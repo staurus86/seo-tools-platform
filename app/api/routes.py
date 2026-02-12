@@ -334,3 +334,24 @@ async def celery_status():
     """Проверить статус Celery"""
     available = check_celery_available()
     return {"celery_available": available}
+
+
+@router.get("/rate-limit")
+async def get_rate_limit(request: Request):
+    """Получить информацию о rate limit"""
+    from app.core.rate_limiter import rate_limiter
+    
+    # Get client IP
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        ip = forwarded.split(",")[0].strip()
+    else:
+        ip = request.client.host
+    
+    result = rate_limiter.check_rate_limit(ip)
+    return {
+        "allowed": result["allowed"],
+        "remaining": result["remaining"],
+        "reset_in": result["reset_in"],
+        "limit": rate_limiter.limit
+    }
