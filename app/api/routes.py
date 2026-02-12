@@ -468,8 +468,8 @@ def check_robots_full(url: str) -> Dict[str, Any]:
     return response
 
 
-def check_robots_full(url: str) -> Dict[str, Any]:
-    """Full robots.txt analysis"""
+def check_robots_simple(url: str) -> Dict[str, Any]:
+    """Simplified robots.txt analysis (legacy fallback)."""
     import requests
     
     robots_url = url.rstrip('/') + '/robots.txt'
@@ -1123,6 +1123,7 @@ def check_site_full(input_url: str, max_pages: int = 20) -> Dict[str, Any]:
             'images_without_alt': len(images_without_alt),
             'images_empty_alt': len(images_empty_alt),
             'links_total': len(links),
+            'links_found': page_links,
             'dofollow': dofollow,
             'nofollow': nofollow,
             'scripts_count': len(scripts),
