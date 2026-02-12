@@ -1347,7 +1347,7 @@ def check_site_full(input_url: str, max_pages: int = 20) -> Dict[str, Any]:
                 "warning_issues": warning_issues[:50],
                 "info_issues": info_issues[:30],
                 "external_links_sample": external_links[:30],
-                "recommendations": generate_recommendations_full(critical_issues, warning_issues, info_issues, tech_counts, seo_score, pages_crawled)
+                "recommendations": generate_recommendations_full(url, critical_issues, warning_issues, info_issues, tech_counts, seo_score, pages_crawled)
             }
         }
     except Exception as e:
@@ -1586,7 +1586,7 @@ def check_site_full(input_url: str, max_pages: int = 20) -> Dict[str, Any]:
         }
 
 
-def generate_recommendations_full(critical_issues: list, warning_issues: list, info_issues: list, tech_counts: dict, score: int, pages_crawled: int) -> list:
+def generate_recommendations_full(site_url: str, critical_issues: list, warning_issues: list, info_issues: list, tech_counts: dict, score: int, pages_crawled: int) -> list:
     """Генерация рекомендаций на основе анализа - приближено к оригинальному скрипту"""
     recommendations = []
     
@@ -1667,7 +1667,7 @@ def generate_recommendations_full(critical_issues: list, warning_issues: list, i
         recommendations.append({"priority": "high", "text": "Адаптируйте сайт для мобильных устройств (Viewport, Responsive Design)"})
     
     # HTTPS
-    if not url.startswith('https://'):
+    if not site_url.startswith('https://'):
         recommendations.append({"priority": "high", "text": "Перенесите сайт на HTTPS для безопасности и SEO"})
     
     return recommendations
