@@ -89,15 +89,64 @@ def check_robots_task(self, url: str) -> Dict[str, Any]:
         extra={"url": url}
     )
     
-    return {
-        "task_type": "robots_check",
-        "url": url,
-        "completed_at": datetime.utcnow().isoformat(),
-        "results": {
-            "robots_txt_found": True,
-            "status": "completed"
+    # Use the actual robots audit
+    import sys
+    import os
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'Проверка Robots.txt'))
+    
+    try:
+        from robots_audit import (
+            fetch_robots, parse_robots, normalize_robots_url, 
+            build_issues_and_warnings, collect_stats
+        )
+        
+        site_url, robots_url = normalize_robots_url(url)
+        raw_text = fetch_robots(robots_url)
+        result = parse_robots(raw_text)
+        stats = collect_stats(result)
+        issues, warnings, recommendations = build_issues_and_warnings(result)
+        
+        return {
+            "task_type": "robots_check",
+            "url": url,
+            "completed_at": datetime.utcnow().isoformat(),
+            "results": {
+                "robots_txt_found": True,
+                "status": "completed",
+                "url": url,
+                "robots_url": robots_url,
+                "content_length": len(raw_text),
+                "lines_count": len(raw_text.splitlines()),
+                "raw_content": raw_text,
+                "user_agents": [ua for group in result.groups for ua in group.user_agents],
+                "disallow_count": len([rule for group in result.groups for rule in group.disallow]),
+                "allow_count": len([rule for group in result.groups for rule in group.allow]),
+                "issues": issues,
+                "warnings": warnings,
+                "recommendations": recommendations,
+                "sitemaps": [s[0] for s in result.sitemaps],
+                "groups_detail": [
+                    {
+                        "user_agents": group.user_agents,
+                        "disallow": [{"path": rule.path, "line": rule.line} for rule in group.disallow],
+                        "allow": [{"path": rule.path, "line": rule.line} for rule in group.allow]
+                    }
+                    for group in result.groups
+                ],
+                "stats": stats
+            }
         }
-    }
+    except Exception as e:
+        return {
+            "task_type": "robots_check",
+            "url": url,
+            "completed_at": datetime.utcnow().isoformat(),
+            "results": {
+                "robots_txt_found": False,
+                "status": "error",
+                "error": str(e)
+            }
+        }
 
 
 @shared_task(
