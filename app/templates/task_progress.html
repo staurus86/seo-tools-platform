@@ -207,9 +207,9 @@ function generateTextReport() {
         `).join('');
     }
     
-    let sitemapsHTML = '';
+    let sitemapsHtml = '';
     if (sitemaps.length > 0) {
-        sitemapsHTML = sitemaps.map(sm => `
+        sitemapsHtml = sitemaps.map(sm => `
             <div class="flex items-center bg-green-50 border border-green-200 rounded px-3 py-2 mb-1">
                 <i class="fas fa-sitemap text-green-500 mr-2"></i>
                 <a href="${sm}" target="_blank" class="text-green-700 hover:underline text-sm break-all">${sm}</a>
@@ -396,12 +396,11 @@ return `
             ` : ''}
             
             <!-- Sitemaps -->
-            ${sitemapsHTML ? `
+            ${sitemapsHtml ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-green-600 mb-3">
-                        <i class="fas fa-sitemap mr-2"></i>Sitemaps (${sitemaps.length})
-                    </h4>
-                    ${sitemapsHTML}
+                        <i class="fas fa-sitemap mr-2"></i>Sitemaps (${sitemaps.length})</h4>
+                    ${sitemapsHtml}
                 </div>
             ` : ''}
             
