@@ -6,11 +6,69 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 import re
+import json
 
 router = APIRouter(prefix="/api", tags=["SEO Tools"])
 
-# Storage for results
-task_results = {}
+# Redis-based storage for task results
+_redis_client = None
+_redis_available = True
+
+def get_redis_client():
+    global _redis_client, _redis_available
+    if _redis_client is None and _redis_available:
+        try:
+            import redis
+            from app.config import settings
+            _redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+            _redis_client.ping()
+            print("[API] Redis connection established for task results")
+        except Exception as e:
+            print(f"[API] Redis unavailable for task results: {e}")
+            _redis_available = False
+            _redis_client = None
+    return _redis_client
+
+def get_task_result(task_id: str) -> Optional[Dict[str, Any]]:
+    """Get task result from Redis or memory fallback"""
+    redis_client = get_redis_client()
+    if redis_client:
+        try:
+            data = redis_client.get(f"task:{task_id}")
+            if data:
+                return json.loads(data)
+        except Exception as e:
+            print(f"[API] Error getting task from Redis: {e}")
+    
+    # Fallback to memory (for development without Redis)
+    return task_results_memory.get(task_id)
+
+def create_task_result(task_id: str, task_type: str, url: str, result: Dict[str, Any]):
+    """Store task result in Redis with 24 hour TTL"""
+    data = {
+        "task_id": task_id,
+        "task_type": task_type,
+        "url": url,
+        "result": result,
+        "completed_at": datetime.utcnow().isoformat()
+    }
+    
+    redis_client = get_redis_client()
+    if redis_client:
+        try:
+            redis_client.setex(f"task:{task_id}", 86400, json.dumps(data))
+            print(f"[API] Task {task_id} stored in Redis")
+        except Exception as e:
+            print(f"[API] Error storing task in Redis: {e}")
+            # Fallback to memory
+            task_results_memory[task_id] = data
+    else:
+        # Use memory fallback
+        task_results_memory[task_id] = data
+        print(f"[API] Task {task_id} stored in memory (Redis unavailable)")
+
+# Memory fallback storage
+task_results_memory = {}
 
 # ============ ORIGINAl ROBOTS AUDIT LOGIC ============
 EXPECTED_BOTS = ["googlebot", "yandex", "bingbot"]
@@ -563,19 +621,6 @@ class BotCheckRequest(BaseModel):
 
 
 # ============ API ENDPOINTS ============
-def create_task_result(task_id: str, task_type: str, url: str, result: Dict[str, Any]):
-    task_results[task_id] = {
-        "task_id": task_id,
-        "task_type": task_type,
-        "url": url,
-        "result": result,
-        "completed_at": datetime.utcnow().isoformat()
-    }
-
-
-def get_task_result(task_id: str) -> Optional[Dict[str, Any]]:
-    return task_results.get(task_id)
-
 
 @router.post("/tasks/robots-check")
 async def create_robots_check(data: RobotsCheckRequest):
