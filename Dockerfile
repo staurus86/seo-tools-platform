@@ -95,7 +95,6 @@ COPY *.toml /app/
 COPY *.md /app/
 COPY .dockerignore /app/
 COPY .gitignore /app/
-COPY .env.example /app/
 
 # Make entrypoint executable
 RUN chmod +x entrypoint.sh
