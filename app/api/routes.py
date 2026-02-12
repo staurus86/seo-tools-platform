@@ -573,6 +573,10 @@ def create_task_result(task_id: str, task_type: str, url: str, result: Dict[str,
     }
 
 
+def get_task_result(task_id: str) -> Optional[Dict[str, Any]]:
+    return task_results.get(task_id)
+
+
 @router.post("/tasks/robots-check")
 async def create_robots_check(data: RobotsCheckRequest):
     """Full robots.txt analysis"""
@@ -594,15 +598,25 @@ async def create_robots_check(data: RobotsCheckRequest):
 @router.get("/export/robots/{task_id}")
 async def export_robots_word(task_id: str):
     """Export robots.txt analysis to Word document"""
+    import re
+    
     try:
         from docx import Document
         from docx.shared import Pt, RGBColor
         from docx.enum.text import WD_ALIGN_PARAGRAPH
         import io
         
-        task = get_task_result(task_id)
+        # Clean task_id (remove any path segments)
+        clean_task_id = task_id.split('/')[-1]
+        
+        task = get_task_result(clean_task_id)
         if not task:
-            return {"error": "Task not found"}
+            # Try finding by partial match
+            matching_ids = [tid for tid in task_results.keys() if clean_task_id in tid]
+            if matching_ids:
+                task = get_task_result(matching_ids[0])
+            else:
+                return {"error": f"Task not found: {clean_task_id}"}
         
         result = task.get("result", {})
         url = task.get("url", "")
