@@ -145,137 +145,24 @@ function generateTextReport() {
     if (!robotsData) return 'Нет данных для отчета';
     
     const r = robotsData.results || robotsData;
-    const userAgents = (r.user_agents || []).join(', ') || 'Не найдено';
-    const disallowRules = r.disallow_count || 0;
-    const allowRules = r.allow_count || 0;
+    console.log('r data:', r);
+    
+    // Handle different data formats
+    let userAgents = 'Не найдено';
+    if (Array.isArray(r.user_agents)) {
+        userAgents = r.user_agents.join(', ');
+    } else if (typeof r.user_agents === 'number') {
+        userAgents = `${r.user_agents} шт.`;
+    } else if (r.user_agents) {
+        userAgents = String(r.user_agents);
+    }
+    
+    const disallowRules = r.disallow_count || r.disallow || 0;
+    const allowRules = r.allow_count || r.allow || 0;
     const issues = r.issues || [];
     const warnings = r.warnings || [];
     const sitemaps = (r.sitemaps || []).map(s => s.url || s) || [];
-    const groups = r.groups || [];
-    
-    let report = `ОТЧЕТ АНАЛИЗА ROBOTS.TXT
-${'='.repeat(50)}
-URL сайта: ${robotsData.url}
-Дата проверки: ${new Date().toLocaleString()}
-${'='.repeat(50)}
-
-СТАТИСТИКА
-${'-'.repeat(30)}
-User-Agents: ${userAgents}
-Disallow правил: ${disallowRules}
-Allow правил: ${allowRules}
-Размер файла: ${r.content_length || 0} байт
-Строк: ${r.lines_count || 0}
-
-`;
-        
-    if (issues.length > 0) {
-        report += `\nПРОБЛЕМЫ\n${'-'.repeat(30)}\n`;
-        issues.forEach(i => report += `⚠️ ${i}\n`);
-    }
-        
-    if (warnings.length > 0) {
-        report += `\nПРЕДУПРЕЖДЕНИЯ\n${'-'.repeat(30)}\n`;
-        warnings.forEach(w => report += `• ${w}\n`);
-    }
-        
-    if (sitemaps.length > 0) {
-        report += `\nSITEMAPS\n${'-'.repeat(30)}\n`;
-        sitemaps.forEach(sm => report += `• ${sm}\n`);
-    }
-        
-    if (groups.length > 0) {
-        report += `\nГРУППЫ ПРАВИЛ\n${'-'.repeat(30)}\n`;
-        groups.forEach(g => {
-            report += `\nUser-agent: ${g.user_agents.join(', ')}\n`;
-            if (g.disallow.length > 0) {
-                g.disallow.forEach(d => report += `  Disallow: ${d}\n`);
-            }
-            if (g.allow.length > 0) {
-                g.allow.forEach(a => report += `  Allow: ${a}\n`);
-            }
-        });
-    }
-        
-    report += `\n${'='.repeat(50)}\nИтоги проверки: ${issues.length} критических проблем, ${warnings.length} предупреждений\n${'='.repeat(50)}`;
-        
-    return report;
-}
-
-function downloadTextReport() {
-    const report = generateTextReport();
-    const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `robots_report_${taskId}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-}
-
-async function downloadWordReport() {
-    try {
-        const response = await fetch('/api/export/robots', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ task_id: taskId })
-        });
-        
-        if (response.ok) {
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `robots_report_${taskId}.docx`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        } else {
-            const error = await response.json();
-            alert('Ошибка при создании отчёта: ' + (error.error || 'Неизвестная ошибка'));
-        }
-    } catch (error) {
-        console.error('Error downloading Word report:', error);
-        alert('Ошибка при скачивании отчёта: ' + error.message);
-    }
-}
-
-// Export to global scope
-window.downloadTextReport = downloadTextReport;
-window.downloadWordReport = downloadWordReport;
-
-function copyToClipboard(text) {
-    navigator.clipboard.writeText(text).then(() => {
-        const notification = document.getElementById('copy-notification');
-        notification.classList.remove('translate-y-20');
-        setTimeout(() => {
-            notification.classList.add('translate-y-20');
-        }, 2000);
-    });
-}
-
-function generateGenericHTML(result) {
-    return `
-        <div class="bg-white rounded-xl shadow-md p-6">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-semibold">Результат анализа</h3>
-                <button onclick="copyToClipboard(JSON.stringify(result, null, 2))" class="text-blue-600 hover:text-blue-800 text-sm">
-                    <i class="fas fa-copy mr-1"></i>Копировать
-                </button>
-            </div>
-            <pre class="bg-gray-50 p-4 rounded-lg overflow-auto text-sm">${JSON.stringify(result, null, 2)}</pre>
-        </div>
-    `;
-}
-
-function generateRobotsHTML(result) {
-    const r = result.results || result;
-    const groups = r.groups_detail || [];
+    const groups = r.groups_detail || r.groups || [];
     const taskId = result.task_id || document.getElementById('task-id').textContent;
     
     // Count stats

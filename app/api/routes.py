@@ -629,6 +629,15 @@ async def export_robots_word(data: ExportRequest):
         info_table = doc.add_table(rows=7, cols=2)
         info_table.style = 'Table Grid'
         
+        # Handle different data formats for user_agents
+        user_agents_str = "Не найдено"
+        if isinstance(result.get("user_agents"), list):
+            user_agents_str = ", ".join(result.get("user_agents", []))
+        elif isinstance(result.get("user_agents"), (int, float)):
+            user_agents_str = f"{result.get('user_agents', 0)} шт."
+        else:
+            user_agents_str = str(result.get("user_agents", "Не найдено"))
+        
         info_data = [
             ("URL сайта:", url),
             ("Дата проверки:", now),
@@ -636,7 +645,7 @@ async def export_robots_word(data: ExportRequest):
             ("Статус HTTP:", str(result.get("status_code", "N/A"))),
             ("Размер файла:", f"{result.get('content_length', 0)} байт"),
             ("Кол-во строк:", str(result.get("lines_count", 0))),
-            ("User-Agents:", str(result.get("user_agents", 0))),
+            ("User-Agents:", user_agents_str),
         ]
         
         for i, (label, value) in enumerate(info_data):
@@ -649,9 +658,9 @@ async def export_robots_word(data: ExportRequest):
         stats_table.style = 'Table Grid'
         
         stats_data = [
-            ("User-Agents:", str(result.get("user_agents", 0))),
-            ("Правил Disallow:", str(result.get("disallow_rules", 0))),
-            ("Правил Allow:", str(result.get("allow_rules", 0))),
+            ("User-Agents:", user_agents_str),
+            ("Правил Disallow:", str(result.get("disallow_count", result.get("disallow", 0)))),
+            ("Правил Allow:", str(result.get("allow_count", result.get("allow", 0)))),
             ("Sitemaps:", str(len(result.get("sitemaps", [])))),
         ]
         
