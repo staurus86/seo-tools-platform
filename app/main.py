@@ -81,22 +81,44 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Static files
-try:
-    logger.info("Mounting static files...")
-    app.mount("/static", StaticFiles(directory="app/static"), name="static")
-    logger.info("✓ Static files mounted")
-except Exception as e:
-    logger.error(f"✗ Static files mount failed: {e}")
+# Static files - try multiple paths
+static_mounted = False
+static_paths = ["app/static", "/app/app/static", "./app/static"]
 
-# Templates
-try:
-    logger.info("Setting up templates...")
-    templates = Jinja2Templates(directory="app/templates")
-    logger.info("✓ Templates configured")
-except Exception as e:
-    logger.error(f"✗ Templates setup failed: {e}")
-    templates = None
+for path in static_paths:
+    try:
+        logger.info(f"Trying static path: {path}")
+        if os.path.exists(path):
+            app.mount("/static", StaticFiles(directory=path), name="static")
+            logger.info(f"✓ Static files mounted from: {path}")
+            static_mounted = True
+            break
+        else:
+            logger.warning(f"Static path does not exist: {path}")
+    except Exception as e:
+        logger.warning(f"Failed to mount static from {path}: {e}")
+
+if not static_mounted:
+    logger.error("✗ Could not mount static files from any path")
+
+# Templates - try multiple paths for different environments
+templates = None
+template_paths = ["app/templates", "/app/app/templates", "./app/templates"]
+
+for path in template_paths:
+    try:
+        logger.info(f"Trying templates path: {path}")
+        if os.path.exists(path):
+            templates = Jinja2Templates(directory=path)
+            logger.info(f"✓ Templates configured from: {path}")
+            break
+        else:
+            logger.warning(f"Path does not exist: {path}")
+    except Exception as e:
+        logger.warning(f"Failed to load templates from {path}: {e}")
+
+if templates is None:
+    logger.error("✗ Could not load templates from any path")
 
 # API routes
 app.include_router(api_router)
