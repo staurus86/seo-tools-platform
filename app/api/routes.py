@@ -1,9 +1,9 @@
 """
-SEO Tools API Routes - Fixed version with proper JSON handling
+SEO Tools API Routes - Fixed version with proper result structure
 """
 from fastapi import APIRouter, Request, Form
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 import os
@@ -29,13 +29,13 @@ def create_task_result(task_id: str, task_type: str, url: str, result: dict):
 
 # Request models
 class RobotsCheckRequest(BaseModel):
-    url: HttpUrl
+    url: str
 
 class SitemapValidateRequest(BaseModel):
-    url: HttpUrl
+    url: str
 
 class BotCheckRequest(BaseModel):
-    url: HttpUrl
+    url: str
 
 
 # Simplified SEO checks
@@ -142,7 +142,7 @@ def check_bots_sync(url: str) -> dict:
 @router.post("/tasks/robots-check", response_model=TaskResponse)
 async def create_robots_check(data: RobotsCheckRequest):
     """Check robots.txt"""
-    url = str(data.url)
+    url = data.url
     
     print(f"[API] Checking robots.txt for: {url}")
     
@@ -162,7 +162,7 @@ async def create_robots_check(data: RobotsCheckRequest):
 @router.post("/tasks/sitemap-validate", response_model=TaskResponse)
 async def create_sitemap_validate(data: SitemapValidateRequest):
     """Validate sitemap"""
-    url = str(data.url)
+    url = data.url
     
     print(f"[API] Validating sitemap: {url}")
     
@@ -181,7 +181,7 @@ async def create_sitemap_validate(data: SitemapValidateRequest):
 @router.post("/tasks/bot-check", response_model=TaskResponse)
 async def create_bot_check(data: BotCheckRequest):
     """Check bot accessibility"""
-    url = str(data.url)
+    url = data.url
     
     print(f"[API] Checking bots for: {url}")
     

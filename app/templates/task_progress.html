@@ -29,29 +29,10 @@
         <div class="w-full bg-gray-200 rounded-full h-4 mb-2">
             <div id="progress-bar" class="bg-blue-500 h-4 rounded-full progress-bar" style="width: 0%"></div>
         </div>
-        <div class="flex justify-between text-sm text-gray-600">
-            <span id="progress-text">0%</span>
-            <span id="progress-detail"></span>
-        </div>
     </div>
 
     <!-- Results Section (hidden initially) -->
     <div id="results-section" class="hidden space-y-6">
-        <!-- Download Buttons -->
-        <div class="bg-white rounded-xl shadow-md p-6">
-            <h3 class="text-lg font-semibold mb-4">
-                <i class="fas fa-download mr-2 text-blue-500"></i>Скачать отчет
-            </h3>
-            <div class="flex flex-wrap gap-3">
-                <button onclick="downloadReport('xlsx')" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition flex items-center">
-                    <i class="fas fa-file-excel mr-2"></i>Excel (.xlsx)
-                </button>
-                <button onclick="downloadReport('docx')" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition flex items-center">
-                    <i class="fas fa-file-word mr-2"></i>Word (.docx)
-                </button>
-            </div>
-        </div>
-
         <!-- Results Content -->
         <div id="results-content" class="space-y-6">
             <!-- Will be populated by JavaScript -->
@@ -65,12 +46,6 @@
             <div>
                 <h3 class="text-red-800 font-semibold mb-2">Ошибка выполнения</h3>
                 <p id="error-message" class="text-red-700"></p>
-                <div id="continue-section" class="mt-4 hidden">
-                    <p class="text-gray-600 mb-3">Задача заняла слишком много времени. Хотите продолжить?</p>
-                    <button onclick="continueTask()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
-                        <i class="fas fa-redo mr-2"></i>Продолжить анализ
-                    </button>
-                </div>
             </div>
         </div>
     </div>
@@ -86,12 +61,10 @@
 <script>
 const taskId = "{{ task_id }}";
 let pollInterval;
-let currentResult = null;
 
-// Start polling when page loads
 document.addEventListener('DOMContentLoaded', () => {
     checkTaskStatus();
-    pollInterval = setInterval(checkTaskStatus, 2000);
+    pollInterval = setInterval(checkTaskStatus, 1000);
 });
 
 async function checkTaskStatus() {
@@ -115,19 +88,15 @@ async function checkTaskStatus() {
 
 function updateProgress(data) {
     const progressBar = document.getElementById('progress-bar');
-    const progressText = document.getElementById('progress-text');
+    const statusTitle = document.getElementById('status-title');
     const statusMessage = document.getElementById('status-message');
-    const progressDetail = document.getElementById('progress-detail');
     
-    if (data.progress) {
-        const percentage = data.progress.percentage;
-        progressBar.style.width = `${percentage}%`;
-        progressText.textContent = `${percentage}%`;
-        statusMessage.textContent = data.progress.message;
-        
-        if (data.progress.current && data.progress.total) {
-            progressDetail.textContent = `${data.progress.current} / ${data.progress.total}`;
-        }
+    if (data.status === 'SUCCESS') {
+        statusTitle.textContent = 'Завершено';
+        statusMessage.textContent = 'Анализ успешно выполнен';
+        progressBar.style.width = '100%';
+        progressBar.classList.remove('bg-blue-500');
+        progressBar.classList.add('bg-green-500');
     }
 }
 
@@ -136,21 +105,16 @@ function showResults(result) {
     document.getElementById('results-section').classList.remove('hidden');
     
     const resultsContent = document.getElementById('results-content');
-    currentResult = result;
     
     // Generate results HTML based on task type
-    if (result.task_type === 'site_analyze') {
-        resultsContent.innerHTML = generateSiteAnalyzeHTML(result);
-    } else if (result.task_type === 'robots_check') {
-        resultsContent.innerHTML = generateRobotsCheckHTML(result);
+    if (result.task_type === 'robots_check') {
+        resultsContent.innerHTML = generateRobotsHTML(result);
     } else if (result.task_type === 'sitemap_validate') {
         resultsContent.innerHTML = generateSitemapHTML(result);
-    } else if (result.task_type === 'render_audit') {
-        resultsContent.innerHTML = generateRenderHTML(result);
-    } else if (result.task_type === 'mobile_check') {
-        resultsContent.innerHTML = generateMobileHTML(result);
     } else if (result.task_type === 'bot_check') {
         resultsContent.innerHTML = generateBotHTML(result);
+    } else {
+        resultsContent.innerHTML = generateGenericHTML(result);
     }
 }
 
@@ -158,34 +122,6 @@ function showError(data) {
     document.getElementById('progress-section').classList.add('hidden');
     document.getElementById('error-section').classList.remove('hidden');
     document.getElementById('error-message').textContent = data.error || 'Unknown error';
-    
-    if (data.can_continue) {
-        document.getElementById('continue-section').classList.remove('hidden');
-    }
-}
-
-async function continueTask() {
-    try {
-        const response = await fetch(`/api/tasks/${taskId}/continue`, {
-            method: 'POST'
-        });
-        
-        if (response.ok) {
-            // Restart polling
-            document.getElementById('error-section').classList.add('hidden');
-            document.getElementById('progress-section').classList.remove('hidden');
-            pollInterval = setInterval(checkTaskStatus, 2000);
-        } else {
-            const data = await response.json();
-            alert(data.detail || 'Failed to continue task');
-        }
-    } catch (error) {
-        console.error('Error continuing task:', error);
-    }
-}
-
-function downloadReport(format) {
-    window.open(`/api/download/${taskId}/${format}`, '_blank');
 }
 
 function copyToClipboard(text) {
@@ -198,43 +134,94 @@ function copyToClipboard(text) {
     });
 }
 
-// HTML generators for different task types
-function generateSiteAnalyzeHTML(result) {
+function generateGenericHTML(result) {
     return `
         <div class="bg-white rounded-xl shadow-md p-6">
             <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-semibold">Общая информация</h3>
+                <h3 class="text-lg font-semibold">Результат анализа</h3>
+                <button onclick="copyToClipboard(JSON.stringify(result, null, 2))" class="text-blue-600 hover:text-blue-800 text-sm">
+                    <i class="fas fa-copy mr-1"></i>Копировать
+                </button>
+            </div>
+            <pre class="bg-gray-50 p-4 rounded-lg overflow-auto text-sm">${JSON.stringify(result, null, 2)}</pre>
+        </div>
+    `;
+}
+
+function generateRobotsHTML(result) {
+    const r = result.results || result;
+    return `
+        <div class="bg-white rounded-xl shadow-md p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold">Проверка Robots.txt</h3>
                 <button onclick="copyToClipboard('${result.url}')" class="text-blue-600 hover:text-blue-800 text-sm">
                     <i class="fas fa-copy mr-1"></i>Копировать URL
                 </button>
             </div>
             <div class="grid grid-cols-2 gap-4 text-sm">
                 <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
-                <div><span class="text-gray-600">Страниц проанализировано:</span> <span class="font-medium">${result.pages_analyzed}</span></div>
+                <div><span class="text-gray-600">Найден:</span> <span class="font-medium">${r.robots_txt_found ? 'Да' : 'Нет'}</span></div>
+                <div><span class="text-gray-600">Статус:</span> <span class="font-medium">${r.status_code || 'N/A'}</span></div>
+                <div><span class="text-gray-600">Размер:</span> <span class="font-medium">${r.content_length || 0} байт</span></div>
                 <div><span class="text-gray-600">Завершено:</span> <span class="font-medium">${new Date(result.completed_at).toLocaleString()}</span></div>
             </div>
         </div>
     `;
 }
 
-function generateRobotsCheckHTML(result) {
-    return generateSiteAnalyzeHTML(result); // Similar structure
-}
-
 function generateSitemapHTML(result) {
-    return generateSiteAnalyzeHTML(result);
-}
-
-function generateRenderHTML(result) {
-    return generateSiteAnalyzeHTML(result);
-}
-
-function generateMobileHTML(result) {
-    return generateSiteAnalyzeHTML(result);
+    const r = result.results || result;
+    return `
+        <div class="bg-white rounded-xl shadow-md p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold">Валидация Sitemap</h3>
+                <button onclick="copyToClipboard('${result.url}')" class="text-blue-600 hover:text-blue-800 text-sm">
+                    <i class="fas fa-copy mr-1"></i>Копировать URL
+                </button>
+            </div>
+            <div class="grid grid-cols-2 gap-4 text-sm">
+                <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
+                <div><span class="text-gray-600">Валиден:</span> <span class="font-medium">${r.valid ? 'Да' : 'Нет'}</span></div>
+                <div><span class="text-gray-600">URLs найдено:</span> <span class="font-medium">${r.urls_count || 0}</span></div>
+                <div><span class="text-gray-600">Статус:</span> <span class="font-medium">${r.status || 'N/A'}</span></div>
+                ${r.error ? `<div class="col-span-2 text-red-600"><span class="font-medium">Ошибка: ${r.error}</span></div>` : ''}
+            </div>
+        </div>
+    `;
 }
 
 function generateBotHTML(result) {
-    return generateSiteAnalyzeHTML(result);
+    const r = result.results || result;
+    const botResults = r.bot_results || {};
+    
+    let botsHTML = '';
+    for (const [bot, data] of Object.entries(botResults)) {
+        botsHTML += `
+            <div class="flex justify-between items-center py-2 border-b">
+                <span class="font-medium">${bot}</span>
+                <span class="${data.accessible ? 'text-green-600' : 'text-red-600'}">${data.status || data.error || 'N/A'}</span>
+            </div>
+        `;
+    }
+    
+    return `
+        <div class="bg-white rounded-xl shadow-md p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold">Проверка ботов</h3>
+                <button onclick="copyToClipboard('${result.url}')" class="text-blue-600 hover:text-blue-800 text-sm">
+                    <i class="fas fa-copy mr-1"></i>Копировать URL
+                </button>
+            </div>
+            <div class="grid grid-cols-2 gap-4 text-sm mb-4">
+                <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
+                <div><span class="text-gray-600">Проверено ботов:</span> <span class="font-medium">${(r.bots_checked || []).length}</span></div>
+            </div>
+            <div class="border-t pt-4">
+                <h4 class="font-semibold mb-2">Результаты по ботам:</h4>
+                ${botsHTML}
+            </div>
+        </div>
+    `;
 }
 </script>
 {% endblock %}
