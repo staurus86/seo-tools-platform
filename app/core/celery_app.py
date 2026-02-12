@@ -4,14 +4,26 @@ Celery configuration and initialization
 import os
 import sys
 
-# CRITICAL: Read environment variables BEFORE importing anything else
+# CRITICAL: Use only REDIS_URL, ignore CELERY_BROKER_URL if it points to localhost
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-BROKER_URL = os.getenv("CELERY_BROKER_URL") or REDIS_URL
-BACKEND_URL = os.getenv("CELERY_RESULT_BACKEND") or REDIS_URL
 
-print(f"[CELERY CONFIG] REDIS_URL from env: {os.getenv('REDIS_URL')}", file=sys.stderr)
-print(f"[CELERY CONFIG] BROKER_URL will be: {BROKER_URL}", file=sys.stderr)
-print(f"[CELERY CONFIG] BACKEND_URL will be: {BACKEND_URL}", file=sys.stderr)
+# Check if CELERY_BROKER_URL exists and doesn't point to localhost
+CELERY_BROKER = os.getenv("CELERY_BROKER_URL")
+if CELERY_BROKER and "localhost" not in CELERY_BROKER:
+    BROKER_URL = CELERY_BROKER
+else:
+    BROKER_URL = REDIS_URL
+
+CELERY_BACKEND = os.getenv("CELERY_RESULT_BACKEND")
+if CELERY_BACKEND and "localhost" not in CELERY_BACKEND:
+    BACKEND_URL = CELERY_BACKEND
+else:
+    BACKEND_URL = REDIS_URL
+
+print(f"[CELERY CONFIG] REDIS_URL from env: {REDIS_URL}", file=sys.stderr)
+print(f"[CELERY CONFIG] CELERY_BROKER_URL from env: {CELERY_BROKER}", file=sys.stderr)
+print(f"[CELERY CONFIG] Using BROKER_URL: {BROKER_URL}", file=sys.stderr)
+print(f"[CELERY CONFIG] Using BACKEND_URL: {BACKEND_URL}", file=sys.stderr)
 
 from celery import Celery
 
@@ -23,7 +35,6 @@ celery_app = Celery(
     include=["app.core.tasks"]
 )
 
-print(f"[CELERY CONFIG] App created, checking broker...", file=sys.stderr)
 print(f"[CELERY CONFIG] App broker_url: {celery_app.conf.broker_url}", file=sys.stderr)
 
 # Hardcoded settings - no imports to avoid reconfiguration
