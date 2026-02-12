@@ -299,7 +299,9 @@ async function downloadWordReport() {
 }
 
 function generateRobotsHTML(result) {
+    console.log('generateRobotsHTML called with:', result);
     const r = result.results || result;
+    console.log('r data:', r);
     
     let userAgents = 'Не найдено';
     if (Array.isArray(r.user_agents)) {
