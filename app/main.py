@@ -7,10 +7,17 @@ from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 import os
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 from app.config import settings
 from app.api.routes import router as api_router
 
+logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
+logger.info(f"Port: {settings.PORT}, Host: {settings.HOST}")
 
 # Create FastAPI app
 app = FastAPI(
