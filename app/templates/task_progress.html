@@ -179,11 +179,7 @@ function generateTextReport() {
     const userAgentCount = r.user_agents || 0;
     const disallowRulesCount = r.disallow || 0;
     const allowRulesCount = r.allow || 0;
-    const sitemaps = r.sitemaps || [];
-    const issues = r.issues || [];
-    const warnings = r.warnings || [];
     const syntaxErrors = r.syntax_errors || [];
-    const recommendations = r.recommendations || [];
     
     let issuesHTML = '';
     if (issues.length > 0) {
@@ -269,57 +265,6 @@ function generateTextReport() {
                 <span class="text-sm text-blue-700">${rec}</span>
             </div>
         `).join('');
-    }
-    
-    // Generate text report for download
-    function generateTextReport() {
-        let report = `ОТЧЕТ АНАЛИЗА ROBOTS.TXT
-${'='.repeat(50)}
-URL сайта: ${result.url}
-Дата проверки: ${new Date().toLocaleString()}
-${'='.repeat(50)}
-
-СТАТИСТИКА
-${'-'.repeat(30)}
-User-Agents: ${r.user_agents || 0}
-Disallow правил: ${r.disallow || 0}
-Allow правил: ${r.allow || 0}
-Размер файла: ${r.content_length || 0} байт
-Строк: ${r.lines_count || 0}
-
-`;
-        
-        if (issues.length > 0) {
-            report += `\nПРОБЛЕМЫ\n${'-'.repeat(30)}\n`;
-            issues.forEach(i => report += `⚠️ ${i}\n`);
-        }
-        
-        if (warnings.length > 0) {
-            report += `\nПРЕДУПРЕЖДЕНИЯ\n${'-'.repeat(30)}\n`;
-            warnings.forEach(w => report += `• ${w}\n`);
-        }
-        
-        if (sitemaps.length > 0) {
-            report += `\nSITEMAPS\n${'-'.repeat(30)}\n`;
-            sitemaps.forEach(sm => report += `• ${sm}\n`);
-        }
-        
-        if (groups.length > 0) {
-            report += `\nГРУППЫ ПРАВИЛ\n${'-'.repeat(30)}\n`;
-            groups.forEach((group, idx) => {
-                report += `\nГруппа ${idx + 1}: ${group.user_agents.join(', ')}\n`;
-                group.disallow.forEach(d => {
-                    report += `  Disallow: ${d.path} (стр ${d.line})\n`;
-                });
-            });
-        }
-        
-        if (recommendations.length > 0) {
-            report += `\nРЕКОМЕНДАЦИИ\n${'-'.repeat(30)}\n`;
-            recommendations.forEach(rec => report += `• ${rec}\n`);
-        }
-        
-        return report;
     }
     
 return `
@@ -487,58 +432,7 @@ function generateBotHTML(result) {
 function generateSiteAnalysisHTML(result) {
     const r = result.results || result;
     if (r.error) {
-// Generate text report for download
-    function generateTextReport() {
-        let report = `ОТЧЕТ АНАЛИЗА ROBOTS.TXT
-${'='.repeat(50)}
-URL сайта: ${result.url}
-Дата проверки: ${new Date().toLocaleString()}
-${'='.repeat(50)}
-
-СТАТИСТИКА
-${'-'.repeat(30)}
-User-Agents: ${r.user_agents || 0}
-Disallow правил: ${r.disallow || 0}
-Allow правил: ${r.allow || 0}
-Размер файла: ${r.content_length || 0} байт
-Строк: ${r.lines_count || 0}
-
-`;
-        
-        if (issues.length > 0) {
-            report += `\nПРОБЛЕМЫ\n${'-'.repeat(30)}\n`;
-            issues.forEach(i => report += `⚠️ ${i}\n`);
-        }
-        
-        if (warnings.length > 0) {
-            report += `\nПРЕДУПРЕЖДЕНИЯ\n${'-'.repeat(30)}\n`;
-            warnings.forEach(w => report += `• ${w}\n`);
-        }
-        
-        if (sitemaps.length > 0) {
-            report += `\nSITEMAPS\n${'-'.repeat(30)}\n`;
-            sitemaps.forEach(sm => report += `• ${sm}\n`);
-        }
-        
-        if (groups.length > 0) {
-            report += `\nГРУППЫ ПРАВИЛ\n${'-'.repeat(30)}\n`;
-            groups.forEach((group, idx) => {
-                report += `\nГруппа ${idx + 1}: ${group.user_agents.join(', ')}\n`;
-                group.disallow.forEach(d => {
-                    report += `  Disallow: ${d.path} (стр ${d.line})\n`;
-                });
-            });
-        }
-        
-        if (recommendations.length > 0) {
-            report += `\nРЕКОМЕНДАЦИИ\n${'-'.repeat(30)}\n`;
-            recommendations.forEach(rec => report += `• ${rec}\n`);
-        }
-        
-        return report;
-    }
-    
-    return `
+        return `
             <div class="bg-white rounded-xl shadow-md p-6">
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="text-lg font-semibold">Анализ сайта</h3>
