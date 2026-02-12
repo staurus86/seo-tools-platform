@@ -842,6 +842,8 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
 
     max_sitemaps = 30
     max_export_urls = 100000
+    export_chunk_size = 25000
+    max_urls_preview_per_sitemap = 2000
     max_file_size = 52428800
     max_urls_per_sitemap = 50000
     queue: List[str] = [url]
@@ -882,6 +884,7 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                 "urls_count": 0,
                 "duplicate_count": 0,
                 "duplicate_urls": [],
+                "urls_omitted": 0,
                 "errors": [],
                 "warnings": [],
                 "urls": [],
@@ -985,11 +988,16 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                                 all_urls.append(loc)
 
                     file_report["urls_count"] = len(file_urls)
-                    file_report["urls"] = file_urls
+                    file_report["urls"] = file_urls[:max_urls_preview_per_sitemap]
+                    file_report["urls_omitted"] = max(0, len(file_urls) - max_urls_preview_per_sitemap)
                     file_report["duplicate_count"] = file_duplicate_occurrences
                     file_report["duplicate_urls"] = dedupe_keep_order(file_duplicate_urls)[:200]
                     if len(file_urls) > max_urls_per_sitemap:
                         file_report["warnings"].append("More than 50,000 URLs in one sitemap file.")
+                    if file_report["urls_omitted"] > 0:
+                        file_report["warnings"].append(
+                            f"URLs preview truncated: {file_report['urls_omitted']} omitted in API response."
+                        )
                     file_report["ok"] = len(file_report["errors"]) == 0
 
                 else:
@@ -1029,6 +1037,7 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
         valid_files = sum(1 for item in sitemap_files if item.get("ok"))
         total_urls_discovered = sum(item.get("urls_count", 0) for item in sitemap_files if item.get("type") == "urlset")
         urls_export_truncated = total_urls_discovered > len(all_urls)
+        export_parts_count = (len(all_urls) + export_chunk_size - 1) // export_chunk_size if all_urls else 0
 
         return {
             "task_type": "sitemap_validate",
@@ -1051,6 +1060,8 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                 "export_urls": all_urls,
                 "urls_export_truncated": urls_export_truncated,
                 "max_export_urls": max_export_urls,
+                "export_chunk_size": export_chunk_size,
+                "export_parts_count": export_parts_count,
                 "invalid_lastmod_count": invalid_lastmod_count,
                 "invalid_changefreq_count": invalid_changefreq_count,
                 "invalid_priority_count": invalid_priority_count,
@@ -1314,6 +1325,49 @@ async def export_robots_word(data: ExportRequest):
         
     except ImportError:
         return {"error": "python-docx not installed"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.post("/export/sitemap-xlsx")
+async def export_sitemap_xlsx(data: ExportRequest):
+    """Export sitemap validation report to XLSX."""
+    import os
+    import re
+    from fastapi.responses import Response
+    from app.reports.xlsx_generator import xlsx_generator
+
+    try:
+        task_id = data.task_id
+        task = get_task_result(task_id)
+        if not task:
+            return {"error": "Task not found", "task_id": task_id}
+
+        task_type = task.get("task_type")
+        if task_type != "sitemap_validate":
+            return {"error": f"Unsupported task type for sitemap XLSX export: {task_type}"}
+
+        task_result = task.get("result", {})
+        url = task.get("url", "") or task_result.get("url", "")
+        report_payload = {
+            "url": url,
+            "results": task_result.get("results", task_result)
+        }
+        filepath = xlsx_generator.generate_sitemap_report(task_id, report_payload)
+        if not filepath or not os.path.exists(filepath):
+            return {"error": "Report generation failed"}
+
+        with open(filepath, "rb") as f:
+            content = f.read()
+
+        domain = re.sub(r"[^a-zA-Z0-9._-]+", "_", (urlparse(url).netloc or "site"))
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+        filename = f"sitemap_report_{domain}_{timestamp}.xlsx"
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
     except Exception as e:
         return {"error": str(e)}
 
