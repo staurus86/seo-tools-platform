@@ -150,10 +150,15 @@ function generateTextReport() {
     
     let totalDisallow = 0;
     let totalAllow = 0;
-    groups.forEach(g => {
-        totalDisallow += (g.disallow || []).length;
-        totalAllow += (g.allow || []).length;
-    });
+    if (groups && groups.length > 0) {
+        groups.forEach(g => {
+            totalDisallow += (g.disallow || []).length;
+            totalAllow += (g.allow || []).length;
+        });
+    } else {
+        totalDisallow = r.disallow_rules || 0;
+        totalAllow = r.allow_rules || 0;
+    }
     
     let report = 'ОТЧЕТ АНАЛИЗА ROBOTS.TXT\n';
     report += '='.repeat(50) + '\n';
@@ -300,7 +305,7 @@ async function downloadWordReport() {
 
 function generateRobotsHTML(result) {
     console.log('generateRobotsHTML called with:', result);
-    const r = result.results || result;
+    const r = result.result?.results || result.result || result;
     console.log('r data:', r);
     
     let userAgents = 'Не найдено';
@@ -321,12 +326,17 @@ function generateRobotsHTML(result) {
     
     let totalDisallow = 0;
     let totalAllow = 0;
-    groups.forEach(g => {
-        totalDisallow += (g.disallow || []).length;
-        totalAllow += (g.allow || []).length;
-    });
+    if (groups && groups.length > 0) {
+        groups.forEach(g => {
+            totalDisallow += (g.disallow || []).length;
+            totalAllow += (g.allow || []).length;
+        });
+    } else {
+        // Fallback to API fields
+        totalDisallow = r.disallow_rules || 0;
+        totalAllow = r.allow_rules || 0;
+    }
     
-    const userAgentCount = r.user_agents || 0;
     const disallowRulesCount = totalDisallow;
     const allowRulesCount = totalAllow;
     
@@ -467,7 +477,7 @@ function generateRobotsHTML(result) {
                     <span class="font-medium">URL:</span> <a href="${result.url}" target="_blank" class="text-blue-600 hover:underline">${result.url}</a>
                     <span class="mx-2">|</span>
                     <span class="font-medium">Robots.txt:</span> 
-                    <a href="${result.url.replace(/\/$/, '')}/robots.txt" target="_blank" class="text-blue-600 hover:underline">показать файл</a>
+                    <a href="${r.url || result.url.replace(/\/$/, '')}/robots.txt" target="_blank" class="text-blue-600 hover:underline">показать файл</a>
                 </div>
             </div>
             
