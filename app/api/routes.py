@@ -619,6 +619,10 @@ async def export_robots_word(data: ExportRequest):
         result = task.get("result", {})
         url = task.get("url", "")
         
+        # Debug log
+        import logging
+        logging.info(f"DOCX export for task {task_id}, result keys: {result.keys()}")
+        
         doc = Document()
         doc.add_heading('Отчет анализа Robots.txt', level=0)
         

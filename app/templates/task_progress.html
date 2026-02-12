@@ -157,12 +157,20 @@ function generateTextReport() {
         userAgents = String(r.user_agents);
     }
     
-    const disallowRules = r.disallow_count || r.disallow || 0;
-    const allowRules = r.allow_count || r.allow || 0;
+    const disallowRules = r.disallow || r.disallow_count || 0;
+    const allowRules = r.allow || r.allow_count || 0;
     const issues = r.issues || [];
     const warnings = r.warnings || [];
     const sitemaps = (r.sitemaps || []).map(s => s.url || s) || [];
     const groups = r.groups_detail || r.groups || [];
+    
+    console.log('Processed data:', {
+        userAgents, disallowRules, allowRules, 
+        issuesCount: issues.length, 
+        warningsCount: warnings.length,
+        sitemapsCount: sitemaps.length,
+        groupsCount: groups.length
+    });
     const taskId = result.task_id || document.getElementById('task-id').textContent;
     
     // Count stats
