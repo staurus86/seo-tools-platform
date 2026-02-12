@@ -92,9 +92,7 @@ COPY *.py /app/
 COPY *.sh /app/
 COPY *.txt /app/
 COPY *.toml /app/
-COPY *.md /app/
-COPY .dockerignore /app/
-COPY .gitignore /app/
+
 
 # Make entrypoint executable
 RUN chmod +x entrypoint.sh
