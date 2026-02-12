@@ -452,17 +452,19 @@ async def celery_status():
 
 # ============ ADDITIONAL TOOLS ============
 
-def check_site_full(url: str, max_pages: int = 20) -> Dict[str, Any]:
+def check_site_full(input_url: str, max_pages: int = 20) -> Dict[str, Any]:
     """
     Full site analysis - максимально приближено к оригинальному seopro.py
     Краулинг, анализ контента, технологии, ссылки, редиректы
     """
     import requests
     from bs4 import BeautifulSoup
-    from urllib.parse import urljoin, urlparse, urlparse
+    from urllib.parse import urljoin, urlparse
     from collections import defaultdict, Counter
     import re
     import time
+    
+    url = input_url  # Use input_url as url for compatibility
     
     session = requests.Session()
     session.headers.update({
