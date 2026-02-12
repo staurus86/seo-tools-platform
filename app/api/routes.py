@@ -1,16 +1,14 @@
 """
-SEO Tools API Routes - Simplified working version
+SEO Tools API Routes - Fixed version with proper JSON handling
 """
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Form
 from fastapi.responses import FileResponse, JSONResponse
-from typing import Optional
+from pydantic import BaseModel, HttpUrl
+from typing import Optional, List
 from datetime import datetime
 import os
 
-from app.api.schemas import (
-    TaskResponse, TaskResult, TaskStatus, TaskType
-)
-from app.core.progress import progress_tracker
+from app.api.schemas import TaskResponse, TaskResult, TaskStatus, TaskType
 
 router = APIRouter(prefix="/api", tags=["SEO Tools"])
 
@@ -29,24 +27,45 @@ def create_task_result(task_id: str, task_type: str, url: str, result: dict):
     }
 
 
-# Simulated SEO checks (simplified versions)
+# Request models
+class RobotsCheckRequest(BaseModel):
+    url: HttpUrl
+
+class SitemapValidateRequest(BaseModel):
+    url: HttpUrl
+
+class BotCheckRequest(BaseModel):
+    url: HttpUrl
+
+
+# Simplified SEO checks
 def check_robots_sync(url: str) -> dict:
     """Check robots.txt"""
     import requests
     
     try:
         robots_url = url.rstrip('/') + '/robots.txt'
-        response = requests.get(robots_url, timeout=10)
+        response = requests.get(robots_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
         
         return {
-            "robots_txt_found": response.status_code == 200,
-            "status_code": response.status_code,
-            "content_length": len(response.text) if response.status_code == 200 else 0
+            "task_type": "robots_check",
+            "url": url,
+            "completed_at": datetime.utcnow().isoformat(),
+            "results": {
+                "robots_txt_found": response.status_code == 200,
+                "status_code": response.status_code,
+                "content_length": len(response.text) if response.status_code == 200 else 0
+            }
         }
     except Exception as e:
         return {
-            "error": str(e),
-            "robots_txt_found": False
+            "task_type": "robots_check",
+            "url": url,
+            "completed_at": datetime.utcnow().isoformat(),
+            "results": {
+                "error": str(e),
+                "robots_txt_found": False
+            }
         }
 
 
@@ -55,25 +74,46 @@ def check_sitemap_sync(url: str) -> dict:
     import requests
     
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
         
         if response.status_code != 200:
-            return {"valid": False, "error": f"HTTP {response.status_code}"}
+            return {
+                "task_type": "sitemap_validate",
+                "url": url,
+                "completed_at": datetime.utcnow().isoformat(),
+                "results": {
+                    "valid": False,
+                    "error": f"HTTP {response.status_code}"
+                }
+            }
         
         return {
-            "valid": True,
-            "urls_count": response.text.count("<url"),
-            "status": "completed"
+            "task_type": "sitemap_validate",
+            "url": url,
+            "completed_at": datetime.utcnow().isoformat(),
+            "results": {
+                "valid": True,
+                "urls_count": response.text.count("<url"),
+                "status": "completed"
+            }
         }
     except Exception as e:
-        return {"valid": False, "error": str(e)}
+        return {
+            "task_type": "sitemap_validate",
+            "url": url,
+            "completed_at": datetime.utcnow().isoformat(),
+            "results": {
+                "valid": False,
+                "error": str(e)
+            }
+        }
 
 
 def check_bots_sync(url: str) -> dict:
     """Check bot accessibility"""
     import requests
     
-    bots = ["Googlebot", "YandexBot"]
+    bots = ["Googlebot", "YandexBot", "Bingbot"]
     results = {}
     
     for bot in bots:
@@ -87,17 +127,22 @@ def check_bots_sync(url: str) -> dict:
             results[bot] = {"error": str(e)}
     
     return {
-        "bots_checked": bots,
-        "results": results,
-        "status": "completed"
+        "task_type": "bot_check",
+        "url": url,
+        "completed_at": datetime.utcnow().isoformat(),
+        "results": {
+            "bots_checked": bots,
+            "bot_results": results,
+            "status": "completed"
+        }
     }
 
 
 # Task endpoints
 @router.post("/tasks/robots-check", response_model=TaskResponse)
-async def create_robots_check(request: Request, data):
+async def create_robots_check(data: RobotsCheckRequest):
     """Check robots.txt"""
-    url = str(data.url) if hasattr(data, 'url') else str(data)
+    url = str(data.url)
     
     print(f"[API] Checking robots.txt for: {url}")
     
@@ -115,9 +160,9 @@ async def create_robots_check(request: Request, data):
 
 
 @router.post("/tasks/sitemap-validate", response_model=TaskResponse)
-async def create_sitemap_validate(request: Request, data):
+async def create_sitemap_validate(data: SitemapValidateRequest):
     """Validate sitemap"""
-    url = str(data.url) if hasattr(data, 'url') else str(data)
+    url = str(data.url)
     
     print(f"[API] Validating sitemap: {url}")
     
@@ -134,9 +179,9 @@ async def create_sitemap_validate(request: Request, data):
 
 
 @router.post("/tasks/bot-check", response_model=TaskResponse)
-async def create_bot_check(request: Request, data):
+async def create_bot_check(data: BotCheckRequest):
     """Check bot accessibility"""
-    url = str(data.url) if hasattr(data, 'url') else str(data)
+    url = str(data.url)
     
     print(f"[API] Checking bots for: {url}")
     
