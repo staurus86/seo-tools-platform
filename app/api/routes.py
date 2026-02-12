@@ -595,9 +595,13 @@ async def create_robots_check(data: RobotsCheckRequest):
     }
 
 
-@router.get("/export/robots/{task_id}")
-async def export_robots_word(task_id: str):
-    """Export robots.txt analysis to Word document"""
+class ExportRequest(BaseModel):
+    task_id: str
+
+
+@router.post("/export/robots")
+async def export_robots_word(data: ExportRequest):
+    """Export robots.txt analysis to Word document - pass task_id in JSON body"""
     import re
     
     try:
@@ -606,17 +610,11 @@ async def export_robots_word(task_id: str):
         from docx.enum.text import WD_ALIGN_PARAGRAPH
         import io
         
-        # Clean task_id (remove any path segments)
-        clean_task_id = task_id.split('/')[-1]
+        task_id = data.task_id
+        task = get_task_result(task_id)
         
-        task = get_task_result(clean_task_id)
         if not task:
-            # Try finding by partial match
-            matching_ids = [tid for tid in task_results.keys() if clean_task_id in tid]
-            if matching_ids:
-                task = get_task_result(matching_ids[0])
-            else:
-                return {"error": f"Task not found: {clean_task_id}"}
+            return {"error": "Task not found", "task_id": task_id}
         
         result = task.get("result", {})
         url = task.get("url", "")

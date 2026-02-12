@@ -164,6 +164,25 @@ async def favicon():
     # Return empty 204 No Content
     return Response(status_code=204)
 
+@app.post("/export/robots")
+async def export_robots_redirect(request: Request):
+    """Handle export requests and redirect to API"""
+    from fastapi import Request
+    from app.api.routes import export_robots_word, ExportRequest
+    import json
+    
+    try:
+        # Read JSON body
+        body = await request.body()
+        data = json.loads(body.decode('utf-8'))
+        export_request = ExportRequest(task_id=data.get('task_id'))
+        
+        # Call the export function
+        return await export_robots_word(export_request)
+    except Exception as e:
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"error": str(e)}, status_code=400)
+
 
 logger.info("=" * 50)
 logger.info("APP INITIALIZED SUCCESSFULLY")

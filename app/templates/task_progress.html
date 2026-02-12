@@ -255,14 +255,112 @@ function generateRobotsHTML(result) {
         `).join('');
     }
     
+    // Generate text report for download
+    function generateTextReport() {
+        let report = `ОТЧЕТ АНАЛИЗА ROBOTS.TXT
+${'='.repeat(50)}
+URL сайта: ${result.url}
+Дата проверки: ${new Date().toLocaleString()}
+${'='.repeat(50)}
+
+СТАТИСТИКА
+${'-'.repeat(30)}
+User-Agents: ${userAgents}
+Disallow правил: ${disallowRules}
+Allow правил: ${allowRules}
+Размер файла: ${r.content_length || 0} байт
+Строк: ${r.lines_count || 0}
+
+`;
+        
+        if (issues.length > 0) {
+            report += `\nПРОБЛЕМЫ\n${'-'.repeat(30)}\n`;
+            issues.forEach(i => report += `⚠️ ${i}\n`);
+        }
+        
+        if (warnings.length > 0) {
+            report += `\nПРЕДУПРЕЖДЕНИЯ\n${'-'.repeat(30)}\n`;
+            warnings.forEach(w => report += `• ${w}\n`);
+        }
+        
+        if (sitemaps.length > 0) {
+            report += `\nSITEMAPS\n${'-'.repeat(30)}\n`;
+            sitemaps.forEach(sm => report += `• ${sm}\n`);
+        }
+        
+        if (groups.length > 0) {
+            report += `\nГРУППЫ ПРАВИЛ\n${'-'.repeat(30)}\n`;
+            groups.forEach((group, idx) => {
+                report += `\nГруппа ${idx + 1}: ${group.user_agents.join(', ')}\n`;
+                group.disallow.forEach(d => {
+                    report += `  Disallow: ${d.path} (стр ${d.line})\n`;
+                });
+            });
+        }
+        
+        if (recommendations.length > 0) {
+            report += `\nРЕКОМЕНДАЦИИ\n${'-'.repeat(30)}\n`;
+            recommendations.forEach(rec => report += `• ${rec}\n`);
+        }
+        
+        return report;
+    }
+    
+    function downloadTextReport() {
+        const report = generateTextReport();
+        const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `robots_report_${taskId}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+    
+    async function downloadWordReport() {
+        try {
+            const response = await fetch('/api/export/robots', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ task_id: taskId })
+            });
+            
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `robots_report_${taskId}.docx`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } else {
+                const error = await response.json();
+                alert('Ошибка при создании отчёта: ' + (error.error || 'Неизвестная ошибка'));
+            }
+        } catch (error) {
+            console.error('Error downloading Word report:', error);
+            alert('Ошибка при скачивании отчёта: ' + error.message);
+        }
+    }
+    
     return `
         <div class="space-y-6">
             <!-- Actions -->
             <div class="bg-white rounded-xl shadow-md p-4 flex flex-wrap gap-3">
-                <a href="/export/robots/${taskId}" class="inline-flex items-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition">
+                <button onclick="downloadTextReport()" class="inline-flex items-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition cursor-pointer">
+                    <i class="fas fa-file-download mr-2"></i>
+                    Скачать отчет (.txt)
+                </button>
+                <button onclick="downloadWordReport()" class="inline-flex items-center bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition cursor-pointer">
                     <i class="fas fa-file-word mr-2"></i>
-                    Скачать Word
-                </a>
+                    Скачать отчет (.docx)
+                </button>
                 <button onclick="copyToClipboard(JSON.stringify(result, null, 2))" class="inline-flex items-center bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition">
                     <i class="fas fa-copy mr-2"></i>
                     Копировать JSON
