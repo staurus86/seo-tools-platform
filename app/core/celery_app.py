@@ -10,12 +10,12 @@ BROKER_URL = os.getenv("CELERY_BROKER_URL") or REDIS_URL
 BACKEND_URL = os.getenv("CELERY_RESULT_BACKEND") or REDIS_URL
 
 print(f"[CELERY CONFIG] REDIS_URL from env: {os.getenv('REDIS_URL')}", file=sys.stderr)
-print(f"[CELERY CONFIG] Using broker: {BROKER_URL}", file=sys.stderr)
-print(f"[CELERY CONFIG] Using backend: {BACKEND_URL}", file=sys.stderr)
+print(f"[CELERY CONFIG] BROKER_URL will be: {BROKER_URL}", file=sys.stderr)
+print(f"[CELERY CONFIG] BACKEND_URL will be: {BACKEND_URL}", file=sys.stderr)
 
 from celery import Celery
 
-# Create Celery app with explicit broker/backend
+# Create Celery app with explicit broker/backend - NO IMPORTS BEFORE THIS
 celery_app = Celery(
     "seo_tools",
     broker=BROKER_URL,
@@ -23,17 +23,18 @@ celery_app = Celery(
     include=["app.core.tasks"]
 )
 
-print(f"[CELERY CONFIG] App created with broker: {celery_app.conf.broker_url}", file=sys.stderr)
+print(f"[CELERY CONFIG] App created, checking broker...", file=sys.stderr)
+print(f"[CELERY CONFIG] App broker_url: {celery_app.conf.broker_url}", file=sys.stderr)
 
-# Now import settings for other config
-from app.config import settings
+# Hardcoded settings - no imports to avoid reconfiguration
+MAX_TASK_DURATION = 20 * 60  # 20 minutes
 
-# Celery configuration
+# Celery configuration - only update specific settings, NOT broker/backend
 celery_app.conf.update(
     # Task settings
     task_track_started=True,
-    task_time_limit=settings.MAX_TASK_DURATION + 60,
-    task_soft_time_limit=settings.MAX_TASK_DURATION,
+    task_time_limit=MAX_TASK_DURATION + 60,
+    task_soft_time_limit=MAX_TASK_DURATION,
     
     # Result settings
     result_expires=3600 * 24,
@@ -59,6 +60,8 @@ celery_app.conf.update(
     # Retry on startup
     broker_connection_retry_on_startup=True,
 )
+
+print(f"[CELERY CONFIG] Final broker_url: {celery_app.conf.broker_url}", file=sys.stderr)
 
 # Queue configuration
 celery_app.conf.task_routes = {
