@@ -107,6 +107,7 @@ function showResults(result) {
     // Store data for download functions
     if (result.task_type === 'robots_check') {
         robotsData = result;
+        console.log('Robots data stored:', robotsData);
     }
     
     const resultsContent = document.getElementById('results-content');
@@ -140,6 +141,7 @@ let robotsData = null;
 
 // Global download functions - moved outside to be accessible
 function generateTextReport() {
+    console.log('generateTextReport called, robotsData:', robotsData);
     if (!robotsData) return 'Нет данных для отчета';
     
     const r = robotsData.results || robotsData;

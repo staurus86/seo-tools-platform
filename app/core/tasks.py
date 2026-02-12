@@ -92,7 +92,12 @@ def check_robots_task(self, url: str) -> Dict[str, Any]:
     # Use the actual robots audit
     import sys
     import os
-    sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'Проверка Robots.txt'))
+    robots_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'Проверка Robots.txt')
+    if not os.path.exists(robots_path):
+        robots_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'Проверка Robots.txt')
+    if not os.path.exists(robots_path):
+        robots_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'Проверка Robots.txt'))
+    sys.path.append(robots_path)
     
     try:
         from robots_audit import (
