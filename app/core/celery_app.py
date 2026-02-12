@@ -4,7 +4,7 @@ Celery configuration and initialization
 import os
 from celery import Celery
 
-# Get Redis URL directly from environment
+# Get Redis URL directly from environment (bypass settings for worker)
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 BROKER_URL = os.getenv("CELERY_BROKER_URL") or REDIS_URL
 BACKEND_URL = os.getenv("CELERY_RESULT_BACKEND") or REDIS_URL
@@ -19,6 +19,9 @@ celery_app = Celery(
     backend=BACKEND_URL,
     include=["app.core.tasks"]
 )
+
+# Import settings only for configuration (not for broker/backend)
+from app.config import settings
 
 # Celery configuration
 celery_app.conf.update(
