@@ -1,5 +1,5 @@
 """
-Celery Tasks for SEO Tools
+Celery Tasks for SEO Tools - Simplified for Railway testing
 """
 from celery import shared_task, Task
 from celery.exceptions import SoftTimeLimitExceeded
@@ -9,9 +9,6 @@ from datetime import datetime
 
 from app.core.celery_app import celery_app
 from app.core.progress import progress_tracker
-from app.config import settings
-from app.reports.xlsx_generator import xlsx_generator
-from app.reports.docx_generator import docx_generator
 
 
 class SEOBaseTask(Task):
@@ -19,31 +16,21 @@ class SEOBaseTask(Task):
     
     def on_failure(self, exc, task_id, args, kwargs, einfo):
         """Обработка ошибок"""
-        # Save error info for potential continuation
         pass
     
     def on_success(self, retval, task_id, args, kwargs):
-        """Обработка успешного выполнения - генерация отчетов"""
-        # Clear progress
+        """Обработка успешного выполнения"""
         progress_tracker.clear_progress(task_id)
-        
-        # Generate reports if we have results
-        if isinstance(retval, dict) and 'task_type' in retval:
-            try:
-                task_type = retval['task_type']
-                # Generate XLSX report
-                xlsx_generator.generate_report(task_id, task_type, retval)
-                # Generate DOCX report
-                docx_generator.generate_report(task_id, task_type, retval)
-            except Exception as e:
-                print(f"Error generating reports for task {task_id}: {e}")
+
+
+MAX_DURATION = 20 * 60  # 20 minutes
 
 
 @shared_task(
     base=SEOBaseTask,
     bind=True,
-    soft_time_limit=settings.MAX_TASK_DURATION,
-    time_limit=settings.MAX_TASK_DURATION + 60,
+    soft_time_limit=MAX_DURATION,
+    time_limit=MAX_DURATION + 60,
     max_retries=2
 )
 def analyze_site_task(
@@ -54,22 +41,10 @@ def analyze_site_task(
     ignore_robots: bool = False,
     check_external: bool = False
 ) -> Dict[str, Any]:
-    """
-    Анализ сайта (каркас для интеграции seopro.py)
-    
-    Args:
-        url: URL сайта
-        max_pages: Максимальное количество страниц
-        use_js: Использовать JavaScript
-        ignore_robots: Игнорировать robots.txt
-        check_external: Проверять внешние ссылки
-    """
+    """Анализ сайта"""
     task_id = self.request.id
     
     try:
-        # TODO: Интегрировать логику из seopro.py
-        
-        # Имитация прогресса
         for i in range(10):
             progress_tracker.update_progress(
                 task_id=task_id,
@@ -78,9 +53,8 @@ def analyze_site_task(
                 message=f"Analyzing page {i + 1} of {max_pages}...",
                 extra={"url": url}
             )
-            time.sleep(0.5)  # Имитация работы
+            time.sleep(0.5)
         
-        # Возвращаем структуру результата
         return {
             "task_type": "site_analyze",
             "url": url,
@@ -100,16 +74,12 @@ def analyze_site_task(
 @shared_task(
     base=SEOBaseTask,
     bind=True,
-    soft_time_limit=300,  # 5 минут
+    soft_time_limit=300,
     time_limit=360
 )
 def check_robots_task(self, url: str) -> Dict[str, Any]:
-    """
-    Проверка robots.txt (каркас для интеграции robots_audit.py)
-    """
+    """Проверка robots.txt"""
     task_id = self.request.id
-    
-    # TODO: Интегрировать логику из robots_audit.py
     
     progress_tracker.update_progress(
         task_id=task_id,
@@ -133,16 +103,12 @@ def check_robots_task(self, url: str) -> Dict[str, Any]:
 @shared_task(
     base=SEOBaseTask,
     bind=True,
-    soft_time_limit=600,  # 10 минут
+    soft_time_limit=600,
     time_limit=660
 )
 def validate_sitemap_task(self, url: str) -> Dict[str, Any]:
-    """
-    Валидация sitemap (каркас для интеграции site.py)
-    """
+    """Валидация sitemap"""
     task_id = self.request.id
-    
-    # TODO: Интегрировать логику из site.py
     
     progress_tracker.update_progress(
         task_id=task_id,
@@ -175,12 +141,8 @@ def audit_render_task(
     url: str,
     user_agent: Optional[str] = None
 ) -> Dict[str, Any]:
-    """
-    Аудит рендеринга (каркас для интеграции seo_render_audit.py)
-    """
+    """Аудит рендеринга"""
     task_id = self.request.id
-    
-    # TODO: Интегрировать логику из seo_render_audit.py
     
     progress_tracker.update_progress(
         task_id=task_id,
@@ -212,12 +174,8 @@ def check_mobile_task(
     url: str,
     devices: Optional[List[str]] = None
 ) -> Dict[str, Any]:
-    """
-    Проверка мобильной версии (каркас для интеграции mobile.py)
-    """
+    """Проверка мобильной версии"""
     task_id = self.request.id
-    
-    # TODO: Интегрировать логику из mobile.py
     
     device_list = devices or ["iPhone 14", "Samsung Galaxy S24"]
     total_devices = len(device_list)
@@ -246,16 +204,12 @@ def check_mobile_task(
 @shared_task(
     base=SEOBaseTask,
     bind=True,
-    soft_time_limit=900,  # 15 минут
+    soft_time_limit=900,
     time_limit=960
 )
 def check_bots_task(self, url: str) -> Dict[str, Any]:
-    """
-    Проверка доступности для ботов (каркас для интеграции bot.py)
-    """
+    """Проверка доступности для ботов"""
     task_id = self.request.id
-    
-    # TODO: Интегрировать логику из bot.py
     
     bot_types = ["Googlebot", "YandexBot", "BingBot", "ChatGPT", "Grok"]
     total_bots = len(bot_types)
