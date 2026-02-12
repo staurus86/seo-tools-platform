@@ -104,6 +104,11 @@ function showResults(result) {
     document.getElementById('progress-section').classList.add('hidden');
     document.getElementById('results-section').classList.remove('hidden');
     
+    // Store data for download functions
+    if (result.task_type === 'robots_check') {
+        robotsData = result;
+    }
+    
     const resultsContent = document.getElementById('results-content');
     
     // Generate results HTML based on task type
@@ -130,7 +135,71 @@ function showError(data) {
     document.getElementById('error-message').textContent = data.error || 'Unknown error';
 }
 
+// Global variables for robots data
+let robotsData = null;
+
 // Global download functions - moved outside to be accessible
+function generateTextReport() {
+    if (!robotsData) return 'Нет данных для отчета';
+    
+    const r = robotsData.results || robotsData;
+    const userAgents = (r.user_agents || []).join(', ') || 'Не найдено';
+    const disallowRules = r.disallow_count || 0;
+    const allowRules = r.allow_count || 0;
+    const issues = r.issues || [];
+    const warnings = r.warnings || [];
+    const sitemaps = (r.sitemaps || []).map(s => s.url || s) || [];
+    const groups = r.groups || [];
+    
+    let report = `ОТЧЕТ АНАЛИЗА ROBOTS.TXT
+${'='.repeat(50)}
+URL сайта: ${robotsData.url}
+Дата проверки: ${new Date().toLocaleString()}
+${'='.repeat(50)}
+
+СТАТИСТИКА
+${'-'.repeat(30)}
+User-Agents: ${userAgents}
+Disallow правил: ${disallowRules}
+Allow правил: ${allowRules}
+Размер файла: ${r.content_length || 0} байт
+Строк: ${r.lines_count || 0}
+
+`;
+        
+    if (issues.length > 0) {
+        report += `\nПРОБЛЕМЫ\n${'-'.repeat(30)}\n`;
+        issues.forEach(i => report += `⚠️ ${i}\n`);
+    }
+        
+    if (warnings.length > 0) {
+        report += `\nПРЕДУПРЕЖДЕНИЯ\n${'-'.repeat(30)}\n`;
+        warnings.forEach(w => report += `• ${w}\n`);
+    }
+        
+    if (sitemaps.length > 0) {
+        report += `\nSITEMAPS\n${'-'.repeat(30)}\n`;
+        sitemaps.forEach(sm => report += `• ${sm}\n`);
+    }
+        
+    if (groups.length > 0) {
+        report += `\nГРУППЫ ПРАВИЛ\n${'-'.repeat(30)}\n`;
+        groups.forEach(g => {
+            report += `\nUser-agent: ${g.user_agents.join(', ')}\n`;
+            if (g.disallow.length > 0) {
+                g.disallow.forEach(d => report += `  Disallow: ${d}\n`);
+            }
+            if (g.allow.length > 0) {
+                g.allow.forEach(a => report += `  Allow: ${a}\n`);
+            }
+        });
+    }
+        
+    report += `\n${'='.repeat(50)}\nИтоги проверки: ${issues.length} критических проблем, ${warnings.length} предупреждений\n${'='.repeat(50)}`;
+        
+    return report;
+}
+
 function downloadTextReport() {
     const report = generateTextReport();
     const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
