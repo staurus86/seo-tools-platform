@@ -374,6 +374,250 @@ return `
     `;
 }
 
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        const notification = document.getElementById('copy-notification');
+        notification.classList.remove('translate-y-20');
+        setTimeout(() => {
+            notification.classList.add('translate-y-20');
+        }, 2000);
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+    });
+}
+
+function downloadTextReport() {
+    const report = generateTextReport();
+    const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `robots-report-${new Date().toISOString().slice(0,10)}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function generateRobotsHTML(result) {
+    const r = result.results || result;
+    
+    // Handle different data formats
+    let userAgents = 'Не найдено';
+    if (Array.isArray(r.user_agents)) {
+        userAgents = r.user_agents.join(', ');
+    } else if (typeof r.user_agents === 'number') {
+        userAgents = `${r.user_agents} шт.`;
+    } else if (r.user_agents) {
+        userAgents = String(r.user_agents);
+    }
+    
+    const disallowRules = r.disallow || r.disallow_count || 0;
+    const allowRules = r.allow || r.allow_count || 0;
+    const issues = r.issues || [];
+    const warnings = r.warnings || [];
+    const sitemaps = r.sitemaps || [];
+    const processedSitemaps = (sitemaps || []).map(s => s.url || s) || [];
+    const groups = r.groups_detail || r.groups || [];
+    const recommendations = r.recommendations || [];
+    
+    const userAgentCount = r.user_agents || 0;
+    const disallowRulesCount = r.disallow || 0;
+    const allowRulesCount = r.allow || 0;
+    
+    let issuesHTML = '';
+    if (issues.length > 0) {
+        issuesHTML = issues.map(issue => `
+            <div class="bg-red-50 border border-red-200 rounded-lg p-3 mb-2">
+                <div class="flex items-center">
+                    <i class="fas fa-exclamation-triangle text-red-500 mr-2"></i>
+                    <span class="text-red-700 font-medium">${issue}</span>
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    let warningsHTML = '';
+    if (warnings.length > 0) {
+        warningsHTML = warnings.map(warning => `
+            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-2">
+                <div class="flex items-center">
+                    <i class="fas fa-exclamation-circle text-yellow-500 mr-2"></i>
+                    <span class="text-yellow-700">${warning}</span>
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    let sitemapsHtml = '';
+    if (processedSitemaps.length > 0) {
+        sitemapsHtml = processedSitemaps.map(sm => `
+            <div class="flex items-center bg-green-50 border border-green-200 rounded px-3 py-2 mb-1">
+                <i class="fas fa-sitemap text-green-500 mr-2"></i>
+                <a href="${sm}" target="_blank" class="text-green-700 hover:underline text-sm break-all">${sm}</a>
+            </div>
+        `).join('');
+    }
+    
+    let groupsHTML = '';
+    if (groups.length > 0) {
+        groupsHTML = groups.map((group, idx) => `
+            <div class="border rounded-lg mb-4 overflow-hidden">
+                <div class="bg-gray-100 px-4 py-2 border-b">
+                    <span class="font-semibold text-gray-700">Группа ${idx + 1}:</span>
+                    <span class="text-gray-600 ml-2">${group.user_agents.join(', ')}</span>
+                </div>
+                <div class="p-4">
+                    ${group.disallow.length > 0 ? `
+                        <div class="mb-3">
+                            <h5 class="text-sm font-medium text-red-600 mb-2">Disallow (${group.disallow.length}):</h5>
+                            <div class="max-h-40 overflow-y-auto">
+                                ${group.disallow.map(d => `
+                                    <div class="flex items-center text-sm font-mono bg-red-50 px-2 py-1 rounded mb-1">
+                                        <span class="text-red-600 mr-2">Disallow:</span>
+                                        <span class="text-gray-700 break-all">${d.path}</span>
+                                        <span class="text-gray-400 ml-auto text-xs">стр ${d.line}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                    ${group.allow.length > 0 ? `
+                        <div>
+                            <h5 class="text-sm font-medium text-green-600 mb-2">Allow (${group.allow.length}):</h5>
+                            <div class="max-h-40 overflow-y-auto">
+                                ${group.allow.map(a => `
+                                    <div class="flex items-center text-sm font-mono bg-green-50 px-2 py-1 rounded mb-1">
+                                        <span class="text-green-600 mr-2">Allow:</span>
+                                        <span class="text-gray-700 break-all">${a.path}</span>
+                                        <span class="text-gray-400 ml-auto text-xs">стр ${a.line}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    let recommendationsHTML = '';
+    if (recommendations.length > 0) {
+        recommendationsHTML = recommendations.map(rec => `
+            <div class="flex items-start mb-2 p-2 bg-blue-50 rounded">
+                <i class="fas fa-lightbulb text-blue-500 mr-2 mt-1"></i>
+                <span class="text-sm text-blue-700">${rec}</span>
+            </div>
+        `).join('');
+    }
+    
+    return `
+        <div class="space-y-6">
+            <!-- Actions -->
+            <div class="bg-white rounded-xl shadow-md p-4 flex flex-wrap gap-3">
+                <button onclick="downloadTextReport()" class="inline-flex items-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition cursor-pointer">
+                    <i class="fas fa-file-download mr-2"></i>
+                    Скачать отчет (.txt)
+                </button>
+                <button onclick="downloadWordReport()" class="inline-flex items-center bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition cursor-pointer">
+                    <i class="fas fa-file-word mr-2"></i>
+                    Скачать отчет (.docx)
+                </button>
+                <button onclick="copyToClipboard(JSON.stringify(robotsData, null, 2))" class="inline-flex items-center bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition">
+                    <i class="fas fa-copy mr-2"></i>
+                    Копировать JSON
+                </button>
+            </div>
+            
+            <!-- Summary Stats -->
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold">Проверка Robots.txt</h3>
+                </div>
+                
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
+                    <div class="text-center p-3 bg-blue-50 rounded-lg">
+                        <div class="text-2xl font-bold text-blue-600">${userAgentCount}</div>
+                        <div class="text-xs text-gray-500">User-Agents</div>
+                    </div>
+                    <div class="text-center p-3 bg-red-50 rounded-lg">
+                        <div class="text-2xl font-bold text-red-600">${disallowRulesCount}</div>
+                        <div class="text-xs text-gray-500">Disallow</div>
+                    </div>
+                    <div class="text-center p-3 bg-green-50 rounded-lg">
+                        <div class="text-2xl font-bold text-green-600">${allowRulesCount}</div>
+                        <div class="text-xs text-gray-500">Allow</div>
+                    </div>
+                    <div class="text-center p-3 bg-purple-50 rounded-lg">
+                        <div class="text-2xl font-bold text-purple-600">${r.content_length || 0}</div>
+                        <div class="text-xs text-gray-500">Байт</div>
+                    </div>
+                    <div class="text-center p-3 bg-gray-50 rounded-lg">
+                        <div class="text-2xl font-bold text-gray-600">${r.lines_count || 0}</div>
+                        <div class="text-xs text-gray-500">Строк</div>
+                    </div>
+                </div>
+                
+                <div class="text-sm text-gray-600 border-t pt-3">
+                    <span class="font-medium">URL:</span> <a href="${result.url}" target="_blank" class="text-blue-600 hover:underline">${result.url}</a>
+                    <span class="mx-2">|</span>
+                    <span class="font-medium">Robots.txt:</span> 
+                    <a href="${result.url.replace(/\/$/, '')}/robots.txt" target="_blank" class="text-blue-600 hover:underline">показать файл</a>
+                </div>
+            </div>
+            
+            <!-- Issues -->
+            ${issuesHTML ? `
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="text-lg font-semibold text-red-600 mb-3">
+                        <i class="fas fa-exclamation-triangle mr-2"></i>Проблемы (${issues.length})
+                    </h4>
+                    ${issuesHTML}
+                </div>
+            ` : '<div class="bg-white rounded-xl shadow-md p-6"><div class="text-green-600"><i class="fas fa-check mr-2"></i>Критических проблем не обнаружено</div></div>'}
+            
+            <!-- Warnings -->
+            ${warningsHTML ? `
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="text-lg font-semibold text-yellow-600 mb-3">
+                        <i class="fas fa-exclamation-circle mr-2"></i>Предупреждения (${warnings.length})
+                    </h4>
+                    ${warningsHTML}
+                </div>
+            ` : ''}
+            
+            <!-- Sitemaps -->
+            ${processedSitemaps.length > 0 ? `
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="text-lg font-semibold text-green-600 mb-3">
+                        <i class="fas fa-sitemap mr-2"></i>Sitemaps (${processedSitemaps.length})</h4>
+                    ${sitemapsHtml}
+                </div>
+            ` : ''}
+            
+            <!-- Groups Detail -->
+            ${groupsHTML ? `
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="text-lg font-semibold text-gray-700 mb-3">
+                        <i class="fas fa-list mr-2"></i>Детальный анализ групп
+                    </h4>
+                    ${groupsHTML}
+                </div>
+            ` : ''}
+            
+            <!-- Recommendations -->
+            ${recommendationsHTML ? `
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="text-lg font-semibold text-blue-600 mb-3">
+                        <i class="fas fa-lightbulb mr-2"></i>Рекомендации
+                    </h4>
+                    ${recommendationsHTML}
+                </div>
+            ` : ''}
+        </div>
+    `;
+}
+
 function generateSitemapHTML(result) {
     const r = result.results || result;
     return `
