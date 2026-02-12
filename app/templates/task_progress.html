@@ -223,6 +223,12 @@ function generateTextReport() {
             if (fix.action) report += '  Action: ' + fix.action + '\n';
         });
     }
+
+    const rawContent = r.raw_content || '';
+    if (rawContent) {
+        report += '\nRAW ROBOTS.TXT\n' + '-'.repeat(30) + '\n';
+        report += rawContent + '\n';
+    }
     
     return report;
 }
@@ -310,6 +316,7 @@ function generateRobotsHTML(data) {
     const groups = r.groups_detail || r.groups || [];
     const recommendations = r.recommendations || [];
     const topFixes = r.top_fixes || [];
+    const rawContent = r.raw_content || '';
     const qualityScore = Number.isFinite(r.quality_score) ? r.quality_score : 0;
     const qualityGrade = r.quality_grade || 'N/A';
     const productionReady = !!r.production_ready;
@@ -557,6 +564,15 @@ function generateRobotsHTML(data) {
                         <i class="fas fa-list mr-2"></i>Детальный анализ групп
                     </h4>
                     ${groupsHTML}
+                </div>
+            ` : ''}
+
+            ${rawContent ? `
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="text-lg font-semibold text-gray-700 mb-3">
+                        <i class="fas fa-file-code mr-2"></i>Robots.txt (Raw)
+                    </h4>
+                    <pre class="text-xs bg-gray-900 text-gray-100 p-4 rounded-lg overflow-auto max-h-96 whitespace-pre-wrap">${rawContent.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
                 </div>
             ` : ''}
             

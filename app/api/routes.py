@@ -95,6 +95,9 @@ RECOMMENDATIONS = [
     "Учитывайте различия интерпретации директив разными поисковиками",
 ]
 
+# Google ignores Crawl-delay; keep default recommendations aligned with current search guidance.
+RECOMMENDATIONS = [item for item in RECOMMENDATIONS if "Crawl-delay" not in item]
+
 
 class Rule:
     def __init__(self, user_agent: str, path: str, line: int):
@@ -179,7 +182,7 @@ def parse_robots(text: str) -> ParseResult:
                 result.syntax_errors.append({"line": idx, "error": err, "content": raw})
                 result.warnings.append(err)
                 continue
-            if value and not value.startswith("/") and value != "*":
+            if value and not value.startswith("/"):
                 result.warnings.append(f"Строка {idx}: Путь '{value}' должен начинаться с '/'")
             for ua in current_group.user_agents:
                 rule = Rule(ua, value, idx)
@@ -192,7 +195,7 @@ def parse_robots(text: str) -> ParseResult:
                 result.syntax_errors.append({"line": idx, "error": err, "content": raw})
                 result.warnings.append(err)
                 continue
-            if value and not value.startswith("/") and value != "*":
+            if value and not value.startswith("/"):
                 result.warnings.append(f"Строка {idx}: Путь '{value}' должен начинаться с '/'")
             for ua in current_group.user_agents:
                 rule = Rule(ua, value, idx)
@@ -249,27 +252,6 @@ def find_duplicates(all_rules: List[Rule], label: str) -> List[str]:
     return warnings
 
 
-def build_param_merge_recommendations(result: ParseResult) -> List[str]:
-    """Build recommendations for parameter merging"""
-    recs = []
-    by_base: Dict[str, List[str]] = defaultdict(list)
-    
-    for group in result.groups:
-        for rule in group.disallow:
-            path = rule.path
-            if "?" in path or "=" in path:
-                split_idx = min([i for i in [path.find("?"), path.find("=")] if i != -1])
-                base = path[:split_idx] if split_idx > 0 else path
-                by_base[base].append(path)
-    
-    for base, paths in by_base.items():
-        uniq = sorted(set(paths))
-        if len(uniq) >= 2:
-            preview = ", ".join(uniq[:5])
-            recs.append(f"Рекомендуется объединить параметры для пути {base}: {preview}")
-    return recs
-
-
 def dedupe_keep_order(items: List[str]) -> List[str]:
     """Remove duplicates preserving original order."""
     seen = set()
@@ -279,6 +261,51 @@ def dedupe_keep_order(items: List[str]) -> List[str]:
             seen.add(item)
             out.append(item)
     return out
+
+
+def build_param_merge_recommendations(result: ParseResult) -> List[str]:
+    """Enhanced recommendations for merging parameter rules."""
+    recs: List[str] = []
+    by_base: Dict[str, List[str]] = defaultdict(list)
+    by_query_prefix: Dict[str, List[str]] = defaultdict(list)
+
+    for group in result.groups:
+        for rule in group.disallow:
+            path = (rule.path or "").strip()
+            if not path:
+                continue
+
+            if path.endswith("*") and len(path) > 1:
+                recs.append(
+                    f"Pattern '{path}' can usually be shortened to '{path[:-1]}' (trailing '*' is often redundant)."
+                )
+
+            if "?" in path:
+                query_prefix = path.split("*", 1)[0]
+                if query_prefix.endswith("?"):
+                    by_query_prefix[query_prefix].append(path)
+
+            if "?" in path or "=" in path:
+                split_idx = min([i for i in [path.find("?"), path.find("=")] if i != -1])
+                base = path[:split_idx] if split_idx > 0 else path
+                by_base[base].append(path)
+
+    for base, paths in by_base.items():
+        uniq = sorted(set(paths))
+        if len(uniq) >= 3:
+            preview = ", ".join(uniq[:5])
+            recs.append(f"Consider merging parameter patterns for '{base}': {preview}")
+
+    for prefix, paths in by_query_prefix.items():
+        uniq = sorted(set(paths))
+        if len(uniq) >= 3:
+            preview = ", ".join(uniq[:6])
+            recs.append(
+                f"Found {len(uniq)} similar rules: {preview}. "
+                f"You can merge them into one rule: {prefix}"
+            )
+
+    return dedupe_keep_order(recs)
 
 
 def validate_sitemaps(sitemaps: List[str], timeout: int = 4, max_checks: int = 5) -> List[Dict[str, Any]]:
@@ -435,6 +462,8 @@ def build_issues_and_warnings(result: ParseResult) -> Dict[str, Any]:
     
     warnings.extend(find_duplicates(all_disallow, "Disallow"))
     warnings.extend(find_duplicates(all_allow, "Allow"))
+    if result.crawl_delays:
+        warnings.append("Crawl-delay found: Google ignores this directive.")
     
     if not result.sitemaps:
         warnings.append("Не указана директива Sitemap")
@@ -599,6 +628,7 @@ def check_robots_full(url: str) -> Dict[str, Any]:
                 "severity_counts": {"critical": 1, "warning": 0, "info": 0},
                 "error": error,
                 "can_continue": False,
+                "raw_content": "",
             }
         }
     
@@ -637,6 +667,7 @@ def check_robots_full(url: str) -> Dict[str, Any]:
                 "severity_counts": {"critical": 1, "warning": 1, "info": 0},
                 "error": None,
                 "can_continue": True,
+                "raw_content": raw_text or "",
             }
         }
     
@@ -644,6 +675,11 @@ def check_robots_full(url: str) -> Dict[str, Any]:
     result = parse_robots(raw_text)
     stats = collect_stats(result)
     analysis = build_issues_and_warnings(result)
+    if len(raw_text.encode("utf-8")) > 512000:
+        analysis["warnings"] = dedupe_keep_order(
+            analysis["warnings"] + ["robots.txt is larger than 500 KiB; Google ignores content after this limit."]
+        )
+        analysis["warning_issues"] = analysis["warnings"]
     
     # Build detailed response
     response = {
@@ -692,6 +728,7 @@ def check_robots_full(url: str) -> Dict[str, Any]:
             },
             "error": None,
             "can_continue": True,
+            "raw_content": raw_text,
             # Detailed groups for UI
             "groups_detail": [
                 {
@@ -750,6 +787,7 @@ def check_robots_simple(url: str) -> Dict[str, Any]:
                 "top_fixes": analysis.get("top_fixes", []),
                 "severity_counts": analysis.get("severity_counts", {"critical": len(analysis["issues"]), "warning": len(analysis["warnings"]), "info": 0}),
                 "quick_status": analysis.get("quick_status", "warn"),
+                "raw_content": raw_text,
             }
         }
     except Exception as e:
