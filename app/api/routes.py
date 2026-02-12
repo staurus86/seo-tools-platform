@@ -457,7 +457,7 @@ def check_site_full(url: str, max_pages: int = 20) -> Dict[str, Any]:
     import requests
     from bs4 import BeautifulSoup
     from urllib.parse import urljoin, urlparse
-    from collections import defaultdict
+    from collections import defaultdict, Counter
     import re
     import time
     
