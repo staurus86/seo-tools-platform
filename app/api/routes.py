@@ -43,6 +43,13 @@ class Rule:
         self.line = line
 
 
+class Group:
+    def __init__(self):
+        self.user_agents = []
+        self.disallow = []
+        self.allow = []
+
+
 class ParseResult:
     def __init__(self):
         self.groups = []
@@ -53,18 +60,30 @@ class ParseResult:
         self.raw_lines = []
         self.syntax_errors = []
         self.warnings = []
-        self.all_disallow = []
-        self.all_allow = []
 
 
-def fetch_robots(url: str, timeout: int = 20) -> str:
-    import requests
-    resp = requests.get(url, timeout=timeout, headers={"User-Agent": "Mozilla/5.0"})
-    resp.raise_for_status()
-    return resp.text
+from dataclasses import dataclass, field
+from typing import Dict, List, Tuple, Any, Optional
+from collections import defaultdict
+import re
+
+
+def fetch_robots(url: str, timeout: int = 20) -> Tuple[Optional[str], Optional[int], Optional[str]]:
+    """Fetch robots.txt and return (content, status_code, error)"""
+    try:
+        robots_url = url.rstrip('/') + '/robots.txt'
+        resp = requests.get(robots_url, timeout=timeout, headers={"User-Agent": "Mozilla/5.0"})
+        return resp.text, resp.status_code, None
+    except requests.exceptions.Timeout:
+        return None, None, "Timeout"
+    except requests.exceptions.ConnectionError:
+        return None, None, "Connection Error"
+    except Exception as e:
+        return None, None, str(e)
 
 
 def parse_robots(text: str) -> ParseResult:
+    """Parse robots.txt content - FULL original implementation"""
     lines = text.splitlines()
     result = ParseResult()
     result.raw_lines = lines
@@ -76,64 +95,135 @@ def parse_robots(text: str) -> ParseResult:
         if not stripped or stripped.startswith("#"):
             continue
         if ":" not in stripped:
-            result.syntax_errors.append({"line": idx, "error": "Нет ':'", "content": raw})
-            result.warnings.append(f"Строка {idx}: Неверный синтаксис")
+            err = f"Строка {idx}: Неверный синтаксис - отсутствует ':'"
+            result.syntax_errors.append({"line": idx, "error": err, "content": raw})
+            result.warnings.append(err)
             continue
-            
+        
         key, value = stripped.split(":", 1)
         key = key.strip().lower()
         value = value.strip()
         
         if key == "user-agent":
-            if current_group is None or current_group.get("user_agents"):
-                current_group = {"user_agents": [], "disallow": [], "allow": []}
+            if current_group is None or current_group.user_agents:
+                current_group = Group()
                 result.groups.append(current_group)
-            current_group["user_agents"].append(value)
+            current_group.user_agents.append(value)
             
         elif key == "disallow":
-            if not current_group or not current_group.get("user_agents"):
-                result.warnings.append(f"Строка {idx}: Disallow без User-agent")
+            if not current_group or not current_group.user_agents:
+                err = f"Строка {idx}: Disallow без предшествующего User-agent"
+                result.syntax_errors.append({"line": idx, "error": err, "content": raw})
+                result.warnings.append(err)
                 continue
-            rule = Rule(current_group["user_agents"][-1], value, idx)
-            current_group["disallow"].append(rule)
-            result.all_disallow.append(rule)
-            
+            if value and not value.startswith("/") and value != "*":
+                result.warnings.append(f"Строка {idx}: Путь '{value}' должен начинаться с '/'")
+            for ua in current_group.user_agents:
+                current_group.disallow.append(Rule(ua, value, idx))
+                
         elif key == "allow":
-            if not current_group or not current_group.get("user_agents"):
+            if not current_group or not current_group.user_agents:
+                err = f"Строка {idx}: Allow без предшествующего User-agent"
+                result.syntax_errors.append({"line": idx, "error": err, "content": raw})
+                result.warnings.append(err)
                 continue
-            rule = Rule(current_group["user_agents"][-1], value, idx)
-            current_group["allow"].append(rule)
-            result.all_allow.append(rule)
-            
+            if value and not value.startswith("/") and value != "*":
+                result.warnings.append(f"Строка {idx}: Путь '{value}' должен начинаться с '/'")
+            for ua in current_group.user_agents:
+                current_group.allow.append(Rule(ua, value, idx))
+                
         elif key == "sitemap":
+            if value and not value.startswith("http://") and not value.startswith("https://"):
+                result.warnings.append(f"Строка {idx}: Sitemap должен содержать полный URL")
             result.sitemaps.append(value)
             
         elif key == "crawl-delay":
+            if not current_group or not current_group.user_agents:
+                err = f"Строка {idx}: Crawl-delay без предшествующего User-agent"
+                result.syntax_errors.append({"line": idx, "error": err, "content": raw})
+                result.warnings.append(err)
+                continue
             try:
                 delay = float(value)
-                result.crawl_delays[value] = delay
-            except:
-                pass
+                if delay < 0:
+                    raise ValueError("negative")
+                for ua in current_group.user_agents:
+                    result.crawl_delays[ua] = delay
+            except Exception:
+                err = f"Строка {idx}: Некорректный Crawl-delay: '{value}'"
+                result.syntax_errors.append({"line": idx, "error": err, "content": raw})
+                result.warnings.append(err)
+                continue
                 
         elif key == "clean-param":
             result.clean_params.append(value)
             
         elif key == "host":
             result.hosts.append(value)
+            
+        else:
+            result.warnings.append(f"Строка {idx}: Неизвестная директива '{key}' - будет проигнорирована")
     
     return result
 
 
-def build_issues_and_warnings(result: ParseResult) -> Dict[str, Any]:
-    issues = []
+def find_duplicates(all_rules: List[Rule], label: str) -> List[str]:
+    """Find duplicate rules"""
     warnings = []
-    recommendations = []
+    by_value: Dict[str, List[int]] = defaultdict(list)
+    for rule in all_rules:
+        key = f"{rule.user_agent.lower()}|{rule.path}"
+        by_value[key].append(rule.line)
+    for key, line_nos in by_value.items():
+        if len(line_nos) > 1:
+            ua, path = key.split("|", 1)
+            lines = ", ".join(str(n) for n in line_nos)
+            warnings.append(f"Дублирующееся правило {label} для {ua}: {path} (строки: {lines})")
+    return warnings
+
+
+def build_param_merge_recommendations(result: ParseResult) -> List[str]:
+    """Build recommendations for parameter merging"""
+    recs = []
+    by_base: Dict[str, List[str]] = defaultdict(list)
     
-    # Check for full block
+    for group in result.groups:
+        for rule in group.disallow:
+            path = rule.path
+            if "?" in path or "=" in path:
+                split_idx = min([i for i in [path.find("?"), path.find("=")] if i != -1])
+                base = path[:split_idx] if split_idx > 0 else path
+                by_base[base].append(path)
+    
+    for base, paths in by_base.items():
+        uniq = sorted(set(paths))
+        if len(uniq) >= 2:
+            preview = ", ".join(uniq[:5])
+            recs.append(f"Рекомендуется объединить параметры для пути {base}: {preview}")
+    return recs
+
+
+def build_issues_and_warnings(result: ParseResult) -> Dict[str, Any]:
+    """Build issues, warnings, and recommendations - FULL original implementation"""
+    issues: List[str] = []
+    warnings: List[str] = list(result.warnings)
+    
+    all_disallow: List[Rule] = []
+    all_allow: List[Rule] = []
+    for group in result.groups:
+        all_disallow.extend(group.disallow)
+        all_allow.extend(group.allow)
+    
+    warnings.extend(find_duplicates(all_disallow, "Disallow"))
+    warnings.extend(find_duplicates(all_allow, "Allow"))
+    
+    if not result.sitemaps:
+        warnings.append("Не указана директива Sitemap")
+    
+    # Check for full site block
     full_block = any(
-        r.path.strip() == "/" 
-        for group in result.groups 
-        for r in group.get("disallow", [])
+        rule.user_agent.lower() == "*" and rule.path.strip() == "/"
+        for rule in all_disallow
     )
     if full_block:
         issues.append("КРИТИЧНО: Весь сайт заблокирован для всех роботов (Disallow: /)")
@@ -141,47 +231,176 @@ def build_issues_and_warnings(result: ParseResult) -> Dict[str, Any]:
     # Check blocked extensions
     blocked_ext = []
     for ext in [".css", ".js"]:
-        for group in result.groups:
-            for r in group.get("disallow", []):
-                if ext in r.path:
-                    blocked_ext.append(ext)
-                    break
+        if any(ext in rule.path for rule in all_disallow):
+            blocked_ext.append(ext)
     if blocked_ext:
-        issues.append(f"Заблокированы важные ресурсы: {', '.join(blocked_ext)} - это мешает сканированию")
+        issues.append(
+            "Заблокированы важные ресурсы: "
+            + ", ".join(blocked_ext)
+            + " - это мешает сканированию"
+        )
     
     # Check expected bots
     present_agents = set()
     for group in result.groups:
-        for ua in group.get("user_agents", []):
+        for ua in group.user_agents:
             present_agents.add(ua.lower())
     
-    missing_bots = [b for b in EXPECTED_BOTS if not any(b in ua for ua in present_agents)]
+    missing_bots = [
+        bot for bot in EXPECTED_BOTS if not any(bot in ua for ua in present_agents)
+    ]
     if missing_bots:
-        warnings.append(f"Рекомендуется добавить правила для: {', '.join(missing_bots)}")
+        warnings.append("Рекомендуется добавить правила для: " + ", ".join(missing_bots))
     
     # Check sensitive paths
     unblocked_sensitive = []
-    blocked_paths = set(r.path for group in result.groups for r in group.get("disallow", []))
+    blocked_paths = set(rule.path for rule in all_disallow)
     for path in SENSITIVE_PATHS:
         if path not in blocked_paths:
             unblocked_sensitive.append(path)
     if unblocked_sensitive:
-        warnings.append(f"Рекомендуется заблокировать: {', '.join(unblocked_sensitive[:5])}")
+        warnings.append(
+            "Рекомендуется заблокировать: "
+            + ", ".join(unblocked_sensitive[:8])
+        )
     
-    # Check sitemaps
-    if not result.sitemaps:
-        warnings.append("Не указана директива Sitemap")
+    # Generate recommendations
+    param_recs = build_param_merge_recommendations(result)
+    all_recommendations = RECOMMENDATIONS.copy()
     
     return {
         "issues": issues,
         "warnings": warnings,
-        "recommendations": RECOMMENDATIONS,
+        "recommendations": all_recommendations,
+        "param_recommendations": param_recs,
         "present_agents": list(present_agents),
         "sitemaps": result.sitemaps,
         "crawl_delays": result.crawl_delays,
         "hosts": result.hosts,
         "syntax_errors": result.syntax_errors,
     }
+
+
+def collect_stats(result: ParseResult) -> Dict[str, int]:
+    """Collect statistics from parsed result"""
+    stats = {
+        "user_agents": 0,
+        "disallow_rules": 0,
+        "allow_rules": 0,
+        "sitemaps": len(result.sitemaps),
+        "crawl_delays": len(result.crawl_delays),
+        "clean_params": len(result.clean_params),
+        "hosts": len(result.hosts),
+        "lines_count": len(result.raw_lines),
+    }
+    for group in result.groups:
+        stats["user_agents"] += len(group.user_agents)
+        stats["disallow_rules"] += len(group.disallow)
+        stats["allow_rules"] += len(group.allow)
+    return stats
+
+
+def check_robots_full(url: str) -> Dict[str, Any]:
+    """
+    FULL robots.txt audit - полная интеграция оригинального скрипта
+    Returns complete analysis matching original robots_audit.py
+    """
+    print(f"[ROBOTS] Starting full audit for: {url}")
+    
+    raw_text, status_code, error = fetch_robots(url)
+    
+    if error:
+        return {
+            "task_type": "robots_check",
+            "url": url,
+            "completed_at": datetime.utcnow().isoformat(),
+            "results": {
+                "robots_txt_found": False,
+                "status_code": None,
+                "content_length": 0,
+                "lines_count": 0,
+                "user_agents": 0,
+                "disallow_rules": 0,
+                "allow_rules": 0,
+                "sitemaps": [],
+                "issues": [f"Ошибка загрузки: {error}"],
+                "warnings": [],
+                "recommendations": RECOMMENDATIONS,
+                "syntax_errors": [],
+                "hosts": [],
+                "error": error,
+                "can_continue": False,
+            }
+        }
+    
+    if status_code != 200:
+        return {
+            "task_type": "robots_check",
+            "url": url,
+            "completed_at": datetime.utcnow().isoformat(),
+            "results": {
+                "robots_txt_found": False,
+                "status_code": status_code,
+                "content_length": len(raw_text) if raw_text else 0,
+                "lines_count": len(raw_text.splitlines()) if raw_text else 0,
+                "user_agents": 0,
+                "disallow_rules": 0,
+                "allow_rules": 0,
+                "sitemaps": [],
+                "issues": [f"Robots.txt не найден (статус: {status_code})"],
+                "warnings": ["Создайте файл robots.txt для управления индексацией"],
+                "recommendations": RECOMMENDATIONS,
+                "syntax_errors": [],
+                "hosts": [],
+                "error": None,
+                "can_continue": True,
+            }
+        }
+    
+    # Full parsing and analysis
+    result = parse_robots(raw_text)
+    stats = collect_stats(result)
+    analysis = build_issues_and_warnings(result)
+    
+    # Build detailed response
+    response = {
+        "task_type": "robots_check",
+        "url": url,
+        "completed_at": datetime.utcnow().isoformat(),
+        "results": {
+            "robots_txt_found": True,
+            "status_code": status_code,
+            "content_length": len(raw_text),
+            "lines_count": stats["lines_count"],
+            "user_agents": stats["user_agents"],
+            "disallow_rules": stats["disallow_rules"],
+            "allow_rules": stats["allow_rules"],
+            "sitemaps": analysis["sitemaps"],
+            "issues": analysis["issues"],
+            "warnings": analysis["warnings"],
+            "recommendations": analysis["recommendations"],
+            "syntax_errors": analysis["syntax_errors"],
+            "hosts": analysis["hosts"],
+            "crawl_delays": analysis["crawl_delays"],
+            "clean_params": analysis["clean_params"],
+            "present_agents": analysis["present_agents"],
+            "error": None,
+            "can_continue": True,
+            # Detailed groups for UI
+            "groups_detail": [
+                {
+                    "user_agents": group.user_agents,
+                    "disallow": [{"path": r.path, "line": r.line} for r in group.disallow],
+                    "allow": [{"path": r.path, "line": r.line} for r in group.allow],
+                }
+                for group in result.groups
+            ],
+        }
+    }
+    
+    print(f"[ROBOTS] Audit completed: {stats['user_agents']} UAs, {stats['disallow_rules']} disallow rules")
+    
+    return response
 
 
 def check_robots_full(url: str) -> Dict[str, Any]:
