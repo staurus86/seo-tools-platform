@@ -161,7 +161,8 @@ function generateTextReport() {
     const allowRules = r.allow || r.allow_count || 0;
     const issues = r.issues || [];
     const warnings = r.warnings || [];
-    const sitemaps = (r.sitemaps || []).map(s => s.url || s) || [];
+    const sitemaps = r.sitemaps || [];
+    const processedSitemaps = (sitemaps || []).map(s => s.url || s) || [];
     const groups = r.groups_detail || r.groups || [];
     
     console.log('Processed data:', {
@@ -169,6 +170,7 @@ function generateTextReport() {
         issuesCount: issues.length, 
         warningsCount: warnings.length,
         sitemapsCount: sitemaps.length,
+        processedSitemapsCount: processedSitemaps.length,
         groupsCount: groups.length
     });
     const taskId = result.task_id || document.getElementById('task-id').textContent;
@@ -208,8 +210,8 @@ function generateTextReport() {
     }
     
     let sitemapsHtml = '';
-    if (sitemaps.length > 0) {
-        sitemapsHtml = sitemaps.map(sm => `
+    if (processedSitemaps.length > 0) {
+        sitemapsHtml = processedSitemaps.map(sm => `
             <div class="flex items-center bg-green-50 border border-green-200 rounded px-3 py-2 mb-1">
                 <i class="fas fa-sitemap text-green-500 mr-2"></i>
                 <a href="${sm}" target="_blank" class="text-green-700 hover:underline text-sm break-all">${sm}</a>
@@ -396,10 +398,10 @@ return `
             ` : ''}
             
             <!-- Sitemaps -->
-            ${sitemapsHtml ? `
+            ${processedSitemaps.length > 0 ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-green-600 mb-3">
-                        <i class="fas fa-sitemap mr-2"></i>Sitemaps (${sitemaps.length})</h4>
+                        <i class="fas fa-sitemap mr-2"></i>Sitemaps (${processedSitemaps.length})</h4>
                     ${sitemapsHtml}
                 </div>
             ` : ''}
