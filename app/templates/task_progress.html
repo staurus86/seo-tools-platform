@@ -174,9 +174,9 @@ function generateTextReport() {
     const taskId = result.task_id || document.getElementById('task-id').textContent;
     
     // Count stats
-    const userAgents = r.user_agents || 0;
-    const disallowRules = r.disallow_rules || 0;
-    const allowRules = r.allow_rules || 0;
+    const userAgentCount = r.user_agents || 0;
+    const disallowRulesCount = r.disallow || 0;
+    const allowRulesCount = r.allow || 0;
     const sitemaps = r.sitemaps || [];
     const issues = r.issues || [];
     const warnings = r.warnings || [];
@@ -279,9 +279,9 @@ ${'='.repeat(50)}
 
 СТАТИСТИКА
 ${'-'.repeat(30)}
-User-Agents: ${userAgents}
-Disallow правил: ${disallowRules}
-Allow правил: ${allowRules}
+User-Agents: ${r.user_agents || 0}
+Disallow правил: ${r.disallow || 0}
+Allow правил: ${r.allow || 0}
 Размер файла: ${r.content_length || 0} байт
 Строк: ${r.lines_count || 0}
 
@@ -346,15 +346,15 @@ return `
                 
                 <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
                     <div class="text-center p-3 bg-blue-50 rounded-lg">
-                        <div class="text-2xl font-bold text-blue-600">${userAgents}</div>
+                        <div class="text-2xl font-bold text-blue-600">${userAgentCount}</div>
                         <div class="text-xs text-gray-500">User-Agents</div>
                     </div>
                     <div class="text-center p-3 bg-red-50 rounded-lg">
-                        <div class="text-2xl font-bold text-red-600">${disallowRules}</div>
+                        <div class="text-2xl font-bold text-red-600">${disallowRulesCount}</div>
                         <div class="text-xs text-gray-500">Disallow</div>
                     </div>
                     <div class="text-center p-3 bg-green-50 rounded-lg">
-                        <div class="text-2xl font-bold text-green-600">${allowRules}</div>
+                        <div class="text-2xl font-bold text-green-600">${allowRulesCount}</div>
                         <div class="text-xs text-gray-500">Allow</div>
                     </div>
                     <div class="text-center p-3 bg-purple-50 rounded-lg">
@@ -496,9 +496,9 @@ ${'='.repeat(50)}
 
 СТАТИСТИКА
 ${'-'.repeat(30)}
-User-Agents: ${userAgents}
-Disallow правил: ${disallowRules}
-Allow правил: ${allowRules}
+User-Agents: ${r.user_agents || 0}
+Disallow правил: ${r.disallow || 0}
+Allow правил: ${r.allow || 0}
 Размер файла: ${r.content_length || 0} байт
 Строк: ${r.lines_count || 0}
 
