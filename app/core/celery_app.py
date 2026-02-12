@@ -2,17 +2,20 @@
 Celery configuration and initialization
 """
 import os
-from celery import Celery
+import sys
 
-# Get Redis URL directly from environment (bypass settings for worker)
+# CRITICAL: Read environment variables BEFORE importing anything else
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 BROKER_URL = os.getenv("CELERY_BROKER_URL") or REDIS_URL
 BACKEND_URL = os.getenv("CELERY_RESULT_BACKEND") or REDIS_URL
 
-print(f"Celery: Using broker {BROKER_URL}")
-print(f"Celery: Using backend {BACKEND_URL}")
+print(f"[CELERY CONFIG] REDIS_URL from env: {os.getenv('REDIS_URL')}", file=sys.stderr)
+print(f"[CELERY CONFIG] Using broker: {BROKER_URL}", file=sys.stderr)
+print(f"[CELERY CONFIG] Using backend: {BACKEND_URL}", file=sys.stderr)
 
-# Create Celery app
+from celery import Celery
+
+# Create Celery app with explicit broker/backend
 celery_app = Celery(
     "seo_tools",
     broker=BROKER_URL,
@@ -20,18 +23,20 @@ celery_app = Celery(
     include=["app.core.tasks"]
 )
 
-# Import settings only for configuration (not for broker/backend)
+print(f"[CELERY CONFIG] App created with broker: {celery_app.conf.broker_url}", file=sys.stderr)
+
+# Now import settings for other config
 from app.config import settings
 
 # Celery configuration
 celery_app.conf.update(
     # Task settings
     task_track_started=True,
-    task_time_limit=settings.MAX_TASK_DURATION + 60,  # +60 sec buffer
+    task_time_limit=settings.MAX_TASK_DURATION + 60,
     task_soft_time_limit=settings.MAX_TASK_DURATION,
     
     # Result settings
-    result_expires=3600 * 24,  # 24 hours
+    result_expires=3600 * 24,
     result_extended=True,
     
     # Worker settings
@@ -50,6 +55,9 @@ celery_app.conf.update(
     # Timezone
     timezone="UTC",
     enable_utc=True,
+    
+    # Retry on startup
+    broker_connection_retry_on_startup=True,
 )
 
 # Queue configuration
@@ -65,6 +73,8 @@ celery_app.conf.task_routes = {
 # Task annotations for rate limiting
 celery_app.conf.task_annotations = {
     "*": {
-        "rate_limit": "10/m"  # Max 10 tasks per minute per worker
+        "rate_limit": "10/m"
     }
 }
+
+print(f"[CELERY CONFIG] Configuration complete", file=sys.stderr)
