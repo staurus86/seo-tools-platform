@@ -28,12 +28,10 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
-WORKDIR /app
+WORKDIR /build
 
-# Copy requirements
+# Copy and install requirements
 COPY requirements.txt .
-
-# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Install Playwright browsers
@@ -71,7 +69,7 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /app
 
-# Set Python path
+# Environment variables
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
@@ -80,31 +78,25 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Copy Playwright browsers from builder
+# Copy Playwright browsers
 COPY --from=builder /root/.cache/ms-playwright /root/.cache/ms-playwright
 
-# Create app directory
-RUN mkdir -p /app/app
-
-# Copy application code to /app/app
+# Copy application files
 COPY app/ /app/app/
 COPY *.py /app/
 COPY *.sh /app/
 COPY *.txt /app/
 COPY *.toml /app/
+COPY *.md /app/
 
+# Make entrypoint executable and create reports dir
+RUN chmod +x entrypoint.sh && mkdir -p reports_output
 
-# Make entrypoint executable
-RUN chmod +x entrypoint.sh
-
-# Create reports directory
-RUN mkdir -p reports_output
-
-# List files for debugging
-RUN echo "=== Directory structure ===" && ls -la && echo "=== App directory ===" && ls -la app/
+# Debug: list files
+RUN echo "=== /app contents ===" && ls -la /app && echo "=== /app/app contents ===" && ls -la /app/app/
 
 # Expose port
 EXPOSE 8000
 
-# Run the application
+# Run
 CMD ["./entrypoint.sh"]
