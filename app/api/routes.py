@@ -63,13 +63,25 @@ async def create_robots_check_task(
     rate_limit: dict = Depends(no_rate_limit)
 ):
     """Создает задачу на проверку robots.txt"""
-    task = check_robots_task.delay(url=str(data.url))
-    
-    return TaskResponse(
-        task_id=task.id,
-        status="PENDING",
-        message="Robots.txt check task created"
-    )
+    try:
+        # Try Celery first
+        task = check_robots_task.delay(url=str(data.url))
+        return TaskResponse(
+            task_id=task.id,
+            status="PENDING",
+            message="Robots.txt check task created"
+        )
+    except Exception as e:
+        # Fallback: run synchronously
+        print(f"Celery failed, running sync: {e}")
+        result = check_robots_task.run(url=str(data.url))
+        task_id = "sync-" + str(datetime.now().timestamp())
+        sync_results[task_id] = result
+        return TaskResponse(
+            task_id=task_id,
+            status="SUCCESS",
+            message="Task completed synchronously"
+        )
 
 
 @router.post("/tasks/sitemap-validate", response_model=TaskResponse)
@@ -142,9 +154,26 @@ async def create_bot_check_task(
     )
 
 
+# Store for synchronous results
+sync_results = {}
+
 @router.get("/tasks/{task_id}", response_model=TaskResult)
 async def get_task_status(task_id: str):
     """Получает статус и результат задачи"""
+    # Check if it's a sync result
+    if task_id.startswith("sync-"):
+        return TaskResult(
+            task_id=task_id,
+            status=TaskStatus.SUCCESS,
+            task_type=TaskType.ROBOTS_CHECK,
+            url="",
+            created_at=datetime.utcnow(),
+            completed_at=datetime.utcnow(),
+            result=sync_results.get(task_id, {}),
+            error=None,
+            can_continue=False
+        )
+    
     task_result = AsyncResult(task_id, app=celery_app)
     
     # Get progress if available
