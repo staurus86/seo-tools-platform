@@ -1,13 +1,13 @@
 """
-Minimal Celery configuration - no external imports
+Minimal Celery configuration - reads REDIS_URL directly
 """
 import os
 import sys
 
-# Get Redis URL
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+# Force read from environment
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
-print(f"[CELERY] Starting with REDIS_URL: {REDIS_URL}", file=sys.stderr, flush=True)
+print(f"[CELERY] REDIS_URL from os.environ: {REDIS_URL}", file=sys.stderr, flush=True)
 
 from celery import Celery
 
@@ -19,12 +19,17 @@ celery_app = Celery(
     include=["app.core.tasks"]
 )
 
-print(f"[CELERY] App created with broker: {celery_app.conf.broker_url}", file=sys.stderr, flush=True)
+print(f"[CELERY] Initial broker_url: {celery_app.conf.broker_url}", file=sys.stderr, flush=True)
+
+# Force re-set broker and backend
+celery_app.conf.broker_url = REDIS_URL
+celery_app.conf.result_backend = REDIS_URL
+
+print(f"[CELERY] Forced broker_url: {celery_app.conf.broker_url}", file=sys.stderr, flush=True)
 
 # Hardcoded config
-MAX_DURATION = 20 * 60  # 20 minutes
+MAX_DURATION = 20 * 60
 
-# Configuration
 celery_app.conf.update(
     task_track_started=True,
     task_time_limit=MAX_DURATION + 60,
@@ -43,11 +48,13 @@ celery_app.conf.update(
     broker_connection_retry_on_startup=True,
 )
 
-# IMPORTANT: Do not allow any further changes to broker
+print(f"[CELERY] After config broker_url: {celery_app.conf.broker_url}", file=sys.stderr, flush=True)
+
+# Force one more time after all updates
 celery_app.conf.broker_url = REDIS_URL
 celery_app.conf.result_backend = REDIS_URL
 
-print(f"[CELERY] Final broker: {celery_app.conf.broker_url}", file=sys.stderr, flush=True)
+print(f"[CELERY] Final broker_url: {celery_app.conf.broker_url}", file=sys.stderr, flush=True)
 
 # Queues
 celery_app.conf.task_routes = {
@@ -59,9 +66,8 @@ celery_app.conf.task_routes = {
     "app.core.tasks.check_bots": {"queue": "seo"},
 }
 
-# Rate limiting
 celery_app.conf.task_annotations = {
     "*": {"rate_limit": "10/m"}
 }
 
-print(f"[CELERY] Ready!", file=sys.stderr, flush=True)
+print(f"[CELERY] Ready with broker: {celery_app.conf.broker_url}", file=sys.stderr, flush=True)

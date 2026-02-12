@@ -10,17 +10,24 @@ echo "REDIS_URL: ${REDIS_URL:-not set}"
 echo "Current directory: $(pwd)"
 echo ""
 
-# Set PYTHONPATH
+# Export PYTHONPATH
 export PYTHONPATH=/app:$PYTHONPATH
 
-# Check mode
+# CRITICAL: Export REDIS_URL explicitly for Celery
+export REDIS_URL="${REDIS_URL:-redis://localhost:6379/0}"
+
+echo "=== Environment ==="
+echo "REDIS_URL=$REDIS_URL"
+echo "PYTHONPATH=$PYTHONPATH"
+echo ""
+
 if [ "$SERVICE_MODE" = "worker" ]; then
     echo "Starting in WORKER mode..."
     echo ""
     
-    if [ -z "$REDIS_URL" ]; then
-        echo "ERROR: REDIS_URL not set. Worker cannot start without Redis."
-        echo "Please add REDIS_URL environment variable."
+    if [ -z "$REDIS_URL" ] || [ "$REDIS_URL" = "redis://localhost:6379/0" ]; then
+        echo "ERROR: REDIS_URL not properly set!"
+        echo "REDIS_URL=$REDIS_URL"
         exit 1
     fi
     
@@ -33,28 +40,6 @@ if [ "$SERVICE_MODE" = "worker" ]; then
 else
     echo "Starting in WEB mode..."
     echo ""
-    echo "=== Directory structure ==="
-    ls -la
-    echo ""
-    
-    # Check if required files exist
-    echo "Checking required files..."
-    if [ -f "app/main.py" ]; then
-        echo "✓ app/main.py exists"
-    else
-        echo "✗ app/main.py NOT FOUND"
-    fi
-    
-    if [ -d "app/templates" ]; then
-        echo "✓ app/templates directory exists"
-    else
-        echo "✗ app/templates directory NOT FOUND"
-    fi
-    
-    echo ""
-    echo "============================================"
-    echo "Starting uvicorn server..."
-    echo "============================================"
     
     exec python -m uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}" --log-level info
 fi
