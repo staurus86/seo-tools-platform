@@ -1,0 +1,58 @@
+"""
+Конфигурация SEO Tools Platform
+"""
+import os
+from pydantic_settings import BaseSettings
+from typing import Optional
+
+
+class Settings(BaseSettings):
+    """Настройки приложения"""
+    
+    # App
+    APP_NAME: str = "SEO Tools Platform"
+    APP_VERSION: str = "1.0.0"
+    DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
+    
+    # Server
+    HOST: str = "0.0.0.0"
+    PORT: int = int(os.getenv("PORT", "8000"))
+    
+    # Redis
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    
+    # Celery
+    CELERY_BROKER_URL: str = os.getenv("CELERY_BROKER_URL", REDIS_URL)
+    CELERY_RESULT_BACKEND: str = os.getenv("CELERY_RESULT_BACKEND", REDIS_URL)
+    
+    # Timeouts (seconds)
+    HTTP_TIMEOUT_NORMAL: int = 10
+    HTTP_TIMEOUT_RENDER: int = 15
+    MAX_TASK_DURATION: int = 20 * 60  # 20 minutes
+    
+    # Page Limits
+    MAX_PAGES_DEFAULT: int = 100
+    MAX_PAGES_LIMIT: int = 2000
+    
+    # Concurrent Tasks
+    MAX_CONCURRENT_TASKS: int = 10
+    
+    # Rate Limiting
+    RATE_LIMIT_PER_HOUR: int = 10
+    RATE_LIMIT_WINDOW: int = 3600  # 1 hour in seconds
+    
+    # Reports
+    REPORTS_DIR: str = "reports_output"
+    MAX_REPORT_AGE_DAYS: int = 7
+    
+    # History
+    HISTORY_SIZE: int = 10
+    
+    # Playwright
+    PLAYWRIGHT_BROWSERS_PATH: str = os.getenv("PLAYWRIGHT_BROWSERS_PATH", "0")
+    
+    class Config:
+        env_file = ".env"
+
+
+settings = Settings()

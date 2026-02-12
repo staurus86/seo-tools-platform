@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+
+{% block title %}Результаты анализа - SEO Tools Platform{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <!-- Header -->
+    <div class="mb-6">
+        <a href="/" class="text-blue-600 hover:text-blue-800 mb-2 inline-block">
+            <i class="fas fa-arrow-left mr-1"></i>Назад к инструментам
+        </a>
+        <h2 class="text-2xl font-bold text-gray-800">Результаты анализа</h2>
+        <p class="text-gray-600">Task ID: <span id="task-id">{{ task_id }}</span></p>
+    </div>
+
+    <!-- Progress Section -->
+    <div id="progress-section" class="bg-white rounded-xl shadow-md p-6 mb-6">
+        <div class="flex items-center justify-between mb-4">
+            <div>
+                <h3 class="text-lg font-semibold" id="status-title">Выполнение...</h3>
+                <p class="text-gray-600" id="status-message">Инициализация...</p>
+            </div>
+            <div id="status-icon" class="text-4xl">
+                <i class="fas fa-spinner fa-spin text-blue-500"></i>
+            </div>
+        </div>
+        
+        <!-- Progress Bar -->
+        <div class="w-full bg-gray-200 rounded-full h-4 mb-2">
+            <div id="progress-bar" class="bg-blue-500 h-4 rounded-full progress-bar" style="width: 0%"></div>
+        </div>
+        <div class="flex justify-between text-sm text-gray-600">
+            <span id="progress-text">0%</span>
+            <span id="progress-detail"></span>
+        </div>
+    </div>
+
+    <!-- Results Section (hidden initially) -->
+    <div id="results-section" class="hidden space-y-6">
+        <!-- Download Buttons -->
+        <div class="bg-white rounded-xl shadow-md p-6">
+            <h3 class="text-lg font-semibold mb-4">
+                <i class="fas fa-download mr-2 text-blue-500"></i>Скачать отчет
+            </h3>
+            <div class="flex flex-wrap gap-3">
+                <button onclick="downloadReport('xlsx')" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition flex items-center">
+                    <i class="fas fa-file-excel mr-2"></i>Excel (.xlsx)
+                </button>
+                <button onclick="downloadReport('docx')" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition flex items-center">
+                    <i class="fas fa-file-word mr-2"></i>Word (.docx)
+                </button>
+            </div>
+        </div>
+
+        <!-- Results Content -->
+        <div id="results-content" class="space-y-6">
+            <!-- Will be populated by JavaScript -->
+        </div>
+    </div>
+
+    <!-- Error Section (hidden initially) -->
+    <div id="error-section" class="hidden bg-red-50 border-l-4 border-red-500 p-6 rounded-r-xl">
+        <div class="flex items-start">
+            <i class="fas fa-exclamation-triangle text-red-500 text-xl mr-3 mt-1"></i>
+            <div>
+                <h3 class="text-red-800 font-semibold mb-2">Ошибка выполнения</h3>
+                <p id="error-message" class="text-red-700"></p>
+                <div id="continue-section" class="mt-4 hidden">
+                    <p class="text-gray-600 mb-3">Задача заняла слишком много времени. Хотите продолжить?</p>
+                    <button onclick="continueTask()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                        <i class="fas fa-redo mr-2"></i>Продолжить анализ
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Copy Notification -->
+    <div id="copy-notification" class="fixed bottom-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg transform translate-y-20 transition-transform duration-300 z-50">
+        <i class="fas fa-check mr-2"></i>Скопировано в буфер обмена
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const taskId = "{{ task_id }}";
+let pollInterval;
+let currentResult = null;
+
+// Start polling when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    checkTaskStatus();
+    pollInterval = setInterval(checkTaskStatus, 2000);
+});
+
+async function checkTaskStatus() {
+    try {
+        const response = await fetch(`/api/tasks/${taskId}`);
+        const data = await response.json();
+        
+        updateProgress(data);
+        
+        if (data.status === 'SUCCESS') {
+            clearInterval(pollInterval);
+            showResults(data.result);
+        } else if (data.status === 'FAILURE') {
+            clearInterval(pollInterval);
+            showError(data);
+        }
+    } catch (error) {
+        console.error('Error checking task status:', error);
+    }
+}
+
+function updateProgress(data) {
+    const progressBar = document.getElementById('progress-bar');
+    const progressText = document.getElementById('progress-text');
+    const statusMessage = document.getElementById('status-message');
+    const progressDetail = document.getElementById('progress-detail');
+    
+    if (data.progress) {
+        const percentage = data.progress.percentage;
+        progressBar.style.width = `${percentage}%`;
+        progressText.textContent = `${percentage}%`;
+        statusMessage.textContent = data.progress.message;
+        
+        if (data.progress.current && data.progress.total) {
+            progressDetail.textContent = `${data.progress.current} / ${data.progress.total}`;
+        }
+    }
+}
+
+function showResults(result) {
+    document.getElementById('progress-section').classList.add('hidden');
+    document.getElementById('results-section').classList.remove('hidden');
+    
+    const resultsContent = document.getElementById('results-content');
+    currentResult = result;
+    
+    // Generate results HTML based on task type
+    if (result.task_type === 'site_analyze') {
+        resultsContent.innerHTML = generateSiteAnalyzeHTML(result);
+    } else if (result.task_type === 'robots_check') {
+        resultsContent.innerHTML = generateRobotsCheckHTML(result);
+    } else if (result.task_type === 'sitemap_validate') {
+        resultsContent.innerHTML = generateSitemapHTML(result);
+    } else if (result.task_type === 'render_audit') {
+        resultsContent.innerHTML = generateRenderHTML(result);
+    } else if (result.task_type === 'mobile_check') {
+        resultsContent.innerHTML = generateMobileHTML(result);
+    } else if (result.task_type === 'bot_check') {
+        resultsContent.innerHTML = generateBotHTML(result);
+    }
+}
+
+function showError(data) {
+    document.getElementById('progress-section').classList.add('hidden');
+    document.getElementById('error-section').classList.remove('hidden');
+    document.getElementById('error-message').textContent = data.error || 'Unknown error';
+    
+    if (data.can_continue) {
+        document.getElementById('continue-section').classList.remove('hidden');
+    }
+}
+
+async function continueTask() {
+    try {
+        const response = await fetch(`/api/tasks/${taskId}/continue`, {
+            method: 'POST'
+        });
+        
+        if (response.ok) {
+            // Restart polling
+            document.getElementById('error-section').classList.add('hidden');
+            document.getElementById('progress-section').classList.remove('hidden');
+            pollInterval = setInterval(checkTaskStatus, 2000);
+        } else {
+            const data = await response.json();
+            alert(data.detail || 'Failed to continue task');
+        }
+    } catch (error) {
+        console.error('Error continuing task:', error);
+    }
+}
+
+function downloadReport(format) {
+    window.open(`/api/download/${taskId}/${format}`, '_blank');
+}
+
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        const notification = document.getElementById('copy-notification');
+        notification.classList.remove('translate-y-20');
+        setTimeout(() => {
+            notification.classList.add('translate-y-20');
+        }, 2000);
+    });
+}
+
+// HTML generators for different task types
+function generateSiteAnalyzeHTML(result) {
+    return `
+        <div class="bg-white rounded-xl shadow-md p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold">Общая информация</h3>
+                <button onclick="copyToClipboard('${result.url}')" class="text-blue-600 hover:text-blue-800 text-sm">
+                    <i class="fas fa-copy mr-1"></i>Копировать URL
+                </button>
+            </div>
+            <div class="grid grid-cols-2 gap-4 text-sm">
+                <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
+                <div><span class="text-gray-600">Страниц проанализировано:</span> <span class="font-medium">${result.pages_analyzed}</span></div>
+                <div><span class="text-gray-600">Завершено:</span> <span class="font-medium">${new Date(result.completed_at).toLocaleString()}</span></div>
+            </div>
+        </div>
+    `;
+}
+
+function generateRobotsCheckHTML(result) {
+    return generateSiteAnalyzeHTML(result); // Similar structure
+}
+
+function generateSitemapHTML(result) {
+    return generateSiteAnalyzeHTML(result);
+}
+
+function generateRenderHTML(result) {
+    return generateSiteAnalyzeHTML(result);
+}
+
+function generateMobileHTML(result) {
+    return generateSiteAnalyzeHTML(result);
+}
+
+function generateBotHTML(result) {
+    return generateSiteAnalyzeHTML(result);
+}
+</script>
+{% endblock %}

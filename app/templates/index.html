@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+
+{% block title %}SEO Tools Platform - Анализ сайтов{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<div class="text-center mb-12">
+    <h2 class="text-4xl font-bold text-gray-800 mb-4">Профессиональные SEO инструменты</h2>
+    <p class="text-xl text-gray-600 max-w-2xl mx-auto">
+        Асинхронная платформа для комплексного анализа сайтов. 
+        Все инструменты работают параллельно с отслеживанием прогресса.
+    </p>
+</div>
+
+<!-- Tools Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+    
+    <!-- Tool 1: Site Analyzer -->
+    <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-blue-500">
+        <div class="flex items-center mb-4">
+            <div class="bg-blue-100 p-3 rounded-lg mr-4">
+                <i class="fas fa-sitemap text-blue-600 text-xl"></i>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold text-gray-800">Анализ сайта</h3>
+                <p class="text-sm text-gray-500">Полный SEO аудит</p>
+            </div>
+        </div>
+        <p class="text-gray-600 mb-4 text-sm">
+            Глубокий анализ сайта: краулинг до 2000 страниц, мета-теги, заголовки, 
+            изображения, ссылки, скорость загрузки и многое другое.
+        </p>
+        <form class="space-y-3" onsubmit="startTask(event, 'site-analyze')">
+            <input type="url" name="url" placeholder="https://example.com" required
+                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+            <div class="grid grid-cols-2 gap-2">
+                <input type="number" name="max_pages" value="100" min="1" max="2000"
+                       class="px-3 py-2 border rounded-lg text-sm" title="Макс. страниц">
+                <select name="use_js" class="px-3 py-2 border rounded-lg text-sm">
+                    <option value="true">С JS</option>
+                    <option value="false">Без JS</option>
+                </select>
+            </div>
+            <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition">
+                <i class="fas fa-play mr-2"></i>Запустить анализ
+            </button>
+        </form>
+    </div>
+
+    <!-- Tool 2: Robots.txt Checker -->
+    <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-green-500">
+        <div class="flex items-center mb-4">
+            <div class="bg-green-100 p-3 rounded-lg mr-4">
+                <i class="fas fa-robot text-green-600 text-xl"></i>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold text-gray-800">Robots.txt</h3>
+                <p class="text-sm text-gray-500">Проверка доступа</p>
+            </div>
+        </div>
+        <p class="text-gray-600 mb-4 text-sm">
+            Проверка robots.txt на корректность синтаксиса, наличие sitemap, 
+            запреты для поисковых систем и рекомендации по исправлению.
+        </p>
+        <form class="space-y-3" onsubmit="startTask(event, 'robots-check')">
+            <input type="url" name="url" placeholder="https://example.com" required
+                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
+            <button type="submit" class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition">
+                <i class="fas fa-play mr-2"></i>Проверить robots.txt
+            </button>
+        </form>
+    </div>
+
+    <!-- Tool 3: Sitemap Validator -->
+    <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-purple-500">
+        <div class="flex items-center mb-4">
+            <div class="bg-purple-100 p-3 rounded-lg mr-4">
+                <i class="fas fa-map text-purple-600 text-xl"></i>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold text-gray-800">Sitemap.xml</h3>
+                <p class="text-sm text-gray-500">Валидация карты сайта</p>
+            </div>
+        </div>
+        <p class="text-gray-600 mb-4 text-sm">
+            Валидация XML sitemap по стандарту sitemaps.org: синтаксис, 
+            кодировка, дубли, URL-ы, lastmod, changefreq, priority.
+        </p>
+        <form class="space-y-3" onsubmit="startTask(event, 'sitemap-validate')">
+            <input type="url" name="url" placeholder="https://example.com/sitemap.xml" required
+                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+            <button type="submit" class="w-full bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700 transition">
+                <i class="fas fa-play mr-2"></i>Валидировать sitemap
+            </button>
+        </form>
+    </div>
+
+    <!-- Tool 4: Render Audit -->
+    <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-orange-500">
+        <div class="flex items-center mb-4">
+            <div class="bg-orange-100 p-3 rounded-lg mr-4">
+                <i class="fas fa-code text-orange-600 text-xl"></i>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold text-gray-800">Аудит рендеринга</h3>
+                <p class="text-sm text-gray-500">JS vs No-JS</p>
+            </div>
+        </div>
+        <p class="text-gray-600 mb-4 text-sm">
+            Сравнение HTML с JavaScript и без: проверка SSR, динамический контент, 
+            мета-теги, канонические URL и критические различия.
+        </p>
+        <form class="space-y-3" onsubmit="startTask(event, 'render-audit')">
+            <input type="url" name="url" placeholder="https://example.com/page" required
+                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent">
+            <button type="submit" class="w-full bg-orange-600 text-white py-2 rounded-lg hover:bg-orange-700 transition">
+                <i class="fas fa-play mr-2"></i>Аудит рендеринга
+            </button>
+        </form>
+    </div>
+
+    <!-- Tool 5: Mobile Checker -->
+    <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-pink-500">
+        <div class="flex items-center mb-4">
+            <div class="bg-pink-100 p-3 rounded-lg mr-4">
+                <i class="fas fa-mobile-alt text-pink-600 text-xl"></i>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold text-gray-800">Мобильная версия</h3>
+                <p class="text-sm text-gray-500">Тестирование устройств</p>
+            </div>
+        </div>
+        <p class="text-gray-600 mb-4 text-sm">
+            Тестирование на 20+ устройствах: iPhone, Samsung, Google Pixel, 
+            планшеты. Viewport, touch-элементы, шрифты, адаптивность.
+        </p>
+        <form class="space-y-3" onsubmit="startTask(event, 'mobile-check')">
+            <input type="url" name="url" placeholder="https://example.com" required
+                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent">
+            <button type="submit" class="w-full bg-pink-600 text-white py-2 rounded-lg hover:bg-pink-700 transition">
+                <i class="fas fa-play mr-2"></i>Проверить мобильную
+            </button>
+        </form>
+    </div>
+
+    <!-- Tool 6: Bot Checker -->
+    <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-red-500">
+        <div class="flex items-center mb-4">
+            <div class="bg-red-100 p-3 rounded-lg mr-4">
+                <i class="fas fa-spider text-red-600 text-xl"></i>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold text-gray-800">Проверка ботов</h3>
+                <p class="text-sm text-gray-500">Доступность поисковиков</p>
+            </div>
+        </div>
+        <p class="text-gray-600 mb-4 text-sm">
+            Проверка доступности сайта для Google, Yandex, Bing, ChatGPT, 
+            Claude и других AI-ботов. HTTP статусы, robots, meta-теги.
+        </p>
+        <form class="space-y-3" onsubmit="startTask(event, 'bot-check')">
+            <input type="url" name="url" placeholder="https://example.com" required
+                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent">
+            <button type="submit" class="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition">
+                <i class="fas fa-play mr-2"></i>Проверить ботов
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- History Section -->
+<div class="bg-white rounded-xl shadow-md p-6">
+    <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold text-gray-800">
+            <i class="fas fa-history mr-2 text-gray-500"></i>История проверок
+        </h3>
+        <button onclick="clearHistory()" class="text-sm text-red-500 hover:text-red-700">
+            <i class="fas fa-trash mr-1"></i>Очистить
+        </button>
+    </div>
+    <div id="history-container" class="space-y-2">
+        <p class="text-gray-500 text-center py-4">История пуста</p>
+    </div>
+</div>
+
+<!-- Rate Limit Warning Modal -->
+<div id="rate-limit-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+    <div class="bg-white rounded-xl p-6 max-w-md mx-4">
+        <div class="text-center">
+            <i class="fas fa-clock text-yellow-500 text-4xl mb-4"></i>
+            <h3 class="text-lg font-semibold mb-2">Лимит запросов исчерпан</h3>
+            <p class="text-gray-600 mb-4">
+                Вы достигли лимита в <span id="modal-limit">10</span> запросов в час.
+                Попробуйте снова через <span id="modal-time">60</span> минут.
+            </p>
+            <button onclick="closeRateLimitModal()" class="bg-gray-800 text-white px-6 py-2 rounded-lg hover:bg-gray-900">
+                Понятно
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/history.js"></script>
+{% endblock %}
