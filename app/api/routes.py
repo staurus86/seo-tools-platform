@@ -819,8 +819,8 @@ async def get_task_status(task_id: str):
     """Get task result"""
     print(f"[API] Getting status for: {task_id}")
     
-    if task_id in task_results:
-        data = task_results[task_id]
+    data = get_task_result(task_id)
+    if data:
         return {
             "task_id": task_id,
             "status": "SUCCESS",
