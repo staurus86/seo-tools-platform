@@ -123,7 +123,7 @@ function showResults(data) {
     } else if (data.task_type === 'robots_check') {
         resultsContent.innerHTML = generateRobotsHTML(data);
     } else if (result.task_type === 'sitemap_validate') {
-        resultsContent.innerHTML = generateSitemapHTML(result);
+        resultsContent.innerHTML = generateSitemapHTMLV2(result);
     } else if (result.task_type === 'bot_check') {
         resultsContent.innerHTML = generateBotHTML(result);
     } else if (result.task_type === 'render_audit') {
@@ -256,6 +256,19 @@ function downloadTextReport() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+}
+
+function downloadLinesAsTxt(lines, filename) {
+    const content = (lines || []).join('\n');
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const href = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(href);
 }
 
 async function downloadWordReport() {
@@ -594,6 +607,91 @@ function generateRobotsHTML(data) {
                     ${topFixesHTML}
                 </div>
             ` : ''}
+        </div>
+    `;
+}
+
+function generateSitemapHTMLV2(result) {
+    const r = result.results || result;
+    const exportUrls = r.export_urls || [];
+    const sitemapFiles = r.sitemap_files || [];
+    const warnings = r.warnings || [];
+    const errors = r.errors || [];
+    const recommendations = r.recommendations || [];
+    const safeDomain = (result.url || 'sitemap').replace(/https?:\/\//, '').replace(/[^\w.-]+/g, '_');
+
+    return `
+        <div class="space-y-4">
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold">Sitemap Validation</h3>
+                    <div class="flex gap-2">
+                        <button onclick="copyToClipboard('${result.url}')" class="text-blue-600 hover:text-blue-800 text-sm">
+                            <i class="fas fa-copy mr-1"></i>Copy URL
+                        </button>
+                        ${exportUrls.length > 0 ? `
+                            <button onclick='downloadLinesAsTxt(${JSON.stringify(exportUrls)}, "sitemap-urls-${safeDomain}.txt")' class="text-green-600 hover:text-green-800 text-sm">
+                                <i class="fas fa-file-download mr-1"></i>Export URLs (.txt)
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div><span class="text-gray-600">URL:</span> <span class="font-medium break-all">${result.url}</span></div>
+                    <div><span class="text-gray-600">Valid:</span> <span class="font-medium">${r.valid ? 'Yes' : 'No'}</span></div>
+                    <div><span class="text-gray-600">HTTP:</span> <span class="font-medium">${r.status_code || 'N/A'}</span></div>
+                    <div><span class="text-gray-600">Total URLs:</span> <span class="font-medium">${r.urls_count || 0}</span></div>
+                    <div><span class="text-gray-600">Unique URLs:</span> <span class="font-medium">${r.unique_urls_count || 0}</span></div>
+                    <div><span class="text-gray-600">Duplicates:</span> <span class="font-medium">${r.duplicate_urls_count || 0}</span></div>
+                    <div><span class="text-gray-600">Sitemaps scanned:</span> <span class="font-medium">${r.sitemaps_scanned || 0}</span></div>
+                    <div><span class="text-gray-600">Sitemaps valid:</span> <span class="font-medium">${r.sitemaps_valid || 0}</span></div>
+                </div>
+                ${r.error ? `<div class="mt-3 text-red-600 font-medium">Error: ${r.error}</div>` : ''}
+                ${r.urls_export_truncated ? `<div class="mt-3 text-amber-700 text-sm">Export truncated to ${r.max_export_urls || 0} URLs.</div>` : ''}
+            </div>
+
+            ${errors.length > 0 ? `
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold text-red-600 mb-2">Errors (${errors.length})</h4>
+                    ${errors.slice(0, 50).map(e => `<div class="text-sm text-red-700 mb-1">${e}</div>`).join('')}
+                </div>
+            ` : ''}
+
+            ${warnings.length > 0 ? `
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold text-amber-600 mb-2">Warnings (${warnings.length})</h4>
+                    ${warnings.slice(0, 50).map(w => `<div class="text-sm text-amber-700 mb-1">${w}</div>`).join('')}
+                </div>
+            ` : ''}
+
+            ${recommendations.length > 0 ? `
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold text-blue-600 mb-2">Recommendations</h4>
+                    ${recommendations.map(rec => `<div class="text-sm text-blue-700 mb-1">- ${rec}</div>`).join('')}
+                </div>
+            ` : ''}
+
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h4 class="font-semibold text-gray-700 mb-3">Sitemap Files (${sitemapFiles.length})</h4>
+                <div class="space-y-3">
+                    ${sitemapFiles.map((f, idx) => `
+                        <div class="border rounded-lg p-3">
+                            <div class="flex justify-between items-center mb-1">
+                                <div class="text-sm font-medium break-all">${f.sitemap_url}</div>
+                                <div class="text-xs ${f.ok ? 'text-green-600' : 'text-red-600'}">${f.ok ? 'OK' : 'FAIL'}</div>
+                            </div>
+                            <div class="text-xs text-gray-600 mb-2">type: ${f.type || 'unknown'} | HTTP: ${f.status_code || 'N/A'} | URLs: ${f.urls_count || 0}</div>
+                            ${(f.urls || []).length > 0 ? `
+                                <button onclick='downloadLinesAsTxt(${JSON.stringify((f.urls || []).slice(0, 100000))}, "sitemap-${idx + 1}-urls.txt")' class="text-xs text-green-700 hover:text-green-900 mb-2">
+                                    <i class="fas fa-file-download mr-1"></i>Export this sitemap URLs
+                                </button>
+                            ` : ''}
+                            ${(f.errors || []).length > 0 ? `<div class="text-xs text-red-600">${(f.errors || []).join(' | ')}</div>` : ''}
+                            ${(f.warnings || []).length > 0 ? `<div class="text-xs text-amber-600">${(f.warnings || []).join(' | ')}</div>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
         </div>
     `;
 }

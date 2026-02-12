@@ -811,48 +811,225 @@ def check_robots_simple(url: str) -> Dict[str, Any]:
 
 
 def check_sitemap_full(url: str) -> Dict[str, Any]:
-    """Full sitemap validation"""
-    import requests
+    """Full sitemap validation with sitemap index traversal and URL export."""
     import xml.etree.ElementTree as ET
-    
+
+    def local_name(tag: str) -> str:
+        if not tag:
+            return ""
+        return tag.split("}", 1)[1] if "}" in tag else tag
+
+    def find_child_text(node: ET.Element, child_name: str) -> str:
+        for child in list(node):
+            if local_name(child.tag).lower() == child_name.lower():
+                return (child.text or "").strip()
+        return ""
+
+    def is_http_url(value: str) -> bool:
+        try:
+            p = urlparse(value)
+            return p.scheme in ("http", "https") and bool(p.netloc)
+        except Exception:
+            return False
+
+    def is_valid_lastmod(value: str) -> bool:
+        if not value:
+            return True
+        date_only = re.fullmatch(r"\d{4}-\d{2}-\d{2}", value)
+        dt_utc = re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", value)
+        dt_tz = re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\+|-)\d{2}:\d{2}", value)
+        return bool(date_only or dt_utc or dt_tz)
+
+    max_sitemaps = 30
+    max_export_urls = 100000
+    max_file_size = 52428800
+    max_urls_per_sitemap = 50000
+    queue: List[str] = [url]
+    visited: set = set()
+    sitemap_files: List[Dict[str, Any]] = []
+    all_urls: List[str] = []
+    seen_urls: set = set()
+    duplicate_urls_count = 0
+    invalid_urls_count = 0
+    invalid_lastmod_count = 0
+    invalid_changefreq_count = 0
+    invalid_priority_count = 0
+    warnings: List[str] = []
+    errors: List[str] = []
+    allowed_changefreq = {"always", "hourly", "daily", "weekly", "monthly", "yearly", "never"}
+    root_status_code = None
+
     try:
-        response = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-        
-        if response.status_code != 200:
-            return {
-                "task_type": "sitemap_validate",
-                "url": url,
-                "completed_at": datetime.utcnow().isoformat(),
-                "results": {
-                    "valid": False,
-                    "error": f"HTTP {response.status_code}"
-                }
+        session = requests.Session()
+        session.headers.update({"User-Agent": "Mozilla/5.0"})
+
+        while queue and len(visited) < max_sitemaps:
+            sitemap_url = queue.pop(0).strip()
+            if not sitemap_url or sitemap_url in visited:
+                continue
+            visited.add(sitemap_url)
+
+            file_report: Dict[str, Any] = {
+                "sitemap_url": sitemap_url,
+                "ok": False,
+                "status_code": None,
+                "type": "unknown",
+                "size_bytes": 0,
+                "urls_count": 0,
+                "errors": [],
+                "warnings": [],
+                "urls": [],
             }
-        
-        # Parse XML
-        root = ET.fromstring(response.text)
-        
-        # Count URLs
-        urls_count = len(root.findall('.//{http://www.sitemaps.org/schemas/sitemap/0.9}url'))
-        if urls_count == 0:
-            urls_count = len(root.findall('.//url'))
-        
-        # Check for errors
-        errors = []
-        if "<" in response.text or ">" in response.text:
-            if "]]>" not in response.text:
-                errors.append("Возможные проблемы с XML экранированием")
-        
+
+            try:
+                response = session.get(sitemap_url, timeout=20, allow_redirects=True)
+                file_report["status_code"] = response.status_code
+                file_report["size_bytes"] = len(response.content or b"")
+                if root_status_code is None:
+                    root_status_code = response.status_code
+
+                if response.status_code != 200:
+                    file_report["errors"].append(f"HTTP {response.status_code}")
+                    sitemap_files.append(file_report)
+                    continue
+
+                if file_report["size_bytes"] > max_file_size:
+                    file_report["warnings"].append("File is larger than 50 MiB.")
+
+                try:
+                    root = ET.fromstring(response.content)
+                except ET.ParseError as parse_error:
+                    file_report["errors"].append(f"XML parse error: {parse_error}")
+                    sitemap_files.append(file_report)
+                    continue
+
+                root_tag = local_name(root.tag).lower()
+                file_report["type"] = root_tag
+
+                if root_tag == "sitemapindex":
+                    child_count = 0
+                    for sm_node in root.iter():
+                        if local_name(sm_node.tag).lower() != "sitemap":
+                            continue
+                        loc = find_child_text(sm_node, "loc")
+                        if not loc:
+                            file_report["warnings"].append("sitemap entry without <loc>.")
+                            continue
+                        if not is_http_url(loc):
+                            file_report["warnings"].append(f"Invalid child sitemap URL: {loc}")
+                            continue
+                        child_count += 1
+                        if loc not in visited and loc not in queue and (len(visited) + len(queue) < max_sitemaps):
+                            queue.append(loc)
+                    if child_count == 0:
+                        file_report["warnings"].append("Sitemap index has no child sitemaps.")
+                    file_report["ok"] = len(file_report["errors"]) == 0
+
+                elif root_tag == "urlset":
+                    file_urls: List[str] = []
+                    for url_node in root.iter():
+                        if local_name(url_node.tag).lower() != "url":
+                            continue
+                        loc = find_child_text(url_node, "loc")
+                        if not loc:
+                            file_report["warnings"].append("url entry without <loc>.")
+                            continue
+                        if not is_http_url(loc):
+                            invalid_urls_count += 1
+                            file_report["warnings"].append(f"Invalid URL in <loc>: {loc}")
+                            continue
+
+                        lastmod = find_child_text(url_node, "lastmod")
+                        if lastmod and not is_valid_lastmod(lastmod):
+                            invalid_lastmod_count += 1
+
+                        changefreq = find_child_text(url_node, "changefreq").lower()
+                        if changefreq and changefreq not in allowed_changefreq:
+                            invalid_changefreq_count += 1
+
+                        priority_raw = find_child_text(url_node, "priority")
+                        if priority_raw:
+                            try:
+                                priority_value = float(priority_raw)
+                                if priority_value < 0 or priority_value > 1:
+                                    invalid_priority_count += 1
+                            except Exception:
+                                invalid_priority_count += 1
+
+                        file_urls.append(loc)
+                        if loc in seen_urls:
+                            duplicate_urls_count += 1
+                        else:
+                            seen_urls.add(loc)
+                            if len(all_urls) < max_export_urls:
+                                all_urls.append(loc)
+
+                    file_report["urls_count"] = len(file_urls)
+                    file_report["urls"] = file_urls
+                    if len(file_urls) > max_urls_per_sitemap:
+                        file_report["warnings"].append("More than 50,000 URLs in one sitemap file.")
+                    file_report["ok"] = len(file_report["errors"]) == 0
+
+                else:
+                    file_report["errors"].append(f"Unsupported XML root tag: {root_tag}")
+
+                sitemap_files.append(file_report)
+
+            except Exception as fetch_error:
+                file_report["errors"].append(str(fetch_error))
+                sitemap_files.append(file_report)
+
+        if queue:
+            warnings.append(f"Sitemap traversal limit reached: {max_sitemaps} files.")
+
+        errors.extend([f"{item['sitemap_url']}: {err}" for item in sitemap_files for err in item.get("errors", [])])
+        warnings.extend([f"{item['sitemap_url']}: {warn}" for item in sitemap_files for warn in item.get("warnings", [])])
+
+        if invalid_lastmod_count:
+            warnings.append(f"Invalid lastmod format found: {invalid_lastmod_count}.")
+        if invalid_changefreq_count:
+            warnings.append(f"Invalid changefreq values found: {invalid_changefreq_count}.")
+        if invalid_priority_count:
+            warnings.append(f"Invalid priority values found: {invalid_priority_count}.")
+        if invalid_urls_count:
+            warnings.append(f"Invalid URLs found in sitemap: {invalid_urls_count}.")
+
+        recommendations = [
+            "Use only absolute HTTP/HTTPS URLs in <loc>.",
+            "Keep each sitemap under 50,000 URLs and 50 MiB uncompressed.",
+            "Use W3C date format for <lastmod>.",
+        ]
+        if duplicate_urls_count > 0:
+            recommendations.append("Remove duplicate URLs across sitemap files.")
+
+        valid_files = sum(1 for item in sitemap_files if item.get("ok"))
+        total_urls_discovered = sum(item.get("urls_count", 0) for item in sitemap_files if item.get("type") == "urlset")
+        urls_export_truncated = total_urls_discovered > len(all_urls)
+
         return {
             "task_type": "sitemap_validate",
             "url": url,
             "completed_at": datetime.utcnow().isoformat(),
             "results": {
-                "valid": True,
-                "urls_count": urls_count,
-                "status_code": response.status_code,
-                "errors": errors,
-                "size": len(response.text),
+                "valid": len(errors) == 0 and len(sitemap_files) > 0,
+                "status_code": root_status_code,
+                "urls_count": total_urls_discovered,
+                "unique_urls_count": len(seen_urls),
+                "duplicate_urls_count": duplicate_urls_count,
+                "sitemaps_scanned": len(sitemap_files),
+                "sitemaps_valid": valid_files,
+                "errors": dedupe_keep_order(errors),
+                "warnings": dedupe_keep_order(warnings),
+                "recommendations": recommendations,
+                "sitemap_files": sitemap_files,
+                "export_urls": all_urls,
+                "urls_export_truncated": urls_export_truncated,
+                "max_export_urls": max_export_urls,
+                "invalid_lastmod_count": invalid_lastmod_count,
+                "invalid_changefreq_count": invalid_changefreq_count,
+                "invalid_priority_count": invalid_priority_count,
+                "invalid_urls_count": invalid_urls_count,
+                "size": sum(item.get("size_bytes", 0) for item in sitemap_files),
             }
         }
     except Exception as e:
@@ -862,7 +1039,10 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
             "completed_at": datetime.utcnow().isoformat(),
             "results": {
                 "valid": False,
-                "error": str(e)
+                "error": str(e),
+                "urls_count": 0,
+                "export_urls": [],
+                "sitemap_files": [],
             }
         }
 
