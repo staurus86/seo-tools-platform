@@ -139,136 +139,72 @@ function showError(data) {
 // Global variables for robots data
 let robotsData = null;
 
-// Global download functions - moved outside to be accessible
 function generateTextReport() {
-    console.log('generateTextReport called, robotsData:', robotsData);
     if (!robotsData) return 'Нет данных для отчета';
     
     const r = robotsData.results || robotsData;
-    console.log('r data:', r);
-    
-    // Handle different data formats
-    let userAgents = 'Не найдено';
-    if (Array.isArray(r.user_agents)) {
-        userAgents = r.user_agents.join(', ');
-    } else if (typeof r.user_agents === 'number') {
-        userAgents = `${r.user_agents} шт.`;
-    } else if (r.user_agents) {
-        userAgents = String(r.user_agents);
-    }
-    
-    const disallowRules = r.disallow || r.disallow_count || 0;
-    const allowRules = r.allow || r.allow_count || 0;
-    const issues = r.issues || [];
-    const warnings = r.warnings || [];
-    const sitemaps = r.sitemaps || [];
-    const processedSitemaps = (sitemaps || []).map(s => s.url || s) || [];
     const groups = r.groups_detail || r.groups || [];
     
-    console.log('Processed data:', {
-        userAgents, disallowRules, allowRules, 
-        issuesCount: issues.length, 
-        warningsCount: warnings.length,
-        sitemapsCount: sitemaps.length,
-        processedSitemapsCount: processedSitemaps.length,
-        groupsCount: groups.length
+    let totalDisallow = 0;
+    let totalAllow = 0;
+    groups.forEach(g => {
+        totalDisallow += (g.disallow || []).length;
+        totalAllow += (g.allow || []).length;
     });
-    const taskId = robotsData.task_id || document.getElementById('task-id').textContent;
     
-    // Count stats
-    const userAgentCount = r.user_agents || 0;
-    const disallowRulesCount = r.disallow || 0;
-    const allowRulesCount = r.allow || 0;
-    const syntaxErrors = r.syntax_errors || [];
-    const recommendations = r.recommendations || [];
+    let report = `ОТЧЕТ АНАЛИЗА ROBOTS.TXT
+${'='.repeat(50)}
+URL сайта: ${robotsData.url}
+Дата проверки: ${new Date().toLocaleString()}
+${'='.repeat(50)}
+
+СТАТИСТИКА
+${'-'.repeat(30)}
+User-Agents: ${r.user_agents || 0}
+Disallow правил: ${totalDisallow}
+Allow правил: ${totalAllow}
+Размер файла: ${r.content_length || 0} байт
+Строк: ${r.lines_count || 0}
+
+`;
     
-    let issuesHTML = '';
+    const issues = r.issues || [];
     if (issues.length > 0) {
-        issuesHTML = issues.map(issue => `
-            <div class="bg-red-50 border border-red-200 rounded-lg p-3 mb-2">
-                <div class="flex items-center">
-                    <i class="fas fa-exclamation-triangle text-red-500 mr-2"></i>
-                    <span class="text-red-700 font-medium">${issue}</span>
-                </div>
-            </div>
-        `).join('');
+        report += `\nПРОБЛЕМЫ\n${'-'.repeat(30)}\n`;
+        issues.forEach(i => report += `⚠️ ${i}\n`);
     }
     
-    let warningsHTML = '';
+    const warnings = r.warnings || [];
     if (warnings.length > 0) {
-        warningsHTML = warnings.map(warning => `
-            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-2">
-                <div class="flex items-center">
-                    <i class="fas fa-exclamation-circle text-yellow-500 mr-2"></i>
-                    <span class="text-yellow-700">${warning}</span>
-                </div>
-            </div>
-        `).join('');
+        report += `\nПРЕДУПРЕЖДЕНИЯ\n${'-'.repeat(30)}\n`;
+        warnings.forEach(w => report += `• ${w}\n`);
     }
     
-    let sitemapsHtml = '';
-    if (processedSitemaps.length > 0) {
-        sitemapsHtml = processedSitemaps.map(sm => `
-            <div class="flex items-center bg-green-50 border border-green-200 rounded px-3 py-2 mb-1">
-                <i class="fas fa-sitemap text-green-500 mr-2"></i>
-                <a href="${sm}" target="_blank" class="text-green-700 hover:underline text-sm break-all">${sm}</a>
-            </div>
-        `).join('');
+    const sitemaps = r.sitemaps || [];
+    if (sitemaps.length > 0) {
+        const processed = sitemaps.map(s => s.url || s);
+        report += `\nSITEMAPS\n${'-'.repeat(30)}\n`;
+        processed.forEach(sm => report += `• ${sm}\n`);
     }
     
-    let groupsHTML = '';
     if (groups.length > 0) {
-        groupsHTML = groups.map((group, idx) => `
-            <div class="border rounded-lg mb-4 overflow-hidden">
-                <div class="bg-gray-100 px-4 py-2 border-b">
-                    <span class="font-semibold text-gray-700">Группа ${idx + 1}:</span>
-                    <span class="text-gray-600 ml-2">${group.user_agents.join(', ')}</span>
-                </div>
-                <div class="p-4">
-                    ${group.disallow.length > 0 ? `
-                        <div class="mb-3">
-                            <h5 class="text-sm font-medium text-red-600 mb-2">Disallow (${group.disallow.length}):</h5>
-                            <div class="max-h-40 overflow-y-auto">
-                                ${group.disallow.map(d => `
-                                    <div class="flex items-center text-sm font-mono bg-red-50 px-2 py-1 rounded mb-1">
-                                        <span class="text-red-600 mr-2">Disallow:</span>
-                                        <span class="text-gray-700 break-all">${d.path}</span>
-                                        <span class="text-gray-400 ml-auto text-xs">стр ${d.line}</span>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
-                    ` : ''}
-                    ${group.allow.length > 0 ? `
-                        <div>
-                            <h5 class="text-sm font-medium text-green-600 mb-2">Allow (${group.allow.length}):</h5>
-                            <div class="max-h-40 overflow-y-auto">
-                                ${group.allow.map(a => `
-                                    <div class="flex items-center text-sm font-mono bg-green-50 px-2 py-1 rounded mb-1">
-                                        <span class="text-green-600 mr-2">Allow:</span>
-                                        <span class="text-gray-700 break-all">${a.path}</span>
-                                        <span class="text-gray-400 ml-auto text-xs">стр ${a.line}</span>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
-                    ` : ''}
-                </div>
-            </div>
-        `).join('');
+        report += `\nГРУППЫ ПРАВИЛ\n${'-'.repeat(30)}\n`;
+        groups.forEach((group, idx) => {
+            report += `\nГруппа ${idx + 1}: ${group.user_agents.join(', ')}\n`;
+            (group.disallow || []).forEach(d => {
+                report += `  Disallow: ${d.path} (стр ${d.line})\n`;
+            });
+        });
     }
     
-    let recommendationsHTML = '';
+    const recommendations = r.recommendations || [];
     if (recommendations.length > 0) {
-        recommendationsHTML = recommendations.map(rec => `
-            <div class="flex items-start mb-2 p-2 bg-blue-50 rounded">
-                <i class="fas fa-lightbulb text-blue-500 mr-2 mt-1"></i>
-                <span class="text-sm text-blue-700">${rec}</span>
-            </div>
-        `).join('');
+        report += `\nРЕКОМЕНДАЦИИ\n${'-'.repeat(30)}\n`;
+        recommendations.forEach(rec => report += `• ${rec}\n`);
     }
     
-return `
+    return report;
+}
         <div class="space-y-6">
             <!-- Actions -->
             <div class="bg-white rounded-xl shadow-md p-4 flex flex-wrap gap-3">
@@ -438,7 +374,6 @@ async function downloadWordReport() {
 function generateRobotsHTML(result) {
     const r = result.results || result;
     
-    // Handle different data formats
     let userAgents = 'Не найдено';
     if (Array.isArray(r.user_agents)) {
         userAgents = r.user_agents.join(', ');
@@ -448,8 +383,6 @@ function generateRobotsHTML(result) {
         userAgents = String(r.user_agents);
     }
     
-    const disallowRules = r.disallow || r.disallow_count || 0;
-    const allowRules = r.allow || r.allow_count || 0;
     const issues = r.issues || [];
     const warnings = r.warnings || [];
     const sitemaps = r.sitemaps || [];
@@ -457,9 +390,16 @@ function generateRobotsHTML(result) {
     const groups = r.groups_detail || r.groups || [];
     const recommendations = r.recommendations || [];
     
+    let totalDisallow = 0;
+    let totalAllow = 0;
+    groups.forEach(g => {
+        totalDisallow += (g.disallow || []).length;
+        totalAllow += (g.allow || []).length;
+    });
+    
     const userAgentCount = r.user_agents || 0;
-    const disallowRulesCount = r.disallow || 0;
-    const allowRulesCount = r.allow || 0;
+    const disallowRulesCount = totalDisallow;
+    const allowRulesCount = totalAllow;
     
     let issuesHTML = '';
     if (issues.length > 0) {
