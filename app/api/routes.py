@@ -7,6 +7,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 import re
 import json
+import requests
 
 router = APIRouter(prefix="/api", tags=["SEO Tools"])
 
@@ -447,7 +448,8 @@ def check_robots_full(url: str) -> Dict[str, Any]:
             "syntax_errors": analysis["syntax_errors"],
             "hosts": analysis["hosts"],
             "crawl_delays": analysis["crawl_delays"],
-            "clean_params": analysis["clean_params"],
+            "clean_params": result.clean_params,
+            "param_recommendations": analysis.get("param_recommendations", []),
             "present_agents": analysis["present_agents"],
             "error": None,
             "can_continue": True,
