@@ -148,6 +148,23 @@ async def health_check():
     return {"status": "healthy", "version": settings.APP_VERSION}
 
 
+@app.get("/robots.txt")
+async def robots_txt():
+    """Serve robots.txt"""
+    return """User-agent: *
+Allow: /
+Sitemap: https://seo-tools-platform.up.railway.app/sitemap.xml
+"""
+
+
+@app.get("/favicon.ico")
+async def favicon():
+    """Serve favicon"""
+    from fastapi.responses import Response
+    # Return empty 204 No Content
+    return Response(status_code=204)
+
+
 logger.info("=" * 50)
 logger.info("APP INITIALIZED SUCCESSFULLY")
 logger.info("=" * 50)
