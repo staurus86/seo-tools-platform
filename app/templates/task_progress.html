@@ -76,7 +76,7 @@ async function checkTaskStatus() {
         
         if (data.status === 'SUCCESS') {
             clearInterval(pollInterval);
-            showResults(data.result);
+            showResults(data);
         } else if (data.status === 'FAILURE') {
             clearInterval(pollInterval);
             showError(data);
@@ -100,23 +100,27 @@ function updateProgress(data) {
     }
 }
 
-function showResults(result) {
+function showResults(data) {
     document.getElementById('progress-section').classList.add('hidden');
     document.getElementById('results-section').classList.remove('hidden');
     
-    // Store data for download functions
-    if (result.task_type === 'robots_check') {
-        robotsData = result;
+    // Store data for download functions (include task_id from API response)
+    if (data.task_type === 'robots_check') {
+        robotsData = {
+            ...data.result,
+            task_id: data.task_id,
+            url: data.url
+        };
         console.log('Robots data stored:', robotsData);
     }
     
     const resultsContent = document.getElementById('results-content');
     
     // Generate results HTML based on task type
-    if (result.task_type === 'site_analyze') {
-        resultsContent.innerHTML = generateSiteAnalysisHTML(result);
-    } else if (result.task_type === 'robots_check') {
-        resultsContent.innerHTML = generateRobotsHTML(result);
+    if (data.task_type === 'site_analyze') {
+        resultsContent.innerHTML = generateSiteAnalysisHTML(data);
+    } else if (data.task_type === 'robots_check') {
+        resultsContent.innerHTML = generateRobotsHTML(data);
     } else if (result.task_type === 'sitemap_validate') {
         resultsContent.innerHTML = generateSitemapHTML(result);
     } else if (result.task_type === 'bot_check') {
