@@ -1,25 +1,69 @@
 """
-SEO Tools Platform - FastAPI Application
+SEO Tools Platform - FastAPI Application (Simplified for Railway)
 """
-from fastapi import FastAPI, Request
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
 import os
+import sys
 import logging
 
-# Setup logging
-logging.basicConfig(level=logging.INFO)
+# Setup logging first
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stdout
+)
 logger = logging.getLogger(__name__)
 
-from app.config import settings
-from app.api.routes import router as api_router
+logger.info("=" * 50)
+logger.info("STARTING SEO TOOLS PLATFORM")
+logger.info("=" * 50)
 
-logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
-logger.info(f"Port: {settings.PORT}, Host: {settings.HOST}")
+# Log environment
+logger.info(f"Python executable: {sys.executable}")
+logger.info(f"Python version: {sys.version}")
+logger.info(f"Current directory: {os.getcwd()}")
+logger.info(f"Files in current dir: {os.listdir('.')}")
+logger.info(f"PORT env var: {os.environ.get('PORT', 'NOT SET')}")
+logger.info(f"PYTHONPATH: {os.environ.get('PYTHONPATH', 'NOT SET')}")
+
+# Try importing FastAPI
+try:
+    logger.info("Importing FastAPI...")
+    from fastapi import FastAPI, Request
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.templating import Jinja2Templates
+    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.responses import HTMLResponse
+    logger.info("✓ FastAPI imported successfully")
+except Exception as e:
+    logger.error(f"✗ FastAPI import failed: {e}")
+    import traceback
+    traceback.print_exc()
+    raise
+
+# Try importing app config
+try:
+    logger.info("Importing app.config...")
+    from app.config import settings
+    logger.info(f"✓ Config loaded: PORT={settings.PORT}, HOST={settings.HOST}")
+except Exception as e:
+    logger.error(f"✗ Config import failed: {e}")
+    import traceback
+    traceback.print_exc()
+    raise
+
+# Try importing routes
+try:
+    logger.info("Importing app.api.routes...")
+    from app.api.routes import router as api_router
+    logger.info("✓ Routes imported successfully")
+except Exception as e:
+    logger.error(f"✗ Routes import failed: {e}")
+    import traceback
+    traceback.print_exc()
+    raise
 
 # Create FastAPI app
+logger.info("Creating FastAPI app...")
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
@@ -38,28 +82,42 @@ app.add_middleware(
 )
 
 # Static files
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+try:
+    logger.info("Mounting static files...")
+    app.mount("/static", StaticFiles(directory="app/static"), name="static")
+    logger.info("✓ Static files mounted")
+except Exception as e:
+    logger.error(f"✗ Static files mount failed: {e}")
 
 # Templates
-templates = Jinja2Templates(directory="app/templates")
+try:
+    logger.info("Setting up templates...")
+    templates = Jinja2Templates(directory="app/templates")
+    logger.info("✓ Templates configured")
+except Exception as e:
+    logger.error(f"✗ Templates setup failed: {e}")
+    templates = None
 
 # API routes
 app.include_router(api_router)
 
-
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Главная страница с инструментами"""
-    return templates.TemplateResponse("index.html", {"request": request})
+    if templates:
+        return templates.TemplateResponse("index.html", {"request": request})
+    return HTMLResponse("<h1>SEO Tools Platform</h1><p>Templates not loaded</p>")
 
 
 @app.get("/results/{task_id}", response_class=HTMLResponse)
 async def results_page(request: Request, task_id: str):
     """Страница результатов"""
-    return templates.TemplateResponse(
-        "task_progress.html", 
-        {"request": request, "task_id": task_id}
-    )
+    if templates:
+        return templates.TemplateResponse(
+            "task_progress.html", 
+            {"request": request, "task_id": task_id}
+        )
+    return HTMLResponse(f"<h1>Results</h1><p>Task: {task_id}</p>")
 
 
 @app.get("/health")
@@ -68,8 +126,14 @@ async def health_check():
     return {"status": "healthy", "version": settings.APP_VERSION}
 
 
+logger.info("=" * 50)
+logger.info("APP INITIALIZED SUCCESSFULLY")
+logger.info("=" * 50)
+
+
 if __name__ == "__main__":
     import uvicorn
+    logger.info(f"Starting uvicorn on {settings.HOST}:{settings.PORT}")
     uvicorn.run(
         "app.main:app",
         host=settings.HOST,
