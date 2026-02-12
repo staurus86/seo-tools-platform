@@ -103,13 +103,14 @@ function updateProgress(data) {
 function showResults(data) {
     document.getElementById('progress-section').classList.add('hidden');
     document.getElementById('results-section').classList.remove('hidden');
+    const result = data;
     
     // Store data for download functions (include task_id from API response)
     if (data.task_type === 'robots_check') {
         robotsData = {
-            ...data.result,
-            task_id: data.task_id,
-            url: data.url
+            ...data,
+            task_id: data.task_id || taskId,
+            url: data.url || ''
         };
         console.log('Robots data stored:', robotsData);
     }
@@ -275,7 +276,9 @@ async function downloadWordReport() {
 }
 
 function generateRobotsHTML(data) {
-    const r = data.result?.results || data.result || data;
+    const resultData = data.result || data;
+    const r = resultData.results || resultData;
+    const sourceUrl = data.url || resultData.url || robotsData?.url || '';
     
     let userAgents = 'Не найдено';
     if (Array.isArray(r.user_agents)) {
@@ -438,10 +441,10 @@ function generateRobotsHTML(data) {
                 </div>
                 
                 <div class="text-sm text-gray-600 border-t pt-3">
-                    <span class="font-medium">URL:</span> <a href="${result.url}" target="_blank" class="text-blue-600 hover:underline">${result.url}</a>
+                    <span class="font-medium">URL:</span> <a href="${sourceUrl}" target="_blank" class="text-blue-600 hover:underline">${sourceUrl}</a>
                     <span class="mx-2">|</span>
                     <span class="font-medium">Robots.txt:</span> 
-                    <a href="${result.url.replace(/\/$/, '')}/robots.txt" target="_blank" class="text-blue-600 hover:underline">показать файл</a>
+                    <a href="${sourceUrl.replace(/\/$/, '')}/robots.txt" target="_blank" class="text-blue-600 hover:underline">показать файл</a>
                 </div>
             </div>
             
