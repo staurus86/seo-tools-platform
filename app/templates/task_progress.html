@@ -861,5 +861,10 @@ function generateMobileCheckHTML(result) {
         </div>
     `;
 }
+
+// Export functions to global scope
+window.downloadTextReport = downloadTextReport;
+window.downloadWordReport = downloadWordReport;
+window.copyToClipboard = copyToClipboard;
 </script>
 {% endblock %}
