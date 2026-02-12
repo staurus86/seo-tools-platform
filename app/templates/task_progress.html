@@ -173,13 +173,14 @@ function generateTextReport() {
         processedSitemapsCount: processedSitemaps.length,
         groupsCount: groups.length
     });
-    const taskId = result.task_id || document.getElementById('task-id').textContent;
+    const taskId = robotsData.task_id || document.getElementById('task-id').textContent;
     
     // Count stats
     const userAgentCount = r.user_agents || 0;
     const disallowRulesCount = r.disallow || 0;
     const allowRulesCount = r.allow || 0;
     const syntaxErrors = r.syntax_errors || [];
+    const recommendations = r.recommendations || [];
     
     let issuesHTML = '';
     if (issues.length > 0) {
@@ -397,6 +398,40 @@ function downloadTextReport() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+}
+
+async function downloadWordReport() {
+    if (!robotsData) {
+        alert('Нет данных для отчета');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/reports/docx', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(robotsData)
+        });
+        
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `robots-report-${new Date().toISOString().slice(0,10)}.docx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } else {
+            alert('Ошибка при создании отчета');
+        }
+    } catch (error) {
+        console.error('Error downloading Word report:', error);
+        alert('Ошибка при скачивании отчета');
+    }
 }
 
 function generateRobotsHTML(result) {
