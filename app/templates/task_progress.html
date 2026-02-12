@@ -254,20 +254,23 @@ function generateSiteAnalysisHTML(result) {
     const issues = r.all_issues || [];
     const critical = r.critical_issues || [];
     const warnings = r.warning_issues || [];
+    const info = r.info_issues || [];
     const recs = r.recommendations || [];
     
     const score = summary.seo_score || 0;
-    let scoreColor = 'text-green-600';
-    if (score < 50) scoreColor = 'text-red-600';
-    else if (score < 70) scoreColor = 'text-yellow-600';
-    
     let scoreBadge = 'bg-green-100 text-green-800';
-    if (score < 50) scoreBadge = 'bg-red-100 text-red-800';
+    if (score < 30) scoreBadge = 'bg-red-100 text-red-800';
+    else if (score < 50) scoreBadge = 'bg-orange-100 text-orange-800';
     else if (score < 70) scoreBadge = 'bg-yellow-100 text-yellow-800';
     
     let techHTML = '';
     if (tech.length > 0) {
-        techHTML = tech.map(t => `<span class="inline-block bg-gray-100 rounded-full px-3 py-1 text-sm font-semibold text-gray-700 mr-2 mb-2">${t.tech} (${t.count})</span>`).join('');
+        techHTML = tech.map(t => `
+            <span class="inline-flex items-center bg-purple-100 text-purple-700 rounded-full px-3 py-1 text-sm font-medium mr-2 mb-2">
+                ${t.tech}
+                <span class="ml-1 bg-purple-200 text-purple-800 rounded-full px-1.5 py-0.5 text-xs">${t.count}</span>
+            </span>
+        `).join('');
     } else {
         techHTML = '<span class="text-gray-500">Технологии не определены</span>';
     }
@@ -277,8 +280,8 @@ function generateSiteAnalysisHTML(result) {
         issuesHTML += `
             <div class="mb-4">
                 <h4 class="font-semibold text-red-600 mb-2"><i class="fas fa-exclamation-triangle mr-2"></i>Критические проблемы (${critical.length}):</h4>
-                <ul class="list-disc pl-5 text-sm text-red-700">
-                    ${critical.slice(0, 10).map(i => `<li>${i.issue} <span class="text-gray-500">- ${i.url}</span></li>`).join('')}
+                <ul class="list-disc pl-5 text-sm text-red-700 space-y-1">
+                    ${critical.slice(0, 10).map(i => `<li>${i.issue} <span class="text-gray-500 ml-2">- ${i.url.substring(0, 60)}...</span></li>`).join('')}
                 </ul>
             </div>
         `;
@@ -287,8 +290,18 @@ function generateSiteAnalysisHTML(result) {
         issuesHTML += `
             <div class="mb-4">
                 <h4 class="font-semibold text-yellow-600 mb-2"><i class="fas fa-exclamation-circle mr-2"></i>Предупреждения (${warnings.length}):</h4>
-                <ul class="list-disc pl-5 text-sm text-yellow-700">
-                    ${warnings.slice(0, 10).map(i => `<li>${i.issue} <span class="text-gray-500">- ${i.url}</span></li>`).join('')}
+                <ul class="list-disc pl-5 text-sm text-yellow-700 space-y-1">
+                    ${warnings.slice(0, 10).map(i => `<li>${i.issue} <span class="text-gray-500 ml-2">- ${i.url.substring(0, 60)}...</span></li>`).join('')}
+                </ul>
+            </div>
+        `;
+    }
+    if (info.length > 0) {
+        issuesHTML += `
+            <div class="mb-4">
+                <h4 class="font-semibold text-blue-600 mb-2"><i class="fas fa-info-circle mr-2"></i>Рекомендации (${info.length}):</h4>
+                <ul class="list-disc pl-5 text-sm text-blue-700 space-y-1">
+                    ${info.slice(0, 5).map(i => `<li>${i.issue}</li>`).join('')}
                 </ul>
             </div>
         `;
@@ -300,19 +313,36 @@ function generateSiteAnalysisHTML(result) {
     let recsHTML = '';
     if (recs.length > 0) {
         recsHTML = recs.map(rec => `
-            <div class="flex items-start mb-2 p-2 rounded ${rec.priority === 'high' ? 'bg-red-50' : rec.priority === 'medium' ? 'bg-yellow-50' : 'bg-gray-50'}">
-                <span class="inline-block w-2 h-2 rounded-full mr-2 mt-2 ${rec.priority === 'high' ? 'bg-red-500' : rec.priority === 'medium' ? 'bg-yellow-500' : 'bg-gray-500'}"></span>
-                <span class="text-sm">${rec.text}</span>
+            <div class="flex items-start mb-2 p-3 rounded ${rec.priority === 'critical' ? 'bg-red-100' : rec.priority === 'high' ? 'bg-orange-50' : rec.priority === 'medium' ? 'bg-yellow-50' : 'bg-gray-50'}">
+                <span class="inline-block w-3 h-3 rounded-full mr-3 mt-1 flex-shrink-0 ${
+                    rec.priority === 'critical' ? 'bg-red-500' : 
+                    rec.priority === 'high' ? 'bg-orange-500' : 
+                    rec.priority === 'medium' ? 'bg-yellow-500' : 'bg-gray-500'
+                }"></span>
+                <span class="text-sm text-gray-700">${rec.text}</span>
             </div>
         `).join('');
     }
+    
+    // Pages breakdown
+    const goodPages = summary.good_pages || 0;
+    const avgPages = summary.average_pages || 0;
+    const badPages = summary.bad_pages || 0;
+    const totalPages = goodPages + avgPages + badPages || 1;
+    
+    const goodPercent = Math.round((goodPages / totalPages) * 100);
+    const avgPercent = Math.round((avgPages / totalPages) * 100);
+    const badPercent = Math.round((badPages / totalPages) * 100);
     
     return `
         <div class="space-y-6">
             <!-- Summary Card -->
             <div class="bg-white rounded-xl shadow-md p-6">
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-lg font-semibold">Анализ сайта: ${result.url}</h3>
+                <div class="flex justify-between items-start mb-4">
+                    <div>
+                        <h3 class="text-lg font-semibold">Анализ сайта</h3>
+                        <p class="text-gray-500 text-sm break-all">${result.url}</p>
+                    </div>
                     <button onclick="copyToClipboard(JSON.stringify(result, null, 2))" class="text-blue-600 hover:text-blue-800 text-sm">
                         <i class="fas fa-copy mr-1"></i>Копировать JSON
                     </button>
@@ -320,15 +350,21 @@ function generateSiteAnalysisHTML(result) {
                 
                 <!-- Score -->
                 <div class="flex items-center mb-6 p-4 rounded-lg ${scoreBadge}">
-                    <div class="text-3xl font-bold mr-4">${score}</div>
+                    <div class="text-4xl font-bold mr-4">${score}</div>
                     <div>
-                        <div class="font-semibold">SEO Score</div>
-                        <div class="text-sm opacity-75">${score >= 70 ? 'Хороший результат' : score >= 50 ? 'Требует улучшения' : 'Критически низкий'}</div>
+                        <div class="font-semibold text-lg">SEO Score</div>
+                        <div class="text-sm opacity-90">
+                            ${score >= 80 ? 'Отличный результат!' : 
+                              score >= 70 ? 'Хороший результат' : 
+                              score >= 50 ? 'Требует улучшения' : 
+                              score >= 30 ? 'Низкий результат' : 
+                              'Критически низкий!'}
+                        </div>
                     </div>
                 </div>
                 
                 <!-- Stats Grid -->
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                     <div class="text-center p-3 bg-gray-50 rounded-lg">
                         <div class="text-2xl font-bold text-blue-600">${summary.pages_crawled || 0}</div>
                         <div class="text-xs text-gray-500">Страниц просканировано</div>
@@ -342,8 +378,36 @@ function generateSiteAnalysisHTML(result) {
                         <div class="text-xs text-gray-500">Битых ссылок</div>
                     </div>
                     <div class="text-center p-3 bg-gray-50 rounded-lg">
-                        <div class="text-2xl font-bold text-yellow-600">${(summary.critical_issues || 0) + (summary.warning_issues || 0)}</div>
+                        <div class="text-2xl font-bold text-orange-600">${(summary.critical_issues || 0) + (summary.warning_issues || 0)}</div>
                         <div class="text-xs text-gray-500">Всего проблем</div>
+                    </div>
+                </div>
+                
+                <!-- Pages Quality -->
+                <div class="border-t pt-4">
+                    <h4 class="font-semibold text-gray-700 mb-3">Качество страниц:</h4>
+                    <div class="space-y-2">
+                        <div class="flex items-center">
+                            <div class="w-20 text-sm text-gray-600">Хорошие</div>
+                            <div class="flex-1 bg-gray-200 rounded-full h-3 mx-2">
+                                <div class="bg-green-500 h-3 rounded-full" style="width: ${goodPercent}%"></div>
+                            </div>
+                            <div class="w-16 text-right text-sm font-medium">${goodPercent}%</div>
+                        </div>
+                        <div class="flex items-center">
+                            <div class="w-20 text-sm text-gray-600">Средние</div>
+                            <div class="flex-1 bg-gray-200 rounded-full h-3 mx-2">
+                                <div class="bg-yellow-500 h-3 rounded-full" style="width: ${avgPercent}%"></div>
+                            </div>
+                            <div class="w-16 text-right text-sm font-medium">${avgPercent}%</div>
+                        </div>
+                        <div class="flex items-center">
+                            <div class="w-20 text-sm text-gray-600">Проблемные</div>
+                            <div class="flex-1 bg-gray-200 rounded-full h-3 mx-2">
+                                <div class="bg-red-500 h-3 rounded-full" style="width: ${badPercent}%"></div>
+                            </div>
+                            <div class="w-16 text-right text-sm font-medium">${badPercent}%</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -352,12 +416,42 @@ function generateSiteAnalysisHTML(result) {
             <div class="bg-white rounded-xl shadow-md p-6">
                 <h3 class="text-lg font-semibold mb-4"><i class="fas fa-chart-bar mr-2 text-blue-500"></i>Анализ контента</h3>
                 <div class="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                    <div><span class="text-gray-600">Всего изображений:</span> <span class="font-medium">${content.total_images || 0}</span></div>
-                    <div><span class="text-gray-600">Без alt-текста:</span> <span class="font-medium text-red-600">${content.images_without_alt || 0}</span></div>
-                    <div><span class="text-gray-600">Всего ссылок:</span> <span class="font-medium">${content.total_links || 0}</span></div>
-                    <div><span class="text-gray-600">Страниц с Title:</span> <span class="font-medium">${content.pages_with_title || 0}/${summary.pages_crawled || 0}</span></div>
-                    <div><span class="text-gray-600">Страниц с H1:</span> <span class="font-medium">${content.pages_with_h1 || 0}/${summary.pages_crawled || 0}</span></div>
-                    <div><span class="text-gray-600">Страниц со Schema:</span> <span class="font-medium">${content.pages_with_schema_org || 0}/${summary.pages_crawled || 0}</span></div>
+                    <div class="p-2 bg-gray-50 rounded">
+                        <span class="text-gray-600">Всего изображений:</span>
+                        <span class="font-medium ml-2">${content.total_images || 0}</span>
+                    </div>
+                    <div class="p-2 bg-red-50 rounded">
+                        <span class="text-gray-600">Без alt-текста:</span>
+                        <span class="font-medium ml-2 text-red-600">${content.images_without_alt || 0}</span>
+                    </div>
+                    <div class="p-2 bg-gray-50 rounded">
+                        <span class="text-gray-600">Всего ссылок:</span>
+                        <span class="font-medium ml-2">${content.total_links || 0}</span>
+                    </div>
+                    <div class="p-2 bg-gray-50 rounded">
+                        <span class="text-gray-600">Страниц с Title:</span>
+                        <span class="font-medium ml-2">${content.pages_with_title || 0}/${summary.pages_crawled || 0}</span>
+                    </div>
+                    <div class="p-2 bg-gray-50 rounded">
+                        <span class="text-gray-600">Страниц с H1:</span>
+                        <span class="font-medium ml-2">${content.pages_with_h1 || 0}/${summary.pages_crawled || 0}</span>
+                    </div>
+                    <div class="p-2 bg-gray-50 rounded">
+                        <span class="text-gray-600">Страниц со Schema:</span>
+                        <span class="font-medium ml-2">${content.pages_with_schema_org || 0}/${summary.pages_crawled || 0}</span>
+                    </div>
+                    <div class="p-2 bg-gray-50 rounded">
+                        <span class="text-gray-600">Среднее слов на странице:</span>
+                        <span class="font-medium ml-2">${Math.round(content.average_word_count || 0)}</span>
+                    </div>
+                    <div class="p-2 bg-gray-50 rounded">
+                        <span class="text-gray-600">Время загрузки:</span>
+                        <span class="font-medium ml-2">${(content.average_load_time || 0) * 1000}ms</span>
+                    </div>
+                    <div class="p-2 bg-gray-50 rounded">
+                        <span class="text-gray-600">Редиректы:</span>
+                        <span class="font-medium ml-2">${summary.redirects_count || 0}</span>
+                    </div>
                 </div>
             </div>
             
