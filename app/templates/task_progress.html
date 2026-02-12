@@ -241,17 +241,36 @@ async function downloadWordReport() {
         return;
     }
     
+    console.log('downloadWordReport robotsData:', robotsData);
+    
+    const taskId = robotsData.task_id || document.getElementById('task-id').textContent;
+    console.log('Using task_id:', taskId);
+    
+    if (!taskId) {
+        alert('Task ID не найден');
+        return;
+    }
+    
     try {
         const response = await fetch('/api/export/robots', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ task_id: robotsData.task_id || robotsData.url })
+            body: JSON.stringify({ task_id: taskId })
         });
+        
+        console.log('Response status:', response.status);
         
         if (response.ok) {
             const blob = await response.blob();
+            console.log('Blob size:', blob.size);
+            
+            if (blob.size === 0) {
+                alert('Пустой файл');
+                return;
+            }
+            
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -261,12 +280,17 @@ async function downloadWordReport() {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         } else {
-            const error = await response.json();
-            alert('Ошибка при создании отчета: ' + (error.error || response.statusText));
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                const error = await response.json();
+                alert('Ошибка при создании отчета: ' + (error.error || response.statusText));
+            } else {
+                alert('Ошибка при создании отчета: ' + response.statusText);
+            }
         }
     } catch (error) {
         console.error('Error downloading Word report:', error);
-        alert('Ошибка при скачивании отчета');
+        alert('Ошибка при скачивании отчета: ' + error.message);
     }
 }
 
