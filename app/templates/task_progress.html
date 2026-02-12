@@ -280,7 +280,7 @@ return `
                     <i class="fas fa-file-word mr-2"></i>
                     Скачать отчет (.docx)
                 </button>
-                <button onclick="copyToClipboard(JSON.stringify(result, null, 2))" class="inline-flex items-center bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition">
+                <button onclick="copyToClipboard(JSON.stringify(robotsData, null, 2))" class="inline-flex items-center bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition">
                     <i class="fas fa-copy mr-2"></i>
                     Копировать JSON
                 </button>
@@ -407,12 +407,12 @@ async function downloadWordReport() {
     }
     
     try {
-        const response = await fetch('/api/reports/docx', {
+        const response = await fetch('/api/export/robots', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify(robotsData)
+            body: JSON.stringify({ task_id: robotsData.task_id || robotsData.url })
         });
         
         if (response.ok) {
@@ -426,7 +426,8 @@ async function downloadWordReport() {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         } else {
-            alert('Ошибка при создании отчета');
+            const error = await response.json();
+            alert('Ошибка при создании отчета: ' + (error.error || response.statusText));
         }
     } catch (error) {
         console.error('Error downloading Word report:', error);
