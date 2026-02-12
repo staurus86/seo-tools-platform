@@ -591,6 +591,123 @@ async def create_robots_check(data: RobotsCheckRequest):
     }
 
 
+@router.get("/export/robots/{task_id}")
+async def export_robots_word(task_id: str):
+    """Export robots.txt analysis to Word document"""
+    try:
+        from docx import Document
+        from docx.shared import Pt, RGBColor
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        import io
+        
+        task = get_task_result(task_id)
+        if not task:
+            return {"error": "Task not found"}
+        
+        result = task.get("result", {})
+        url = task.get("url", "")
+        
+        doc = Document()
+        doc.add_heading('Отчет анализа Robots.txt', level=0)
+        
+        # Info section
+        doc.add_heading('Информация о проверке', level=1)
+        now = datetime.now().strftime("%d.%m.%Y, %H:%M:%S")
+        
+        info_table = doc.add_table(rows=7, cols=2)
+        info_table.style = 'Table Grid'
+        
+        info_data = [
+            ("URL сайта:", url),
+            ("Дата проверки:", now),
+            ("Robots.txt найден:", "Да" if result.get("robots_txt_found") else "Нет"),
+            ("Статус HTTP:", str(result.get("status_code", "N/A"))),
+            ("Размер файла:", f"{result.get('content_length', 0)} байт"),
+            ("Кол-во строк:", str(result.get("lines_count", 0))),
+            ("User-Agents:", str(result.get("user_agents", 0))),
+        ]
+        
+        for i, (label, value) in enumerate(info_data):
+            info_table.rows[i].cells[0].text = label
+            info_table.rows[i].cells[1].text = str(value)
+        
+        # Stats
+        doc.add_heading('Статистика', level=1)
+        stats_table = doc.add_table(rows=4, cols=2)
+        stats_table.style = 'Table Grid'
+        
+        stats_data = [
+            ("User-Agents:", str(result.get("user_agents", 0))),
+            ("Правил Disallow:", str(result.get("disallow_rules", 0))),
+            ("Правил Allow:", str(result.get("allow_rules", 0))),
+            ("Sitemaps:", str(len(result.get("sitemaps", [])))),
+        ]
+        
+        for i, (label, value) in enumerate(stats_data):
+            stats_table.rows[i].cells[0].text = label
+            stats_table.rows[i].cells[1].text = str(value)
+        
+        # Issues
+        issues = result.get("issues", [])
+        if issues:
+            doc.add_heading('Проблемы', level=1)
+            for issue in issues:
+                p = doc.add_paragraph()
+                run = p.add_run("⚠️ " + issue)
+                run.font.color.rgb = RGBColor(255, 0, 0)
+        
+        # Warnings
+        warnings = result.get("warnings", [])
+        if warnings:
+            doc.add_heading('Предупреждения', level=1)
+            for warning in warnings:
+                doc.add_paragraph("• " + warning, style='List Bullet')
+        
+        # Sitemaps
+        sitemaps = result.get("sitemaps", [])
+        if sitemaps:
+            doc.add_heading('Sitemaps', level=1)
+            for sm in sitemaps:
+                doc.add_paragraph("• " + sm, style='List Bullet')
+        
+        # Groups
+        groups = result.get("groups_detail", [])
+        if groups:
+            doc.add_heading('Группы правил', level=1)
+            for i, group in enumerate(groups, 1):
+                doc.add_heading(f'Группа {i}', level=2)
+                doc.add_paragraph(f"User-Agents: {', '.join(group.get('user_agents', []))}")
+                
+                disallow = group.get("disallow", [])
+                if disallow:
+                    doc.add_paragraph(f"Disallow ({len(disallow)}):", style='List Bullet')
+                    for d in disallow[:20]:  # Limit to 20
+                        doc.add_paragraph(f"  • {d.get('path', '')} (строка {d.get('line', '')})", style='List Bullet')
+        
+        # Recommendations
+        doc.add_heading('Рекомендации', level=1)
+        recommendations = result.get("recommendations", [])
+        for rec in recommendations:
+            doc.add_paragraph("• " + rec, style='List Bullet')
+        
+        # Save to buffer
+        buffer = io.BytesIO()
+        doc.save(buffer)
+        buffer.seek(0)
+        
+        from fastapi.responses import Response
+        return Response(
+            content=buffer.getvalue(),
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f"attachment; filename=robots_report_{task_id}.docx"}
+        )
+        
+    except ImportError:
+        return {"error": "python-docx not installed"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.post("/tasks/sitemap-validate")
 async def create_sitemap_validate(data: SitemapValidateRequest):
     """Full sitemap validation"""
