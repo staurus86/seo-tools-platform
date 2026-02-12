@@ -849,7 +849,11 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
     sitemap_files: List[Dict[str, Any]] = []
     all_urls: List[str] = []
     seen_urls: set = set()
+    url_first_seen_in: Dict[str, str] = {}
     duplicate_urls_count = 0
+    duplicate_details: List[Dict[str, str]] = []
+    duplicate_details_truncated = False
+    max_duplicate_details = 500
     invalid_urls_count = 0
     invalid_lastmod_count = 0
     invalid_changefreq_count = 0
@@ -876,6 +880,8 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                 "type": "unknown",
                 "size_bytes": 0,
                 "urls_count": 0,
+                "duplicate_count": 0,
+                "duplicate_urls": [],
                 "errors": [],
                 "warnings": [],
                 "urls": [],
@@ -927,6 +933,8 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
 
                 elif root_tag == "urlset":
                     file_urls: List[str] = []
+                    file_duplicate_urls: List[str] = []
+                    file_duplicate_occurrences = 0
                     for url_node in root.iter():
                         if local_name(url_node.tag).lower() != "url":
                             continue
@@ -959,13 +967,27 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                         file_urls.append(loc)
                         if loc in seen_urls:
                             duplicate_urls_count += 1
+                            file_duplicate_occurrences += 1
+                            file_duplicate_urls.append(loc)
+                            first_sitemap = url_first_seen_in.get(loc, "")
+                            if len(duplicate_details) < max_duplicate_details:
+                                duplicate_details.append({
+                                    "url": loc,
+                                    "first_sitemap": first_sitemap,
+                                    "duplicate_sitemap": sitemap_url
+                                })
+                            else:
+                                duplicate_details_truncated = True
                         else:
                             seen_urls.add(loc)
+                            url_first_seen_in[loc] = sitemap_url
                             if len(all_urls) < max_export_urls:
                                 all_urls.append(loc)
 
                     file_report["urls_count"] = len(file_urls)
                     file_report["urls"] = file_urls
+                    file_report["duplicate_count"] = file_duplicate_occurrences
+                    file_report["duplicate_urls"] = dedupe_keep_order(file_duplicate_urls)[:200]
                     if len(file_urls) > max_urls_per_sitemap:
                         file_report["warnings"].append("More than 50,000 URLs in one sitemap file.")
                     file_report["ok"] = len(file_report["errors"]) == 0
@@ -993,6 +1015,8 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
             warnings.append(f"Invalid priority values found: {invalid_priority_count}.")
         if invalid_urls_count:
             warnings.append(f"Invalid URLs found in sitemap: {invalid_urls_count}.")
+        if duplicate_details_truncated:
+            warnings.append(f"Duplicate details were truncated to {max_duplicate_details} entries.")
 
         recommendations = [
             "Use only absolute HTTP/HTTPS URLs in <loc>.",
@@ -1016,6 +1040,8 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                 "urls_count": total_urls_discovered,
                 "unique_urls_count": len(seen_urls),
                 "duplicate_urls_count": duplicate_urls_count,
+                "duplicate_details": duplicate_details,
+                "duplicate_details_truncated": duplicate_details_truncated,
                 "sitemaps_scanned": len(sitemap_files),
                 "sitemaps_valid": valid_files,
                 "errors": dedupe_keep_order(errors),
