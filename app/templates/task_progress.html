@@ -141,7 +141,6 @@ let robotsData = null;
 
 function generateTextReport() {
     if (!robotsData) return 'Нет данных для отчета';
-    
     const r = robotsData.results || robotsData;
     const groups = r.groups_detail || r.groups || [];
     
@@ -152,163 +151,63 @@ function generateTextReport() {
         totalAllow += (g.allow || []).length;
     });
     
-    let report = `ОТЧЕТ АНАЛИЗА ROBOTS.TXT
-${'='.repeat(50)}
-URL сайта: ${robotsData.url}
-Дата проверки: ${new Date().toLocaleString()}
-${'='.repeat(50)}
-
-СТАТИСТИКА
-${'-'.repeat(30)}
-User-Agents: ${r.user_agents || 0}
-Disallow правил: ${totalDisallow}
-Allow правил: ${totalAllow}
-Размер файла: ${r.content_length || 0} байт
-Строк: ${r.lines_count || 0}
-
-`;
+    let report = 'ОТЧЕТ АНАЛИЗА ROBOTS.TXT\n';
+    report += '='.repeat(50) + '\n';
+    report += 'URL сайта: ' + robotsData.url + '\n';
+    report += 'Дата проверки: ' + new Date().toLocaleString() + '\n';
+    report += '='.repeat(50) + '\n\n';
+    
+    report += 'СТАТИСТИКА\n';
+    report += '-'.repeat(30) + '\n';
+    report += 'User-Agents: ' + (r.user_agents || 0) + '\n';
+    report += 'Disallow правил: ' + totalDisallow + '\n';
+    report += 'Allow правил: ' + totalAllow + '\n';
+    report += 'Размер файла: ' + (r.content_length || 0) + ' байт\n';
+    report += 'Строк: ' + (r.lines_count || 0) + '\n\n';
     
     const issues = r.issues || [];
     if (issues.length > 0) {
-        report += `\nПРОБЛЕМЫ\n${'-'.repeat(30)}\n`;
-        issues.forEach(i => report += `⚠️ ${i}\n`);
+        report += 'ПРОБЛЕМЫ\n' + '-'.repeat(30) + '\n';
+        issues.forEach(i => report += '! ' + i + '\n');
+        report += '\n';
     }
     
     const warnings = r.warnings || [];
     if (warnings.length > 0) {
-        report += `\nПРЕДУПРЕЖДЕНИЯ\n${'-'.repeat(30)}\n`;
-        warnings.forEach(w => report += `• ${w}\n`);
+        report += 'ПРЕДУПРЕЖДЕНИЯ\n' + '-'.repeat(30) + '\n';
+        warnings.forEach(w => report += '- ' + w + '\n');
+        report += '\n';
     }
     
     const sitemaps = r.sitemaps || [];
     if (sitemaps.length > 0) {
         const processed = sitemaps.map(s => s.url || s);
-        report += `\nSITEMAPS\n${'-'.repeat(30)}\n`;
-        processed.forEach(sm => report += `• ${sm}\n`);
+        report += 'SITEMAPS\n' + '-'.repeat(30) + '\n';
+        processed.forEach(sm => report += '- ' + sm + '\n');
+        report += '\n';
     }
     
     if (groups.length > 0) {
-        report += `\nГРУППЫ ПРАВИЛ\n${'-'.repeat(30)}\n`;
+        report += 'ГРУППЫ ПРАВИЛ\n' + '-'.repeat(30) + '\n';
         groups.forEach((group, idx) => {
-            report += `\nГруппа ${idx + 1}: ${group.user_agents.join(', ')}\n`;
+            report += '\nГруппа ' + (idx + 1) + ': ' + group.user_agents.join(', ') + '\n';
             (group.disallow || []).forEach(d => {
-                report += `  Disallow: ${d.path} (стр ${d.line})\n`;
+                report += '  Disallow: ' + d.path + ' (стр ' + d.line + ')\n';
+            });
+            (group.allow || []).forEach(a => {
+                report += '  Allow: ' + a.path + ' (стр ' + a.line + ')\n';
             });
         });
+        report += '\n';
     }
     
     const recommendations = r.recommendations || [];
     if (recommendations.length > 0) {
-        report += `\nРЕКОМЕНДАЦИИ\n${'-'.repeat(30)}\n`;
-        recommendations.forEach(rec => report += `• ${rec}\n`);
+        report += 'РЕКОМЕНДАЦИИ\n' + '-'.repeat(30) + '\n';
+        recommendations.forEach(rec => report += '- ' + rec + '\n');
     }
     
     return report;
-}
-        <div class="space-y-6">
-            <!-- Actions -->
-            <div class="bg-white rounded-xl shadow-md p-4 flex flex-wrap gap-3">
-                <button onclick="downloadTextReport()" class="inline-flex items-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition cursor-pointer">
-                    <i class="fas fa-file-download mr-2"></i>
-                    Скачать отчет (.txt)
-                </button>
-                <button onclick="downloadWordReport()" class="inline-flex items-center bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition cursor-pointer">
-                    <i class="fas fa-file-word mr-2"></i>
-                    Скачать отчет (.docx)
-                </button>
-                <button onclick="copyToClipboard(JSON.stringify(robotsData, null, 2))" class="inline-flex items-center bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition">
-                    <i class="fas fa-copy mr-2"></i>
-                    Копировать JSON
-                </button>
-            </div>
-            
-            <!-- Summary Stats -->
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-lg font-semibold">Проверка Robots.txt</h3>
-                </div>
-                
-                <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
-                    <div class="text-center p-3 bg-blue-50 rounded-lg">
-                        <div class="text-2xl font-bold text-blue-600">${userAgentCount}</div>
-                        <div class="text-xs text-gray-500">User-Agents</div>
-                    </div>
-                    <div class="text-center p-3 bg-red-50 rounded-lg">
-                        <div class="text-2xl font-bold text-red-600">${disallowRulesCount}</div>
-                        <div class="text-xs text-gray-500">Disallow</div>
-                    </div>
-                    <div class="text-center p-3 bg-green-50 rounded-lg">
-                        <div class="text-2xl font-bold text-green-600">${allowRulesCount}</div>
-                        <div class="text-xs text-gray-500">Allow</div>
-                    </div>
-                    <div class="text-center p-3 bg-purple-50 rounded-lg">
-                        <div class="text-2xl font-bold text-purple-600">${r.content_length || 0}</div>
-                        <div class="text-xs text-gray-500">Байт</div>
-                    </div>
-                    <div class="text-center p-3 bg-gray-50 rounded-lg">
-                        <div class="text-2xl font-bold text-gray-600">${r.lines_count || 0}</div>
-                        <div class="text-xs text-gray-500">Строк</div>
-                    </div>
-                </div>
-                
-                <div class="text-sm text-gray-600 border-t pt-3">
-                    <span class="font-medium">URL:</span> <a href="${result.url}" target="_blank" class="text-blue-600 hover:underline">${result.url}</a>
-                    <span class="mx-2">|</span>
-                    <span class="font-medium">Robots.txt:</span> 
-                    <a href="${result.url.replace(/\/$/, '')}/robots.txt" target="_blank" class="text-blue-600 hover:underline">показать файл</a>
-                </div>
-            </div>
-            
-            <!-- Issues -->
-            ${issuesHTML ? `
-                <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="text-lg font-semibold text-red-600 mb-3">
-                        <i class="fas fa-exclamation-triangle mr-2"></i>Проблемы (${issues.length})
-                    </h4>
-                    ${issuesHTML}
-                </div>
-            ` : '<div class="bg-white rounded-xl shadow-md p-6"><div class="text-green-600"><i class="fas fa-check mr-2"></i>Критических проблем не обнаружено</div></div>'}
-            
-            <!-- Warnings -->
-            ${warningsHTML ? `
-                <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="text-lg font-semibold text-yellow-600 mb-3">
-                        <i class="fas fa-exclamation-circle mr-2"></i>Предупреждения (${warnings.length})
-                    </h4>
-                    ${warningsHTML}
-                </div>
-            ` : ''}
-            
-            <!-- Sitemaps -->
-            ${processedSitemaps.length > 0 ? `
-                <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="text-lg font-semibold text-green-600 mb-3">
-                        <i class="fas fa-sitemap mr-2"></i>Sitemaps (${processedSitemaps.length})</h4>
-                    ${sitemapsHtml}
-                </div>
-            ` : ''}
-            
-            <!-- Groups Detail -->
-            ${groupsHTML ? `
-                <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="text-lg font-semibold text-gray-700 mb-3">
-                        <i class="fas fa-list mr-2"></i>Детальный анализ групп
-                    </h4>
-                    ${groupsHTML}
-                </div>
-            ` : ''}
-            
-            <!-- Recommendations -->
-            ${recommendationsHTML ? `
-                <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="text-lg font-semibold text-blue-600 mb-3">
-                        <i class="fas fa-lightbulb mr-2"></i>Рекомендации
-                    </h4>
-                    ${recommendationsHTML}
-                </div>
-            ` : ''}
-        </div>
-    `;
 }
 
 function copyToClipboard(text) {
