@@ -567,6 +567,10 @@ Allow правил: ${allowRules}
         }
     }
     
+    // Export functions to global scope immediately after definition
+    window.downloadTextReport = downloadTextReport;
+    window.downloadWordReport = downloadWordReport;
+    
     return `
             <div class="bg-white rounded-xl shadow-md p-6">
                 <div class="flex justify-between items-center mb-4">
@@ -862,9 +866,7 @@ function generateMobileCheckHTML(result) {
     `;
 }
 
-// Export functions to global scope
-window.downloadTextReport = downloadTextReport;
-window.downloadWordReport = downloadWordReport;
+// Export copyToClipboard to global scope
 window.copyToClipboard = copyToClipboard;
 </script>
 {% endblock %}
