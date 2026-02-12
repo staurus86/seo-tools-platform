@@ -76,7 +76,7 @@ async function checkTaskStatus() {
         
         if (data.status === 'SUCCESS') {
             clearInterval(pollInterval);
-            showResults(data);
+            showResults(data.result);
         } else if (data.status === 'FAILURE') {
             clearInterval(pollInterval);
             showError(data);
@@ -150,15 +150,10 @@ function generateTextReport() {
     
     let totalDisallow = 0;
     let totalAllow = 0;
-    if (groups && groups.length > 0) {
-        groups.forEach(g => {
-            totalDisallow += (g.disallow || []).length;
-            totalAllow += (g.allow || []).length;
-        });
-    } else {
-        totalDisallow = r.disallow_rules || 0;
-        totalAllow = r.allow_rules || 0;
-    }
+    groups.forEach(g => {
+        totalDisallow += (g.disallow || []).length;
+        totalAllow += (g.allow || []).length;
+    });
     
     let report = 'ОТЧЕТ АНАЛИЗА ROBOTS.TXT\n';
     report += '='.repeat(50) + '\n';
@@ -250,36 +245,17 @@ async function downloadWordReport() {
         return;
     }
     
-    console.log('downloadWordReport robotsData:', robotsData);
-    
-    const taskId = robotsData.task_id || document.getElementById('task-id').textContent;
-    console.log('Using task_id:', taskId);
-    
-    if (!taskId) {
-        alert('Task ID не найден');
-        return;
-    }
-    
     try {
         const response = await fetch('/api/export/robots', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ task_id: taskId })
+            body: JSON.stringify({ task_id: robotsData.task_id || robotsData.url })
         });
-        
-        console.log('Response status:', response.status);
         
         if (response.ok) {
             const blob = await response.blob();
-            console.log('Blob size:', blob.size);
-            
-            if (blob.size === 0) {
-                alert('Пустой файл');
-                return;
-            }
-            
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -289,24 +265,17 @@ async function downloadWordReport() {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         } else {
-            const contentType = response.headers.get('content-type');
-            if (contentType && contentType.includes('application/json')) {
-                const error = await response.json();
-                alert('Ошибка при создании отчета: ' + (error.error || response.statusText));
-            } else {
-                alert('Ошибка при создании отчета: ' + response.statusText);
-            }
+            const error = await response.json();
+            alert('Ошибка при создании отчета: ' + (error.error || response.statusText));
         }
     } catch (error) {
         console.error('Error downloading Word report:', error);
-        alert('Ошибка при скачивании отчета: ' + error.message);
+        alert('Ошибка при скачивании отчета');
     }
 }
 
-function generateRobotsHTML(result) {
-    console.log('generateRobotsHTML called with:', result);
-    const r = result.result?.results || result.result || result;
-    console.log('r data:', r);
+function generateRobotsHTML(data) {
+    const r = data.result?.results || data.result || data;
     
     let userAgents = 'Не найдено';
     if (Array.isArray(r.user_agents)) {
@@ -326,17 +295,12 @@ function generateRobotsHTML(result) {
     
     let totalDisallow = 0;
     let totalAllow = 0;
-    if (groups && groups.length > 0) {
-        groups.forEach(g => {
-            totalDisallow += (g.disallow || []).length;
-            totalAllow += (g.allow || []).length;
-        });
-    } else {
-        // Fallback to API fields
-        totalDisallow = r.disallow_rules || 0;
-        totalAllow = r.allow_rules || 0;
-    }
+    groups.forEach(g => {
+        totalDisallow += (g.disallow || []).length;
+        totalAllow += (g.allow || []).length;
+    });
     
+    const userAgentCount = r.user_agents || 0;
     const disallowRulesCount = totalDisallow;
     const allowRulesCount = totalAllow;
     
@@ -477,7 +441,7 @@ function generateRobotsHTML(result) {
                     <span class="font-medium">URL:</span> <a href="${result.url}" target="_blank" class="text-blue-600 hover:underline">${result.url}</a>
                     <span class="mx-2">|</span>
                     <span class="font-medium">Robots.txt:</span> 
-                    <a href="${r.url || result.url.replace(/\/$/, '')}/robots.txt" target="_blank" class="text-blue-600 hover:underline">показать файл</a>
+                    <a href="${result.url.replace(/\/$/, '')}/robots.txt" target="_blank" class="text-blue-600 hover:underline">показать файл</a>
                 </div>
             </div>
             
