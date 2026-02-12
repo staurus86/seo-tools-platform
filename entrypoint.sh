@@ -6,30 +6,41 @@ echo "SEO Tools Platform - Railway Deployment"
 echo "============================================"
 echo "MODE: ${SERVICE_MODE:-web}"
 echo "PORT: ${PORT:-8000}"
-echo "REDIS_URL: ${REDIS_URL:-not set}"
 echo "Current directory: $(pwd)"
 echo ""
 
 # Export PYTHONPATH
 export PYTHONPATH=/app:$PYTHONPATH
 
-# CRITICAL: Export REDIS_URL explicitly for Celery
-export REDIS_URL="${REDIS_URL:-redis://localhost:6379/0}"
-
-echo "=== Environment ==="
-echo "REDIS_URL=$REDIS_URL"
-echo "PYTHONPATH=$PYTHONPATH"
+# Show all env vars
+echo "=== All Environment Variables ==="
+env | grep -E '(REDIS|CELERY|SERVICE|PORT)' | sed 's/=.*@/=***@/' || echo "No matching vars found"
 echo ""
 
 if [ "$SERVICE_MODE" = "worker" ]; then
     echo "Starting in WORKER mode..."
     echo ""
     
-    if [ -z "$REDIS_URL" ] || [ "$REDIS_URL" = "redis://localhost:6379/0" ]; then
-        echo "ERROR: REDIS_URL not properly set!"
-        echo "REDIS_URL=$REDIS_URL"
+    # Test environment first
+    echo "=== Testing Environment ==="
+    python3 test_env.py
+    echo ""
+    
+    # Check REDIS_URL
+    if [ -z "$REDIS_URL" ]; then
+        echo "ERROR: REDIS_URL is empty!"
         exit 1
     fi
+    
+    echo "REDIS_URL is set to: ${REDIS_URL//:*@/:***@}"
+    echo ""
+    
+    # Unset CELERY_* vars to prevent override
+    unset CELERY_BROKER_URL
+    unset CELERY_RESULT_BACKEND
+    
+    echo "Unset CELERY_BROKER_URL and CELERY_RESULT_BACKEND to prevent override"
+    echo ""
     
     echo "Starting Celery worker..."
     echo "Queue: seo"
