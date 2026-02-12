@@ -1,27 +1,22 @@
 """
-API Routes for SEO Tools
+API Routes for SEO Tools - With synchronous fallback
 """
-from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import FileResponse
 from celery.result import AsyncResult
 from typing import Optional
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from app.api.schemas import (
     SiteAnalyzeRequest, RobotsCheckRequest, SitemapValidateRequest,
     RenderAuditRequest, MobileCheckRequest, BotCheckRequest,
-    TaskResponse, TaskResult, TaskStatus, TaskType,
-    RateLimitInfo
+    TaskResponse, TaskResult, TaskStatus, TaskType
 )
-from app.core.celery_app import celery_app
-from app.core.rate_limiter import check_rate_limit_http, rate_limiter
 from app.core.progress import progress_tracker
-from app.config import settings
 
 
 router = APIRouter(prefix="/api", tags=["SEO Tools"])
-
 
 # Import tasks
 from app.core.tasks import (
@@ -29,10 +24,73 @@ from app.core.tasks import (
     audit_render_task, check_mobile_task, check_bots_task
 )
 
+# Storage for synchronous results
+sync_results = {}
 
-# Temporary: Disable rate limiting for testing
+
+def check_celery_available():
+    """Check if Celery worker is available"""
+    try:
+        from app.core.celery_app import celery_app
+        # Try to get worker statistics
+        inspect = celery_app.control.inspect()
+        stats = inspect.stats()
+        return stats is not None
+    except Exception as e:
+        print(f"Celery not available: {e}")
+        return False
+
+
+def run_task_sync(task_func, **kwargs):
+    """Run task synchronously and return result"""
+    print(f"Running {task_func.__name__} synchronously...")
+    result = task_func.run(**kwargs)
+    task_id = f"sync-{datetime.now().timestamp()}"
+    sync_results[task_id] = result
+    return task_id, result
+
+
+# Get celery_app only when needed
+_celery_app = None
+
+def get_celery_app():
+    global _celery_app
+    if _celery_app is None:
+        from app.core.celery_app import celery_app
+        _celery_app = celery_app
+    return _celery_app
+
+
+def get_task_result(task_id):
+    """Get task result - from Celery or sync storage"""
+    if task_id.startswith("sync-"):
+        # Synchronous result
+        if task_id in sync_results:
+            return {
+                "state": "SUCCESS",
+                "result": sync_results[task_id],
+                "date_done": datetime.utcnow()
+            }
+        return {"state": "PENDING", "result": None, "date_done": None}
+    
+    # Celery result
+    try:
+        app = get_celery_app()
+        result = AsyncResult(task_id, app=app)
+        return {
+            "state": result.state,
+            "result": result.result if hasattr(result, 'result') else None,
+            "date_done": result.date_done
+        }
+    except Exception as e:
+        print(f"Error getting Celery result: {e}")
+        return {"state": "PENDING", "result": None, "date_done": None}
+
+
+# Rate limiting disabled for testing
 def no_rate_limit():
     return {"allowed": True, "remaining": 9999}
+
 
 @router.post("/tasks/site-analyze", response_model=TaskResponse)
 async def create_site_analyze_task(
@@ -40,20 +98,37 @@ async def create_site_analyze_task(
     data: SiteAnalyzeRequest,
     rate_limit: dict = Depends(no_rate_limit)
 ):
-    """Создает задачу на анализ сайта"""
-    task = analyze_site_task.delay(
-        url=str(data.url),
-        max_pages=data.max_pages,
-        use_js=data.use_js,
-        ignore_robots=data.ignore_robots,
-        check_external=data.check_external
-    )
-    
-    return TaskResponse(
-        task_id=task.id,
-        status="PENDING",
-        message=f"Site analysis task created. Max pages: {data.max_pages}"
-    )
+    """Анализ сайта"""
+    try:
+        if not check_celery_available():
+            raise Exception("Celery not available")
+        
+        task = analyze_site_task.delay(
+            url=str(data.url),
+            max_pages=data.max_pages,
+            use_js=data.use_js,
+            ignore_robots=data.ignore_robots,
+            check_external=data.check_external
+        )
+        return TaskResponse(
+            task_id=task.id,
+            status="PENDING",
+            message=f"Site analysis task created. Max pages: {data.max_pages}"
+        )
+    except Exception as e:
+        print(f"Celery failed: {e}, running sync")
+        task_id, result = run_task_sync(analyze_site_task,
+            url=str(data.url),
+            max_pages=data.max_pages,
+            use_js=data.use_js,
+            ignore_robots=data.ignore_robots,
+            check_external=data.check_external
+        )
+        return TaskResponse(
+            task_id=task_id,
+            status="SUCCESS",
+            message=f"Analysis completed (sync mode)"
+        )
 
 
 @router.post("/tasks/robots-check", response_model=TaskResponse)
@@ -62,9 +137,11 @@ async def create_robots_check_task(
     data: RobotsCheckRequest,
     rate_limit: dict = Depends(no_rate_limit)
 ):
-    """Создает задачу на проверку robots.txt"""
+    """Проверка robots.txt"""
     try:
-        # Try Celery first
+        if not check_celery_available():
+            raise Exception("Celery not available")
+        
         task = check_robots_task.delay(url=str(data.url))
         return TaskResponse(
             task_id=task.id,
@@ -72,15 +149,12 @@ async def create_robots_check_task(
             message="Robots.txt check task created"
         )
     except Exception as e:
-        # Fallback: run synchronously
-        print(f"Celery failed, running sync: {e}")
-        result = check_robots_task.run(url=str(data.url))
-        task_id = "sync-" + str(datetime.now().timestamp())
-        sync_results[task_id] = result
+        print(f"Celery failed: {e}, running sync")
+        task_id, result = run_task_sync(check_robots_task, url=str(data.url))
         return TaskResponse(
             task_id=task_id,
             status="SUCCESS",
-            message="Task completed synchronously"
+            message=f"Robots check completed (sync mode)"
         )
 
 
@@ -90,14 +164,25 @@ async def create_sitemap_validate_task(
     data: SitemapValidateRequest,
     rate_limit: dict = Depends(no_rate_limit)
 ):
-    """Создает задачу на валидацию sitemap"""
-    task = validate_sitemap_task.delay(url=str(data.url))
-    
-    return TaskResponse(
-        task_id=task.id,
-        status="PENDING",
-        message="Sitemap validation task created"
-    )
+    """Валидация sitemap"""
+    try:
+        if not check_celery_available():
+            raise Exception("Celery not available")
+        
+        task = validate_sitemap_task.delay(url=str(data.url))
+        return TaskResponse(
+            task_id=task.id,
+            status="PENDING",
+            message="Sitemap validation task created"
+        )
+    except Exception as e:
+        print(f"Celery failed: {e}, running sync")
+        task_id, result = run_task_sync(validate_sitemap_task, url=str(data.url))
+        return TaskResponse(
+            task_id=task_id,
+            status="SUCCESS",
+            message=f"Sitemap validation completed (sync mode)"
+        )
 
 
 @router.post("/tasks/render-audit", response_model=TaskResponse)
@@ -106,17 +191,28 @@ async def create_render_audit_task(
     data: RenderAuditRequest,
     rate_limit: dict = Depends(no_rate_limit)
 ):
-    """Создает задачу на аудит рендеринга"""
-    task = audit_render_task.delay(
-        url=str(data.url),
-        user_agent=data.user_agent
-    )
-    
-    return TaskResponse(
-        task_id=task.id,
-        status="PENDING",
-        message="Render audit task created"
-    )
+    """Аудит рендеринга"""
+    try:
+        if not check_celery_available():
+            raise Exception("Celery not available")
+        
+        task = audit_render_task.delay(url=str(data.url), user_agent=data.user_agent)
+        return TaskResponse(
+            task_id=task.id,
+            status="PENDING",
+            message="Render audit task created"
+        )
+    except Exception as e:
+        print(f"Celery failed: {e}, running sync")
+        task_id, result = run_task_sync(audit_render_task, 
+            url=str(data.url), 
+            user_agent=data.user_agent
+        )
+        return TaskResponse(
+            task_id=task_id,
+            status="SUCCESS",
+            message=f"Render audit completed (sync mode)"
+        )
 
 
 @router.post("/tasks/mobile-check", response_model=TaskResponse)
@@ -125,17 +221,28 @@ async def create_mobile_check_task(
     data: MobileCheckRequest,
     rate_limit: dict = Depends(no_rate_limit)
 ):
-    """Создает задачу на проверку мобильной версии"""
-    task = check_mobile_task.delay(
-        url=str(data.url),
-        devices=data.devices
-    )
-    
-    return TaskResponse(
-        task_id=task.id,
-        status="PENDING",
-        message="Mobile check task created"
-    )
+    """Проверка мобильной версии"""
+    try:
+        if not check_celery_available():
+            raise Exception("Celery not available")
+        
+        task = check_mobile_task.delay(url=str(data.url), devices=data.devices)
+        return TaskResponse(
+            task_id=task.id,
+            status="PENDING",
+            message="Mobile check task created"
+        )
+    except Exception as e:
+        print(f"Celery failed: {e}, running sync")
+        task_id, result = run_task_sync(check_mobile_task, 
+            url=str(data.url), 
+            devices=data.devices
+        )
+        return TaskResponse(
+            task_id=task_id,
+            status="SUCCESS",
+            message=f"Mobile check completed (sync mode)"
+        )
 
 
 @router.post("/tasks/bot-check", response_model=TaskResponse)
@@ -144,128 +251,86 @@ async def create_bot_check_task(
     data: BotCheckRequest,
     rate_limit: dict = Depends(no_rate_limit)
 ):
-    """Создает задачу на проверку доступности для ботов"""
-    task = check_bots_task.delay(url=str(data.url))
-    
-    return TaskResponse(
-        task_id=task.id,
-        status="PENDING",
-        message="Bot check task created"
-    )
+    """Проверка ботов"""
+    try:
+        if not check_celery_available():
+            raise Exception("Celery not available")
+        
+        task = check_bots_task.delay(url=str(data.url))
+        return TaskResponse(
+            task_id=task.id,
+            status="PENDING",
+            message="Bot check task created"
+        )
+    except Exception as e:
+        print(f"Celery failed: {e}, running sync")
+        task_id, result = run_task_sync(check_bots_task, url=str(data.url))
+        return TaskResponse(
+            task_id=task_id,
+            status="SUCCESS",
+            message=f"Bot check completed (sync mode)"
+        )
 
-
-# Store for synchronous results
-sync_results = {}
 
 @router.get("/tasks/{task_id}", response_model=TaskResult)
 async def get_task_status(task_id: str):
-    """Получает статус и результат задачи"""
-    # Check if it's a sync result
-    if task_id.startswith("sync-"):
-        return TaskResult(
-            task_id=task_id,
-            status=TaskStatus.SUCCESS,
-            task_type=TaskType.ROBOTS_CHECK,
-            url="",
-            created_at=datetime.utcnow(),
-            completed_at=datetime.utcnow(),
-            result=sync_results.get(task_id, {}),
-            error=None,
-            can_continue=False
-        )
+    """Получает статус задачи"""
+    result_data = get_task_result(task_id)
+    state = result_data.get("state", "PENDING")
+    result = result_data.get("result")
+    date_done = result_data.get("date_done")
     
-    task_result = AsyncResult(task_id, app=celery_app)
-    
-    # Get progress if available
-    progress = progress_tracker.get_progress(task_id)
-    
-    # Determine task type from result if available
-    task_type = TaskType.SITE_ANALYZE  # Default
+    task_type = TaskType.SITE_ANALYZE
     url = ""
-    
-    result_data = None
     error_msg = None
-    can_continue = False
     
-    if task_result.state == "SUCCESS":
-        result_data = task_result.result
-        if isinstance(result_data, dict):
-            task_type_str = result_data.get("task_type", "site_analyze")
-            task_type = TaskType(task_type_str)
-            url = result_data.get("url", "")
-    elif task_result.state == "FAILURE":
-        error_msg = str(task_result.result) if task_result.result else "Unknown error"
-        # Check if it's a timeout error
-        if error_msg and ("time limit" in error_msg.lower() or "timeout" in error_msg.lower()):
-            can_continue = True
+    if state == "SUCCESS" and result:
+        if isinstance(result, dict):
+            task_type_str = result.get("task_type", "site_analyze")
+            try:
+                task_type = TaskType(task_type_str)
+            except:
+                pass
+            url = result.get("url", "")
     
     return TaskResult(
         task_id=task_id,
-        status=TaskStatus(task_result.state),
+        status=TaskStatus(state),
         task_type=task_type,
         url=url,
-        created_at=datetime.fromtimestamp(task_result.date_done.timestamp()) if task_result.date_done else datetime.utcnow(),
-        completed_at=datetime.fromtimestamp(task_result.date_done.timestamp()) if task_result.date_done and task_result.state == "SUCCESS" else None,
-        progress=TaskProgress(**progress) if progress else None,
-        result=result_data,
+        created_at=date_done or datetime.utcnow(),
+        completed_at=date_done,
+        progress=None,
+        result=result,
         error=error_msg,
-        can_continue=can_continue
-    )
-
-
-@router.post("/tasks/{task_id}/continue")
-async def continue_task(task_id: str):
-    """Продолжает задачу, которая превысила лимит времени"""
-    # Get old task info
-    old_task = AsyncResult(task_id, app=celery_app)
-    
-    if old_task.state != "FAILURE":
-        raise HTTPException(status_code=400, detail="Task can only be continued if it failed")
-    
-    # Get original arguments
-    # Note: In production, you'd store these in Redis or DB
-    # For now, we'll require the client to resubmit
-    raise HTTPException(
-        status_code=501,
-        detail="Task continuation requires resubmission with same parameters"
+        can_continue=False
     )
 
 
 @router.get("/download/{task_id}/{format}")
 async def download_report(task_id: str, format: str):
-    """Скачивает отчет в указанном формате (xlsx или docx)"""
+    """Скачать отчет"""
+    from fastapi.responses import FileResponse
+    import os
+    from app.config import settings
+    
     if format not in ["xlsx", "docx"]:
-        raise HTTPException(status_code=400, detail="Format must be 'xlsx' or 'docx'")
+        return {"error": "Invalid format"}
     
-    # Check if file exists
-    filename = f"{task_id}.{format}"
-    filepath = os.path.join(settings.REPORTS_DIR, filename)
-    
+    filepath = os.path.join(settings.REPORTS_DIR, f"{task_id}.{format}")
     if not os.path.exists(filepath):
-        raise HTTPException(status_code=404, detail="Report not found or not ready")
+        return {"error": "File not found"}
     
     return FileResponse(
         filepath,
-        filename=filename,
+        filename=f"seo-report.{format}",
         media_type="application/vnd.openxmlformats-officedocument." + 
                   ("spreadsheetml.sheet" if format == "xlsx" else "wordprocessingml.document")
     )
 
 
-@router.get("/rate-limit", response_model=RateLimitInfo)
-async def get_rate_limit(request: Request):
-    """Получает информацию о rate limit для текущего IP"""
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        ip = forwarded.split(",")[0].strip()
-    else:
-        ip = request.client.host
-    
-    result = rate_limiter.check_rate_limit(ip)
-    
-    return RateLimitInfo(
-        allowed=result["allowed"],
-        remaining=result["remaining"],
-        reset_in=result["reset_in"],
-        limit=rate_limiter.limit
-    )
+@router.get("/celery-status")
+async def celery_status():
+    """Проверить статус Celery"""
+    available = check_celery_available()
+    return {"celery_available": available}
