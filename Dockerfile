@@ -42,7 +42,7 @@ RUN python -m playwright install chromium
 # Production stage
 FROM python:3.11-bookworm
 
-# Install runtime dependencies (minimal set for Playwright)
+# Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     libxml2 \
     libxslt1.1 \
@@ -71,6 +71,11 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /app
 
+# Set Python path
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
+
 # Copy Python packages from builder
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
@@ -78,11 +83,11 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copy Playwright browsers from builder
 COPY --from=builder /root/.cache/ms-playwright /root/.cache/ms-playwright
 
-# Set Playwright browsers path
-ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
-
 # Copy application code
 COPY . .
+
+# Make entrypoint executable
+RUN chmod +x entrypoint.sh
 
 # Create reports directory
 RUN mkdir -p reports_output
@@ -90,9 +95,5 @@ RUN mkdir -p reports_output
 # Expose port
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
-
 # Run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["./entrypoint.sh"]
