@@ -60,6 +60,9 @@ class ParseResult:
         self.raw_lines = []
         self.syntax_errors = []
         self.warnings = []
+        # For compatibility
+        self.all_disallow = []
+        self.all_allow = []
 
 
 from dataclasses import dataclass, field
@@ -119,7 +122,9 @@ def parse_robots(text: str) -> ParseResult:
             if value and not value.startswith("/") and value != "*":
                 result.warnings.append(f"Строка {idx}: Путь '{value}' должен начинаться с '/'")
             for ua in current_group.user_agents:
-                current_group.disallow.append(Rule(ua, value, idx))
+                rule = Rule(ua, value, idx)
+                current_group.disallow.append(rule)
+                result.all_disallow.append(rule)
                 
         elif key == "allow":
             if not current_group or not current_group.user_agents:
@@ -130,7 +135,9 @@ def parse_robots(text: str) -> ParseResult:
             if value and not value.startswith("/") and value != "*":
                 result.warnings.append(f"Строка {idx}: Путь '{value}' должен начинаться с '/'")
             for ua in current_group.user_agents:
-                current_group.allow.append(Rule(ua, value, idx))
+                rule = Rule(ua, value, idx)
+                current_group.allow.append(rule)
+                result.all_allow.append(rule)
                 
         elif key == "sitemap":
             if value and not value.startswith("http://") and not value.startswith("https://"):
