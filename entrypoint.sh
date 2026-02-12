@@ -5,10 +5,16 @@ echo "============================================"
 echo "SEO Tools Platform - Railway Deployment"
 echo "============================================"
 echo "PORT: ${PORT:-8000}"
-echo "REDIS_URL: ${REDIS_URL:-not set}"
 echo "Current directory: $(pwd)"
-echo "Files in directory:"
+echo ""
+echo "=== Directory structure ==="
 ls -la
+echo ""
+echo "=== App directory ==="
+ls -la app/ 2>/dev/null || echo "app/ not found"
+echo ""
+echo "=== App/templates directory ==="
+ls -la app/templates/ 2>/dev/null || echo "app/templates/ not found"
 echo ""
 
 # Check if required files exist
@@ -17,7 +23,6 @@ if [ -f "app/main.py" ]; then
     echo "✓ app/main.py exists"
 else
     echo "✗ app/main.py NOT FOUND"
-    ls -la app/ || echo "app directory not found"
 fi
 
 if [ -f "requirements.txt" ]; then
@@ -46,19 +51,5 @@ echo "============================================"
 # Set PYTHONPATH
 export PYTHONPATH=/app:$PYTHONPATH
 
-# Try to start uvicorn with error handling
-python -c "
-import sys
-sys.path.insert(0, '/app')
-try:
-    from app.main import app
-    print('✓ Successfully imported app')
-except Exception as e:
-    print(f'✗ Failed to import app: {e}')
-    import traceback
-    traceback.print_exc()
-    sys.exit(1)
-"
-
-# Start the server
-exec uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}" --log-level info
+# Start the server with detailed logging
+exec python -m uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}" --log-level info

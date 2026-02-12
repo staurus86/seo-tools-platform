@@ -83,14 +83,28 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copy Playwright browsers from builder
 COPY --from=builder /root/.cache/ms-playwright /root/.cache/ms-playwright
 
-# Copy application code
-COPY . .
+# Create app directory
+RUN mkdir -p /app/app
+
+# Copy application code to /app/app
+COPY app/ /app/app/
+COPY *.py /app/
+COPY *.sh /app/
+COPY *.txt /app/
+COPY *.toml /app/
+COPY *.md /app/
+COPY .dockerignore /app/
+COPY .gitignore /app/
+COPY .env.example /app/
 
 # Make entrypoint executable
 RUN chmod +x entrypoint.sh
 
 # Create reports directory
 RUN mkdir -p reports_output
+
+# List files for debugging
+RUN echo "=== Directory structure ===" && ls -la && echo "=== App directory ===" && ls -la app/
 
 # Expose port
 EXPOSE 8000
