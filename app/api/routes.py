@@ -8,6 +8,7 @@ from datetime import datetime
 import re
 import json
 import requests
+from urllib.parse import urlparse
 
 router = APIRouter(prefix="/api", tags=["SEO Tools"])
 
@@ -269,6 +270,158 @@ def build_param_merge_recommendations(result: ParseResult) -> List[str]:
     return recs
 
 
+def dedupe_keep_order(items: List[str]) -> List[str]:
+    """Remove duplicates preserving original order."""
+    seen = set()
+    out = []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
+def validate_sitemaps(sitemaps: List[str], timeout: int = 4, max_checks: int = 5) -> List[Dict[str, Any]]:
+    """Validate sitemap URLs declared in robots.txt."""
+    checks: List[Dict[str, Any]] = []
+    unique_sitemaps = dedupe_keep_order([s for s in sitemaps if isinstance(s, str) and s.strip()])
+    for index, sm in enumerate(unique_sitemaps):
+        sm = sm.strip()
+        if index >= max_checks:
+            checks.append({
+                "url": sm,
+                "ok": None,
+                "status_code": None,
+                "content_type": None,
+                "error": "Skipped (limit reached)"
+            })
+            continue
+        try:
+            parsed = urlparse(sm)
+            if parsed.scheme not in ("http", "https"):
+                checks.append({
+                    "url": sm,
+                    "ok": False,
+                    "status_code": None,
+                    "content_type": None,
+                    "error": "Invalid sitemap URL scheme"
+                })
+                continue
+            resp = requests.get(sm, timeout=timeout, headers={"User-Agent": "Mozilla/5.0"}, allow_redirects=True)
+            content_type = (resp.headers.get("Content-Type") or "").lower()
+            looks_xml = any(token in content_type for token in ["xml", "text/plain"]) or resp.text.lstrip().startswith("<?xml")
+            ok = resp.status_code == 200 and looks_xml
+            checks.append({
+                "url": sm,
+                "ok": ok,
+                "status_code": resp.status_code,
+                "content_type": content_type,
+                "error": None if ok else "Sitemap not accessible or not XML"
+            })
+        except Exception as e:
+            checks.append({
+                "url": sm,
+                "ok": False,
+                "status_code": None,
+                "content_type": None,
+                "error": str(e)
+            })
+    return checks
+
+
+def build_quality_metrics(
+    issues: List[str],
+    warnings: List[str],
+    syntax_errors: List[Dict[str, Any]],
+    missing_bots: List[str],
+    sitemap_checks: List[Dict[str, Any]],
+    full_block: bool,
+    blocked_ext: List[str]
+) -> Dict[str, Any]:
+    """Build score, grade, production readiness and top fixes."""
+    score = 100
+    critical_count = len(issues)
+    warning_count = len(warnings)
+    syntax_count = len(syntax_errors)
+
+    if full_block:
+        score -= 70
+    if blocked_ext:
+        score -= 20
+    score -= min(20, syntax_count * 2)
+    score -= min(22, warning_count)
+    if missing_bots:
+        score -= min(8, len(missing_bots) * 2)
+
+    has_sitemap = any(check.get("ok") for check in sitemap_checks) if sitemap_checks else False
+    if sitemap_checks and not has_sitemap:
+        score -= 10
+    if not sitemap_checks:
+        score -= 8
+
+    score = max(0, min(100, score))
+    if score >= 90:
+        grade = "A"
+    elif score >= 80:
+        grade = "B"
+    elif score >= 70:
+        grade = "C"
+    elif score >= 60:
+        grade = "D"
+    else:
+        grade = "F"
+
+    top_fixes: List[Dict[str, str]] = []
+    if full_block:
+        top_fixes.append({
+            "priority": "critical",
+            "title": "Уберите глобальную блокировку сайта",
+            "why": "Disallow: / для * блокирует индексацию всего сайта.",
+            "action": "Оставьте только точечные запреты для служебных разделов."
+        })
+    if blocked_ext:
+        top_fixes.append({
+            "priority": "high",
+            "title": "Разблокируйте CSS/JS",
+            "why": "Блокировка CSS/JS ухудшает рендеринг для поисковых роботов.",
+            "action": "Удалите правила, блокирующие .css и .js."
+        })
+    if missing_bots:
+        top_fixes.append({
+            "priority": "medium",
+            "title": "Добавьте группы для ключевых ботов",
+            "why": "Явные правила для поисковых ботов делают поведение предсказуемым.",
+            "action": f"Добавьте User-agent группы для: {', '.join(missing_bots)}."
+        })
+    if sitemap_checks and not has_sitemap:
+        top_fixes.append({
+            "priority": "high",
+            "title": "Исправьте sitemap URL",
+            "why": "Sitemap недоступен или возвращает некорректный контент.",
+            "action": "Проверьте URL sitemap в robots.txt и доступность по HTTP 200."
+        })
+    if syntax_count:
+        top_fixes.append({
+            "priority": "high",
+            "title": "Исправьте синтаксис robots.txt",
+            "why": "Синтаксические ошибки могут приводить к игнорированию правил.",
+            "action": "Исправьте строки с ошибками в блоке syntax_errors."
+        })
+
+    production_ready = score >= 75 and not full_block and not blocked_ext
+    return {
+        "quality_score": score,
+        "quality_grade": grade,
+        "production_ready": production_ready,
+        "top_fixes": top_fixes[:5],
+        "severity_counts": {
+            "critical": critical_count,
+            "warning": warning_count,
+            "info": 0
+        }
+    }
+
+
 def build_issues_and_warnings(result: ParseResult) -> Dict[str, Any]:
     """Build issues, warnings, and recommendations - FULL original implementation"""
     issues: List[str] = []
@@ -330,20 +483,56 @@ def build_issues_and_warnings(result: ParseResult) -> Dict[str, Any]:
             + ", ".join(unblocked_sensitive[:8])
         )
     
-    # Generate recommendations
+    # Generate recommendations and quality metrics
     param_recs = build_param_merge_recommendations(result)
-    all_recommendations = RECOMMENDATIONS.copy()
+    all_recommendations = dedupe_keep_order(RECOMMENDATIONS.copy() + param_recs)
+    warnings = dedupe_keep_order(warnings)
+    issues = dedupe_keep_order(issues)
+
+    sitemap_checks = validate_sitemaps(result.sitemaps)
+    metrics = build_quality_metrics(
+        issues=issues,
+        warnings=warnings,
+        syntax_errors=result.syntax_errors,
+        missing_bots=missing_bots,
+        sitemap_checks=sitemap_checks,
+        full_block=full_block,
+        blocked_ext=blocked_ext
+    )
+    info_issues = [
+        f"Обнаружено групп правил: {len(result.groups)}",
+        f"Проверено sitemap URL: {len(sitemap_checks)}"
+    ]
+    if metrics["production_ready"]:
+        info_issues.append("Robots.txt готов к продакшн-использованию.")
+    else:
+        info_issues.append("Требуются правки перед продакшн-использованием.")
     
     return {
         "issues": issues,
+        "critical_issues": issues,
         "warnings": warnings,
+        "warning_issues": warnings,
+        "info_issues": info_issues,
         "recommendations": all_recommendations,
         "param_recommendations": param_recs,
         "present_agents": list(present_agents),
+        "missing_bots": missing_bots,
         "sitemaps": result.sitemaps,
+        "sitemap_checks": sitemap_checks,
         "crawl_delays": result.crawl_delays,
         "hosts": result.hosts,
         "syntax_errors": result.syntax_errors,
+        "quality_score": metrics["quality_score"],
+        "quality_grade": metrics["quality_grade"],
+        "production_ready": metrics["production_ready"],
+        "top_fixes": metrics["top_fixes"],
+        "severity_counts": {
+            "critical": metrics["severity_counts"]["critical"],
+            "warning": metrics["severity_counts"]["warning"],
+            "info": len(info_issues)
+        },
+        "quick_status": "pass" if metrics["production_ready"] else ("fail" if metrics["quality_score"] < 60 else "warn")
     }
 
 
@@ -393,7 +582,21 @@ def check_robots_full(url: str) -> Dict[str, Any]:
                 "warnings": [],
                 "recommendations": RECOMMENDATIONS,
                 "syntax_errors": [],
+                "critical_issues": [f"Ошибка загрузки: {error}"],
+                "warning_issues": [],
+                "info_issues": [],
                 "hosts": [],
+                "sitemap_checks": [],
+                "quality_score": 0,
+                "quality_grade": "F",
+                "production_ready": False,
+                "top_fixes": [{
+                    "priority": "critical",
+                    "title": "Обеспечьте доступность robots.txt",
+                    "why": "Файл robots.txt недоступен, анализ и управление индексацией невозможны.",
+                    "action": "Проверьте DNS/SSL/доступность сайта и путь /robots.txt."
+                }],
+                "severity_counts": {"critical": 1, "warning": 0, "info": 0},
                 "error": error,
                 "can_continue": False,
             }
@@ -417,7 +620,21 @@ def check_robots_full(url: str) -> Dict[str, Any]:
                 "warnings": ["Создайте файл robots.txt для управления индексацией"],
                 "recommendations": RECOMMENDATIONS,
                 "syntax_errors": [],
+                "critical_issues": [f"Robots.txt не найден (статус: {status_code})"],
+                "warning_issues": ["Создайте файл robots.txt для управления индексацией"],
+                "info_issues": [],
                 "hosts": [],
+                "sitemap_checks": [],
+                "quality_score": 20 if status_code else 0,
+                "quality_grade": "F",
+                "production_ready": False,
+                "top_fixes": [{
+                    "priority": "high",
+                    "title": "Создайте robots.txt",
+                    "why": "Поисковые системы не получили правила индексации.",
+                    "action": "Добавьте файл /robots.txt и укажите sitemap."
+                }],
+                "severity_counts": {"critical": 1, "warning": 1, "info": 0},
                 "error": None,
                 "can_continue": True,
             }
@@ -443,7 +660,10 @@ def check_robots_full(url: str) -> Dict[str, Any]:
             "allow_rules": stats["allow_rules"],
             "sitemaps": analysis["sitemaps"],
             "issues": analysis["issues"],
+            "critical_issues": analysis.get("critical_issues", analysis["issues"]),
             "warnings": analysis["warnings"],
+            "warning_issues": analysis.get("warning_issues", analysis["warnings"]),
+            "info_issues": analysis.get("info_issues", []),
             "recommendations": analysis["recommendations"],
             "syntax_errors": analysis["syntax_errors"],
             "hosts": analysis["hosts"],
@@ -451,6 +671,25 @@ def check_robots_full(url: str) -> Dict[str, Any]:
             "clean_params": result.clean_params,
             "param_recommendations": analysis.get("param_recommendations", []),
             "present_agents": analysis["present_agents"],
+            "missing_bots": analysis.get("missing_bots", []),
+            "sitemap_checks": analysis.get("sitemap_checks", []),
+            "quality_score": analysis.get("quality_score", 0),
+            "quality_grade": analysis.get("quality_grade", "F"),
+            "production_ready": analysis.get("production_ready", False),
+            "top_fixes": analysis.get("top_fixes", []),
+            "severity_counts": analysis.get("severity_counts", {"critical": len(analysis["issues"]), "warning": len(analysis["warnings"]), "info": 0}),
+            "quick_status": analysis.get("quick_status", "warn"),
+            "machine_summary": {
+                "user_agents_count": stats["user_agents"],
+                "disallow_count": stats["disallow_rules"],
+                "allow_count": stats["allow_rules"],
+                "sitemap_count": len(analysis.get("sitemaps", [])),
+                "critical_count": len(analysis.get("critical_issues", analysis["issues"])),
+                "warning_count": len(analysis.get("warning_issues", analysis["warnings"])),
+                "score": analysis.get("quality_score", 0),
+                "grade": analysis.get("quality_grade", "F"),
+                "production_ready": analysis.get("production_ready", False)
+            },
             "error": None,
             "can_continue": True,
             # Detailed groups for UI
@@ -497,10 +736,20 @@ def check_robots_simple(url: str) -> Dict[str, Any]:
                 "allow_rules": len(result.all_allow),
                 "sitemaps": analysis["sitemaps"],
                 "issues": analysis["issues"],
+                "critical_issues": analysis.get("critical_issues", analysis["issues"]),
                 "warnings": analysis["warnings"],
+                "warning_issues": analysis.get("warning_issues", analysis["warnings"]),
+                "info_issues": analysis.get("info_issues", []),
                 "recommendations": analysis["recommendations"],
                 "syntax_errors": analysis["syntax_errors"],
                 "hosts": analysis["hosts"],
+                "sitemap_checks": analysis.get("sitemap_checks", []),
+                "quality_score": analysis.get("quality_score", 0),
+                "quality_grade": analysis.get("quality_grade", "F"),
+                "production_ready": analysis.get("production_ready", False),
+                "top_fixes": analysis.get("top_fixes", []),
+                "severity_counts": analysis.get("severity_counts", {"critical": len(analysis["issues"]), "warning": len(analysis["warnings"]), "info": 0}),
+                "quick_status": analysis.get("quick_status", "warn"),
             }
         }
     except Exception as e:
@@ -510,7 +759,15 @@ def check_robots_simple(url: str) -> Dict[str, Any]:
             "completed_at": datetime.utcnow().isoformat(),
             "results": {
                 "error": str(e),
-                "robots_txt_found": False
+                "robots_txt_found": False,
+                "quality_score": 0,
+                "quality_grade": "F",
+                "production_ready": False,
+                "critical_issues": [str(e)],
+                "warning_issues": [],
+                "info_issues": [],
+                "top_fixes": [],
+                "severity_counts": {"critical": 1, "warning": 0, "info": 0}
             }
         }
 
@@ -663,8 +920,9 @@ async def export_robots_word(data: ExportRequest):
         if not task:
             return {"error": "Task not found", "task_id": task_id}
         
-        result = task.get("result", {})
-        url = task.get("url", "")
+        task_result = task.get("result", {})
+        result = task_result.get("results", task_result)
+        url = task.get("url", "") or task_result.get("url", "")
         
         # Debug log
         import logging
@@ -677,7 +935,7 @@ async def export_robots_word(data: ExportRequest):
         doc.add_heading('Информация о проверке', level=1)
         now = datetime.now().strftime("%d.%m.%Y, %H:%M:%S")
         
-        info_table = doc.add_table(rows=7, cols=2)
+        info_table = doc.add_table(rows=10, cols=2)
         info_table.style = 'Table Grid'
         
         # Handle different data formats for user_agents
@@ -699,28 +957,40 @@ async def export_robots_word(data: ExportRequest):
             ("User-Agents:", user_agents_str),
         ]
         
+        info_data.extend([
+            ("SEO Score:", str(result.get("quality_score", "N/A"))),
+            ("Grade:", str(result.get("quality_grade", "N/A"))),
+            ("Production-ready:", "Yes" if result.get("production_ready") else "No"),
+        ])
+
         for i, (label, value) in enumerate(info_data):
             info_table.rows[i].cells[0].text = label
             info_table.rows[i].cells[1].text = str(value)
         
         # Stats
         doc.add_heading('Статистика', level=1)
-        stats_table = doc.add_table(rows=4, cols=2)
+        stats_table = doc.add_table(rows=7, cols=2)
         stats_table.style = 'Table Grid'
         
         stats_data = [
             ("User-Agents:", user_agents_str),
-            ("Правил Disallow:", str(result.get("disallow_count", result.get("disallow", 0)))),
-            ("Правил Allow:", str(result.get("allow_count", result.get("allow", 0)))),
+            ("Правил Disallow:", str(result.get("disallow_rules", result.get("disallow_count", result.get("disallow", 0))))),
+            ("Правил Allow:", str(result.get("allow_rules", result.get("allow_count", result.get("allow", 0))))),
             ("Sitemaps:", str(len(result.get("sitemaps", [])))),
         ]
         
+        stats_data.extend([
+            ("Critical:", str((result.get("severity_counts") or {}).get("critical", len(result.get("critical_issues", result.get("issues", [])))))),
+            ("Warning:", str((result.get("severity_counts") or {}).get("warning", len(result.get("warning_issues", result.get("warnings", [])))))),
+            ("Info:", str((result.get("severity_counts") or {}).get("info", len(result.get("info_issues", []))))),
+        ])
+
         for i, (label, value) in enumerate(stats_data):
             stats_table.rows[i].cells[0].text = label
             stats_table.rows[i].cells[1].text = str(value)
         
         # Issues
-        issues = result.get("issues", [])
+        issues = result.get("critical_issues", result.get("issues", []))
         if issues:
             doc.add_heading('Проблемы', level=1)
             for issue in issues:
@@ -729,7 +999,7 @@ async def export_robots_word(data: ExportRequest):
                 run.font.color.rgb = RGBColor(255, 0, 0)
         
         # Warnings
-        warnings = result.get("warnings", [])
+        warnings = result.get("warning_issues", result.get("warnings", []))
         if warnings:
             doc.add_heading('Предупреждения', level=1)
             for warning in warnings:
@@ -741,6 +1011,17 @@ async def export_robots_word(data: ExportRequest):
             doc.add_heading('Sitemaps', level=1)
             for sm in sitemaps:
                 doc.add_paragraph("• " + sm, style='List Bullet')
+
+        sitemap_checks = result.get("sitemap_checks", [])
+        if sitemap_checks:
+            doc.add_heading('Sitemap URL Checks', level=1)
+            for check in sitemap_checks:
+                status = "OK" if check.get("ok") else ("SKIPPED" if check.get("ok") is None else "FAIL")
+                suffix = f" [HTTP {check.get('status_code')}]" if check.get("status_code") else ""
+                line = f"{status}: {check.get('url', '')}{suffix}"
+                if check.get("error"):
+                    line += f" - {check.get('error')}"
+                doc.add_paragraph("• " + line, style='List Bullet')
         
         # Groups
         groups = result.get("groups_detail", [])
@@ -762,6 +1043,19 @@ async def export_robots_word(data: ExportRequest):
         for rec in recommendations:
             doc.add_paragraph("• " + rec, style='List Bullet')
         
+        top_fixes = result.get("top_fixes", [])
+        if top_fixes:
+            doc.add_heading('Top Fixes', level=1)
+            for fix in top_fixes:
+                title = fix.get("title", "Fix")
+                priority = fix.get("priority", "medium").upper()
+                why = fix.get("why", "")
+                action = fix.get("action", "")
+                doc.add_paragraph(f"[{priority}] {title}", style='List Bullet')
+                if why:
+                    doc.add_paragraph(f"Why: {why}")
+                if action:
+                    doc.add_paragraph(f"Action: {action}")
         # Save to buffer
         buffer = io.BytesIO()
         doc.save(buffer)
@@ -1866,3 +2160,5 @@ async def create_mobile_check(data: MobileCheckRequest):
         "status": "SUCCESS",
         "message": "Mobile check completed"
     }
+
+

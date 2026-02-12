@@ -167,6 +167,8 @@ function generateTextReport() {
     report += 'User-Agents: ' + (r.user_agents || 0) + '\n';
     report += 'Disallow правил: ' + totalDisallow + '\n';
     report += 'Allow правил: ' + totalAllow + '\n';
+    report += 'SEO Score: ' + (r.quality_score ?? 'N/A') + ' (' + (r.quality_grade || 'N/A') + ')\n';
+    report += 'Production-ready: ' + (r.production_ready ? 'Yes' : 'No') + '\n';
     report += 'Размер файла: ' + (r.content_length || 0) + ' байт\n';
     report += 'Строк: ' + (r.lines_count || 0) + '\n\n';
     
@@ -210,6 +212,16 @@ function generateTextReport() {
     if (recommendations.length > 0) {
         report += 'РЕКОМЕНДАЦИИ\n' + '-'.repeat(30) + '\n';
         recommendations.forEach(rec => report += '- ' + rec + '\n');
+    }
+
+    const topFixes = r.top_fixes || [];
+    if (topFixes.length > 0) {
+        report += '\nTOP FIXES\n' + '-'.repeat(30) + '\n';
+        topFixes.forEach(fix => {
+            report += '[' + String((fix.priority || 'medium')).toUpperCase() + '] ' + (fix.title || 'Fix') + '\n';
+            if (fix.why) report += '  Why: ' + fix.why + '\n';
+            if (fix.action) report += '  Action: ' + fix.action + '\n';
+        });
     }
     
     return report;
@@ -289,12 +301,18 @@ function generateRobotsHTML(data) {
         userAgents = String(r.user_agents);
     }
     
-    const issues = r.issues || [];
-    const warnings = r.warnings || [];
+    const issues = r.critical_issues || r.issues || [];
+    const warnings = r.warning_issues || r.warnings || [];
+    const infoIssues = r.info_issues || [];
     const sitemaps = r.sitemaps || [];
     const processedSitemaps = (sitemaps || []).map(s => s.url || s) || [];
+    const sitemapChecks = r.sitemap_checks || [];
     const groups = r.groups_detail || r.groups || [];
     const recommendations = r.recommendations || [];
+    const topFixes = r.top_fixes || [];
+    const qualityScore = Number.isFinite(r.quality_score) ? r.quality_score : 0;
+    const qualityGrade = r.quality_grade || 'N/A';
+    const productionReady = !!r.production_ready;
     
     let totalDisallow = 0;
     let totalAllow = 0;
@@ -392,6 +410,37 @@ function generateRobotsHTML(data) {
             </div>
         `).join('');
     }
+
+    let topFixesHTML = '';
+    if (topFixes.length > 0) {
+        topFixesHTML = topFixes.map(fix => `
+            <div class="border rounded-lg p-3 mb-2 bg-indigo-50 border-indigo-200">
+                <div class="text-sm font-semibold text-indigo-700">[${(fix.priority || 'medium').toUpperCase()}] ${fix.title || 'Fix'}</div>
+                ${fix.why ? `<div class="text-sm text-indigo-700 mt-1">Why: ${fix.why}</div>` : ''}
+                ${fix.action ? `<div class="text-sm text-indigo-800 mt-1">Action: ${fix.action}</div>` : ''}
+            </div>
+        `).join('');
+    }
+
+    let sitemapChecksHTML = '';
+    if (sitemapChecks.length > 0) {
+        sitemapChecksHTML = sitemapChecks.map(check => {
+            const ok = check.ok;
+            const badge = ok === true ? 'bg-green-100 text-green-700' : (ok === null ? 'bg-gray-100 text-gray-700' : 'bg-red-100 text-red-700');
+            const status = ok === true ? 'OK' : (ok === null ? 'SKIPPED' : 'FAIL');
+            return `
+                <div class="border rounded-lg p-3 mb-2">
+                    <div class="flex items-center justify-between">
+                        <a href="${check.url}" target="_blank" class="text-sm text-blue-600 hover:underline break-all">${check.url}</a>
+                        <span class="text-xs px-2 py-1 rounded ${badge}">${status}</span>
+                    </div>
+                    <div class="text-xs text-gray-500 mt-1">
+                        ${check.status_code ? `HTTP ${check.status_code}` : ''} ${check.error ? `• ${check.error}` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
     
     return `
         <div class="space-y-6">
@@ -417,7 +466,11 @@ function generateRobotsHTML(data) {
                     <h3 class="text-lg font-semibold">Проверка Robots.txt</h3>
                 </div>
                 
-                <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
+                <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-4">
+                    <div class="text-center p-3 ${productionReady ? 'bg-emerald-50' : 'bg-amber-50'} rounded-lg">
+                        <div class="text-2xl font-bold ${productionReady ? 'text-emerald-600' : 'text-amber-600'}">${qualityScore}</div>
+                        <div class="text-xs text-gray-500">Score (${qualityGrade})</div>
+                    </div>
                     <div class="text-center p-3 bg-blue-50 rounded-lg">
                         <div class="text-2xl font-bold text-blue-600">${userAgentCount}</div>
                         <div class="text-xs text-gray-500">User-Agents</div>
@@ -467,13 +520,33 @@ function generateRobotsHTML(data) {
                     ${warningsHTML}
                 </div>
             ` : ''}
-            
+
+            ${infoIssues.length > 0 ? `
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="text-lg font-semibold text-sky-600 mb-3">
+                        <i class="fas fa-info-circle mr-2"></i>Info (${infoIssues.length})
+                    </h4>
+                    ${infoIssues.map(item => `
+                        <div class="bg-sky-50 border border-sky-200 rounded-lg p-3 mb-2 text-sky-700 text-sm">${item}</div>
+                    `).join('')}
+                </div>
+            ` : ''}
+             
             <!-- Sitemaps -->
             ${processedSitemaps.length > 0 ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-green-600 mb-3">
                         <i class="fas fa-sitemap mr-2"></i>Sitemaps (${processedSitemaps.length})</h4>
                     ${sitemapsHtml}
+                </div>
+            ` : ''}
+
+            ${sitemapChecksHTML ? `
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="text-lg font-semibold text-indigo-600 mb-3">
+                        <i class="fas fa-shield-alt mr-2"></i>Sitemap URL Checks (${sitemapChecks.length})
+                    </h4>
+                    ${sitemapChecksHTML}
                 </div>
             ` : ''}
             
@@ -494,6 +567,15 @@ function generateRobotsHTML(data) {
                         <i class="fas fa-lightbulb mr-2"></i>Рекомендации
                     </h4>
                     ${recommendationsHTML}
+                </div>
+            ` : ''}
+            
+            ${topFixesHTML ? `
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="text-lg font-semibold text-indigo-700 mb-3">
+                        <i class="fas fa-wrench mr-2"></i>Top Fixes (${topFixes.length})
+                    </h4>
+                    ${topFixesHTML}
                 </div>
             ` : ''}
         </div>
