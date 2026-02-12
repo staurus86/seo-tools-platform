@@ -107,12 +107,18 @@ function showResults(result) {
     const resultsContent = document.getElementById('results-content');
     
     // Generate results HTML based on task type
-    if (result.task_type === 'robots_check') {
+    if (result.task_type === 'site_analyze') {
+        resultsContent.innerHTML = generateSiteAnalysisHTML(result);
+    } else if (result.task_type === 'robots_check') {
         resultsContent.innerHTML = generateRobotsHTML(result);
     } else if (result.task_type === 'sitemap_validate') {
         resultsContent.innerHTML = generateSitemapHTML(result);
     } else if (result.task_type === 'bot_check') {
         resultsContent.innerHTML = generateBotHTML(result);
+    } else if (result.task_type === 'render_audit') {
+        resultsContent.innerHTML = generateRenderAuditHTML(result);
+    } else if (result.task_type === 'mobile_check') {
+        resultsContent.innerHTML = generateMobileCheckHTML(result);
     } else {
         resultsContent.innerHTML = generateGenericHTML(result);
     }
@@ -220,6 +226,210 @@ function generateBotHTML(result) {
                 <h4 class="font-semibold mb-2">Результаты по ботам:</h4>
                 ${botsHTML}
             </div>
+        </div>
+    `;
+}
+
+function generateSiteAnalysisHTML(result) {
+    const r = result.results || result;
+    if (r.error) {
+        return `
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold">Анализ сайта</h3>
+                    <button onclick="copyToClipboard(JSON.stringify(result, null, 2))" class="text-blue-600 hover:text-blue-800 text-sm">
+                        <i class="fas fa-copy mr-1"></i>Копировать JSON
+                    </button>
+                </div>
+                <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded-r">
+                    <p class="text-red-700">Ошибка: ${r.error}</p>
+                </div>
+            </div>
+        `;
+    }
+    
+    const summary = r.summary || {};
+    const content = r.content_analysis || {};
+    const tech = r.technology_stack || [];
+    const issues = r.all_issues || [];
+    const critical = r.critical_issues || [];
+    const warnings = r.warning_issues || [];
+    const recs = r.recommendations || [];
+    
+    const score = summary.seo_score || 0;
+    let scoreColor = 'text-green-600';
+    if (score < 50) scoreColor = 'text-red-600';
+    else if (score < 70) scoreColor = 'text-yellow-600';
+    
+    let scoreBadge = 'bg-green-100 text-green-800';
+    if (score < 50) scoreBadge = 'bg-red-100 text-red-800';
+    else if (score < 70) scoreBadge = 'bg-yellow-100 text-yellow-800';
+    
+    let techHTML = '';
+    if (tech.length > 0) {
+        techHTML = tech.map(t => `<span class="inline-block bg-gray-100 rounded-full px-3 py-1 text-sm font-semibold text-gray-700 mr-2 mb-2">${t.tech} (${t.count})</span>`).join('');
+    } else {
+        techHTML = '<span class="text-gray-500">Технологии не определены</span>';
+    }
+    
+    let issuesHTML = '';
+    if (critical.length > 0) {
+        issuesHTML += `
+            <div class="mb-4">
+                <h4 class="font-semibold text-red-600 mb-2"><i class="fas fa-exclamation-triangle mr-2"></i>Критические проблемы (${critical.length}):</h4>
+                <ul class="list-disc pl-5 text-sm text-red-700">
+                    ${critical.slice(0, 10).map(i => `<li>${i.issue} <span class="text-gray-500">- ${i.url}</span></li>`).join('')}
+                </ul>
+            </div>
+        `;
+    }
+    if (warnings.length > 0) {
+        issuesHTML += `
+            <div class="mb-4">
+                <h4 class="font-semibold text-yellow-600 mb-2"><i class="fas fa-exclamation-circle mr-2"></i>Предупреждения (${warnings.length}):</h4>
+                <ul class="list-disc pl-5 text-sm text-yellow-700">
+                    ${warnings.slice(0, 10).map(i => `<li>${i.issue} <span class="text-gray-500">- ${i.url}</span></li>`).join('')}
+                </ul>
+            </div>
+        `;
+    }
+    if (issues.length === 0) {
+        issuesHTML = '<p class="text-green-600"><i class="fas fa-check mr-2"></i>Проблем не обнаружено!</p>';
+    }
+    
+    let recsHTML = '';
+    if (recs.length > 0) {
+        recsHTML = recs.map(rec => `
+            <div class="flex items-start mb-2 p-2 rounded ${rec.priority === 'high' ? 'bg-red-50' : rec.priority === 'medium' ? 'bg-yellow-50' : 'bg-gray-50'}">
+                <span class="inline-block w-2 h-2 rounded-full mr-2 mt-2 ${rec.priority === 'high' ? 'bg-red-500' : rec.priority === 'medium' ? 'bg-yellow-500' : 'bg-gray-500'}"></span>
+                <span class="text-sm">${rec.text}</span>
+            </div>
+        `).join('');
+    }
+    
+    return `
+        <div class="space-y-6">
+            <!-- Summary Card -->
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold">Анализ сайта: ${result.url}</h3>
+                    <button onclick="copyToClipboard(JSON.stringify(result, null, 2))" class="text-blue-600 hover:text-blue-800 text-sm">
+                        <i class="fas fa-copy mr-1"></i>Копировать JSON
+                    </button>
+                </div>
+                
+                <!-- Score -->
+                <div class="flex items-center mb-6 p-4 rounded-lg ${scoreBadge}">
+                    <div class="text-3xl font-bold mr-4">${score}</div>
+                    <div>
+                        <div class="font-semibold">SEO Score</div>
+                        <div class="text-sm opacity-75">${score >= 70 ? 'Хороший результат' : score >= 50 ? 'Требует улучшения' : 'Критически низкий'}</div>
+                    </div>
+                </div>
+                
+                <!-- Stats Grid -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    <div class="text-center p-3 bg-gray-50 rounded-lg">
+                        <div class="text-2xl font-bold text-blue-600">${summary.pages_crawled || 0}</div>
+                        <div class="text-xs text-gray-500">Страниц просканировано</div>
+                    </div>
+                    <div class="text-center p-3 bg-gray-50 rounded-lg">
+                        <div class="text-2xl font-bold text-green-600">${summary.internal_links_count || 0}</div>
+                        <div class="text-xs text-gray-500">Внутренних ссылок</div>
+                    </div>
+                    <div class="text-center p-3 bg-gray-50 rounded-lg">
+                        <div class="text-2xl font-bold text-red-600">${summary.broken_links_count || 0}</div>
+                        <div class="text-xs text-gray-500">Битых ссылок</div>
+                    </div>
+                    <div class="text-center p-3 bg-gray-50 rounded-lg">
+                        <div class="text-2xl font-bold text-yellow-600">${(summary.critical_issues || 0) + (summary.warning_issues || 0)}</div>
+                        <div class="text-xs text-gray-500">Всего проблем</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Content Analysis -->
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h3 class="text-lg font-semibold mb-4"><i class="fas fa-chart-bar mr-2 text-blue-500"></i>Анализ контента</h3>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                    <div><span class="text-gray-600">Всего изображений:</span> <span class="font-medium">${content.total_images || 0}</span></div>
+                    <div><span class="text-gray-600">Без alt-текста:</span> <span class="font-medium text-red-600">${content.images_without_alt || 0}</span></div>
+                    <div><span class="text-gray-600">Всего ссылок:</span> <span class="font-medium">${content.total_links || 0}</span></div>
+                    <div><span class="text-gray-600">Страниц с Title:</span> <span class="font-medium">${content.pages_with_title || 0}/${summary.pages_crawled || 0}</span></div>
+                    <div><span class="text-gray-600">Страниц с H1:</span> <span class="font-medium">${content.pages_with_h1 || 0}/${summary.pages_crawled || 0}</span></div>
+                    <div><span class="text-gray-600">Страниц со Schema:</span> <span class="font-medium">${content.pages_with_schema_org || 0}/${summary.pages_crawled || 0}</span></div>
+                </div>
+            </div>
+            
+            <!-- Technology Stack -->
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h3 class="text-lg font-semibold mb-4"><i class="fas fa-microchip mr-2 text-purple-500"></i>Технологии</h3>
+                <div class="flex flex-wrap">
+                    ${techHTML}
+                </div>
+            </div>
+            
+            <!-- Issues -->
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h3 class="text-lg font-semibold mb-4"><i class="fas fa-bug mr-2 text-red-500"></i>Проблемы</h3>
+                ${issuesHTML}
+            </div>
+            
+            <!-- Recommendations -->
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h3 class="text-lg font-semibold mb-4"><i class="fas fa-lightbulb mr-2 text-yellow-500"></i>Рекомендации</h3>
+                ${recsHTML}
+            </div>
+        </div>
+    `;
+}
+
+function generateRenderAuditHTML(result) {
+    const r = result.results || result;
+    return `
+        <div class="bg-white rounded-xl shadow-md p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold">Аудит рендеринга</h3>
+                <button onclick="copyToClipboard(JSON.stringify(result, null, 2))" class="text-blue-600 hover:text-blue-800 text-sm">
+                    <i class="fas fa-copy mr-1"></i>Копировать JSON
+                </button>
+            </div>
+            <div class="grid grid-cols-2 gap-4 text-sm">
+                <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
+                <div><span class="text-gray-600">Статус:</span> <span class="font-medium">${r.status_code || 'N/A'}</span></div>
+                <div><span class="text-gray-600">Размер контента:</span> <span class="font-medium">${(r.content_length || 0).toLocaleString()} байт</span></div>
+                <div><span class="text-gray-600">Количество слов:</span> <span class="font-medium">${r.word_count || 0}</span></div>
+                <div><span class="text-gray-600">SSR:</span> <span class="font-medium">${r.is_ssr ? 'Да' : 'Нет'}</span></div>
+                <div><span class="text-gray-600">JS-фреймворки:</span> <span class="font-medium">${(r.js_frameworks || []).join(', ') || 'Не обнаружены'}</span></div>
+            </div>
+        </div>
+    `;
+}
+
+function generateMobileCheckHTML(result) {
+    const r = result.results || result;
+    return `
+        <div class="bg-white rounded-xl shadow-md p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold">Проверка мобильной версии</h3>
+                <button onclick="copyToClipboard(JSON.stringify(result, null, 2))" class="text-blue-600 hover:text-blue-800 text-sm">
+                    <i class="fas fa-copy mr-1"></i>Копировать JSON
+                </button>
+            </div>
+            <div class="grid grid-cols-2 gap-4 text-sm mb-4">
+                <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
+                <div><span class="text-gray-600">Статус:</span> <span class="font-medium">${r.status_code || 'N/A'}</span></div>
+                <div><span class="text-gray-600">Viewport:</span> <span class="font-medium">${r.viewport_found ? 'Найден' : 'Не найден'}</span></div>
+                <div><span class="text-gray-600">Mobile-friendly:</span> <span class="font-medium ${r.mobile_friendly ? 'text-green-600' : 'text-red-600'}">${r.mobile_friendly ? 'Да' : 'Нет'}</span></div>
+            </div>
+            ${r.issues && r.issues.length > 0 ? `
+                <div class="border-t pt-4">
+                    <h4 class="font-semibold mb-2">Проблемы:</h4>
+                    <ul class="list-disc pl-5 text-sm text-red-600">
+                        ${r.issues.map(i => `<li>${i}</li>`).join('')}
+                    </ul>
+                </div>
+            ` : ''}
         </div>
     `;
 }

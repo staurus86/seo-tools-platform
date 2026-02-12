@@ -452,57 +452,332 @@ async def celery_status():
 
 # ============ ADDITIONAL TOOLS ============
 
-def check_site_basic(url: str) -> Dict[str, Any]:
-    """Basic site analysis - simplified version"""
+def check_site_full(url: str, max_pages: int = 20) -> Dict[str, Any]:
+    """Full site analysis - multi-page crawling with deep analysis"""
     import requests
     from bs4 import BeautifulSoup
+    from urllib.parse import urljoin, urlparse
+    from collections import defaultdict
+    import re
+    import time
     
-    try:
-        response = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-        soup = BeautifulSoup(response.text, 'html.parser')
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+    })
+    
+    parsed_base = urlparse(url)
+    base_domain = parsed_base.netloc.lower()
+    base_normalized = base_domain[4:] if base_domain.startswith('www.') else base_domain
+    
+    visited = set()
+    to_visit = [(url, 0)]
+    all_pages_data = []
+    broken_links = []
+    external_links = []
+    internal_links = []
+    all_urls = set()
+    redirects = []
+    technology_stack = []
+    content_issues = []
+    
+    stop_words = {
+        'и', 'в', 'на', 'что', 'это', 'по', 'с', 'для', 'при', 'или', 'как', 'от', 'до',
+        'a', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'of', 'to', 'in'
+    }
+    
+    def is_internal(url_to_check: str) -> bool:
+        try:
+            parsed = urlparse(url_to_check)
+            netloc = parsed.netloc.lower()
+            netloc_norm = netloc[4:] if netloc.startswith('www.') else netloc
+            return netloc_norm == base_normalized or netloc_norm.endswith('.' + base_normalized)
+        except:
+            return False
+    
+    def is_valid_page(url_to_check: str) -> bool:
+        try:
+            parsed = urlparse(url_to_check)
+            path = parsed.path.lower()
+            exts = ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.bmp', '.ico', '.pdf', 
+                    '.doc', '.docx', '.xls', '.xlsx', '.zip', '.rar', '.mp3', '.mp4', '.css', 
+                    '.js', '.json', '.xml', '.rss', '.woff', '.woff2', '.ttf']
+            for ext in exts:
+                if path.endswith(ext):
+                    return False
+            admin_paths = ['/admin', '/wp-admin', '/administrator', '/manage', '/login', 
+                          '/logout', '/signup', '/register', '/api/', '/static/', '/media/']
+            for admin in admin_paths:
+                if admin in path:
+                    return False
+            return True
+        except:
+            return False
+    
+    def extract_tech(html_text: str) -> list:
+        tech = []
+        text = html_text.lower()
+        if 'react' in text and 'data-react' not in text:
+            tech.append('React')
+        if 'vue' in text or 'vue.js' in text:
+            tech.append('Vue.js')
+        if 'angular' in text:
+            tech.append('Angular')
+        if 'jquery' in text:
+            tech.append('jQuery')
+        if 'bootstrap' in text:
+            tech.append('Bootstrap')
+        if 'wordpress' in text:
+            tech.append('WordPress')
+        if 'bitrix' in text or '1c-bitrix' in text:
+            tech.append('1C-Bitrix')
+        if 'django' in text:
+            tech.append('Django')
+        if 'flask' in text:
+            tech.append('Flask')
+        if 'laravel' in text:
+            tech.append('Laravel')
+        if 'node.js' in text or 'nodejs' in text:
+            tech.append('Node.js')
+        if 'php' in text:
+            tech.append('PHP')
+        if 'asp.net' in text or 'asp.net' in text.lower():
+            tech.append('ASP.NET')
+        if 'gatsby' in text:
+            tech.append('Gatsby')
+        if 'next.js' in text or 'nextjs' in text:
+            tech.append('Next.js')
+        if 'webpack' in text:
+            tech.append('Webpack')
+        if 'gulp' in text:
+            tech.append('Gulp')
+        if 'grunt' in text:
+            tech.append('Grunt')
+        if 'google tag manager' in text:
+            tech.append('Google Tag Manager')
+        if 'yandex.metrika' in text or 'yandex metrika' in text:
+            tech.append('Yandex.Metrika')
+        if 'google analytics' in text:
+            tech.append('Google Analytics')
+        if 'gtm.js' in html_text:
+            tech.append('Google Tag Manager')
+        return list(set(tech))
+    
+    def analyze_page(page_url: str, depth: int, html: str) -> Dict:
+        soup = BeautifulSoup(html, 'html.parser')
         
-        # Basic analysis
         title = soup.find('title')
         meta_desc = soup.find('meta', attrs={'name': 'description'})
+        meta_keywords = soup.find('meta', attrs={'name': 'keywords'})
+        meta_robots = soup.find('meta', attrs={'name': 'robots'})
+        canonical = soup.find('link', rel='canonical')
         h1_tags = soup.find_all('h1')
+        h2_tags = soup.find_all('h2')
         
-        # Check for common issues
-        issues = []
-        
-        if not title:
-            issues.append("Missing title tag")
-        if not meta_desc:
-            issues.append("Missing meta description")
-        if len(h1_tags) == 0:
-            issues.append("No H1 tags found")
-        elif len(h1_tags) > 1:
-            issues.append(f"Multiple H1 tags found ({len(h1_tags)})")
-        
-        # Check images
         images = soup.find_all('img')
-        images_without_alt = [img for img in images if not img.get('alt')]
-        if images_without_alt:
-            issues.append(f"{len(images_without_alt)} images without alt text")
+        images_without_alt = [img for img in images if not img.get('alt') or not img.get('alt').strip()]
+        images_with_empty_alt = [img for img in images if img.get('alt', '').strip() == '']
         
-        # Check links
         links = soup.find_all('a')
-        broken_links = 0
+        page_links = []
+        for link in links:
+            href = link.get('href', '')
+            if href and not href.startswith('#') and not href.startswith('javascript'):
+                page_links.append(href)
+        
+        scripts = soup.find_all('script')
+        styles = soup.find_all('style')
+        iframes = soup.find_all('iframe')
+        
+        body = soup.find('body')
+        text_content = body.get_text(strip=True) if body else ''
+        word_count = len(text_content.split())
+        
+        has_og_tags = bool(soup.find('meta', property='og:title'))
+        has_twitter_cards = bool(soup.find('meta', property='twitter:card'))
+        has_schema = bool(soup.find('script', type='application/ld+json'))
+        
+        page_issues = []
+        if not title:
+            page_issues.append({'type': 'critical', 'issue': 'Missing title tag', 'url': page_url})
+        if title and len(title.text) < 30:
+            page_issues.append({'type': 'warning', 'issue': 'Title too short (< 30 chars)', 'url': page_url})
+        if title and len(title.text) > 70:
+            page_issues.append({'type': 'warning', 'issue': 'Title too long (> 70 chars)', 'url': page_url})
+        if not meta_desc:
+            page_issues.append({'type': 'critical', 'issue': 'Missing meta description', 'url': page_url})
+        if meta_desc and len(meta_desc.get('content', '')) < 120:
+            page_issues.append({'type': 'warning', 'issue': 'Meta description too short', 'url': page_url})
+        if len(h1_tags) == 0:
+            page_issues.append({'type': 'warning', 'issue': 'No H1 tags found', 'url': page_url})
+        elif len(h1_tags) > 1:
+            page_issues.append({'type': 'warning', 'issue': f'Multiple H1 tags ({len(h1_tags)})', 'url': page_url})
+        if len(images_without_alt) > 0:
+            page_issues.append({'type': 'warning', 'issue': f'{len(images_without_alt)} images without alt text', 'url': page_url})
+        
+        return {
+            'url': page_url,
+            'depth': depth,
+            'status': 'success',
+            'title': title.text if title else None,
+            'title_length': len(title.text) if title else 0,
+            'meta_description': meta_desc.get('content') if meta_desc else None,
+            'meta_keywords': meta_keywords.get('content') if meta_keywords else None,
+            'meta_robots': meta_robots.get('content') if meta_robots else None,
+            'canonical': canonical.get('href') if canonical else None,
+            'h1_count': len(h1_tags),
+            'h2_count': len(h2_tags),
+            'images_total': len(images),
+            'images_without_alt': len(images_without_alt),
+            'images_empty_alt': len(images_with_empty_alt),
+            'links_total': len(links),
+            'links_found': page_links,
+            'scripts_count': len(scripts),
+            'styles_count': len(styles),
+            'iframes_count': len(iframes),
+            'word_count': word_count,
+            'has_og_tags': has_og_tags,
+            'has_twitter_cards': has_twitter_cards,
+            'has_schema_org': has_schema,
+            'issues': page_issues,
+            'tech_stack': extract_tech(html)
+        }
+    
+    start_time = time.time()
+    pages_crawled = 0
+    
+    try:
+        while to_visit and pages_crawled < max_pages:
+            current_url, depth = to_visit.pop(0)
+            
+            if current_url in visited:
+                continue
+            if not is_valid_page(current_url):
+                continue
+            
+            visited.add(current_url)
+            all_urls.add(current_url)
+            
+            try:
+                response = session.get(current_url, timeout=10, allow_redirects=True)
+                
+                if response.history:
+                    for r in response.history:
+                        redirects.append({
+                            'from': r.url,
+                            'to': response.url,
+                            'status': r.status_code
+                        })
+                    current_url = response.url
+                
+                if response.status_code >= 400:
+                    broken_links.append({
+                        'url': current_url,
+                        'status': response.status_code
+                    })
+                    pages_crawled += 1
+                    continue
+                
+                page_data = analyze_page(current_url, depth, response.text)
+                all_pages_data.append(page_data)
+                internal_links.extend([l for l in page_data['links_found'] if is_internal(l)])
+                
+                if depth < 2:
+                    for link in page_data['links_found'][:50]:
+                        if link not in visited and len(all_urls) < max_pages * 2:
+                            full_link = urljoin(current_url, link)
+                            if is_internal(full_link) and is_valid_page(full_link):
+                                to_visit.append((full_link, depth + 1))
+                                all_urls.add(full_link)
+                
+                external_links.extend([l for l in page_data['links_found'] if not is_internal(l)])
+                
+                pages_crawled += 1
+                
+            except requests.exceptions.Timeout:
+                broken_links.append({'url': current_url, 'status': 'timeout'})
+                pages_crawled += 1
+            except requests.exceptions.ConnectionError:
+                broken_links.append({'url': current_url, 'status': 'connection_error'})
+                pages_crawled += 1
+            except Exception as e:
+                broken_links.append({'url': current_url, 'status': str(e)})
+                pages_crawled += 1
+        
+        elapsed_time = time.time() - start_time
+        
+        all_tech = []
+        for page in all_pages_data:
+            all_tech.extend(page.get('tech_stack', []))
+        tech_counts = Counter(all_tech)
+        top_technologies = [{'tech': t, 'count': c} for t, c in tech_counts.most_common(10)]
+        
+        all_issues = []
+        for page in all_pages_data:
+            all_issues.extend(page.get('issues', []))
+        
+        critical_issues = [i for i in all_issues if i.get('type') == 'critical']
+        warning_issues = [i for i in all_issues if i.get('type') == 'warning']
+        
+        total_images = sum(p.get('images_total', 0) for p in all_pages_data)
+        total_images_without_alt = sum(p.get('images_without_alt', 0) for p in all_pages_data)
+        total_links = sum(p.get('links_total', 0) for p in all_pages_data)
+        
+        pages_with_title = len([p for p in all_pages_data if p.get('title')])
+        pages_with_desc = len([p for p in all_pages_data if p.get('meta_description')])
+        pages_with_h1 = len([p for p in all_pages_data if p.get('h1_count', 0) > 0])
+        pages_with_schema = len([p for p in all_pages_data if p.get('has_schema_org')])
+        
+        avg_word_count = sum(p.get('word_count', 0) for p in all_pages_data) / max(1, len(all_pages_data))
+        
+        redirect_count = len(redirects)
+        broken_count = len(broken_links)
+        
+        seo_score = 100
+        seo_score -= min(30, len(critical_issues) * 10)
+        seo_score -= min(20, len(warning_issues) * 3)
+        seo_score -= min(20, total_images_without_alt * 0.5)
+        seo_score -= min(10, redirect_count * 2)
+        seo_score -= min(10, broken_count * 2)
+        seo_score = max(0, seo_score)
         
         return {
             "task_type": "site_analyze",
             "url": url,
             "completed_at": datetime.utcnow().isoformat(),
             "results": {
-                "status_code": response.status_code,
-                "title": title.text if title else None,
-                "meta_description": meta_desc.get('content') if meta_desc else None,
-                "h1_count": len(h1_tags),
-                "images_count": len(images),
-                "images_without_alt": len(images_without_alt),
-                "links_count": len(links),
-                "issues": issues,
-                "issues_count": len(issues),
-                "score": max(0, 100 - len(issues) * 10)
+                "summary": {
+                    "pages_crawled": pages_crawled,
+                    "pages_total_found": len(all_urls),
+                    "crawl_time_seconds": round(elapsed_time, 2),
+                    "internal_links_count": len(set(internal_links)),
+                    "external_links_count": len(set(external_links)),
+                    "broken_links_count": broken_count,
+                    "redirects_count": redirect_count,
+                    "seo_score": seo_score,
+                    "critical_issues": len(critical_issues),
+                    "warning_issues": len(warning_issues)
+                },
+                "content_analysis": {
+                    "total_images": total_images,
+                    "images_without_alt": total_images_without_alt,
+                    "total_links": total_links,
+                    "average_word_count": round(avg_word_count, 0),
+                    "pages_with_title": pages_with_title,
+                    "pages_with_meta_desc": pages_with_desc,
+                    "pages_with_h1": pages_with_h1,
+                    "pages_with_schema_org": pages_with_schema
+                },
+                "technology_stack": top_technologies,
+                "pages_detail": all_pages_data[:50],
+                "broken_links": broken_links[:50],
+                "redirects": redirects[:20],
+                "all_issues": all_issues[:100],
+                "critical_issues": critical_issues[:20],
+                "warning_issues": warning_issues[:50],
+                "recommendations": generate_recommendations(critical_issues, warning_issues, tech_counts, seo_score)
             }
         }
     except Exception as e:
@@ -514,6 +789,43 @@ def check_site_basic(url: str) -> Dict[str, Any]:
                 "error": str(e)
             }
         }
+
+
+def generate_recommendations(critical_issues: list, warning_issues: list, tech_counts: dict, score: int) -> list:
+    """Generate recommendations based on analysis results"""
+    recommendations = []
+    
+    if score < 50:
+        recommendations.append({"priority": "high", "text": "Критически низкий SEO- score. Требуется полный аудит и исправления."})
+    
+    if any('title' in i.get('issue', '').lower() for i in critical_issues):
+        recommendations.append({"priority": "high", "text": "Добавьте Title тег на все страницы (60-70 символов)"})
+    
+    if any('description' in i.get('issue', '').lower() for i in critical_issues):
+        recommendations.append({"priority": "high", "text": "Добавьте Meta Description на все страницы (120-160 символов)"})
+    
+    if any('h1' in i.get('issue', '').lower() for i in warning_issues):
+        recommendations.append({"priority": "medium", "text": "Добавьте H1 тег на каждую страницу (1 тег на страницу)"})
+    
+    img_issues = [i for i in warning_issues if 'image' in i.get('issue', '').lower() or 'alt' in i.get('issue', '').lower()]
+    if img_issues:
+        recommendations.append({"priority": "medium", "text": f"Добавьте alt-текст к {sum(1 for i in img_issues)} изображениям"})
+    
+    if 'WordPress' in tech_counts:
+        recommendations.append({"priority": "medium", "text": "Установите SEO-плагин для WordPress (Yoast SEO или Rank Math)"})
+    
+    if not any('Google Analytics' in t or 'Yandex.Metrika' in t for t in tech_counts.keys()):
+        recommendations.append({"priority": "low", "text": "Добавьте системы аналитики (Google Analytics, Yandex.Metrika)"})
+    
+    schema_issues = [i for i in critical_issues + warning_issues if 'schema' in i.get('issue', '').lower()]
+    if schema_issues or len([p for p in [] if p.get('has_schema_org')]) == 0:
+        recommendations.append({"priority": "medium", "text": "Добавьте Schema.org разметку для улучшения сниппетов в поиске"})
+    
+    recommendations.append({"priority": "low", "text": "Оптимизируйте скорость загрузки страниц"})
+    recommendations.append({"priority": "low", "text": "Настройте канонические URL для дублирующихся страниц"})
+    recommendations.append({"priority": "low", "text": "Добавьте Open Graph и Twitter Cards мета-теги"})
+    
+    return recommendations
 
 
 def check_render_simple(url: str) -> Dict[str, Any]:
@@ -647,7 +959,7 @@ def check_mobile_simple(url: str) -> Dict[str, Any]:
 
 class SiteAnalyzeRequest(BaseModel):
     url: str
-    max_pages: int = 100
+    max_pages: int = 20
 
 class RenderAuditRequest(BaseModel):
     url: str
@@ -658,12 +970,13 @@ class MobileCheckRequest(BaseModel):
 
 @router.post("/tasks/site-analyze")
 async def create_site_analyze(data: SiteAnalyzeRequest):
-    """Basic site analysis"""
+    """Full site analysis with multi-page crawling"""
     url = data.url
+    max_pages = min(data.max_pages, 50)
     
-    print(f"[API] Basic site analysis for: {url}")
+    print(f"[API] Full site analysis for: {url} (max_pages={max_pages})")
     
-    result = check_site_basic(url)
+    result = check_site_full(url, max_pages)
     task_id = f"site-{datetime.now().timestamp()}"
     create_task_result(task_id, "site_analyze", url, result)
     
