@@ -188,6 +188,221 @@ def _score(rendered: Snapshot, missing: Dict[str, List[str]]) -> Dict[str, float
     }
 
 
+def _images_without_alt(images: List[str]) -> int:
+    count = 0
+    for row in images:
+        m = re.search(r"\|\s*alt=(.*)$", row or "", flags=re.I)
+        if m is None:
+            continue
+        if not m.group(1).strip():
+            count += 1
+    return count
+
+
+def _build_required_seo_checks(raw: Dict[str, Any], rendered: Dict[str, Any]) -> Dict[str, Any]:
+    checks: List[Dict[str, Any]] = []
+
+    def add(
+        code: str,
+        label: str,
+        severity: str,
+        ok: bool,
+        raw_value: Any,
+        rendered_value: Any,
+        details: str,
+        fix: str,
+    ) -> None:
+        checks.append(
+            {
+                "code": code,
+                "label": label,
+                "severity": severity,
+                "status": "pass" if ok else ("fail" if severity == "critical" else "warn"),
+                "raw": raw_value,
+                "rendered": rendered_value,
+                "details": details,
+                "fix": fix,
+            }
+        )
+
+    title_raw = (raw.get("title") or "").strip()
+    title_js = (rendered.get("title") or "").strip()
+    add(
+        "title_present_js",
+        "Title присутствует в JS-рендере",
+        "critical",
+        bool(title_js),
+        title_raw,
+        title_js,
+        "Title обязателен для индексации и формирования сниппета.",
+        "Добавьте уникальный <title> в шаблон страницы.",
+    )
+    add(
+        "title_present_nojs",
+        "Title присутствует без JavaScript",
+        "warning",
+        bool(title_raw),
+        title_raw,
+        title_js,
+        "Если title доступен только после JS, робот может получить неполный документ.",
+        "Рендерьте <title> на стороне сервера (SSR/шаблон HTML).",
+    )
+    title_len = len(title_js)
+    add(
+        "title_length",
+        "Длина Title (20-70 символов)",
+        "warning",
+        20 <= title_len <= 70,
+        len(title_raw),
+        title_len,
+        "Слишком короткий или длинный title ухудшает CTR и релевантность сниппета.",
+        "Держите title в диапазоне 20-70 символов с ключевой темой страницы.",
+    )
+
+    desc_raw = (raw.get("meta_description") or "").strip()
+    desc_js = (rendered.get("meta_description") or "").strip()
+    add(
+        "description_present_js",
+        "Meta Description присутствует в JS-рендере",
+        "critical",
+        bool(desc_js),
+        desc_raw,
+        desc_js,
+        "Meta description влияет на описание сниппета в выдаче.",
+        "Добавьте <meta name=\"description\" ...> с уникальным содержимым.",
+    )
+    add(
+        "description_present_nojs",
+        "Meta Description присутствует без JavaScript",
+        "warning",
+        bool(desc_raw),
+        desc_raw,
+        desc_js,
+        "Если description появляется только после JS, сниппет может быть неуправляемым.",
+        "Вставляйте description в исходный HTML до выполнения JS.",
+    )
+    desc_len = len(desc_js)
+    add(
+        "description_length",
+        "Длина Description (70-180 символов)",
+        "warning",
+        70 <= desc_len <= 180,
+        len(desc_raw),
+        desc_len,
+        "Невалидная длина description ухудшает качество предпросмотра в SERP.",
+        "Оптимизируйте длину description до 70-180 символов.",
+    )
+
+    canon_raw = (raw.get("canonical") or "").strip()
+    canon_js = (rendered.get("canonical") or "").strip()
+    add(
+        "canonical_present_js",
+        "Canonical присутствует в JS-рендере",
+        "warning",
+        bool(canon_js),
+        canon_raw,
+        canon_js,
+        "Canonical снижает риски дублей URL.",
+        "Добавьте <link rel=\"canonical\" href=\"...\"> для канонической версии страницы.",
+    )
+    add(
+        "canonical_present_nojs",
+        "Canonical присутствует без JavaScript",
+        "warning",
+        bool(canon_raw),
+        canon_raw,
+        canon_js,
+        "Canonical должен быть доступен роботу в исходном HTML.",
+        "Генерируйте canonical сервером, а не клиентским JS.",
+    )
+
+    h1_raw = int(raw.get("h1_count", 0) or 0)
+    h1_js = int(rendered.get("h1_count", 0) or 0)
+    add(
+        "h1_present_js",
+        "H1 присутствует в JS-рендере",
+        "critical",
+        h1_js > 0,
+        h1_raw,
+        h1_js,
+        "Отсутствие H1 усложняет понимание темы страницы поисковыми системами.",
+        "Добавьте один основной <h1> с релевантной формулировкой.",
+    )
+    add(
+        "h1_present_nojs",
+        "H1 присутствует без JavaScript",
+        "warning",
+        h1_raw > 0,
+        h1_raw,
+        h1_js,
+        "Если H1 появляется только после JS, no-JS обход теряет важный сигнал релевантности.",
+        "Рендерьте H1 в исходном HTML.",
+    )
+
+    links_raw = int(raw.get("links_count", 0) or 0)
+    links_js = int(rendered.get("links_count", 0) or 0)
+    add(
+        "links_minimum_js",
+        "Внутренние ссылки в JS-рендере (>=3)",
+        "warning",
+        links_js >= 3,
+        links_raw,
+        links_js,
+        "Малое число внутренних ссылок ухудшает обход и распределение веса.",
+        "Добавьте минимум 3 релевантные внутренние ссылки на странице.",
+    )
+
+    img_raw = int(raw.get("images_count", 0) or 0)
+    img_js = int(rendered.get("images_count", 0) or 0)
+    img_wo_alt_raw = int(raw.get("images_without_alt", 0) or 0)
+    img_wo_alt_js = int(rendered.get("images_without_alt", 0) or 0)
+    add(
+        "images_alt_js",
+        "Изображения с alt в JS-рендере",
+        "warning",
+        img_js == 0 or img_wo_alt_js == 0,
+        f"{img_raw} img / без alt: {img_wo_alt_raw}",
+        f"{img_js} img / без alt: {img_wo_alt_js}",
+        "Отсутствующие alt у изображений ухудшают доступность и контекст для SEO.",
+        "Добавьте осмысленные alt для контентных изображений.",
+    )
+
+    schema_raw = int(raw.get("structured_data_count", 0) or 0)
+    schema_js = int(rendered.get("structured_data_count", 0) or 0)
+    add(
+        "structured_data_presence",
+        "Structured data присутствует",
+        "warning",
+        schema_js > 0,
+        schema_raw,
+        schema_js,
+        "Разметка schema.org помогает расширенным результатам и пониманию сущностей.",
+        "Добавьте JSON-LD schema.org для ключевых сущностей страницы.",
+    )
+
+    fail_count = sum(1 for c in checks if c["status"] == "fail")
+    warn_count = sum(1 for c in checks if c["status"] == "warn")
+    pass_count = sum(1 for c in checks if c["status"] == "pass")
+    return {"total": len(checks), "pass": pass_count, "warn": warn_count, "fail": fail_count, "items": checks}
+
+
+def _build_seo_recommendations(seo_checks: Dict[str, Any]) -> List[str]:
+    recs: List[str] = []
+    for item in seo_checks.get("items", []):
+        if item.get("status") in {"warn", "fail"} and item.get("fix"):
+            recs.append(str(item["fix"]))
+    # unique, keep order
+    out: List[str] = []
+    seen = set()
+    for rec in recs:
+        key = _norm(rec)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(rec)
+    return out
+
+
 def _build_recommendations(missing: Dict[str, List[str]]) -> List[str]:
     recs: List[str] = []
     if len(missing.get("Visible text", [])) > 10:
@@ -364,6 +579,38 @@ class RenderAuditServiceV2:
                 rendered, timing_js, timing_nojs = self._render(p, url, ua, mobile, shot_js, shot_nojs)
                 elapsed = max(0.0, time.time() - t0)
 
+                raw_stats = {
+                    "status_code": raw.status_code,
+                    "title": raw.title,
+                    "meta_description": raw.meta_description,
+                    "canonical": raw.canonical,
+                    "h1_count": _count_h(raw.headings, 1),
+                    "h2_count": _count_h(raw.headings, 2),
+                    "links_count": len(raw.links),
+                    "images_count": len(raw.images),
+                    "images_without_alt": _images_without_alt(raw.images),
+                    "structured_data_count": len(raw.structured_data),
+                    "schema_types": _schema_types(raw.structured_data),
+                    "visible_text_count": len(raw.visible_text),
+                    "html_bytes": raw.html_bytes,
+                    "errors": raw.errors,
+                }
+                rendered_stats = {
+                    "title": rendered.title,
+                    "meta_description": rendered.meta_description,
+                    "canonical": rendered.canonical,
+                    "h1_count": _count_h(rendered.headings, 1),
+                    "h2_count": _count_h(rendered.headings, 2),
+                    "links_count": len(rendered.links),
+                    "images_count": len(rendered.images),
+                    "images_without_alt": _images_without_alt(rendered.images),
+                    "structured_data_count": len(rendered.structured_data),
+                    "schema_types": _schema_types(rendered.structured_data),
+                    "visible_text_count": len(rendered.visible_text),
+                    "html_bytes": rendered.html_bytes,
+                    "errors": rendered.errors,
+                }
+
                 missing = {
                     "Visible text": _diff(rendered.visible_text, raw.visible_text),
                     "Headings": _diff(rendered.headings, raw.headings),
@@ -373,6 +620,7 @@ class RenderAuditServiceV2:
                 }
                 metrics = _score(rendered, missing)
                 meta_cmp = _compare_meta(raw.meta_non_seo, rendered.meta_non_seo)
+                seo_required = _build_required_seo_checks(raw_stats, rendered_stats)
                 issues: List[Dict[str, Any]] = []
                 if missing["Visible text"]:
                     issues.append({"severity": "warning" if len(missing["Visible text"]) <= 10 else "critical", "code": "content_missing_nojs", "title": "Content appears only after JavaScript", "details": f"Missing in no-JS version: {len(missing['Visible text'])} text lines.", "examples": _sample(missing["Visible text"])})
@@ -397,6 +645,20 @@ class RenderAuditServiceV2:
                         ),
                         "examples": [x["key"] for x in meta_cmp["items"] if x["status"] != "same"][:8],
                     })
+                for check in seo_required.get("items", []):
+                    status = check.get("status")
+                    if status not in {"warn", "fail"}:
+                        continue
+                    issues.append({
+                        "severity": "critical" if status == "fail" else "warning",
+                        "code": f"seo_required_{check.get('code')}",
+                        "title": f"Обязательный SEO-элемент: {check.get('label')}",
+                        "details": f"{check.get('details')} Рекомендация: {check.get('fix')}",
+                        "examples": [
+                            f"no-JS: {check.get('raw', '-')}",
+                            f"JS: {check.get('rendered', '-')}",
+                        ],
+                    })
 
                 all_issues.extend([{**i, "variant": label} for i in issues])
                 shots = {}
@@ -410,16 +672,17 @@ class RenderAuditServiceV2:
                     "variant_label": label,
                     "mobile": mobile,
                     "user_agent": ua,
-                    "raw": {"status_code": raw.status_code, "title": raw.title, "meta_description": raw.meta_description, "canonical": raw.canonical, "h1_count": _count_h(raw.headings, 1), "h2_count": _count_h(raw.headings, 2), "links_count": len(raw.links), "images_count": len(raw.images), "structured_data_count": len(raw.structured_data), "schema_types": _schema_types(raw.structured_data), "visible_text_count": len(raw.visible_text), "html_bytes": raw.html_bytes, "errors": raw.errors},
-                    "rendered": {"title": rendered.title, "meta_description": rendered.meta_description, "canonical": rendered.canonical, "h1_count": _count_h(rendered.headings, 1), "h2_count": _count_h(rendered.headings, 2), "links_count": len(rendered.links), "images_count": len(rendered.images), "structured_data_count": len(rendered.structured_data), "schema_types": _schema_types(rendered.structured_data), "visible_text_count": len(rendered.visible_text), "html_bytes": rendered.html_bytes, "errors": rendered.errors},
+                    "raw": raw_stats,
+                    "rendered": rendered_stats,
                     "missing": {"visible_text": missing["Visible text"], "headings": missing["Headings"], "links": missing["Links"], "images": missing["Images"], "structured_data": missing["Structured data"]},
                     "meta_non_seo": {"raw": raw.meta_non_seo, "rendered": rendered.meta_non_seo, "comparison": meta_cmp},
+                    "seo_required": seo_required,
                     "metrics": metrics,
                     "timings": {"raw_s": 0.0, "rendered_s": elapsed},
                     "timing_nojs_ms": timing_nojs,
                     "timing_js_ms": timing_js,
                     "issues": issues,
-                    "recommendations": _build_recommendations(missing),
+                    "recommendations": _build_recommendations(missing) + _build_seo_recommendations(seo_required),
                     "screenshots": shots,
                 })
                 notify(10 + int(idx * 40), f"Completed: {label}")
@@ -431,6 +694,8 @@ class RenderAuditServiceV2:
         missing_total = int(sum(float(v.get("metrics", {}).get("total_missing", 0)) for v in all_variants))
         missing_pct = [float(v.get("metrics", {}).get("missing_pct", 0)) for v in all_variants]
         avg_js = [float(v.get("timings", {}).get("rendered_s", 0)) * 1000 for v in all_variants]
+        seo_required_failures = sum(int(v.get("seo_required", {}).get("fail", 0) or 0) for v in all_variants)
+        seo_required_warnings = sum(int(v.get("seo_required", {}).get("warn", 0) or 0) for v in all_variants)
 
         notify(98, "Building final render report")
         return {
@@ -449,6 +714,8 @@ class RenderAuditServiceV2:
                     "avg_missing_pct": round(sum(missing_pct) / len(missing_pct), 1) if missing_pct else 0,
                     "avg_raw_load_ms": 0,
                     "avg_js_load_ms": round(sum(avg_js) / len(avg_js), 1) if avg_js else 0,
+                    "seo_required_failures": seo_required_failures,
+                    "seo_required_warnings": seo_required_warnings,
                 },
                 "variants": all_variants,
                 "issues": all_issues,

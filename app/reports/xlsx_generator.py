@@ -469,6 +469,34 @@ class XLSXGenerator:
         meta_ws.column_dimensions['D'].width = 80
         meta_ws.column_dimensions['E'].width = 18
 
+        seo_ws = wb.create_sheet('SEO обязательные')
+        seo_headers = ['Профиль', 'Элемент', 'no-JS', 'JS', 'Статус', 'Что исправить']
+        for col, header in enumerate(seo_headers, 1):
+            self._apply_style(seo_ws.cell(row=1, column=col, value=header), header_style)
+        row_idx = 2
+        status_map = {'pass': 'PASS', 'warn': 'WARN', 'fail': 'FAIL'}
+        for variant in variants:
+            profile = variant.get('variant_label') or variant.get('variant_id', '')
+            for item in ((variant.get('seo_required') or {}).get('items') or []):
+                self._apply_style(seo_ws.cell(row=row_idx, column=1, value=profile), cell_style)
+                self._apply_style(seo_ws.cell(row=row_idx, column=2, value=item.get('label', '')), cell_style)
+                self._apply_style(seo_ws.cell(row=row_idx, column=3, value=str(item.get('raw', ''))), cell_style)
+                self._apply_style(seo_ws.cell(row=row_idx, column=4, value=str(item.get('rendered', ''))), cell_style)
+                status = status_map.get(item.get('status', ''), item.get('status', ''))
+                self._apply_style(seo_ws.cell(row=row_idx, column=5, value=status), cell_style)
+                self._apply_style(seo_ws.cell(row=row_idx, column=6, value=item.get('fix', '')), cell_style)
+                sev = 'critical' if item.get('status') == 'fail' else ('warning' if item.get('status') == 'warn' else 'ok')
+                self._apply_row_severity_fill(seo_ws, row_idx, 1, len(seo_headers), sev)
+                row_idx += 1
+        seo_ws.freeze_panes = 'A2'
+        seo_ws.auto_filter.ref = f"A1:F{max(2, row_idx-1)}"
+        seo_ws.column_dimensions['A'].width = 24
+        seo_ws.column_dimensions['B'].width = 44
+        seo_ws.column_dimensions['C'].width = 40
+        seo_ws.column_dimensions['D'].width = 40
+        seo_ws.column_dimensions['E'].width = 12
+        seo_ws.column_dimensions['F'].width = 70
+
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         wb.save(filepath)
         return filepath

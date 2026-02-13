@@ -210,6 +210,25 @@ class DOCXGenerator:
                 ]
                 self._add_table(doc, ['Параметр', 'Значение', ''], rows)
 
+                seo_required = variant.get('seo_required', {}) or {}
+                seo_items = seo_required.get('items', []) or []
+                if seo_items:
+                    doc.add_paragraph(
+                        f"Обязательные SEO-элементы: PASS {seo_required.get('pass', 0)}, "
+                        f"WARN {seo_required.get('warn', 0)}, FAIL {seo_required.get('fail', 0)}."
+                    )
+                    seo_rows = []
+                    status_map = {'pass': 'PASS', 'warn': 'WARN', 'fail': 'FAIL'}
+                    for item in seo_items:
+                        seo_rows.append([
+                            item.get('label', ''),
+                            item.get('raw', ''),
+                            item.get('rendered', ''),
+                            status_map.get(item.get('status', ''), item.get('status', '')),
+                            item.get('fix', ''),
+                        ])
+                    self._add_table(doc, ['Элемент', 'no-JS', 'JS', 'Статус', 'Что исправить'], seo_rows[:80])
+
                 var_issues = variant.get('issues', []) or []
                 if var_issues:
                     doc.add_paragraph("Найденные проблемы:", style='List Bullet')

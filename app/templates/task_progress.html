@@ -1435,6 +1435,25 @@ function generateRenderAuditHTML(result) {
             <li><span class="font-medium ${(i.severity || '') === 'critical' ? 'text-red-700' : 'text-amber-700'}">${(i.severity || 'info').toUpperCase()}</span> - ${i.title || ''}</li>
         `).join('');
         const missing = v.missing || {};
+        const seoReq = v.seo_required || {};
+        const seoItems = seoReq.items || [];
+        const seoRows = seoItems.map(item => {
+            const map = {
+                pass: { text: 'PASS', cls: 'bg-green-100 text-green-700' },
+                warn: { text: 'WARN', cls: 'bg-amber-100 text-amber-700' },
+                fail: { text: 'FAIL', cls: 'bg-red-100 text-red-700' },
+            };
+            const st = map[item.status] || { text: item.status || 'N/A', cls: 'bg-gray-100 text-gray-700' };
+            return `
+                <tr class="border-b border-gray-100 align-top">
+                    <td class="py-1 pr-2">${item.label || '-'}</td>
+                    <td class="py-1 pr-2 break-all text-gray-700">${item.raw ?? '—'}</td>
+                    <td class="py-1 pr-2 break-all text-gray-700">${item.rendered ?? '—'}</td>
+                    <td class="py-1 pr-2"><span class="text-[11px] px-2 py-0.5 rounded-full ${st.cls}">${st.text}</span></td>
+                    <td class="py-1 text-gray-600">${item.fix || ''}</td>
+                </tr>
+            `;
+        }).join('');
         const metaCmp = v.meta_non_seo?.comparison || {};
         const metaItems = metaCmp.items || [];
         const metaRows = metaItems.slice(0, 30).map(item => {
@@ -1483,6 +1502,8 @@ function generateRenderAuditHTML(result) {
                     <div class="p-2 bg-gray-50 rounded"><span class="text-gray-600">Links no-JS/JS:</span> <span class="font-medium">${raw.links_count || 0}/${rendered.links_count || 0}</span></div>
                     <div class="p-2 bg-gray-50 rounded"><span class="text-gray-600">Meta (non-SEO):</span> <span class="font-medium">${metaCmp.total || 0}</span></div>
                     <div class="p-2 bg-gray-50 rounded"><span class="text-gray-600">Изменено meta:</span> <span class="font-medium">${(metaCmp.changed || 0) + (metaCmp.only_rendered || 0) + (metaCmp.only_raw || 0)}</span></div>
+                    <div class="p-2 bg-gray-50 rounded"><span class="text-gray-600">SEO FAIL:</span> <span class="font-medium text-red-700">${seoReq.fail || 0}</span></div>
+                    <div class="p-2 bg-gray-50 rounded"><span class="text-gray-600">SEO WARN:</span> <span class="font-medium text-amber-700">${seoReq.warn || 0}</span></div>
                 </div>
                 ${firstShot ? `
                     <div class="rounded-lg overflow-hidden border cursor-zoom-in mb-3" onclick="openMobileLightbox(${Math.max(0, shotIndex)})">
@@ -1496,6 +1517,28 @@ function generateRenderAuditHTML(result) {
                         ${missingLists}
                     </div>
                 ` : '<div class="text-sm text-green-700">Проблем не обнаружено.</div>'}
+                <details class="mt-3 rounded border border-gray-200 p-2 bg-gray-50">
+                    <summary class="cursor-pointer text-sm font-medium">Обязательные SEO-элементы: тщательная проверка</summary>
+                    ${seoRows ? `
+                        <div class="text-xs text-gray-600 mt-2 mb-2">
+                            PASS: ${seoReq.pass || 0}, WARN: ${seoReq.warn || 0}, FAIL: ${seoReq.fail || 0}
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full text-xs">
+                                <thead>
+                                    <tr class="text-left border-b">
+                                        <th class="py-1 pr-2">Элемент</th>
+                                        <th class="py-1 pr-2">no-JS</th>
+                                        <th class="py-1 pr-2">JS</th>
+                                        <th class="py-1 pr-2">Статус</th>
+                                        <th class="py-1">Что исправить</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${seoRows}</tbody>
+                            </table>
+                        </div>
+                    ` : '<div class="text-sm text-gray-500 mt-2">Данные по обязательным SEO-элементам отсутствуют.</div>'}
+                </details>
                 <details class="mt-3 rounded border border-gray-200 p-2 bg-gray-50">
                     <summary class="cursor-pointer text-sm font-medium">Мета-данные (не SEO): сравнение no-JS и JS</summary>
                     ${metaRows ? `
@@ -1557,6 +1600,8 @@ function generateRenderAuditHTML(result) {
                     <div><span class="text-gray-600">Warnings:</span> <span class="font-medium text-amber-700">${summary.warning_issues || 0}</span></div>
                     <div><span class="text-gray-600">Missing:</span> <span class="font-medium">${summary.missing_total || 0}</span></div>
                     <div><span class="text-gray-600">Missing %:</span> <span class="font-medium">${summary.avg_missing_pct || 0}%</span></div>
+                    <div><span class="text-gray-600">SEO FAIL:</span> <span class="font-medium text-red-700">${summary.seo_required_failures || 0}</span></div>
+                    <div><span class="text-gray-600">SEO WARN:</span> <span class="font-medium text-amber-700">${summary.seo_required_warnings || 0}</span></div>
                 </div>
             </div>
 
