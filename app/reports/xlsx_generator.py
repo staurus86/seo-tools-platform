@@ -53,6 +53,55 @@ class XLSXGenerator:
             cell.alignment = style['alignment']
         if 'border' in style:
             cell.border = style['border']
+
+    def _severity_style(self, severity: str) -> Dict[str, Any]:
+        """Return fill/font style for a severity level."""
+        sev = (severity or "info").lower()
+        styles = {
+            "critical": {
+                "fill": PatternFill(start_color='F8D7DA', end_color='F8D7DA', fill_type='solid'),
+                "font": Font(color='842029', bold=True),
+            },
+            "warning": {
+                "fill": PatternFill(start_color='FFF3CD', end_color='FFF3CD', fill_type='solid'),
+                "font": Font(color='664D03', bold=True),
+            },
+            "info": {
+                "fill": PatternFill(start_color='D1ECF1', end_color='D1ECF1', fill_type='solid'),
+                "font": Font(color='0C5460'),
+            },
+            "ok": {
+                "fill": PatternFill(start_color='D1E7DD', end_color='D1E7DD', fill_type='solid'),
+                "font": Font(color='0F5132', bold=True),
+            },
+        }
+        return styles.get(sev, styles["info"])
+
+    def _apply_severity_cell_style(self, cell, severity: str):
+        sev_style = self._severity_style(severity)
+        cell.fill = sev_style["fill"]
+        cell.font = sev_style["font"]
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+
+    def _apply_row_severity_fill(self, ws, row_idx: int, start_col: int, end_col: int, severity: str):
+        """Apply severity background to all row cells, preserving existing font/border/alignment."""
+        sev_fill = self._severity_style(severity)["fill"]
+        for col in range(start_col, end_col + 1):
+            ws.cell(row=row_idx, column=col).fill = sev_fill
+
+    def _sitemap_issue_severity(self, item: Dict[str, Any]) -> str:
+        """Infer severity for sitemap file-level row."""
+        if not item.get("ok", False):
+            return "critical"
+        if (item.get("status_code") or 0) >= 400:
+            return "critical"
+        if (item.get("duplicate_count") or 0) > 0:
+            return "critical"
+        if item.get("errors"):
+            return "critical"
+        if item.get("warnings"):
+            return "warning"
+        return "ok"
     
     def generate_site_analyze_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Р В РІР‚СљР В Р’ВµР В Р вЂ¦Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋР вЂљР РЋРЎвЂњР В Р’ВµР РЋРІР‚С™ Р В РЎвЂўР РЋРІР‚С™Р РЋРІР‚РЋР В Р’ВµР РЋРІР‚С™ Р В Р’В°Р В Р вЂ¦Р В Р’В°Р В Р’В»Р В РЎвЂР В Р’В·Р В Р’В° Р РЋР С“Р В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В Р’В°"""
@@ -169,13 +218,14 @@ class XLSXGenerator:
         files_ws = wb.create_sheet("Sitemap Files")
         files_headers = [
             "Sitemap URL", "Type", "HTTP", "OK", "URLs",
-            "Duplicates", "Size (bytes)", "Errors", "Warnings"
+            "Duplicates", "Size (bytes)", "Errors", "Warnings", "Severity"
         ]
         for col, header in enumerate(files_headers, 1):
             cell = files_ws.cell(row=1, column=col, value=header)
             self._apply_style(cell, header_style)
 
         for row_idx, item in enumerate((results.get("sitemap_files", []) or []), start=2):
+            severity = self._sitemap_issue_severity(item)
             values = [
                 item.get("sitemap_url", ""),
                 item.get("type", ""),
@@ -186,34 +236,54 @@ class XLSXGenerator:
                 item.get("size_bytes", 0),
                 " | ".join(item.get("errors", [])[:5]),
                 " | ".join(item.get("warnings", [])[:5]),
+                severity.capitalize(),
             ]
             for col, value in enumerate(values, 1):
                 cell = files_ws.cell(row=row_idx, column=col, value=value)
                 self._apply_style(cell, cell_style)
+            self._apply_row_severity_fill(files_ws, row_idx, 1, len(files_headers), severity)
+            self._apply_severity_cell_style(files_ws.cell(row=row_idx, column=len(files_headers)), severity)
         files_ws.freeze_panes = "A2"
-        for col, width in enumerate([72, 14, 10, 8, 12, 12, 14, 60, 60], 1):
+        files_ws.auto_filter.ref = f"A1:{get_column_letter(len(files_headers))}1"
+        for col, width in enumerate([72, 14, 10, 8, 12, 12, 14, 60, 60, 14], 1):
             files_ws.column_dimensions[get_column_letter(col)].width = width
 
         errors_ws = wb.create_sheet("Errors")
         errors_ws.cell(row=1, column=1, value="Error")
+        errors_ws.cell(row=1, column=2, value="Severity")
         self._apply_style(errors_ws.cell(row=1, column=1), header_style)
+        self._apply_style(errors_ws.cell(row=1, column=2), header_style)
         for idx, err in enumerate((results.get("errors", []) or []), start=2):
-            cell = errors_ws.cell(row=idx, column=1, value=err)
-            self._apply_style(cell, cell_style)
+            err_cell = errors_ws.cell(row=idx, column=1, value=err)
+            sev_cell = errors_ws.cell(row=idx, column=2, value="Critical")
+            self._apply_style(err_cell, cell_style)
+            self._apply_style(sev_cell, cell_style)
+            self._apply_row_severity_fill(errors_ws, idx, 1, 2, "critical")
+            self._apply_severity_cell_style(sev_cell, "critical")
         errors_ws.column_dimensions['A'].width = 140
+        errors_ws.column_dimensions['B'].width = 14
         errors_ws.freeze_panes = "A2"
+        errors_ws.auto_filter.ref = "A1:B1"
 
         warnings_ws = wb.create_sheet("Warnings")
         warnings_ws.cell(row=1, column=1, value="Warning")
+        warnings_ws.cell(row=1, column=2, value="Severity")
         self._apply_style(warnings_ws.cell(row=1, column=1), header_style)
+        self._apply_style(warnings_ws.cell(row=1, column=2), header_style)
         for idx, warn in enumerate((results.get("warnings", []) or []), start=2):
-            cell = warnings_ws.cell(row=idx, column=1, value=warn)
-            self._apply_style(cell, cell_style)
+            warn_cell = warnings_ws.cell(row=idx, column=1, value=warn)
+            sev_cell = warnings_ws.cell(row=idx, column=2, value="Warning")
+            self._apply_style(warn_cell, cell_style)
+            self._apply_style(sev_cell, cell_style)
+            self._apply_row_severity_fill(warnings_ws, idx, 1, 2, "warning")
+            self._apply_severity_cell_style(sev_cell, "warning")
         warnings_ws.column_dimensions['A'].width = 140
+        warnings_ws.column_dimensions['B'].width = 14
         warnings_ws.freeze_panes = "A2"
+        warnings_ws.auto_filter.ref = "A1:B1"
 
         dup_ws = wb.create_sheet("Duplicates")
-        dup_headers = ["URL", "First Sitemap", "Duplicate Sitemap"]
+        dup_headers = ["URL", "First Sitemap", "Duplicate Sitemap", "Severity"]
         for col, header in enumerate(dup_headers, 1):
             cell = dup_ws.cell(row=1, column=col, value=header)
             self._apply_style(cell, header_style)
@@ -221,12 +291,17 @@ class XLSXGenerator:
             dup_ws.cell(row=row_idx, column=1, value=item.get("url", ""))
             dup_ws.cell(row=row_idx, column=2, value=item.get("first_sitemap", ""))
             dup_ws.cell(row=row_idx, column=3, value=item.get("duplicate_sitemap", ""))
-            for col in range(1, 4):
+            dup_ws.cell(row=row_idx, column=4, value="Critical")
+            for col in range(1, 5):
                 self._apply_style(dup_ws.cell(row=row_idx, column=col), cell_style)
+            self._apply_row_severity_fill(dup_ws, row_idx, 1, 4, "critical")
+            self._apply_severity_cell_style(dup_ws.cell(row=row_idx, column=4), "critical")
         dup_ws.freeze_panes = "A2"
+        dup_ws.auto_filter.ref = "A1:D1"
         dup_ws.column_dimensions['A'].width = 80
         dup_ws.column_dimensions['B'].width = 60
         dup_ws.column_dimensions['C'].width = 60
+        dup_ws.column_dimensions['D'].width = 14
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         wb.save(filepath)
