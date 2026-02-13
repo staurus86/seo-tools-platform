@@ -580,125 +580,153 @@ class RenderAuditServiceV2:
             for idx, (vid, label, ua, mobile) in enumerate(variants, start=1):
                 notify(10 + int((idx - 1) * 40), f"Auditing {label} ({idx}/2)")
                 try:
-                    r = requests.get(url, timeout=self.timeout, headers={"User-Agent": ua}, allow_redirects=True)
-                    raw = self._parse_raw(r.text, r.status_code)
-                except Exception:
-                    raw = self._parse_raw("", None)
+                    try:
+                        r = requests.get(url, timeout=self.timeout, headers={"User-Agent": ua}, allow_redirects=True)
+                        raw = self._parse_raw(r.text, r.status_code)
+                    except Exception:
+                        raw = self._parse_raw("", None)
 
-                t0 = time.time()
-                base = f"render_{re.sub(r'[^a-zA-Z0-9]+','-',urlparse(url).netloc or 'site').strip('-').lower()}_{datetime.utcnow().strftime('%Y-%m-%d_%H-%M')}_{vid}"
-                shot_js = shot_dir / f"{base}_js.png"
-                shot_nojs = shot_dir / f"{base}_nojs.png"
-                rendered, timing_js, timing_nojs = self._render(p, url, ua, mobile, shot_js, shot_nojs)
-                elapsed = max(0.0, time.time() - t0)
+                    t0 = time.time()
+                    base = f"render_{re.sub(r'[^a-zA-Z0-9]+','-',urlparse(url).netloc or 'site').strip('-').lower()}_{datetime.utcnow().strftime('%Y-%m-%d_%H-%M')}_{vid}"
+                    shot_js = shot_dir / f"{base}_js.png"
+                    shot_nojs = shot_dir / f"{base}_nojs.png"
+                    rendered, timing_js, timing_nojs = self._render(p, url, ua, mobile, shot_js, shot_nojs)
+                    elapsed = max(0.0, time.time() - t0)
 
-                raw_stats = {
-                    "status_code": raw.status_code,
-                    "title": raw.title,
-                    "meta_description": raw.meta_description,
-                    "canonical": raw.canonical,
-                    "h1_count": _count_h(raw.headings, 1),
-                    "h2_count": _count_h(raw.headings, 2),
-                    "links_count": len(raw.links),
-                    "images_count": len(raw.images),
-                    "images_without_alt": _images_without_alt(raw.images),
-                    "structured_data_count": len(raw.structured_data),
-                    "schema_types": _schema_types(raw.structured_data),
-                    "visible_text_count": len(raw.visible_text),
-                    "html_bytes": raw.html_bytes,
-                    "errors": raw.errors,
-                }
-                rendered_stats = {
-                    "title": rendered.title,
-                    "meta_description": rendered.meta_description,
-                    "canonical": rendered.canonical,
-                    "h1_count": _count_h(rendered.headings, 1),
-                    "h2_count": _count_h(rendered.headings, 2),
-                    "links_count": len(rendered.links),
-                    "images_count": len(rendered.images),
-                    "images_without_alt": _images_without_alt(rendered.images),
-                    "structured_data_count": len(rendered.structured_data),
-                    "schema_types": _schema_types(rendered.structured_data),
-                    "visible_text_count": len(rendered.visible_text),
-                    "html_bytes": rendered.html_bytes,
-                    "errors": rendered.errors,
-                }
+                    raw_stats = {
+                        "status_code": raw.status_code,
+                        "title": raw.title,
+                        "meta_description": raw.meta_description,
+                        "canonical": raw.canonical,
+                        "h1_count": _count_h(raw.headings, 1),
+                        "h2_count": _count_h(raw.headings, 2),
+                        "links_count": len(raw.links),
+                        "images_count": len(raw.images),
+                        "images_without_alt": _images_without_alt(raw.images),
+                        "structured_data_count": len(raw.structured_data),
+                        "schema_types": _schema_types(raw.structured_data),
+                        "visible_text_count": len(raw.visible_text),
+                        "html_bytes": raw.html_bytes,
+                        "errors": raw.errors,
+                    }
+                    rendered_stats = {
+                        "title": rendered.title,
+                        "meta_description": rendered.meta_description,
+                        "canonical": rendered.canonical,
+                        "h1_count": _count_h(rendered.headings, 1),
+                        "h2_count": _count_h(rendered.headings, 2),
+                        "links_count": len(rendered.links),
+                        "images_count": len(rendered.images),
+                        "images_without_alt": _images_without_alt(rendered.images),
+                        "structured_data_count": len(rendered.structured_data),
+                        "schema_types": _schema_types(rendered.structured_data),
+                        "visible_text_count": len(rendered.visible_text),
+                        "html_bytes": rendered.html_bytes,
+                        "errors": rendered.errors,
+                    }
 
-                missing = {
-                    "Visible text": _diff(rendered.visible_text, raw.visible_text),
-                    "Headings": _diff(rendered.headings, raw.headings),
-                    "Links": _diff(rendered.links, raw.links),
-                    "Images": _diff(rendered.images, raw.images),
-                    "Structured data": _diff(rendered.structured_data, raw.structured_data),
-                }
-                metrics = _score(rendered, missing)
-                meta_cmp = _compare_meta(raw.meta_non_seo, rendered.meta_non_seo)
-                seo_required = _build_required_seo_checks(raw_stats, rendered_stats)
-                issues: List[Dict[str, Any]] = []
-                if missing["Visible text"]:
-                    issues.append({"severity": "warning" if len(missing["Visible text"]) <= 10 else "critical", "code": "content_missing_nojs", "title": "Content appears only after JavaScript", "details": f"Missing in no-JS version: {len(missing['Visible text'])} text lines.", "examples": _sample(missing["Visible text"])})
-                if missing["Headings"]:
-                    issues.append({"severity": "critical", "code": "headings_missing_nojs", "title": "Headings missing without JavaScript", "details": f"Found {len(missing['Headings'])} headings only after JS.", "examples": _sample(missing["Headings"])})
-                if missing["Links"]:
-                    issues.append({"severity": "warning", "code": "links_missing_nojs", "title": "Links appear only after JavaScript", "details": f"Found {len(missing['Links'])} links only in JS-rendered version.", "examples": _sample(missing["Links"])})
-                if missing["Structured data"]:
-                    issues.append({"severity": "warning", "code": "schema_missing_nojs", "title": "Structured data depends on JavaScript", "details": f"Found {len(missing['Structured data'])} JSON-LD items only with JS.", "examples": _sample(missing["Structured data"])})
-                if elapsed > 12:
-                    issues.append({"severity": "warning", "code": "render_too_slow", "title": "Slow JS render", "details": f"JS render time: {elapsed:.2f} sec."})
-                if metrics["score"] < 70:
-                    issues.append({"severity": "critical", "code": "low_render_score", "title": "Low render score", "details": f"Current score: {metrics['score']:.1f}/100."})
-                if meta_cmp["changed"] or meta_cmp["only_rendered"] or meta_cmp["only_raw"]:
-                    issues.append({
-                        "severity": "warning",
-                        "code": "meta_non_seo_diff",
-                        "title": "Non-SEO meta differs between no-JS and JS",
-                        "details": (
-                            f"Changed: {meta_cmp['changed']}, only JS: {meta_cmp['only_rendered']}, "
-                            f"only no-JS: {meta_cmp['only_raw']}."
-                        ),
-                        "examples": [x["key"] for x in meta_cmp["items"] if x["status"] != "same"][:8],
+                    missing = {
+                        "Visible text": _diff(rendered.visible_text, raw.visible_text),
+                        "Headings": _diff(rendered.headings, raw.headings),
+                        "Links": _diff(rendered.links, raw.links),
+                        "Images": _diff(rendered.images, raw.images),
+                        "Structured data": _diff(rendered.structured_data, raw.structured_data),
+                    }
+                    metrics = _score(rendered, missing)
+                    meta_cmp = _compare_meta(raw.meta_non_seo, rendered.meta_non_seo)
+                    seo_required = _build_required_seo_checks(raw_stats, rendered_stats)
+                    issues: List[Dict[str, Any]] = []
+                    if missing["Visible text"]:
+                        issues.append({"severity": "warning" if len(missing["Visible text"]) <= 10 else "critical", "code": "content_missing_nojs", "title": "Content appears only after JavaScript", "details": f"Missing in no-JS version: {len(missing['Visible text'])} text lines.", "examples": _sample(missing["Visible text"])})
+                    if missing["Headings"]:
+                        issues.append({"severity": "critical", "code": "headings_missing_nojs", "title": "Headings missing without JavaScript", "details": f"Found {len(missing['Headings'])} headings only after JS.", "examples": _sample(missing["Headings"])})
+                    if missing["Links"]:
+                        issues.append({"severity": "warning", "code": "links_missing_nojs", "title": "Links appear only after JavaScript", "details": f"Found {len(missing['Links'])} links only in JS-rendered version.", "examples": _sample(missing["Links"])})
+                    if missing["Structured data"]:
+                        issues.append({"severity": "warning", "code": "schema_missing_nojs", "title": "Structured data depends on JavaScript", "details": f"Found {len(missing['Structured data'])} JSON-LD items only with JS.", "examples": _sample(missing["Structured data"])})
+                    if elapsed > 12:
+                        issues.append({"severity": "warning", "code": "render_too_slow", "title": "Slow JS render", "details": f"JS render time: {elapsed:.2f} sec."})
+                    if metrics["score"] < 70:
+                        issues.append({"severity": "critical", "code": "low_render_score", "title": "Low render score", "details": f"Current score: {metrics['score']:.1f}/100."})
+                    if meta_cmp["changed"] or meta_cmp["only_rendered"] or meta_cmp["only_raw"]:
+                        issues.append({
+                            "severity": "warning",
+                            "code": "meta_non_seo_diff",
+                            "title": "Non-SEO meta differs between no-JS and JS",
+                            "details": (
+                                f"Changed: {meta_cmp['changed']}, only JS: {meta_cmp['only_rendered']}, "
+                                f"only no-JS: {meta_cmp['only_raw']}."
+                            ),
+                            "examples": [x["key"] for x in meta_cmp["items"] if x["status"] != "same"][:8],
+                        })
+                    for check in seo_required.get("items", []):
+                        status = check.get("status")
+                        if status not in {"warn", "fail"}:
+                            continue
+                        issues.append({
+                            "severity": "critical" if status == "fail" else "warning",
+                            "code": f"seo_required_{check.get('code')}",
+                            "title": f"Обязательный SEO-элемент: {check.get('label')}",
+                            "details": f"{check.get('details')} Рекомендация: {check.get('fix')}",
+                            "examples": [
+                                f"no-JS: {check.get('raw', '-')}",
+                                f"JS: {check.get('rendered', '-')}",
+                            ],
+                        })
+
+                    all_issues.extend([{**i, "variant": label} for i in issues])
+                    shots = {}
+                    for tag, path in (("js", shot_js), ("nojs", shot_nojs)):
+                        if path.exists():
+                            shots[tag] = {"path": str(path), "name": path.name, "url": f"/api/render-artifacts/{task_id}/{path.name}"}
+                            all_shots.append(str(path))
+
+                    all_variants.append({
+                        "variant_id": vid,
+                        "variant_label": label,
+                        "mobile": mobile,
+                        "user_agent": ua,
+                        "profile_type": "mobile" if mobile else "desktop",
+                        "raw": raw_stats,
+                        "rendered": rendered_stats,
+                        "missing": {"visible_text": missing["Visible text"], "headings": missing["Headings"], "links": missing["Links"], "images": missing["Images"], "structured_data": missing["Structured data"]},
+                        "meta_non_seo": {"raw": raw.meta_non_seo, "rendered": rendered.meta_non_seo, "comparison": meta_cmp},
+                        "seo_required": seo_required,
+                        "metrics": metrics,
+                        "timings": {"raw_s": 0.0, "rendered_s": elapsed},
+                        "timing_nojs_ms": timing_nojs,
+                        "timing_js_ms": timing_js,
+                        "issues": issues,
+                        "recommendations": _build_recommendations(missing) + _build_seo_recommendations(seo_required),
+                        "screenshots": shots,
                     })
-                for check in seo_required.get("items", []):
-                    status = check.get("status")
-                    if status not in {"warn", "fail"}:
-                        continue
-                    issues.append({
-                        "severity": "critical" if status == "fail" else "warning",
-                        "code": f"seo_required_{check.get('code')}",
-                        "title": f"Обязательный SEO-элемент: {check.get('label')}",
-                        "details": f"{check.get('details')} Рекомендация: {check.get('fix')}",
-                        "examples": [
-                            f"no-JS: {check.get('raw', '-')}",
-                            f"JS: {check.get('rendered', '-')}",
-                        ],
+                except Exception as variant_exc:
+                    issues = [{
+                        "severity": "critical",
+                        "code": "variant_execution_failed",
+                        "title": "Профиль рендеринга не выполнен",
+                        "details": str(variant_exc),
+                    }]
+                    all_issues.extend([{**i, "variant": label} for i in issues])
+                    all_variants.append({
+                        "variant_id": vid,
+                        "variant_label": label,
+                        "mobile": mobile,
+                        "user_agent": ua,
+                        "profile_type": "mobile" if mobile else "desktop",
+                        "raw": {},
+                        "rendered": {},
+                        "missing": {"visible_text": [], "headings": [], "links": [], "images": [], "structured_data": []},
+                        "meta_non_seo": {"raw": {}, "rendered": {}, "comparison": {"total": 0, "same": 0, "changed": 0, "only_rendered": 0, "only_raw": 0, "items": []}},
+                        "seo_required": {"total": 0, "pass": 0, "warn": 0, "fail": 0, "items": []},
+                        "metrics": {"total_missing": 0.0, "rendered_total": 0.0, "missing_pct": 0.0, "score": 0.0},
+                        "timings": {"raw_s": 0.0, "rendered_s": 0.0},
+                        "timing_nojs_ms": {},
+                        "timing_js_ms": {},
+                        "issues": issues,
+                        "recommendations": ["Проверьте окружение Playwright и доступность целевого URL."],
+                        "screenshots": {},
                     })
-
-                all_issues.extend([{**i, "variant": label} for i in issues])
-                shots = {}
-                for tag, path in (("js", shot_js), ("nojs", shot_nojs)):
-                    if path.exists():
-                        shots[tag] = {"path": str(path), "name": path.name, "url": f"/api/render-artifacts/{task_id}/{path.name}"}
-                        all_shots.append(str(path))
-
-                all_variants.append({
-                    "variant_id": vid,
-                    "variant_label": label,
-                    "mobile": mobile,
-                    "user_agent": ua,
-                    "profile_type": "mobile" if mobile else "desktop",
-                    "raw": raw_stats,
-                    "rendered": rendered_stats,
-                    "missing": {"visible_text": missing["Visible text"], "headings": missing["Headings"], "links": missing["Links"], "images": missing["Images"], "structured_data": missing["Structured data"]},
-                    "meta_non_seo": {"raw": raw.meta_non_seo, "rendered": rendered.meta_non_seo, "comparison": meta_cmp},
-                    "seo_required": seo_required,
-                    "metrics": metrics,
-                    "timings": {"raw_s": 0.0, "rendered_s": elapsed},
-                    "timing_nojs_ms": timing_nojs,
-                    "timing_js_ms": timing_js,
-                    "issues": issues,
-                    "recommendations": _build_recommendations(missing) + _build_seo_recommendations(seo_required),
-                    "screenshots": shots,
-                })
                 notify(10 + int(idx * 40), f"Completed: {label}")
 
         critical = sum(1 for i in all_issues if i.get("severity") == "critical")
