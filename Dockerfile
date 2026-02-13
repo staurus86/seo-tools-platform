@@ -33,6 +33,7 @@ WORKDIR /app
 # Environment variables
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 # Copy Python packages from builder
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
@@ -45,6 +46,9 @@ COPY *.sh /app/
 COPY *.txt /app/
 COPY *.toml /app/
 COPY *.md /app/
+
+# Install Playwright Chromium for mobile checks
+RUN mkdir -p /ms-playwright && python -m playwright install --with-deps chromium
 
 # Make entrypoint executable and create reports dir
 RUN chmod +x entrypoint.sh && mkdir -p reports_output
