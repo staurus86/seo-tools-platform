@@ -1411,6 +1411,16 @@ function generateRenderAuditHTML(result) {
     const variants = r.variants || [];
     const issues = r.issues || [];
 
+    const variantDiagnostics = variants.map(v => ({
+        variant_id: v?.variant_id,
+        variant_label: v?.variant_label,
+        profile_type: v?.profile_type,
+        mobile: v?.mobile,
+        issues: (v?.issues || []).length,
+        screenshots: Object.keys(v?.screenshots || {}),
+    }));
+    console.log('[RenderUI] variants diagnostics:', variantDiagnostics);
+
     const screenshotItems = [];
     variants.forEach(v => {
         const shots = v.screenshots || {};
@@ -1581,6 +1591,11 @@ function generateRenderAuditHTML(result) {
     `).join('');
 
     const recommendationsHtml = (r.recommendations || []).map(rec => `<li>${rec}</li>`).join('');
+    const diagnosticsHtml = variantDiagnostics.length
+        ? `<ul class="list-disc pl-5 text-xs text-gray-700">${variantDiagnostics.map(d =>
+            `<li>${d.variant_id || '-'} | ${d.variant_label || '-'} | profile=${d.profile_type || '-'} | mobile=${String(d.mobile)} | issues=${d.issues} | shots=${d.screenshots.join(',') || '-'}</li>`
+        ).join('')}</ul>`
+        : '<div class="text-xs text-gray-500">Профили отсутствуют в JSON результата.</div>';
 
     return `
         <div class="space-y-6">
@@ -1607,6 +1622,10 @@ function generateRenderAuditHTML(result) {
                     <div><span class="text-gray-600">Missing %:</span> <span class="font-medium">${summary.avg_missing_pct || 0}%</span></div>
                     <div><span class="text-gray-600">SEO FAIL:</span> <span class="font-medium text-red-700">${summary.seo_required_failures || 0}</span></div>
                     <div><span class="text-gray-600">SEO WARN:</span> <span class="font-medium text-amber-700">${summary.seo_required_warnings || 0}</span></div>
+                </div>
+                <div class="mt-4 p-3 bg-gray-50 rounded border border-gray-200">
+                    <div class="text-sm font-medium mb-1">Диагностика профилей (debug)</div>
+                    ${diagnosticsHtml}
                 </div>
             </div>
 
