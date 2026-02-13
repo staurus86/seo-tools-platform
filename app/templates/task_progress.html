@@ -1628,6 +1628,30 @@ function generateRenderAuditHTML(result) {
     const mobileIssuesPreview = (mobileVariant?.issues || []).slice(0, 6).map(i => `
         <li><span class="font-medium ${(i.severity || '') === 'critical' ? 'text-red-700' : 'text-amber-700'}">${(i.severity || 'info').toUpperCase()}</span> - ${i.title || ''}</li>
     `).join('');
+    const desktopIssuesPreview = (desktopVariant?.issues || []).slice(0, 6).map(i => `
+        <li><span class="font-medium ${(i.severity || '') === 'critical' ? 'text-red-700' : 'text-amber-700'}">${(i.severity || 'info').toUpperCase()}</span> - ${i.title || ''}</li>
+    `).join('');
+    const forcedProfilesHtml = `
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-white rounded-xl shadow-md p-5 border ${desktopVariant ? 'border-green-100' : 'border-red-200'}">
+                <h4 class="font-semibold mb-2">Googlebot Desktop</h4>
+                ${desktopVariant ? `
+                    <div class="text-sm text-gray-700 mb-2">Score: ${Number(desktopVariant.metrics?.score ?? 0).toFixed(1)} | Missing: ${Math.round(desktopVariant.metrics?.total_missing || 0)}</div>
+                    <div class="text-xs text-gray-600 mb-2">Скриншоты: ${Object.keys(desktopVariant.screenshots || {}).join(', ') || 'нет'}</div>
+                    ${desktopIssuesPreview ? `<ul class="list-disc pl-5 text-sm text-gray-700">${desktopIssuesPreview}</ul>` : '<div class="text-sm text-green-700">Проблем не обнаружено.</div>'}
+                ` : `<div class="text-sm text-red-700">Данные desktop-профиля отсутствуют.</div>`}
+            </div>
+            <div class="bg-white rounded-xl shadow-md p-5 border ${mobileVariant ? 'border-blue-100' : 'border-red-200'}">
+                <h4 class="font-semibold mb-2">Googlebot Mobile</h4>
+                ${mobileVariant ? `
+                    <div class="text-sm text-gray-700 mb-2">Score: ${Number(mobileVariant.metrics?.score ?? 0).toFixed(1)} | Missing: ${Math.round(mobileVariant.metrics?.total_missing || 0)}</div>
+                    <div class="text-xs text-gray-600 mb-2">Скриншоты: ${Object.keys(mobileVariant.screenshots || {}).join(', ') || 'нет'}</div>
+                    <div class="text-xs text-gray-600 mb-2">is_mobile: ${String(mobileVariant.emulation?.is_mobile ?? mobileVariant.mobile ?? false)}, viewport: ${mobileVariant.emulation?.viewport ? `${mobileVariant.emulation.viewport.width}x${mobileVariant.emulation.viewport.height}` : '-'}</div>
+                    ${mobileIssuesPreview ? `<ul class="list-disc pl-5 text-sm text-gray-700">${mobileIssuesPreview}</ul>` : '<div class="text-sm text-green-700">Проблем не обнаружено.</div>'}
+                ` : `<div class="text-sm text-red-700">Данные mobile-профиля отсутствуют.</div>`}
+            </div>
+        </div>
+    `;
     const mobileDetailsHtml = mobileVariant ? `
         <div class="bg-white rounded-xl shadow-md p-6 border border-blue-100">
             <h4 class="font-semibold mb-2">Детализация мобильного профиля</h4>
@@ -1685,6 +1709,8 @@ function generateRenderAuditHTML(result) {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 ${variantCards || '<div class="text-sm text-gray-500">Нет данных по профилям рендеринга.</div>'}
             </div>
+
+            ${forcedProfilesHtml}
 
             ${mobileDetailsHtml}
 
