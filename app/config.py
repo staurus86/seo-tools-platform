@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     MOBILE_CHECK_ENGINE: str = os.getenv("MOBILE_CHECK_ENGINE", "v2")
     MOBILE_CHECK_TIMEOUT: int = int(os.getenv("MOBILE_CHECK_TIMEOUT", "35"))
     MOBILE_CHECK_MODE: str = os.getenv("MOBILE_CHECK_MODE", "quick")
+
+    # Render audit v2
+    RENDER_AUDIT_ENGINE: str = os.getenv("RENDER_AUDIT_ENGINE", "v2")
+    RENDER_AUDIT_TIMEOUT: int = int(os.getenv("RENDER_AUDIT_TIMEOUT", "35"))
     
     # History
     HISTORY_SIZE: int = 10

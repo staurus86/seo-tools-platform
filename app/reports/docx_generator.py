@@ -1,4 +1,4 @@
-"""
+﻿"""
 Word Report Generator
 """
 from docx import Document
@@ -13,20 +13,20 @@ from app.config import settings
 
 
 class DOCXGenerator:
-    """Генератор Word отчетов"""
+    """Р“РµРЅРµСЂР°С‚РѕСЂ Word РѕС‚С‡РµС‚РѕРІ"""
     
     def __init__(self):
         self.reports_dir = settings.REPORTS_DIR
         os.makedirs(self.reports_dir, exist_ok=True)
     
     def _add_heading(self, doc, text: str, level: int = 1):
-        """Добавляет заголовок"""
+        """Р”РѕР±Р°РІР»СЏРµС‚ Р·Р°РіРѕР»РѕРІРѕРє"""
         heading = doc.add_heading(text, level=level)
         heading.alignment = WD_ALIGN_PARAGRAPH.LEFT
         return heading
     
     def _add_table(self, doc, headers: List[str], rows: List[List[Any]]):
-        """Добавляет таблицу"""
+        """Р”РѕР±Р°РІР»СЏРµС‚ С‚Р°Р±Р»РёС†Сѓ"""
         table = doc.add_table(rows=1, cols=len(headers))
         table.style = 'Light Grid Accent 1'
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -49,37 +49,37 @@ class DOCXGenerator:
         return table
     
     def generate_site_analyze_report(self, task_id: str, data: Dict[str, Any]) -> str:
-        """Генерирует клиентский отчет анализа сайта."""
+        """Р“РµРЅРµСЂРёСЂСѓРµС‚ РєР»РёРµРЅС‚СЃРєРёР№ РѕС‚С‡РµС‚ Р°РЅР°Р»РёР·Р° СЃР°Р№С‚Р°."""
         doc = Document()
 
-        title = doc.add_heading('Отчет по SEO-анализу сайта', 0)
+        title = doc.add_heading('РћС‚С‡РµС‚ РїРѕ SEO-Р°РЅР°Р»РёР·Сѓ СЃР°Р№С‚Р°', 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
         doc.add_paragraph(f"URL: {data.get('url', 'N/A')}")
-        doc.add_paragraph(f"Проверено страниц: {data.get('pages_analyzed', 0)}")
-        doc.add_paragraph(f"Дата завершения: {data.get('completed_at', 'N/A')}")
+        doc.add_paragraph(f"РџСЂРѕРІРµСЂРµРЅРѕ СЃС‚СЂР°РЅРёС†: {data.get('pages_analyzed', 0)}")
+        doc.add_paragraph(f"Р”Р°С‚Р° Р·Р°РІРµСЂС€РµРЅРёСЏ: {data.get('completed_at', 'N/A')}")
         doc.add_paragraph(
-            "Описание: данный отчет фиксирует общее техническое состояние сайта с точки зрения SEO, "
-            "чтобы определить приоритеты доработок и снизить риски потери органического трафика."
+            "РћРїРёСЃР°РЅРёРµ: РґР°РЅРЅС‹Р№ РѕС‚С‡РµС‚ С„РёРєСЃРёСЂСѓРµС‚ РѕР±С‰РµРµ С‚РµС…РЅРёС‡РµСЃРєРѕРµ СЃРѕСЃС‚РѕСЏРЅРёРµ СЃР°Р№С‚Р° СЃ С‚РѕС‡РєРё Р·СЂРµРЅРёСЏ SEO, "
+            "С‡С‚РѕР±С‹ РѕРїСЂРµРґРµР»РёС‚СЊ РїСЂРёРѕСЂРёС‚РµС‚С‹ РґРѕСЂР°Р±РѕС‚РѕРє Рё СЃРЅРёР·РёС‚СЊ СЂРёСЃРєРё РїРѕС‚РµСЂРё РѕСЂРіР°РЅРёС‡РµСЃРєРѕРіРѕ С‚СЂР°С„РёРєР°."
         )
 
-        self._add_heading(doc, 'Ключевые результаты', level=1)
+        self._add_heading(doc, 'РљР»СЋС‡РµРІС‹Рµ СЂРµР·СѓР»СЊС‚Р°С‚С‹', level=1)
         results = data.get('results', {})
-        headers = ['Показатель', 'Значение', 'Статус']
+        headers = ['РџРѕРєР°Р·Р°С‚РµР»СЊ', 'Р—РЅР°С‡РµРЅРёРµ', 'РЎС‚Р°С‚СѓСЃ']
         rows = [
-            ['Всего страниц', results.get('total_pages', 0), 'OK'],
-            ['Статус анализа', results.get('status', 'N/A'), 'OK'],
-            ['Сводка', results.get('summary', 'N/A'), 'OK']
+            ['Р’СЃРµРіРѕ СЃС‚СЂР°РЅРёС†', results.get('total_pages', 0), 'OK'],
+            ['РЎС‚Р°С‚СѓСЃ Р°РЅР°Р»РёР·Р°', results.get('status', 'N/A'), 'OK'],
+            ['РЎРІРѕРґРєР°', results.get('summary', 'N/A'), 'OK']
         ]
         self._add_table(doc, headers, rows)
 
         recs = results.get("recommendations", []) or data.get("recommendations", [])
         if recs:
-            self._add_heading(doc, 'Рекомендации', level=1)
+            self._add_heading(doc, 'Р РµРєРѕРјРµРЅРґР°С†РёРё', level=1)
             for rec in recs[:30]:
                 doc.add_paragraph(str(rec), style='List Bullet')
 
         doc.add_paragraph()
-        footer = doc.add_paragraph(f"Отчет сформирован SEO Инструменты: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        footer = doc.add_paragraph(f"РћС‚С‡РµС‚ СЃС„РѕСЂРјРёСЂРѕРІР°РЅ SEO РРЅСЃС‚СЂСѓРјРµРЅС‚С‹: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
         footer.runs[0].font.size = Pt(8)
         footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
@@ -89,27 +89,27 @@ class DOCXGenerator:
         return filepath
     
     def generate_robots_report(self, task_id: str, data: Dict[str, Any]) -> str:
-        """Генерирует клиентский отчет robots.txt."""
+        """Р“РµРЅРµСЂРёСЂСѓРµС‚ РєР»РёРµРЅС‚СЃРєРёР№ РѕС‚С‡РµС‚ robots.txt."""
         doc = Document()
 
-        title = doc.add_heading('Отчет по robots.txt', 0)
+        title = doc.add_heading('РћС‚С‡РµС‚ РїРѕ robots.txt', 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         doc.add_paragraph(f"URL: {data.get('url', 'N/A')}")
         results = data.get('results', {})
-        doc.add_paragraph(f"Файл robots.txt найден: {'Да' if results.get('robots_txt_found') else 'Нет'}")
+        doc.add_paragraph(f"Р¤Р°Р№Р» robots.txt РЅР°Р№РґРµРЅ: {'Р”Р°' if results.get('robots_txt_found') else 'РќРµС‚'}")
         doc.add_paragraph(
-            "Описание: robots.txt управляет доступом поисковых и сервисных ботов к разделам сайта. "
-            "Ошибки в этом файле могут ограничить индексацию важных страниц."
+            "РћРїРёСЃР°РЅРёРµ: robots.txt СѓРїСЂР°РІР»СЏРµС‚ РґРѕСЃС‚СѓРїРѕРј РїРѕРёСЃРєРѕРІС‹С… Рё СЃРµСЂРІРёСЃРЅС‹С… Р±РѕС‚РѕРІ Рє СЂР°Р·РґРµР»Р°Рј СЃР°Р№С‚Р°. "
+            "РћС€РёР±РєРё РІ СЌС‚РѕРј С„Р°Р№Р»Рµ РјРѕРіСѓС‚ РѕРіСЂР°РЅРёС‡РёС‚СЊ РёРЅРґРµРєСЃР°С†РёСЋ РІР°Р¶РЅС‹С… СЃС‚СЂР°РЅРёС†."
         )
         recs = results.get("recommendations", [])
         if recs:
-            self._add_heading(doc, 'Рекомендации', level=1)
+            self._add_heading(doc, 'Р РµРєРѕРјРµРЅРґР°С†РёРё', level=1)
             for rec in recs[:30]:
                 doc.add_paragraph(str(rec), style='List Bullet')
 
         doc.add_paragraph()
-        footer = doc.add_paragraph(f"Отчет сформирован SEO Инструменты: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        footer = doc.add_paragraph(f"РћС‚С‡РµС‚ СЃС„РѕСЂРјРёСЂРѕРІР°РЅ SEO РРЅСЃС‚СЂСѓРјРµРЅС‚С‹: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
         footer.runs[0].font.size = Pt(8)
         footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
@@ -119,28 +119,28 @@ class DOCXGenerator:
         return filepath
     
     def generate_sitemap_report(self, task_id: str, data: Dict[str, Any]) -> str:
-        """Генерирует клиентский отчет по sitemap."""
+        """Р“РµРЅРµСЂРёСЂСѓРµС‚ РєР»РёРµРЅС‚СЃРєРёР№ РѕС‚С‡РµС‚ РїРѕ sitemap."""
         doc = Document()
 
-        title = doc.add_heading('Отчет по валидации sitemap', 0)
+        title = doc.add_heading('РћС‚С‡РµС‚ РїРѕ РІР°Р»РёРґР°С†РёРё sitemap', 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         doc.add_paragraph(f"URL: {data.get('url', 'N/A')}")
         results = data.get('results', {})
-        doc.add_paragraph(f"Валиден: {'Да' if results.get('valid') else 'Нет'}")
-        doc.add_paragraph(f"Количество URL: {results.get('urls_count', 0)}")
+        doc.add_paragraph(f"Р’Р°Р»РёРґРµРЅ: {'Р”Р°' if results.get('valid') else 'РќРµС‚'}")
+        doc.add_paragraph(f"РљРѕР»РёС‡РµСЃС‚РІРѕ URL: {results.get('urls_count', 0)}")
         doc.add_paragraph(
-            "Описание: sitemap помогает поисковым системам быстрее находить и переобходить страницы. "
-            "Ошибки структуры и дублей могут ухудшать качество индексации."
+            "РћРїРёСЃР°РЅРёРµ: sitemap РїРѕРјРѕРіР°РµС‚ РїРѕРёСЃРєРѕРІС‹Рј СЃРёСЃС‚РµРјР°Рј Р±С‹СЃС‚СЂРµРµ РЅР°С…РѕРґРёС‚СЊ Рё РїРµСЂРµРѕР±С…РѕРґРёС‚СЊ СЃС‚СЂР°РЅРёС†С‹. "
+            "РћС€РёР±РєРё СЃС‚СЂСѓРєС‚СѓСЂС‹ Рё РґСѓР±Р»РµР№ РјРѕРіСѓС‚ СѓС…СѓРґС€Р°С‚СЊ РєР°С‡РµСЃС‚РІРѕ РёРЅРґРµРєСЃР°С†РёРё."
         )
         recs = results.get("recommendations", [])
         if recs:
-            self._add_heading(doc, 'Рекомендации', level=1)
+            self._add_heading(doc, 'Р РµРєРѕРјРµРЅРґР°С†РёРё', level=1)
             for rec in recs[:30]:
                 doc.add_paragraph(str(rec), style='List Bullet')
 
         doc.add_paragraph()
-        footer = doc.add_paragraph(f"Отчет сформирован SEO Инструменты: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        footer = doc.add_paragraph(f"РћС‚С‡РµС‚ СЃС„РѕСЂРјРёСЂРѕРІР°РЅ SEO РРЅСЃС‚СЂСѓРјРµРЅС‚С‹: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
         footer.runs[0].font.size = Pt(8)
         footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
@@ -150,270 +150,115 @@ class DOCXGenerator:
         return filepath
     
     def generate_render_report(self, task_id: str, data: Dict[str, Any]) -> str:
-        """Генерирует отчет аудита рендеринга."""
+        """Генерирует расширенный клиентский отчет аудита рендеринга."""
         doc = Document()
 
-        title = doc.add_heading('Отчет аудита рендеринга', 0)
+        title = doc.add_heading('Отчет по аудиту рендеринга (JS vs no-JS)', 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        doc.add_paragraph(f"URL: {data.get('url', 'N/A')}")
-        results = data.get('results', {})
-        doc.add_paragraph(f"Разница рендера JS/без JS: {'Да' if results.get('js_render_diff') else 'Нет'}")
-        doc.add_paragraph(
-            "Описание: аудит рендеринга нужен для оценки доступности контента для поисковых систем "
-            "в случаях, когда сайт зависит от JavaScript."
-        )
-        recs = results.get("recommendations", [])
-        if recs:
-            self._add_heading(doc, 'Рекомендации', level=1)
-            for rec in recs[:20]:
-                doc.add_paragraph(str(rec), style='List Bullet')
-
-        doc.add_paragraph()
-        footer = doc.add_paragraph(f"Отчет сформирован SEO Инструменты: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        footer.runs[0].font.size = Pt(8)
-        footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
-
-        filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
-        doc.save(filepath)
-        return filepath
-
-    def generate_mobile_report(self, task_id: str, data: Dict[str, Any]) -> str:
-        """Генерирует расширенный клиентский отчет по мобильной версии сайта."""
-        doc = Document()
-
-        issue_guides = {
-            "viewport_missing": {
-                "name": "Отсутствует meta viewport",
-                "why": "Без viewport страница отображается как десктопная версия, что ухудшает UX и SEO-поведенческие факторы.",
-                "impact": "Высокий",
-                "fix": [
-                    "Добавить в <head> тег: <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">.",
-                    "Проверить, что тег присутствует на всех шаблонах страниц.",
-                ],
-            },
-            "viewport_invalid": {
-                "name": "Некорректная настройка viewport",
-                "why": "Неверные параметры viewport приводят к неправильному масштабу и проблемам с адаптивностью.",
-                "impact": "Высокий",
-                "fix": [
-                    "Исправить content viewport на width=device-width, initial-scale=1.",
-                    "Проверить отсутствие конфликтующих мета-тегов viewport.",
-                ],
-            },
-            "horizontal_overflow": {
-                "name": "Горизонтальная прокрутка",
-                "why": "Пользователи вынуждены прокручивать страницу по горизонтали, что ухудшает конверсию и удобство.",
-                "impact": "Высокий",
-                "fix": [
-                    "Найти блоки, выходящие за ширину экрана (ширина документа больше viewport).",
-                    "Использовать адаптивные единицы и ограничить ширину медиа-элементов через max-width: 100%.",
-                ],
-            },
-            "small_touch_targets": {
-                "name": "Маленькие кликабельные элементы",
-                "why": "Элементы меньше 44x44px затрудняют навигацию с сенсорного экрана.",
-                "impact": "Средний",
-                "fix": [
-                    "Увеличить размеры кнопок/ссылок до минимум 44x44px.",
-                    "Добавить отступы между соседними интерактивными элементами.",
-                ],
-            },
-            "small_fonts": {
-                "name": "Слишком мелкий текст",
-                "why": "Мелкий текст снижает читаемость и увеличивает показатель отказов.",
-                "impact": "Средний",
-                "fix": [
-                    "Установить базовый размер шрифта не менее 16px для мобильных экранов.",
-                    "Проверить масштабирование текста в ключевых блоках (меню, карточки, формы).",
-                ],
-            },
-            "large_images": {
-                "name": "Изображения шире экрана",
-                "why": "Слишком широкие изображения ломают сетку и вызывают горизонтальный скролл.",
-                "impact": "Средний",
-                "fix": [
-                    "Добавить для изображений max-width: 100%; height: auto;.",
-                    "Проверить адаптивность слайдеров, баннеров и встраиваемых медиа-блоков.",
-                ],
-            },
-            "console_errors": {
-                "name": "Ошибки JavaScript в консоли",
-                "why": "JS-ошибки могут ломать меню, формы, фильтры и другие элементы интерфейса.",
-                "impact": "Средний",
-                "fix": [
-                    "Разобрать ошибки консоли в порядке критичности.",
-                    "Исправить недоступные ресурсы и исключения в клиентском коде.",
-                ],
-            },
-            "runtime_error": {
-                "name": "Ошибка выполнения проверки",
-                "why": "Проверка конкретного устройства не завершилась, данные неполные.",
-                "impact": "Высокий",
-                "fix": [
-                    "Проверить доступность сайта, редиректы и блокировки.",
-                    "Повторить тест после исправления инфраструктурных ограничений.",
-                ],
-            },
-            "playwright_unavailable": {
-                "name": "Среда браузерного тестирования недоступна",
-                "why": "Без браузерного движка нельзя получить реальные скриншоты и измерения мобильной верстки.",
-                "impact": "Высокий",
-                "fix": [
-                    "Установить зависимости Playwright и браузер Chromium в окружении сервера.",
-                    "Перезапустить сервис и повторить анализ.",
-                ],
-            },
-            "mobile_engine_error": {
-                "name": "Сбой движка мобильной проверки",
-                "why": "Инструмент не смог выполнить полноценный мобильный аудит.",
-                "impact": "Высокий",
-                "fix": [
-                    "Проверить логи сервиса и окружение выполнения.",
-                    "Устранить причину ошибки и повторно запустить проверку.",
-                ],
-            },
-        }
-
-        title = doc.add_heading('Клиентский отчет: мобильная версия сайта', 0)
-        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-        url = data.get("url", "N/A")
-        generated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        doc.add_paragraph(f"Сайт: {url}")
-        doc.add_paragraph(f"Дата и время отчета: {generated_at}")
-        doc.add_paragraph(
-            "Цель отчета: оценить удобство использования сайта на популярных мобильных устройствах, "
-            "выявить технические ошибки адаптивности и предоставить понятный план исправлений для команды разработки."
-        )
-
+        url = data.get('url', 'N/A')
         results = data.get('results', {}) or {}
         summary = results.get('summary', {}) or {}
-        devices = results.get('device_results', []) or []
-        all_issues = results.get('issues', []) or []
-        actionable_issues = [i for i in all_issues if i.get("severity") in ("critical", "warning")]
-        info_issues = [i for i in all_issues if i.get("severity") == "info"]
+        variants = results.get('variants', []) or []
+        issues = results.get('issues', []) or []
+        recommendations = results.get('recommendations', []) or []
+        generated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-        self._add_heading(doc, '1. Сводка по проверке', level=1)
-        summary_rows = [
-            ["Движок проверки", results.get("engine", "legacy")],
-            ["Режим проверки", "Быстрый" if results.get("mode") == "quick" else "Полный"],
-            ["Проверено устройств", summary.get("total_devices", len(results.get("devices_tested", [])))],
-            ["Устройств без критичных проблем", summary.get("mobile_friendly_devices", 0)],
-            ["Устройств с проблемами", summary.get("non_friendly_devices", 0)],
-            ["Среднее время загрузки, мс", summary.get("avg_load_time_ms", 0)],
-            ["Количество ошибок (critical + warning)", len(actionable_issues)],
-            ["Информационные замечания", len(info_issues)],
-            ["Интегральная оценка", results.get("score", "N/A")],
-            ["Итог", "Сайт соответствует мобильным требованиям" if results.get("mobile_friendly") else "Требуются доработки мобильной версии"],
+        doc.add_paragraph(f"URL: {url}")
+        doc.add_paragraph(f"Дата отчета: {generated_at}")
+        doc.add_paragraph(f"Движок: {results.get('engine', 'legacy')}")
+        doc.add_paragraph(
+            "Описание: аудит рендеринга проверяет, насколько контент страницы доступен поисковым системам "
+            "без выполнения JavaScript. Это критично для индексации, сниппетов и стабильности SEO."
+        )
+
+        self._add_heading(doc, '1. Итоги', level=1)
+        totals = [
+            ['Профилей проверки', summary.get('variants_total', len(variants)), 'Инфо'],
+            ['Общий Score', summary.get('score', 'N/A'), 'Инфо'],
+            ['Критичные проблемы', summary.get('critical_issues', 0), 'Важно'],
+            ['Предупреждения', summary.get('warning_issues', 0), 'Важно'],
+            ['Всего missing-элементов', summary.get('missing_total', 0), 'Важно'],
+            ['Средний missing %', f"{summary.get('avg_missing_pct', 0)}%", 'Инфо'],
         ]
-        self._add_table(doc, ["Показатель", "Значение"], summary_rows)
+        self._add_table(doc, ['Показатель', 'Значение', 'Статус'], totals)
 
-        self._add_heading(doc, '2. Технические параметры аудита', level=1)
-        tech_rows = [
-            ["HTTP статус", results.get("status_code", "N/A")],
-            ["Финальный URL", results.get("final_url", url)],
-            ["Viewport найден", "Да" if results.get("viewport_found") else "Нет"],
-            ["Содержимое viewport", results.get("viewport_content") or "Не найдено"],
-        ]
-        self._add_table(doc, ["Параметр", "Значение"], tech_rows)
+        self._add_heading(doc, '2. Что проверялось и зачем', level=1)
+        doc.add_paragraph(
+            "Система сравнивает две версии страницы: исходный HTML (без JS) и итоговый DOM после JS-рендера. "
+            "Если значимый контент появляется только после JS, поисковый робот может увидеть неполную страницу."
+        )
+        doc.add_paragraph("Проверяются элементы: title, meta description, canonical, H1-H2, ссылки, изображения, schema.org, видимый текст.")
 
-        self._add_heading(doc, '3. Результаты по устройствам', level=1)
-        device_rows = []
-        for d in devices:
-            device_rows.append([
-                d.get("device_name", ""),
-                "Телефон" if d.get("category") == "phone" else ("Планшет" if d.get("category") == "tablet" else d.get("category", "")),
-                f"{(d.get('viewport') or {}).get('width', '-') }x{(d.get('viewport') or {}).get('height', '-')}",
-                d.get("status_code", "N/A"),
-                d.get("load_time_ms", 0),
-                d.get("issues_count", 0),
-                "Да" if d.get("mobile_friendly") else "Нет",
-            ])
-        if device_rows:
-            self._add_table(
-                doc,
-                ["Устройство", "Тип", "Viewport", "HTTP", "Загрузка (мс)", "Ошибок", "ОК для mobile"],
-                device_rows,
-            )
+        self._add_heading(doc, '3. Результаты по профилям', level=1)
+        if variants:
+            for variant in variants:
+                label = variant.get('variant_label') or variant.get('variant_id', 'Профиль')
+                metrics = variant.get('metrics', {}) or {}
+                raw = variant.get('raw', {}) or {}
+                rendered = variant.get('rendered', {}) or {}
+                doc.add_heading(label, level=2)
+
+                rows = [
+                    ['Score', f"{metrics.get('score', 0):.1f}/100", ''],
+                    ['Missing элементы', int(metrics.get('total_missing', 0) or 0), ''],
+                    ['Missing %', f"{metrics.get('missing_pct', 0):.1f}%", ''],
+                    ['H1 (no-JS / JS)', f"{raw.get('h1_count', 0)} / {rendered.get('h1_count', 0)}", ''],
+                    ['Links (no-JS / JS)', f"{raw.get('links_count', 0)} / {rendered.get('links_count', 0)}", ''],
+                    ['Structured data (no-JS / JS)', f"{raw.get('structured_data_count', 0)} / {rendered.get('structured_data_count', 0)}", ''],
+                ]
+                self._add_table(doc, ['Параметр', 'Значение', ''], rows)
+
+                var_issues = variant.get('issues', []) or []
+                if var_issues:
+                    doc.add_paragraph("Найденные проблемы:", style='List Bullet')
+                    for issue in var_issues:
+                        sev = str(issue.get('severity', 'info')).upper()
+                        title_i = issue.get('title', '')
+                        details_i = issue.get('details', '')
+                        doc.add_paragraph(f"[{sev}] {title_i}: {details_i}", style='List Bullet')
+                else:
+                    doc.add_paragraph("Проблемы не обнаружены.")
+
+                var_recs = variant.get('recommendations', []) or []
+                if var_recs:
+                    doc.add_paragraph("Рекомендации по профилю:", style='List Bullet')
+                    for rec in var_recs:
+                        doc.add_paragraph(str(rec), style='List Bullet')
+
+                screenshots = variant.get('screenshots', {}) or {}
+                for key in ('js', 'nojs', 'js_landscape', 'nojs_landscape'):
+                    shot = screenshots.get(key) or {}
+                    shot_path = shot.get('path')
+                    if shot_path and os.path.exists(shot_path):
+                        caption = {
+                            'js': 'Скриншот: рендер с JavaScript',
+                            'nojs': 'Скриншот: версия без JavaScript',
+                            'js_landscape': 'Скриншот: mobile landscape с JavaScript',
+                            'nojs_landscape': 'Скриншот: mobile landscape без JavaScript',
+                        }.get(key, 'Скриншот')
+                        doc.add_paragraph(caption)
+                        doc.add_picture(shot_path, width=Inches(6.5))
         else:
-            doc.add_paragraph("Данные по устройствам отсутствуют.")
+            doc.add_paragraph("Данные по профилям отсутствуют.")
 
-        self._add_heading(doc, '4. Выявленные ошибки и план исправления', level=1)
-        if not actionable_issues:
-            doc.add_paragraph("Критические ошибки и предупреждения не обнаружены.")
+        self._add_heading(doc, '4. Общий список ошибок', level=1)
+        if issues:
+            for issue in issues:
+                sev = str(issue.get('severity', 'info')).upper()
+                profile = issue.get('variant', 'Профиль')
+                title_i = issue.get('title', '')
+                details_i = issue.get('details', '')
+                doc.add_paragraph(f"[{sev}] {profile}: {title_i} — {details_i}", style='List Bullet')
         else:
-            grouped: Dict[str, List[Dict[str, Any]]] = {}
-            for issue in actionable_issues:
-                code = issue.get("code", "unknown")
-                grouped.setdefault(code, []).append(issue)
+            doc.add_paragraph("Ошибок не обнаружено.")
 
-            for idx, (code, items) in enumerate(grouped.items(), start=1):
-                guide = issue_guides.get(code, {
-                    "name": items[0].get("title", code),
-                    "why": "Ошибка влияет на качество мобильного интерфейса и пользовательский опыт.",
-                    "impact": "Средний",
-                    "fix": ["Проверить верстку и исправить причину ошибки в шаблонах/стилях."],
-                })
-
-                self._add_heading(doc, f"4.{idx} {guide['name']}", level=2)
-                devices_list = sorted({str(i.get("device", "не указано")) for i in items})
-                doc.add_paragraph(f"Серьезность: {items[0].get('severity', 'warning')}")
-                doc.add_paragraph(f"Затронуто устройств: {len(devices_list)}")
-                doc.add_paragraph(f"Устройства: {', '.join(devices_list)}")
-                doc.add_paragraph(f"Почему это важно: {guide['why']}")
-                doc.add_paragraph(f"Бизнес-влияние: {guide['impact']}")
-                doc.add_paragraph("Что сделать:")
-                for step in guide["fix"]:
-                    doc.add_paragraph(step, style='List Number')
-                doc.add_paragraph("Технические детали из проверки:")
-                for example in items[:5]:
-                    detail = str(example.get("details", "") or "").strip()
-                    if detail:
-                        doc.add_paragraph(f"• {detail}")
-
-        self._add_heading(doc, '5. Информационные наблюдения', level=1)
-        if info_issues:
-            for issue in info_issues:
-                doc.add_paragraph(f"{issue.get('title', 'Наблюдение')}: {issue.get('details', '')}", style='List Bullet')
+        self._add_heading(doc, '5. Что делать для исправления', level=1)
+        if recommendations:
+            for rec in recommendations:
+                doc.add_paragraph(str(rec), style='List Bullet')
         else:
-            doc.add_paragraph("Дополнительные информационные замечания отсутствуют.")
-
-        self._add_heading(doc, '6. Скриншоты проверенных устройств', level=1)
-        added = 0
-        for d in devices:
-            shot = d.get("screenshot_path")
-            if not shot or not os.path.exists(shot):
-                continue
-            doc.add_paragraph(
-                f"{d.get('device_name', 'Устройство')} | "
-                f"Viewport {(d.get('viewport') or {}).get('width', '-') }x{(d.get('viewport') or {}).get('height', '-') } | "
-                f"Ошибок: {d.get('issues_count', 0)}"
-            )
-            try:
-                doc.add_picture(shot, width=Inches(5.8))
-                added += 1
-            except Exception:
-                doc.add_paragraph(f"Не удалось встроить скриншот: {shot}")
-        if added == 0:
-            doc.add_paragraph("Скриншоты отсутствуют.")
-
-        self._add_heading(doc, '7. Итоги', level=1)
-        if actionable_issues:
-            doc.add_paragraph(
-                "Обнаружены ошибки мобильной версии, которые требуют исправления для повышения "
-                "качества пользовательского опыта и стабильности SEO-показателей на мобильном трафике."
-            )
-            doc.add_paragraph(
-                "Рекомендуется выполнить исправления по приоритету (critical -> warning), "
-                "после чего провести повторную проверку и зафиксировать улучшение метрик."
-            )
-        else:
-            doc.add_paragraph(
-                "Критичных проблем не обнаружено. Мобильная версия сайта в текущей конфигурации "
-                "соответствует базовым требованиям удобства и технической корректности."
-            )
+            doc.add_paragraph("Критичных рекомендаций по итогам проверки нет.")
 
         doc.add_paragraph()
         footer = doc.add_paragraph(f"Отчет сформирован SEO Инструменты: {generated_at}")
@@ -424,34 +269,279 @@ class DOCXGenerator:
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         doc.save(filepath)
         return filepath
-
-    def generate_bot_report(self, task_id: str, data: Dict[str, Any]) -> str:
-        """Генерирует клиентский отчет проверки ботов."""
+    def generate_mobile_report(self, task_id: str, data: Dict[str, Any]) -> str:
+        """Р“РµРЅРµСЂРёСЂСѓРµС‚ СЂР°СЃС€РёСЂРµРЅРЅС‹Р№ РєР»РёРµРЅС‚СЃРєРёР№ РѕС‚С‡РµС‚ РїРѕ РјРѕР±РёР»СЊРЅРѕР№ РІРµСЂСЃРёРё СЃР°Р№С‚Р°."""
         doc = Document()
 
-        title = doc.add_heading('Отчет по доступности ботов', 0)
+        issue_guides = {
+            "viewport_missing": {
+                "name": "РћС‚СЃСѓС‚СЃС‚РІСѓРµС‚ meta viewport",
+                "why": "Р‘РµР· viewport СЃС‚СЂР°РЅРёС†Р° РѕС‚РѕР±СЂР°Р¶Р°РµС‚СЃСЏ РєР°Рє РґРµСЃРєС‚РѕРїРЅР°СЏ РІРµСЂСЃРёСЏ, С‡С‚Рѕ СѓС…СѓРґС€Р°РµС‚ UX Рё SEO-РїРѕРІРµРґРµРЅС‡РµСЃРєРёРµ С„Р°РєС‚РѕСЂС‹.",
+                "impact": "Р’С‹СЃРѕРєРёР№",
+                "fix": [
+                    "Р”РѕР±Р°РІРёС‚СЊ РІ <head> С‚РµРі: <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">.",
+                    "РџСЂРѕРІРµСЂРёС‚СЊ, С‡С‚Рѕ С‚РµРі РїСЂРёСЃСѓС‚СЃС‚РІСѓРµС‚ РЅР° РІСЃРµС… С€Р°Р±Р»РѕРЅР°С… СЃС‚СЂР°РЅРёС†.",
+                ],
+            },
+            "viewport_invalid": {
+                "name": "РќРµРєРѕСЂСЂРµРєС‚РЅР°СЏ РЅР°СЃС‚СЂРѕР№РєР° viewport",
+                "why": "РќРµРІРµСЂРЅС‹Рµ РїР°СЂР°РјРµС‚СЂС‹ viewport РїСЂРёРІРѕРґСЏС‚ Рє РЅРµРїСЂР°РІРёР»СЊРЅРѕРјСѓ РјР°СЃС€С‚Р°Р±Сѓ Рё РїСЂРѕР±Р»РµРјР°Рј СЃ Р°РґР°РїС‚РёРІРЅРѕСЃС‚СЊСЋ.",
+                "impact": "Р’С‹СЃРѕРєРёР№",
+                "fix": [
+                    "РСЃРїСЂР°РІРёС‚СЊ content viewport РЅР° width=device-width, initial-scale=1.",
+                    "РџСЂРѕРІРµСЂРёС‚СЊ РѕС‚СЃСѓС‚СЃС‚РІРёРµ РєРѕРЅС„Р»РёРєС‚СѓСЋС‰РёС… РјРµС‚Р°-С‚РµРіРѕРІ viewport.",
+                ],
+            },
+            "horizontal_overflow": {
+                "name": "Р“РѕСЂРёР·РѕРЅС‚Р°Р»СЊРЅР°СЏ РїСЂРѕРєСЂСѓС‚РєР°",
+                "why": "РџРѕР»СЊР·РѕРІР°С‚РµР»Рё РІС‹РЅСѓР¶РґРµРЅС‹ РїСЂРѕРєСЂСѓС‡РёРІР°С‚СЊ СЃС‚СЂР°РЅРёС†Сѓ РїРѕ РіРѕСЂРёР·РѕРЅС‚Р°Р»Рё, С‡С‚Рѕ СѓС…СѓРґС€Р°РµС‚ РєРѕРЅРІРµСЂСЃРёСЋ Рё СѓРґРѕР±СЃС‚РІРѕ.",
+                "impact": "Р’С‹СЃРѕРєРёР№",
+                "fix": [
+                    "РќР°Р№С‚Рё Р±Р»РѕРєРё, РІС‹С…РѕРґСЏС‰РёРµ Р·Р° С€РёСЂРёРЅСѓ СЌРєСЂР°РЅР° (С€РёСЂРёРЅР° РґРѕРєСѓРјРµРЅС‚Р° Р±РѕР»СЊС€Рµ viewport).",
+                    "РСЃРїРѕР»СЊР·РѕРІР°С‚СЊ Р°РґР°РїС‚РёРІРЅС‹Рµ РµРґРёРЅРёС†С‹ Рё РѕРіСЂР°РЅРёС‡РёС‚СЊ С€РёСЂРёРЅСѓ РјРµРґРёР°-СЌР»РµРјРµРЅС‚РѕРІ С‡РµСЂРµР· max-width: 100%.",
+                ],
+            },
+            "small_touch_targets": {
+                "name": "РњР°Р»РµРЅСЊРєРёРµ РєР»РёРєР°Р±РµР»СЊРЅС‹Рµ СЌР»РµРјРµРЅС‚С‹",
+                "why": "Р­Р»РµРјРµРЅС‚С‹ РјРµРЅСЊС€Рµ 44x44px Р·Р°С‚СЂСѓРґРЅСЏСЋС‚ РЅР°РІРёРіР°С†РёСЋ СЃ СЃРµРЅСЃРѕСЂРЅРѕРіРѕ СЌРєСЂР°РЅР°.",
+                "impact": "РЎСЂРµРґРЅРёР№",
+                "fix": [
+                    "РЈРІРµР»РёС‡РёС‚СЊ СЂР°Р·РјРµСЂС‹ РєРЅРѕРїРѕРє/СЃСЃС‹Р»РѕРє РґРѕ РјРёРЅРёРјСѓРј 44x44px.",
+                    "Р”РѕР±Р°РІРёС‚СЊ РѕС‚СЃС‚СѓРїС‹ РјРµР¶РґСѓ СЃРѕСЃРµРґРЅРёРјРё РёРЅС‚РµСЂР°РєС‚РёРІРЅС‹РјРё СЌР»РµРјРµРЅС‚Р°РјРё.",
+                ],
+            },
+            "small_fonts": {
+                "name": "РЎР»РёС€РєРѕРј РјРµР»РєРёР№ С‚РµРєСЃС‚",
+                "why": "РњРµР»РєРёР№ С‚РµРєСЃС‚ СЃРЅРёР¶Р°РµС‚ С‡РёС‚Р°РµРјРѕСЃС‚СЊ Рё СѓРІРµР»РёС‡РёРІР°РµС‚ РїРѕРєР°Р·Р°С‚РµР»СЊ РѕС‚РєР°Р·РѕРІ.",
+                "impact": "РЎСЂРµРґРЅРёР№",
+                "fix": [
+                    "РЈСЃС‚Р°РЅРѕРІРёС‚СЊ Р±Р°Р·РѕРІС‹Р№ СЂР°Р·РјРµСЂ С€СЂРёС„С‚Р° РЅРµ РјРµРЅРµРµ 16px РґР»СЏ РјРѕР±РёР»СЊРЅС‹С… СЌРєСЂР°РЅРѕРІ.",
+                    "РџСЂРѕРІРµСЂРёС‚СЊ РјР°СЃС€С‚Р°Р±РёСЂРѕРІР°РЅРёРµ С‚РµРєСЃС‚Р° РІ РєР»СЋС‡РµРІС‹С… Р±Р»РѕРєР°С… (РјРµРЅСЋ, РєР°СЂС‚РѕС‡РєРё, С„РѕСЂРјС‹).",
+                ],
+            },
+            "large_images": {
+                "name": "РР·РѕР±СЂР°Р¶РµРЅРёСЏ С€РёСЂРµ СЌРєСЂР°РЅР°",
+                "why": "РЎР»РёС€РєРѕРј С€РёСЂРѕРєРёРµ РёР·РѕР±СЂР°Р¶РµРЅРёСЏ Р»РѕРјР°СЋС‚ СЃРµС‚РєСѓ Рё РІС‹Р·С‹РІР°СЋС‚ РіРѕСЂРёР·РѕРЅС‚Р°Р»СЊРЅС‹Р№ СЃРєСЂРѕР»Р».",
+                "impact": "РЎСЂРµРґРЅРёР№",
+                "fix": [
+                    "Р”РѕР±Р°РІРёС‚СЊ РґР»СЏ РёР·РѕР±СЂР°Р¶РµРЅРёР№ max-width: 100%; height: auto;.",
+                    "РџСЂРѕРІРµСЂРёС‚СЊ Р°РґР°РїС‚РёРІРЅРѕСЃС‚СЊ СЃР»Р°Р№РґРµСЂРѕРІ, Р±Р°РЅРЅРµСЂРѕРІ Рё РІСЃС‚СЂР°РёРІР°РµРјС‹С… РјРµРґРёР°-Р±Р»РѕРєРѕРІ.",
+                ],
+            },
+            "console_errors": {
+                "name": "РћС€РёР±РєРё JavaScript РІ РєРѕРЅСЃРѕР»Рё",
+                "why": "JS-РѕС€РёР±РєРё РјРѕРіСѓС‚ Р»РѕРјР°С‚СЊ РјРµРЅСЋ, С„РѕСЂРјС‹, С„РёР»СЊС‚СЂС‹ Рё РґСЂСѓРіРёРµ СЌР»РµРјРµРЅС‚С‹ РёРЅС‚РµСЂС„РµР№СЃР°.",
+                "impact": "РЎСЂРµРґРЅРёР№",
+                "fix": [
+                    "Р Р°Р·РѕР±СЂР°С‚СЊ РѕС€РёР±РєРё РєРѕРЅСЃРѕР»Рё РІ РїРѕСЂСЏРґРєРµ РєСЂРёС‚РёС‡РЅРѕСЃС‚Рё.",
+                    "РСЃРїСЂР°РІРёС‚СЊ РЅРµРґРѕСЃС‚СѓРїРЅС‹Рµ СЂРµСЃСѓСЂСЃС‹ Рё РёСЃРєР»СЋС‡РµРЅРёСЏ РІ РєР»РёРµРЅС‚СЃРєРѕРј РєРѕРґРµ.",
+                ],
+            },
+            "runtime_error": {
+                "name": "РћС€РёР±РєР° РІС‹РїРѕР»РЅРµРЅРёСЏ РїСЂРѕРІРµСЂРєРё",
+                "why": "РџСЂРѕРІРµСЂРєР° РєРѕРЅРєСЂРµС‚РЅРѕРіРѕ СѓСЃС‚СЂРѕР№СЃС‚РІР° РЅРµ Р·Р°РІРµСЂС€РёР»Р°СЃСЊ, РґР°РЅРЅС‹Рµ РЅРµРїРѕР»РЅС‹Рµ.",
+                "impact": "Р’С‹СЃРѕРєРёР№",
+                "fix": [
+                    "РџСЂРѕРІРµСЂРёС‚СЊ РґРѕСЃС‚СѓРїРЅРѕСЃС‚СЊ СЃР°Р№С‚Р°, СЂРµРґРёСЂРµРєС‚С‹ Рё Р±Р»РѕРєРёСЂРѕРІРєРё.",
+                    "РџРѕРІС‚РѕСЂРёС‚СЊ С‚РµСЃС‚ РїРѕСЃР»Рµ РёСЃРїСЂР°РІР»РµРЅРёСЏ РёРЅС„СЂР°СЃС‚СЂСѓРєС‚СѓСЂРЅС‹С… РѕРіСЂР°РЅРёС‡РµРЅРёР№.",
+                ],
+            },
+            "playwright_unavailable": {
+                "name": "РЎСЂРµРґР° Р±СЂР°СѓР·РµСЂРЅРѕРіРѕ С‚РµСЃС‚РёСЂРѕРІР°РЅРёСЏ РЅРµРґРѕСЃС‚СѓРїРЅР°",
+                "why": "Р‘РµР· Р±СЂР°СѓР·РµСЂРЅРѕРіРѕ РґРІРёР¶РєР° РЅРµР»СЊР·СЏ РїРѕР»СѓС‡РёС‚СЊ СЂРµР°Р»СЊРЅС‹Рµ СЃРєСЂРёРЅС€РѕС‚С‹ Рё РёР·РјРµСЂРµРЅРёСЏ РјРѕР±РёР»СЊРЅРѕР№ РІРµСЂСЃС‚РєРё.",
+                "impact": "Р’С‹СЃРѕРєРёР№",
+                "fix": [
+                    "РЈСЃС‚Р°РЅРѕРІРёС‚СЊ Р·Р°РІРёСЃРёРјРѕСЃС‚Рё Playwright Рё Р±СЂР°СѓР·РµСЂ Chromium РІ РѕРєСЂСѓР¶РµРЅРёРё СЃРµСЂРІРµСЂР°.",
+                    "РџРµСЂРµР·Р°РїСѓСЃС‚РёС‚СЊ СЃРµСЂРІРёСЃ Рё РїРѕРІС‚РѕСЂРёС‚СЊ Р°РЅР°Р»РёР·.",
+                ],
+            },
+            "mobile_engine_error": {
+                "name": "РЎР±РѕР№ РґРІРёР¶РєР° РјРѕР±РёР»СЊРЅРѕР№ РїСЂРѕРІРµСЂРєРё",
+                "why": "РРЅСЃС‚СЂСѓРјРµРЅС‚ РЅРµ СЃРјРѕРі РІС‹РїРѕР»РЅРёС‚СЊ РїРѕР»РЅРѕС†РµРЅРЅС‹Р№ РјРѕР±РёР»СЊРЅС‹Р№ Р°СѓРґРёС‚.",
+                "impact": "Р’С‹СЃРѕРєРёР№",
+                "fix": [
+                    "РџСЂРѕРІРµСЂРёС‚СЊ Р»РѕРіРё СЃРµСЂРІРёСЃР° Рё РѕРєСЂСѓР¶РµРЅРёРµ РІС‹РїРѕР»РЅРµРЅРёСЏ.",
+                    "РЈСЃС‚СЂР°РЅРёС‚СЊ РїСЂРёС‡РёРЅСѓ РѕС€РёР±РєРё Рё РїРѕРІС‚РѕСЂРЅРѕ Р·Р°РїСѓСЃС‚РёС‚СЊ РїСЂРѕРІРµСЂРєСѓ.",
+                ],
+            },
+        }
+
+        title = doc.add_heading('РљР»РёРµРЅС‚СЃРєРёР№ РѕС‚С‡РµС‚: РјРѕР±РёР»СЊРЅР°СЏ РІРµСЂСЃРёСЏ СЃР°Р№С‚Р°', 0)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        url = data.get("url", "N/A")
+        generated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        doc.add_paragraph(f"РЎР°Р№С‚: {url}")
+        doc.add_paragraph(f"Р”Р°С‚Р° Рё РІСЂРµРјСЏ РѕС‚С‡РµС‚Р°: {generated_at}")
+        doc.add_paragraph(
+            "Р¦РµР»СЊ РѕС‚С‡РµС‚Р°: РѕС†РµРЅРёС‚СЊ СѓРґРѕР±СЃС‚РІРѕ РёСЃРїРѕР»СЊР·РѕРІР°РЅРёСЏ СЃР°Р№С‚Р° РЅР° РїРѕРїСѓР»СЏСЂРЅС‹С… РјРѕР±РёР»СЊРЅС‹С… СѓСЃС‚СЂРѕР№СЃС‚РІР°С…, "
+            "РІС‹СЏРІРёС‚СЊ С‚РµС…РЅРёС‡РµСЃРєРёРµ РѕС€РёР±РєРё Р°РґР°РїС‚РёРІРЅРѕСЃС‚Рё Рё РїСЂРµРґРѕСЃС‚Р°РІРёС‚СЊ РїРѕРЅСЏС‚РЅС‹Р№ РїР»Р°РЅ РёСЃРїСЂР°РІР»РµРЅРёР№ РґР»СЏ РєРѕРјР°РЅРґС‹ СЂР°Р·СЂР°Р±РѕС‚РєРё."
+        )
+
+        results = data.get('results', {}) or {}
+        summary = results.get('summary', {}) or {}
+        devices = results.get('device_results', []) or []
+        all_issues = results.get('issues', []) or []
+        actionable_issues = [i for i in all_issues if i.get("severity") in ("critical", "warning")]
+        info_issues = [i for i in all_issues if i.get("severity") == "info"]
+
+        self._add_heading(doc, '1. РЎРІРѕРґРєР° РїРѕ РїСЂРѕРІРµСЂРєРµ', level=1)
+        summary_rows = [
+            ["Р”РІРёР¶РѕРє РїСЂРѕРІРµСЂРєРё", results.get("engine", "legacy")],
+            ["Р РµР¶РёРј РїСЂРѕРІРµСЂРєРё", "Р‘С‹СЃС‚СЂС‹Р№" if results.get("mode") == "quick" else "РџРѕР»РЅС‹Р№"],
+            ["РџСЂРѕРІРµСЂРµРЅРѕ СѓСЃС‚СЂРѕР№СЃС‚РІ", summary.get("total_devices", len(results.get("devices_tested", [])))],
+            ["РЈСЃС‚СЂРѕР№СЃС‚РІ Р±РµР· РєСЂРёС‚РёС‡РЅС‹С… РїСЂРѕР±Р»РµРј", summary.get("mobile_friendly_devices", 0)],
+            ["РЈСЃС‚СЂРѕР№СЃС‚РІ СЃ РїСЂРѕР±Р»РµРјР°РјРё", summary.get("non_friendly_devices", 0)],
+            ["РЎСЂРµРґРЅРµРµ РІСЂРµРјСЏ Р·Р°РіСЂСѓР·РєРё, РјСЃ", summary.get("avg_load_time_ms", 0)],
+            ["РљРѕР»РёС‡РµСЃС‚РІРѕ РѕС€РёР±РѕРє (critical + warning)", len(actionable_issues)],
+            ["РРЅС„РѕСЂРјР°С†РёРѕРЅРЅС‹Рµ Р·Р°РјРµС‡Р°РЅРёСЏ", len(info_issues)],
+            ["РРЅС‚РµРіСЂР°Р»СЊРЅР°СЏ РѕС†РµРЅРєР°", results.get("score", "N/A")],
+            ["РС‚РѕРі", "РЎР°Р№С‚ СЃРѕРѕС‚РІРµС‚СЃС‚РІСѓРµС‚ РјРѕР±РёР»СЊРЅС‹Рј С‚СЂРµР±РѕРІР°РЅРёСЏРј" if results.get("mobile_friendly") else "РўСЂРµР±СѓСЋС‚СЃСЏ РґРѕСЂР°Р±РѕС‚РєРё РјРѕР±РёР»СЊРЅРѕР№ РІРµСЂСЃРёРё"],
+        ]
+        self._add_table(doc, ["РџРѕРєР°Р·Р°С‚РµР»СЊ", "Р—РЅР°С‡РµРЅРёРµ"], summary_rows)
+
+        self._add_heading(doc, '2. РўРµС…РЅРёС‡РµСЃРєРёРµ РїР°СЂР°РјРµС‚СЂС‹ Р°СѓРґРёС‚Р°', level=1)
+        tech_rows = [
+            ["HTTP СЃС‚Р°С‚СѓСЃ", results.get("status_code", "N/A")],
+            ["Р¤РёРЅР°Р»СЊРЅС‹Р№ URL", results.get("final_url", url)],
+            ["Viewport РЅР°Р№РґРµРЅ", "Р”Р°" if results.get("viewport_found") else "РќРµС‚"],
+            ["РЎРѕРґРµСЂР¶РёРјРѕРµ viewport", results.get("viewport_content") or "РќРµ РЅР°Р№РґРµРЅРѕ"],
+        ]
+        self._add_table(doc, ["РџР°СЂР°РјРµС‚СЂ", "Р—РЅР°С‡РµРЅРёРµ"], tech_rows)
+
+        self._add_heading(doc, '3. Р РµР·СѓР»СЊС‚Р°С‚С‹ РїРѕ СѓСЃС‚СЂРѕР№СЃС‚РІР°Рј', level=1)
+        device_rows = []
+        for d in devices:
+            device_rows.append([
+                d.get("device_name", ""),
+                "РўРµР»РµС„РѕРЅ" if d.get("category") == "phone" else ("РџР»Р°РЅС€РµС‚" if d.get("category") == "tablet" else d.get("category", "")),
+                f"{(d.get('viewport') or {}).get('width', '-') }x{(d.get('viewport') or {}).get('height', '-')}",
+                d.get("status_code", "N/A"),
+                d.get("load_time_ms", 0),
+                d.get("issues_count", 0),
+                "Р”Р°" if d.get("mobile_friendly") else "РќРµС‚",
+            ])
+        if device_rows:
+            self._add_table(
+                doc,
+                ["РЈСЃС‚СЂРѕР№СЃС‚РІРѕ", "РўРёРї", "Viewport", "HTTP", "Р—Р°РіСЂСѓР·РєР° (РјСЃ)", "РћС€РёР±РѕРє", "РћРљ РґР»СЏ mobile"],
+                device_rows,
+            )
+        else:
+            doc.add_paragraph("Р”Р°РЅРЅС‹Рµ РїРѕ СѓСЃС‚СЂРѕР№СЃС‚РІР°Рј РѕС‚СЃСѓС‚СЃС‚РІСѓСЋС‚.")
+
+        self._add_heading(doc, '4. Р’С‹СЏРІР»РµРЅРЅС‹Рµ РѕС€РёР±РєРё Рё РїР»Р°РЅ РёСЃРїСЂР°РІР»РµРЅРёСЏ', level=1)
+        if not actionable_issues:
+            doc.add_paragraph("РљСЂРёС‚РёС‡РµСЃРєРёРµ РѕС€РёР±РєРё Рё РїСЂРµРґСѓРїСЂРµР¶РґРµРЅРёСЏ РЅРµ РѕР±РЅР°СЂСѓР¶РµРЅС‹.")
+        else:
+            grouped: Dict[str, List[Dict[str, Any]]] = {}
+            for issue in actionable_issues:
+                code = issue.get("code", "unknown")
+                grouped.setdefault(code, []).append(issue)
+
+            for idx, (code, items) in enumerate(grouped.items(), start=1):
+                guide = issue_guides.get(code, {
+                    "name": items[0].get("title", code),
+                    "why": "РћС€РёР±РєР° РІР»РёСЏРµС‚ РЅР° РєР°С‡РµСЃС‚РІРѕ РјРѕР±РёР»СЊРЅРѕРіРѕ РёРЅС‚РµСЂС„РµР№СЃР° Рё РїРѕР»СЊР·РѕРІР°С‚РµР»СЊСЃРєРёР№ РѕРїС‹С‚.",
+                    "impact": "РЎСЂРµРґРЅРёР№",
+                    "fix": ["РџСЂРѕРІРµСЂРёС‚СЊ РІРµСЂСЃС‚РєСѓ Рё РёСЃРїСЂР°РІРёС‚СЊ РїСЂРёС‡РёРЅСѓ РѕС€РёР±РєРё РІ С€Р°Р±Р»РѕРЅР°С…/СЃС‚РёР»СЏС…."],
+                })
+
+                self._add_heading(doc, f"4.{idx} {guide['name']}", level=2)
+                devices_list = sorted({str(i.get("device", "РЅРµ СѓРєР°Р·Р°РЅРѕ")) for i in items})
+                doc.add_paragraph(f"РЎРµСЂСЊРµР·РЅРѕСЃС‚СЊ: {items[0].get('severity', 'warning')}")
+                doc.add_paragraph(f"Р—Р°С‚СЂРѕРЅСѓС‚Рѕ СѓСЃС‚СЂРѕР№СЃС‚РІ: {len(devices_list)}")
+                doc.add_paragraph(f"РЈСЃС‚СЂРѕР№СЃС‚РІР°: {', '.join(devices_list)}")
+                doc.add_paragraph(f"РџРѕС‡РµРјСѓ СЌС‚Рѕ РІР°Р¶РЅРѕ: {guide['why']}")
+                doc.add_paragraph(f"Р‘РёР·РЅРµСЃ-РІР»РёСЏРЅРёРµ: {guide['impact']}")
+                doc.add_paragraph("Р§С‚Рѕ СЃРґРµР»Р°С‚СЊ:")
+                for step in guide["fix"]:
+                    doc.add_paragraph(step, style='List Number')
+                doc.add_paragraph("РўРµС…РЅРёС‡РµСЃРєРёРµ РґРµС‚Р°Р»Рё РёР· РїСЂРѕРІРµСЂРєРё:")
+                for example in items[:5]:
+                    detail = str(example.get("details", "") or "").strip()
+                    if detail:
+                        doc.add_paragraph(f"вЂў {detail}")
+
+        self._add_heading(doc, '5. РРЅС„РѕСЂРјР°С†РёРѕРЅРЅС‹Рµ РЅР°Р±Р»СЋРґРµРЅРёСЏ', level=1)
+        if info_issues:
+            for issue in info_issues:
+                doc.add_paragraph(f"{issue.get('title', 'РќР°Р±Р»СЋРґРµРЅРёРµ')}: {issue.get('details', '')}", style='List Bullet')
+        else:
+            doc.add_paragraph("Р”РѕРїРѕР»РЅРёС‚РµР»СЊРЅС‹Рµ РёРЅС„РѕСЂРјР°С†РёРѕРЅРЅС‹Рµ Р·Р°РјРµС‡Р°РЅРёСЏ РѕС‚СЃСѓС‚СЃС‚РІСѓСЋС‚.")
+
+        self._add_heading(doc, '6. РЎРєСЂРёРЅС€РѕС‚С‹ РїСЂРѕРІРµСЂРµРЅРЅС‹С… СѓСЃС‚СЂРѕР№СЃС‚РІ', level=1)
+        added = 0
+        for d in devices:
+            shot = d.get("screenshot_path")
+            if not shot or not os.path.exists(shot):
+                continue
+            doc.add_paragraph(
+                f"{d.get('device_name', 'РЈСЃС‚СЂРѕР№СЃС‚РІРѕ')} | "
+                f"Viewport {(d.get('viewport') or {}).get('width', '-') }x{(d.get('viewport') or {}).get('height', '-') } | "
+                f"РћС€РёР±РѕРє: {d.get('issues_count', 0)}"
+            )
+            try:
+                doc.add_picture(shot, width=Inches(5.8))
+                added += 1
+            except Exception:
+                doc.add_paragraph(f"РќРµ СѓРґР°Р»РѕСЃСЊ РІСЃС‚СЂРѕРёС‚СЊ СЃРєСЂРёРЅС€РѕС‚: {shot}")
+        if added == 0:
+            doc.add_paragraph("РЎРєСЂРёРЅС€РѕС‚С‹ РѕС‚СЃСѓС‚СЃС‚РІСѓСЋС‚.")
+
+        self._add_heading(doc, '7. РС‚РѕРіРё', level=1)
+        if actionable_issues:
+            doc.add_paragraph(
+                "РћР±РЅР°СЂСѓР¶РµРЅС‹ РѕС€РёР±РєРё РјРѕР±РёР»СЊРЅРѕР№ РІРµСЂСЃРёРё, РєРѕС‚РѕСЂС‹Рµ С‚СЂРµР±СѓСЋС‚ РёСЃРїСЂР°РІР»РµРЅРёСЏ РґР»СЏ РїРѕРІС‹С€РµРЅРёСЏ "
+                "РєР°С‡РµСЃС‚РІР° РїРѕР»СЊР·РѕРІР°С‚РµР»СЊСЃРєРѕРіРѕ РѕРїС‹С‚Р° Рё СЃС‚Р°Р±РёР»СЊРЅРѕСЃС‚Рё SEO-РїРѕРєР°Р·Р°С‚РµР»РµР№ РЅР° РјРѕР±РёР»СЊРЅРѕРј С‚СЂР°С„РёРєРµ."
+            )
+            doc.add_paragraph(
+                "Р РµРєРѕРјРµРЅРґСѓРµС‚СЃСЏ РІС‹РїРѕР»РЅРёС‚СЊ РёСЃРїСЂР°РІР»РµРЅРёСЏ РїРѕ РїСЂРёРѕСЂРёС‚РµС‚Сѓ (critical -> warning), "
+                "РїРѕСЃР»Рµ С‡РµРіРѕ РїСЂРѕРІРµСЃС‚Рё РїРѕРІС‚РѕСЂРЅСѓСЋ РїСЂРѕРІРµСЂРєСѓ Рё Р·Р°С„РёРєСЃРёСЂРѕРІР°С‚СЊ СѓР»СѓС‡С€РµРЅРёРµ РјРµС‚СЂРёРє."
+            )
+        else:
+            doc.add_paragraph(
+                "РљСЂРёС‚РёС‡РЅС‹С… РїСЂРѕР±Р»РµРј РЅРµ РѕР±РЅР°СЂСѓР¶РµРЅРѕ. РњРѕР±РёР»СЊРЅР°СЏ РІРµСЂСЃРёСЏ СЃР°Р№С‚Р° РІ С‚РµРєСѓС‰РµР№ РєРѕРЅС„РёРіСѓСЂР°С†РёРё "
+                "СЃРѕРѕС‚РІРµС‚СЃС‚РІСѓРµС‚ Р±Р°Р·РѕРІС‹Рј С‚СЂРµР±РѕРІР°РЅРёСЏРј СѓРґРѕР±СЃС‚РІР° Рё С‚РµС…РЅРёС‡РµСЃРєРѕР№ РєРѕСЂСЂРµРєС‚РЅРѕСЃС‚Рё."
+            )
+
+        doc.add_paragraph()
+        footer = doc.add_paragraph(f"РћС‚С‡РµС‚ СЃС„РѕСЂРјРёСЂРѕРІР°РЅ SEO РРЅСЃС‚СЂСѓРјРµРЅС‚С‹: {generated_at}")
+        footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        footer.runs[0].font.size = Pt(8)
+        footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
+
+        filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
+        doc.save(filepath)
+        return filepath
+
+    def generate_bot_report(self, task_id: str, data: Dict[str, Any]) -> str:
+        """Р“РµРЅРµСЂРёСЂСѓРµС‚ РєР»РёРµРЅС‚СЃРєРёР№ РѕС‚С‡РµС‚ РїСЂРѕРІРµСЂРєРё Р±РѕС‚РѕРІ."""
+        doc = Document()
+
+        title = doc.add_heading('РћС‚С‡РµС‚ РїРѕ РґРѕСЃС‚СѓРїРЅРѕСЃС‚Рё Р±РѕС‚РѕРІ', 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         doc.add_paragraph(f"URL: {data.get('url', 'N/A')}")
         results = data.get('results', {})
         bots = results.get('bots_checked', [])
         doc.add_paragraph(
-            "Описание: отчет показывает, как поисковые и AI-боты видят сайт, "
-            "и помогает исключить ограничения, мешающие индексации."
+            "РћРїРёСЃР°РЅРёРµ: РѕС‚С‡РµС‚ РїРѕРєР°Р·С‹РІР°РµС‚, РєР°Рє РїРѕРёСЃРєРѕРІС‹Рµ Рё AI-Р±РѕС‚С‹ РІРёРґСЏС‚ СЃР°Р№С‚, "
+            "Рё РїРѕРјРѕРіР°РµС‚ РёСЃРєР»СЋС‡РёС‚СЊ РѕРіСЂР°РЅРёС‡РµРЅРёСЏ, РјРµС€Р°СЋС‰РёРµ РёРЅРґРµРєСЃР°С†РёРё."
         )
 
-        self._add_heading(doc, 'Проверенные боты', level=1)
+        self._add_heading(doc, 'РџСЂРѕРІРµСЂРµРЅРЅС‹Рµ Р±РѕС‚С‹', level=1)
         for bot in bots:
             doc.add_paragraph(bot, style='List Bullet')
 
         recs = results.get("recommendations", [])
         if recs:
-            self._add_heading(doc, 'Рекомендации', level=1)
+            self._add_heading(doc, 'Р РµРєРѕРјРµРЅРґР°С†РёРё', level=1)
             for rec in recs[:30]:
                 doc.add_paragraph(str(rec), style='List Bullet')
 
         doc.add_paragraph()
-        footer = doc.add_paragraph(f"Отчет сформирован SEO Инструменты: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        footer = doc.add_paragraph(f"РћС‚С‡РµС‚ СЃС„РѕСЂРјРёСЂРѕРІР°РЅ SEO РРЅСЃС‚СЂСѓРјРµРЅС‚С‹: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
         footer.runs[0].font.size = Pt(8)
         footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
@@ -461,7 +551,7 @@ class DOCXGenerator:
         return filepath
     
     def generate_report(self, task_id: str, task_type: str, data: Dict[str, Any]) -> str:
-        """Генерирует отчет в зависимости от типа задачи"""
+        """Р“РµРЅРµСЂРёСЂСѓРµС‚ РѕС‚С‡РµС‚ РІ Р·Р°РІРёСЃРёРјРѕСЃС‚Рё РѕС‚ С‚РёРїР° Р·Р°РґР°С‡Рё"""
         generators = {
             'site_analyze': self.generate_site_analyze_report,
             'robots_check': self.generate_robots_report,

@@ -1585,6 +1585,98 @@ async def export_mobile_docx(data: ExportRequest):
         return {"error": str(e)}
 
 
+@router.post("/export/render-docx")
+async def export_render_docx(data: ExportRequest):
+    """Export render audit report to DOCX."""
+    import os
+    import re
+    from fastapi.responses import Response
+    from app.reports.docx_generator import docx_generator
+
+    try:
+        task_id = data.task_id
+        task = get_task_result(task_id)
+        if not task:
+            return {"error": "Task not found", "task_id": task_id}
+
+        task_type = task.get("task_type")
+        if task_type != "render_audit":
+            return {"error": f"Unsupported task type for render DOCX export: {task_type}"}
+
+        task_result = task.get("result", {})
+        url = task.get("url", "") or task_result.get("url", "")
+        report_payload = {
+            "url": url,
+            "results": task_result.get("results", task_result),
+        }
+        filepath = docx_generator.generate_render_report(task_id, report_payload)
+        if not filepath or not os.path.exists(filepath):
+            return {"error": "Report generation failed"}
+        append_task_artifact(task_id, filepath, kind="export")
+
+        with open(filepath, "rb") as f:
+            content = f.read()
+
+        domain = re.sub(r"[^a-zA-Z0-9._-]+", "_", (urlparse(url).netloc or "site"))
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+        filename = f"render_report_{domain}_{timestamp}.docx"
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.post("/export/render-xlsx")
+async def export_render_xlsx(data: ExportRequest):
+    """Export render issues to XLSX only if issues exist."""
+    import os
+    import re
+    from fastapi.responses import Response
+    from app.reports.xlsx_generator import xlsx_generator
+
+    try:
+        task_id = data.task_id
+        task = get_task_result(task_id)
+        if not task:
+            return {"error": "Task not found", "task_id": task_id}
+
+        task_type = task.get("task_type")
+        if task_type != "render_audit":
+            return {"error": f"Unsupported task type for render XLSX export: {task_type}"}
+
+        task_result = task.get("result", {})
+        url = task.get("url", "") or task_result.get("url", "")
+        results = task_result.get("results", task_result) or {}
+        issues_count = results.get("issues_count")
+        if issues_count is None:
+            issues_count = len(results.get("issues", []) or [])
+        if issues_count <= 0:
+            return {"error": "No issues found, XLSX report is not generated"}
+
+        report_payload = {"url": url, "results": results}
+        filepath = xlsx_generator.generate_render_report(task_id, report_payload)
+        if not filepath or not os.path.exists(filepath):
+            return {"error": "Report generation failed"}
+        append_task_artifact(task_id, filepath, kind="export")
+
+        with open(filepath, "rb") as f:
+            content = f.read()
+
+        domain = re.sub(r"[^a-zA-Z0-9._-]+", "_", (urlparse(url).netloc or "site"))
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+        filename = f"render_issues_{domain}_{timestamp}.xlsx"
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.post("/export/mobile-xlsx")
 async def export_mobile_xlsx(data: ExportRequest):
     """Export mobile issues report to XLSX only if issues exist."""
@@ -1650,6 +1742,30 @@ async def get_mobile_artifact(task_id: str, filename: str):
                 shot_path = item.get("screenshot_path")
                 if shot_path and Path(shot_path).exists():
                     return FileResponse(shot_path)
+        return {"error": "Artifact not found"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.get("/render-artifacts/{task_id}/{filename}")
+async def get_render_artifact(task_id: str, filename: str):
+    """Serve render audit screenshot artifact for UI gallery."""
+    from pathlib import Path
+    from fastapi.responses import FileResponse
+
+    try:
+        task = get_task_result(task_id)
+        if not task:
+            return {"error": "Task not found", "task_id": task_id}
+        task_result = task.get("result", {})
+        results = task_result.get("results", task_result) or {}
+        variants = results.get("variants", []) or []
+        for variant in variants:
+            for shot in (variant.get("screenshots", {}) or {}).values():
+                if isinstance(shot, dict) and shot.get("name") == filename:
+                    shot_path = shot.get("path")
+                    if shot_path and Path(shot_path).exists():
+                        return FileResponse(shot_path)
         return {"error": "Artifact not found"}
     except Exception as e:
         return {"error": str(e)}
@@ -2625,6 +2741,57 @@ def check_render_simple(url: str) -> Dict[str, Any]:
         }
 
 
+def check_render_full(
+    url: str,
+    task_id: str,
+    progress_callback=None,
+) -> Dict[str, Any]:
+    """Feature-flagged render audit with v2 service fallback."""
+    from app.config import settings
+
+    engine = (getattr(settings, "RENDER_AUDIT_ENGINE", "v2") or "v2").lower()
+    if engine == "v2":
+        try:
+            from app.tools.render.service_v2 import RenderAuditServiceV2
+
+            checker = RenderAuditServiceV2(timeout=getattr(settings, "RENDER_AUDIT_TIMEOUT", 35))
+            return checker.run(url=url, task_id=task_id, progress_callback=progress_callback)
+        except Exception as e:
+            print(f"[API] render v2 failed, fallback to simple: {e}")
+            fallback = check_render_simple(url)
+            fallback_results = fallback.get("results", {}) if isinstance(fallback, dict) else {}
+            fallback_results["engine"] = "legacy-fallback"
+            fallback_results["engine_error"] = str(e)
+            fallback_results["issues"] = [
+                {
+                    "severity": "critical",
+                    "code": "render_engine_error",
+                    "title": "Ошибка движка render v2",
+                    "details": str(e),
+                }
+            ]
+            fallback_results["issues_count"] = 1
+            fallback_results["summary"] = {
+                "variants_total": 0,
+                "critical_issues": 1,
+                "warning_issues": 0,
+                "info_issues": 0,
+                "score": None,
+                "missing_total": 0,
+                "avg_missing_pct": 0,
+                "avg_raw_load_ms": 0,
+                "avg_js_load_ms": 0,
+            }
+            fallback_results["variants"] = []
+            fallback_results["recommendations"] = ["Движок v2 недоступен, проверьте окружение Playwright."]
+            return fallback
+
+    legacy = check_render_simple(url)
+    legacy_results = legacy.get("results", {}) if isinstance(legacy, dict) else {}
+    legacy_results["engine"] = "legacy"
+    return legacy
+
+
 def check_mobile_simple(url: str) -> Dict[str, Any]:
     """Simple mobile check - viewport and responsive indicators"""
     import requests
@@ -2783,20 +2950,59 @@ async def create_site_analyze(data: SiteAnalyzeRequest):
 
 
 @router.post("/tasks/render-audit")
-async def create_render_audit(data: RenderAuditRequest):
-    """Simple render audit"""
+async def create_render_audit(data: RenderAuditRequest, background_tasks: BackgroundTasks):
+    """Render audit with background progress updates."""
     url = data.url
-    
-    print(f"[API] Render audit for: {url}")
-    
-    result = check_render_simple(url)
+
+    print(f"[API] Render audit queued for: {url}")
     task_id = f"render-{datetime.now().timestamp()}"
-    create_task_result(task_id, "render_audit", url, result)
-    
+    create_task_pending(task_id, "render_audit", url, status_message="Задача поставлена в очередь")
+
+    def _run_render_task() -> None:
+        try:
+            update_task_state(task_id, status="RUNNING", progress=5, status_message="Подготовка рендер-аудита")
+
+            def _progress(progress: int, message: str) -> None:
+                update_task_state(task_id, status="RUNNING", progress=progress, status_message=message)
+
+            result = check_render_full(url, task_id=task_id, progress_callback=_progress)
+            results = result.get("results", {}) if isinstance(result, dict) else {}
+            engine = (results.get("engine") or "").lower()
+            has_engine_error = bool(results.get("engine_error")) or engine in ("legacy-fallback", "")
+
+            if has_engine_error:
+                error_message = results.get("engine_error") or "Ошибка движка render"
+                update_task_state(
+                    task_id,
+                    status="FAILURE",
+                    progress=100,
+                    status_message="Ошибка рендер-аудита",
+                    result=result,
+                    error=error_message,
+                )
+                return
+
+            update_task_state(
+                task_id,
+                status="SUCCESS",
+                progress=100,
+                status_message="Рендер-аудит завершен",
+                result=result,
+            )
+        except Exception as exc:
+            update_task_state(
+                task_id,
+                status="FAILURE",
+                progress=100,
+                status_message="Ошибка рендер-аудита",
+                error=str(exc),
+            )
+
+    background_tasks.add_task(_run_render_task)
     return {
         "task_id": task_id,
-        "status": "SUCCESS",
-        "message": "Render audit completed"
+        "status": "PENDING",
+        "message": "Render audit queued",
     }
 
 
