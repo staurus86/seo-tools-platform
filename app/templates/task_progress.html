@@ -1492,7 +1492,12 @@ function generateRenderAuditHTML(result) {
         return `
             <div class="bg-white rounded-xl shadow-md p-5 border border-gray-100">
                 <div class="flex items-center justify-between mb-3">
-                    <h4 class="text-base font-semibold text-gray-800">${v.variant_label || v.variant_id}</h4>
+                    <h4 class="text-base font-semibold text-gray-800">
+                        ${v.variant_label || v.variant_id}
+                        <span class="ml-2 text-[11px] px-2 py-0.5 rounded-full ${v.profile_type === 'mobile' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}">
+                            ${v.profile_type === 'mobile' ? 'MOBILE' : 'DESKTOP'}
+                        </span>
+                    </h4>
                     <span class="text-xs px-2 py-1 rounded-full ${(score >= 80) ? 'bg-green-100 text-green-700' : (score >= 60 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700')}">Score ${score}</span>
                 </div>
                 <div class="grid grid-cols-2 gap-2 text-sm mb-3">

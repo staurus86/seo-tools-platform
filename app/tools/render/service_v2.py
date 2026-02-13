@@ -463,11 +463,24 @@ class RenderAuditServiceV2:
         nojs_timing: Dict[str, float] = {}
         browser = p.chromium.launch(headless=True)
         try:
-            ctx_kwargs: Dict[str, Any] = {"user_agent": ua, "locale": "en-US"}
-            if mobile and p.devices.get("Pixel 5"):
-                ctx_kwargs.update(p.devices["Pixel 5"])
+            ctx_kwargs: Dict[str, Any] = {"locale": "en-US", "user_agent": ua}
+            if mobile:
+                # Force real mobile emulation even if Playwright preset is unavailable.
+                mobile_preset = p.devices.get("Pixel 5") or p.devices.get("iPhone 13")
+                if mobile_preset:
+                    ctx_kwargs.update(mobile_preset)
+                    ctx_kwargs["user_agent"] = ua
+                else:
+                    ctx_kwargs.update(
+                        {
+                            "viewport": {"width": 393, "height": 851},
+                            "device_scale_factor": 3,
+                            "is_mobile": True,
+                            "has_touch": True,
+                        }
+                    )
             else:
-                ctx_kwargs.update({"viewport": {"width": 1366, "height": 900}})
+                ctx_kwargs.update({"viewport": {"width": 1366, "height": 900}, "is_mobile": False, "has_touch": False})
 
             ctx = browser.new_context(**ctx_kwargs)
             page = ctx.new_page()
@@ -672,6 +685,7 @@ class RenderAuditServiceV2:
                     "variant_label": label,
                     "mobile": mobile,
                     "user_agent": ua,
+                    "profile_type": "mobile" if mobile else "desktop",
                     "raw": raw_stats,
                     "rendered": rendered_stats,
                     "missing": {"visible_text": missing["Visible text"], "headings": missing["Headings"], "links": missing["Links"], "images": missing["Images"], "structured_data": missing["Structured data"]},
