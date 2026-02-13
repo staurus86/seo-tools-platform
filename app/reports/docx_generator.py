@@ -153,8 +153,10 @@ class DOCXGenerator:
         """Генерирует расширенный клиентский отчет аудита рендеринга."""
         doc = Document()
 
-        title = doc.add_heading('Отчет по аудиту рендеринга (JS vs no-JS)', 0)
+        title = doc.add_heading('SEO RENDERING AUDIT', 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        subtitle = doc.add_paragraph('Анализ контента с JavaScript и без него')
+        subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         url = data.get('url', 'N/A')
         results = data.get('results', {}) or {}
@@ -164,15 +166,16 @@ class DOCXGenerator:
         recommendations = results.get('recommendations', []) or []
         generated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-        doc.add_paragraph(f"URL: {url}")
-        doc.add_paragraph(f"Дата отчета: {generated_at}")
+        doc.add_paragraph(f"Анализируемый URL: {url}")
+        doc.add_paragraph(f"Дата аудита: {generated_at}")
         doc.add_paragraph(f"Движок: {results.get('engine', 'legacy')}")
+        doc.add_paragraph("Краткое резюме")
         doc.add_paragraph(
-            "Описание: аудит рендеринга проверяет, насколько контент страницы доступен поисковым системам "
-            "без выполнения JavaScript. Это критично для индексации, сниппетов и стабильности SEO."
+            f"Данный отчёт содержит результаты SEO-аудита страницы {url} с фокусом на сравнение контента, "
+            "доступного с JavaScript и без него."
         )
 
-        self._add_heading(doc, '1. Итоги', level=1)
+        self._add_heading(doc, '1. Ключевые выводы', level=1)
         totals = [
             ['Профилей проверки', summary.get('variants_total', len(variants)), 'Инфо'],
             ['Общий Score', summary.get('score', 'N/A'), 'Инфо'],
@@ -182,8 +185,55 @@ class DOCXGenerator:
             ['Средний missing %', f"{summary.get('avg_missing_pct', 0)}%", 'Инфо'],
         ]
         self._add_table(doc, ['Показатель', 'Значение', 'Статус'], totals)
+        doc.add_paragraph(f"• SEO Score: {summary.get('score', 'N/A')}/100")
+        doc.add_paragraph(f"• Критических проблем: {summary.get('critical_issues', 0)}")
+        doc.add_paragraph(f"• Предупреждений: {summary.get('warning_issues', 0)}")
+        doc.add_paragraph(f"• Добавлено элементов через JS: {summary.get('missing_total', 0)}")
 
-        self._add_heading(doc, '2. Что проверялось и зачем', level=1)
+        primary = variants[0] if variants else {}
+        raw_p = primary.get('raw', {}) or {}
+        js_p = primary.get('rendered', {}) or {}
+        meta_p = ((primary.get('meta_non_seo') or {}).get('comparison') or {})
+        raw_meta = ((primary.get('meta_non_seo') or {}).get('raw') or {})
+        js_meta = ((primary.get('meta_non_seo') or {}).get('rendered') or {})
+        raw_schema = ", ".join(raw_p.get('schema_types', []) or []) or "Нет"
+        js_schema = ", ".join(js_p.get('schema_types', []) or []) or "Нет"
+
+        def _status(a, b) -> str:
+            return "✅" if str(a).strip() == str(b).strip() else "⚠️"
+
+        self._add_heading(doc, '2. Сравнение SEO-элементов', level=1)
+        compare_rows = [
+            ['Title', raw_p.get('title', ''), js_p.get('title', ''), _status(raw_p.get('title', ''), js_p.get('title', ''))],
+            ['Meta Description', raw_p.get('meta_description', ''), js_p.get('meta_description', ''), _status(raw_p.get('meta_description', ''), js_p.get('meta_description', ''))],
+            ['H1 заголовки', f"{raw_p.get('h1_count', 0)} шт", f"{js_p.get('h1_count', 0)} шт", _status(raw_p.get('h1_count', 0), js_p.get('h1_count', 0))],
+            ['H2 заголовки', f"{raw_p.get('h2_count', 0)} шт", f"{js_p.get('h2_count', 0)} шт", _status(raw_p.get('h2_count', 0), js_p.get('h2_count', 0))],
+            ['Изображения', f"{raw_p.get('images_count', 0)} шт", f"{js_p.get('images_count', 0)} шт", _status(raw_p.get('images_count', 0), js_p.get('images_count', 0))],
+            ['Ссылки', f"{raw_p.get('links_count', 0)} шт", f"{js_p.get('links_count', 0)} шт", _status(raw_p.get('links_count', 0), js_p.get('links_count', 0))],
+            ['Canonical', raw_p.get('canonical', ''), js_p.get('canonical', ''), _status(raw_p.get('canonical', ''), js_p.get('canonical', ''))],
+            ['Schema Markup', raw_schema, js_schema, _status(raw_schema, js_schema)],
+            ['Viewport', '✅ Есть' if raw_meta.get('meta:viewport') else '❌ Нет', '✅ Есть' if js_meta.get('meta:viewport') else '❌ Нет', _status(bool(raw_meta.get('meta:viewport')), bool(js_meta.get('meta:viewport')))],
+        ]
+        self._add_table(doc, ['Элемент', 'Без JS', 'С JS', 'Статус'], compare_rows)
+
+        self._add_heading(doc, '3. Анализ по устройствам', level=1)
+        if variants:
+            device_rows = []
+            for variant in variants:
+                metrics = variant.get('metrics', {}) or {}
+                shots = variant.get('screenshots', {}) or {}
+                device_rows.append([
+                    variant.get('variant_label') or variant.get('variant_id', 'Профиль'),
+                    (variant.get('profile_type') or ('mobile' if variant.get('mobile') else 'desktop')),
+                    f"{float(metrics.get('score', 0) or 0):.1f}",
+                    f"{int(metrics.get('total_missing', 0) or 0)}",
+                    ", ".join(list(shots.keys())) if shots else 'нет',
+                ])
+            self._add_table(doc, ['Устройство', 'Тип профиля', 'Score', 'Missing', 'Скриншоты'], device_rows)
+        else:
+            doc.add_paragraph("Профили устройств отсутствуют.")
+
+        self._add_heading(doc, '4. Что проверялось и зачем', level=1)
         doc.add_paragraph(
             "Система сравнивает две версии страницы: исходный HTML (без JS) и итоговый DOM после JS-рендера. "
             "Если значимый контент появляется только после JS, поисковый робот может увидеть неполную страницу."
@@ -191,7 +241,7 @@ class DOCXGenerator:
         doc.add_paragraph("Проверяются элементы: title, meta description, canonical, H1-H2, ссылки, изображения, schema.org, видимый текст.")
         doc.add_paragraph("Дополнительно сравниваются не-SEO meta-данные между no-JS и JS: viewport, charset, referrer, theme-color, manifest и др.")
 
-        self._add_heading(doc, '3. Результаты по профилям', level=1)
+        self._add_heading(doc, '5. Результаты по профилям', level=1)
         if variants:
             for variant in variants:
                 label = variant.get('variant_label') or variant.get('variant_id', 'Профиль')
@@ -303,7 +353,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Данные по профилям отсутствуют.")
 
-        self._add_heading(doc, '4. Общий список ошибок', level=1)
+        self._add_heading(doc, '6. Общий список ошибок', level=1)
         if issues:
             for issue in issues:
                 sev = str(issue.get('severity', 'info')).upper()
@@ -314,7 +364,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Ошибок не обнаружено.")
 
-        self._add_heading(doc, '5. Что делать для исправления', level=1)
+        self._add_heading(doc, '7. Что делать для исправления', level=1)
         if recommendations:
             for rec in recommendations:
                 doc.add_paragraph(str(rec), style='List Bullet')
