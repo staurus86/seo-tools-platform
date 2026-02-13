@@ -1716,13 +1716,13 @@ function generateRenderAuditHTML(result) {
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                ${variantCards || '<div class="text-sm text-gray-500">Нет данных по профилям рендеринга.</div>'}
-            </div>
+            ${mobileDetailsHtml}
 
             ${forcedProfilesHtml}
 
-            ${mobileDetailsHtml}
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                ${variantCards || '<div class="text-sm text-gray-500">Нет данных по профилям рендеринга.</div>'}
+            </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
                 <h4 class="font-semibold mb-2">Найденные проблемы</h4>
