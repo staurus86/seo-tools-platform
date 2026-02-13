@@ -411,6 +411,32 @@ class XLSXGenerator:
         rec_ws.freeze_panes = 'A2'
         rec_ws.auto_filter.ref = 'A1:A1'
 
+        missing_ws = wb.create_sheet('Missing элементы')
+        missing_headers = ['Профиль', 'Категория', 'Элемент']
+        for col, header in enumerate(missing_headers, 1):
+            self._apply_style(missing_ws.cell(row=1, column=col, value=header), header_style)
+        row_idx = 2
+        for variant in variants:
+            profile = variant.get('variant_label') or variant.get('variant_id', '')
+            missing = variant.get('missing', {}) or {}
+            for key, label in [
+                ('visible_text', 'Текст только в JS'),
+                ('headings', 'Заголовки только в JS'),
+                ('links', 'Ссылки только в JS'),
+                ('structured_data', 'Structured data только в JS'),
+            ]:
+                values = missing.get(key, []) or []
+                for value in values:
+                    self._apply_style(missing_ws.cell(row=row_idx, column=1, value=profile), cell_style)
+                    self._apply_style(missing_ws.cell(row=row_idx, column=2, value=label), cell_style)
+                    self._apply_style(missing_ws.cell(row=row_idx, column=3, value=str(value)), cell_style)
+                    row_idx += 1
+        missing_ws.freeze_panes = 'A2'
+        missing_ws.auto_filter.ref = f"A1:C{max(2, row_idx-1)}"
+        missing_ws.column_dimensions['A'].width = 24
+        missing_ws.column_dimensions['B'].width = 28
+        missing_ws.column_dimensions['C'].width = 140
+
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         wb.save(filepath)
         return filepath

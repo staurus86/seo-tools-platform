@@ -217,8 +217,25 @@ class DOCXGenerator:
                         title_i = issue.get('title', '')
                         details_i = issue.get('details', '')
                         doc.add_paragraph(f"[{sev}] {title_i}: {details_i}", style='List Bullet')
+                        examples = issue.get('examples', []) or []
+                        for ex in examples[:5]:
+                            doc.add_paragraph(f"Пример: {ex}", style='List Bullet')
                 else:
                     doc.add_paragraph("Проблемы не обнаружены.")
+
+                missing = variant.get('missing', {}) or {}
+                for key, label in [
+                    ('visible_text', 'Текст, который появляется только после JS'),
+                    ('headings', 'Заголовки, которые появляются только после JS'),
+                    ('links', 'Ссылки, которые появляются только после JS'),
+                    ('structured_data', 'Structured data, которая появляется только после JS'),
+                ]:
+                    values = missing.get(key, []) or []
+                    if not values:
+                        continue
+                    doc.add_paragraph(f"{label}: {len(values)}", style='List Bullet')
+                    for item in values[:20]:
+                        doc.add_paragraph(str(item), style='List Bullet')
 
                 var_recs = variant.get('recommendations', []) or []
                 if var_recs:

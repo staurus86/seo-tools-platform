@@ -1434,6 +1434,23 @@ function generateRenderAuditHTML(result) {
         const issueRows = (v.issues || []).slice(0, 4).map(i => `
             <li><span class="font-medium ${(i.severity || '') === 'critical' ? 'text-red-700' : 'text-amber-700'}">${(i.severity || 'info').toUpperCase()}</span> - ${i.title || ''}</li>
         `).join('');
+        const missing = v.missing || {};
+        const missingLists = [
+            { key: 'visible_text', label: 'Текст только в JS' },
+            { key: 'headings', label: 'Заголовки только в JS' },
+            { key: 'links', label: 'Ссылки только в JS' },
+            { key: 'structured_data', label: 'Structured data только в JS' },
+        ].map(item => {
+            const arr = missing[item.key] || [];
+            if (!arr.length) return '';
+            const rows = arr.slice(0, 8).map(x => `<li class="break-all">${String(x)}</li>`).join('');
+            return `
+                <details class="mt-2 rounded border border-gray-200 p-2 bg-gray-50">
+                    <summary class="cursor-pointer text-sm font-medium">${item.label}: ${arr.length}</summary>
+                    <ul class="list-disc pl-5 text-xs text-gray-700 mt-2">${rows}</ul>
+                </details>
+            `;
+        }).join('');
         return `
             <div class="bg-white rounded-xl shadow-md p-5 border border-gray-100">
                 <div class="flex items-center justify-between mb-3">
@@ -1455,6 +1472,7 @@ function generateRenderAuditHTML(result) {
                     <div class="text-sm">
                         <div class="font-medium mb-1">Ключевые проблемы:</div>
                         <ul class="list-disc pl-5 text-gray-700">${issueRows}</ul>
+                        ${missingLists}
                     </div>
                 ` : '<div class="text-sm text-green-700">Проблем не обнаружено.</div>'}
             </div>
@@ -1468,6 +1486,7 @@ function generateRenderAuditHTML(result) {
             </div>
             <div class="text-gray-700">${i.title || ''}</div>
             <div class="text-gray-500">${i.details || ''}</div>
+            ${(i.examples || []).length ? `<ul class="list-disc pl-5 text-xs text-gray-600 mt-1">${(i.examples || []).map(ex => `<li class="break-all">${ex}</li>`).join('')}</ul>` : ''}
         </div>
     `).join('');
 
