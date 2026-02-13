@@ -332,8 +332,17 @@ class MobileCheckServiceV2:
         task_id: str,
         mode: str = "full",
         selected_devices: Optional[List[str]] = None,
+        progress_callback=None,
     ) -> Dict[str, Any]:
+        def _notify(progress: int, message: str) -> None:
+            if callable(progress_callback):
+                try:
+                    progress_callback(progress, message)
+                except Exception:
+                    pass
+
         devices = self._select_devices(mode=mode, selected=selected_devices)
+        _notify(8, "Fetching page metadata")
         prefetch = self._http_prefetch(url)
         domain = urlparse(url).netloc or "site"
         stamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
@@ -345,6 +354,7 @@ class MobileCheckServiceV2:
         try:
             from playwright.sync_api import sync_playwright
         except Exception as e:
+            _notify(100, "Playwright runtime unavailable")
             return {
                 "task_type": "mobile_check",
                 "url": url,
@@ -362,9 +372,13 @@ class MobileCheckServiceV2:
             }
 
         with sync_playwright() as p:
+            _notify(12, "Launching browser engine")
             browser = p.chromium.launch(headless=True)
+            total_devices = len(devices) or 1
             for device in devices:
                 started = time.perf_counter()
+                device_idx = len(results) + 1
+                _notify(12 + int(((device_idx - 1) / total_devices) * 80), f"Testing {device.name} ({device_idx}/{total_devices})")
                 shot_name = f"mobile_{_slug(domain)}_{stamp}_{_slug(device.name)}.png"
                 shot_path = shot_dir / shot_name
                 context = browser.new_context(
@@ -417,6 +431,7 @@ class MobileCheckServiceV2:
                         "screenshot_url": f"/api/mobile-artifacts/{task_id}/{shot_name}",
                     }
                 )
+                _notify(12 + int((device_idx / total_devices) * 80), f"Completed {device.name} ({device_idx}/{total_devices})")
             browser.close()
 
         total = len(results)
@@ -439,6 +454,7 @@ class MobileCheckServiceV2:
         if summary["critical_issues"] == 0 and summary["warning_issues"] == 0:
             recommendations.append("No blocking mobile issues detected across selected devices.")
 
+        _notify(98, "Finalizing report")
         return {
             "task_type": "mobile_check",
             "url": url,

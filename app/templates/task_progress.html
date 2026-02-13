@@ -90,14 +90,35 @@ function updateProgress(data) {
     const progressBar = document.getElementById('progress-bar');
     const statusTitle = document.getElementById('status-title');
     const statusMessage = document.getElementById('status-message');
-    
+    const statusIcon = document.getElementById('status-icon');
+
     if (data.status === 'SUCCESS') {
-        statusTitle.textContent = 'Завершено';
-        statusMessage.textContent = 'Анализ успешно выполнен';
+        statusTitle.textContent = 'Completed';
+        statusMessage.textContent = data.status_message || 'Analysis completed successfully';
         progressBar.style.width = '100%';
         progressBar.classList.remove('bg-blue-500');
         progressBar.classList.add('bg-green-500');
+        statusIcon.innerHTML = '<i class="fas fa-check-circle text-green-500"></i>';
+        return;
     }
+
+    if (data.status === 'FAILURE') {
+        statusTitle.textContent = 'Failed';
+        statusMessage.textContent = data.error || data.status_message || 'Analysis failed';
+        progressBar.style.width = `${data.progress || 100}%`;
+        progressBar.classList.remove('bg-blue-500');
+        progressBar.classList.add('bg-red-500');
+        statusIcon.innerHTML = '<i class="fas fa-times-circle text-red-500"></i>';
+        return;
+    }
+
+    const p = Number.isFinite(Number(data.progress)) ? Number(data.progress) : 10;
+    statusTitle.textContent = data.status === 'RUNNING' ? 'Running...' : 'Queued...';
+    statusMessage.textContent = data.status_message || (data.status === 'RUNNING' ? 'Analyzing devices' : 'Task in queue');
+    progressBar.style.width = `${Math.max(5, Math.min(95, p))}%`;
+    progressBar.classList.remove('bg-green-500', 'bg-red-500');
+    progressBar.classList.add('bg-blue-500');
+    statusIcon.innerHTML = '<i class="fas fa-spinner fa-spin text-blue-500"></i>';
 }
 
 function showResults(data) {
@@ -1418,3 +1439,4 @@ function generateMobileCheckHTML(result) {
 window.copyToClipboard = copyToClipboard;
 </script>
 {% endblock %}
+

@@ -1,7 +1,7 @@
 """
 SEO Tools API Routes - Full integration with original scripts
 """
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
@@ -62,12 +62,63 @@ def create_task_result(task_id: str, task_type: str, url: str, result: Dict[str,
         "task_id": task_id,
         "task_type": task_type,
         "url": url,
+        "status": "SUCCESS",
+        "progress": 100,
+        "status_message": "Completed",
+        "error": None,
+        "created_at": datetime.utcnow().isoformat(),
         "result": result,
         "completed_at": datetime.utcnow().isoformat()
     }
     
     _save_task_payload(task_id, data)
     print(f"[API] Task {task_id} stored")
+
+
+def create_task_pending(task_id: str, task_type: str, url: str, status_message: str = "Queued") -> None:
+    """Create task record in pending state."""
+    now = datetime.utcnow().isoformat()
+    data = {
+        "task_id": task_id,
+        "task_type": task_type,
+        "url": url,
+        "status": "PENDING",
+        "progress": 0,
+        "status_message": status_message,
+        "error": None,
+        "created_at": now,
+        "completed_at": None,
+        "result": None,
+    }
+    _save_task_payload(task_id, data)
+
+
+def update_task_state(
+    task_id: str,
+    *,
+    status: Optional[str] = None,
+    progress: Optional[int] = None,
+    status_message: Optional[str] = None,
+    result: Optional[Dict[str, Any]] = None,
+    error: Optional[str] = None,
+) -> None:
+    """Update task fields while preserving existing payload."""
+    task = get_task_result(task_id)
+    if not task:
+        return
+    if status is not None:
+        task["status"] = status
+    if progress is not None:
+        task["progress"] = max(0, min(100, int(progress)))
+    if status_message is not None:
+        task["status_message"] = status_message
+    if result is not None:
+        task["result"] = result
+    if error is not None:
+        task["error"] = error
+    if status in ("SUCCESS", "FAILURE"):
+        task["completed_at"] = datetime.utcnow().isoformat()
+    _save_task_payload(task_id, task)
 
 
 def append_task_artifact(task_id: str, artifact_path: str, kind: str = "report") -> None:
@@ -1649,19 +1700,23 @@ async def get_task_status(task_id: str):
     if data:
         return {
             "task_id": task_id,
-            "status": "SUCCESS",
-            "task_type": data["task_type"],
-            "url": data["url"],
-            "created_at": datetime.utcnow(),
-            "completed_at": datetime.utcnow(),
-            "result": data["result"],
-            "error": None,
+            "status": data.get("status", "SUCCESS"),
+            "progress": data.get("progress", 100),
+            "status_message": data.get("status_message", ""),
+            "task_type": data.get("task_type"),
+            "url": data.get("url", ""),
+            "created_at": data.get("created_at"),
+            "completed_at": data.get("completed_at"),
+            "result": data.get("result"),
+            "error": data.get("error"),
             "can_continue": False
         }
     
     return {
         "task_id": task_id,
         "status": "PENDING",
+        "progress": 0,
+        "status_message": "Task not found yet",
         "task_type": "site_analyze",
         "url": "",
         "created_at": datetime.utcnow(),
@@ -2649,6 +2704,7 @@ def check_mobile_full(
     task_id: str,
     mode: str = "full",
     devices: Optional[List[str]] = None,
+    progress_callback=None,
 ) -> Dict[str, Any]:
     """Feature-flagged mobile check with v2 service fallback."""
     from app.config import settings
@@ -2662,13 +2718,30 @@ def check_mobile_full(
             selected_mode = (mode or getattr(settings, "MOBILE_CHECK_MODE", "full") or "full").lower()
             if selected_mode not in ("quick", "full"):
                 selected_mode = "full"
-            return checker.run(url=url, task_id=task_id, mode=selected_mode, selected_devices=devices)
+            return checker.run(
+                url=url,
+                task_id=task_id,
+                mode=selected_mode,
+                selected_devices=devices,
+                progress_callback=progress_callback,
+            )
         except Exception as e:
             print(f"[API] mobile v2 failed, fallback to simple: {e}")
             fallback = check_mobile_simple(url)
             fallback_results = fallback.get("results", {})
             fallback_results["engine"] = "legacy-fallback"
             fallback_results["engine_error"] = str(e)
+            fallback_results["mobile_friendly"] = False
+            fallback_results["score"] = None
+            fallback_results["issues"] = [
+                {
+                    "severity": "critical",
+                    "code": "mobile_engine_error",
+                    "title": "Mobile v2 engine failed",
+                    "details": str(e),
+                }
+            ]
+            fallback_results["issues_count"] = 1
             return fallback
 
     legacy = check_mobile_simple(url)
@@ -2728,19 +2801,65 @@ async def create_render_audit(data: RenderAuditRequest):
 
 
 @router.post("/tasks/mobile-check")
-async def create_mobile_check(data: MobileCheckRequest):
-    """Mobile check with v2 support."""
+async def create_mobile_check(data: MobileCheckRequest, background_tasks: BackgroundTasks):
+    """Mobile check with background progress updates."""
     url = data.url
-    
-    print(f"[API] Mobile check for: {url}")
+    mode = data.mode or "full"
+    devices = data.devices
+
+    print(f"[API] Mobile check queued for: {url}")
     task_id = f"mobile-{datetime.now().timestamp()}"
-    result = check_mobile_full(url, task_id=task_id, mode=data.mode or "full", devices=data.devices)
-    create_task_result(task_id, "mobile_check", url, result)
-    
-    return {
-        "task_id": task_id,
-        "status": "SUCCESS",
-        "message": "Mobile check completed"
-    }
+    create_task_pending(task_id, "mobile_check", url, status_message="Queued for mobile analysis")
+
+    def _run_mobile_task() -> None:
+        try:
+            update_task_state(task_id, status="RUNNING", progress=5, status_message="Preparing mobile audit")
+
+            def _progress(progress: int, message: str) -> None:
+                update_task_state(task_id, status="RUNNING", progress=progress, status_message=message)
+
+            result = check_mobile_full(
+                url,
+                task_id=task_id,
+                mode=mode,
+                devices=devices,
+                progress_callback=_progress,
+            )
+
+            results = result.get("results", {}) if isinstance(result, dict) else {}
+            engine = (results.get("engine") or "").lower()
+            has_engine_error = bool(results.get("engine_error")) or engine in ("legacy-fallback", "")
+
+            if has_engine_error:
+                error_message = results.get("engine_error") or "Mobile engine failed"
+                update_task_state(
+                    task_id,
+                    status="FAILURE",
+                    progress=100,
+                    status_message="Mobile audit failed",
+                    result=result,
+                    error=error_message,
+                )
+                return
+
+            update_task_state(
+                task_id,
+                status="SUCCESS",
+                progress=100,
+                status_message="Mobile audit completed",
+                result=result,
+                error=None,
+            )
+        except Exception as e:
+            update_task_state(
+                task_id,
+                status="FAILURE",
+                progress=100,
+                status_message="Mobile audit failed",
+                error=str(e),
+            )
+
+    background_tasks.add_task(_run_mobile_task)
+    return {"task_id": task_id, "status": "PENDING", "message": "Mobile check started"}
 
 
