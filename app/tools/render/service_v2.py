@@ -461,11 +461,12 @@ class RenderAuditServiceV2:
             errors,
         )
 
-    def _render(self, p: Any, url: str, ua: str, mobile: bool, shot_js: Path, shot_nojs: Path) -> Tuple[Snapshot, Dict[str, float], Dict[str, float]]:
+    def _render(self, p: Any, url: str, ua: str, mobile: bool, shot_js: Path, shot_nojs: Path) -> Tuple[Snapshot, Dict[str, float], Dict[str, float], Dict[str, Any]]:
         errors: List[str] = []
         out: Dict[str, Any] = {}
         js_timing: Dict[str, float] = {}
         nojs_timing: Dict[str, float] = {}
+        emulation: Dict[str, Any] = {}
         browser = p.chromium.launch(headless=True)
         try:
             ctx_kwargs: Dict[str, Any] = {"locale": "en-US", "user_agent": ua}
@@ -486,6 +487,13 @@ class RenderAuditServiceV2:
                     )
             else:
                 ctx_kwargs.update({"viewport": {"width": 1366, "height": 900}, "is_mobile": False, "has_touch": False})
+            emulation = {
+                "requested_mobile": bool(mobile),
+                "is_mobile": bool(ctx_kwargs.get("is_mobile", False)),
+                "has_touch": bool(ctx_kwargs.get("has_touch", False)),
+                "viewport": ctx_kwargs.get("viewport"),
+                "user_agent": ctx_kwargs.get("user_agent", ua),
+            }
 
             ctx = browser.new_context(**ctx_kwargs)
             page = ctx.new_page()
@@ -568,7 +576,7 @@ class RenderAuditServiceV2:
             0,
             errors,
         )
-        return snap, js_timing, nojs_timing
+        return snap, js_timing, nojs_timing, emulation
 
     def run(self, url: str, task_id: str, progress_callback=None) -> Dict[str, Any]:
         def notify(progress: int, message: str) -> None:
@@ -605,7 +613,7 @@ class RenderAuditServiceV2:
                     base = f"render_{re.sub(r'[^a-zA-Z0-9]+','-',urlparse(url).netloc or 'site').strip('-').lower()}_{datetime.utcnow().strftime('%Y-%m-%d_%H-%M')}_{vid}"
                     shot_js = shot_dir / f"{base}_js.png"
                     shot_nojs = shot_dir / f"{base}_nojs.png"
-                    rendered, timing_js, timing_nojs = self._render(p, url, ua, mobile, shot_js, shot_nojs)
+                    rendered, timing_js, timing_nojs, emulation = self._render(p, url, ua, mobile, shot_js, shot_nojs)
                     elapsed = max(0.0, time.time() - t0)
                     self._dbg(
                         task_id,
@@ -724,6 +732,7 @@ class RenderAuditServiceV2:
                         "timings": {"raw_s": 0.0, "rendered_s": elapsed},
                         "timing_nojs_ms": timing_nojs,
                         "timing_js_ms": timing_js,
+                        "emulation": emulation,
                         "issues": issues,
                         "recommendations": _build_recommendations(missing) + _build_seo_recommendations(seo_required),
                         "screenshots": shots,

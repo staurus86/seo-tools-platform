@@ -1439,6 +1439,7 @@ function generateRenderAuditHTML(result) {
         const raw = v.raw || {};
         const rendered = v.rendered || {};
         const shots = v.screenshots || {};
+        const emulation = v.emulation || {};
         const firstShot = shots.js?.url || shots.nojs?.url || '';
         const shotIndex = firstShot ? screenshotItems.findIndex(i => i.src === firstShot) : -1;
         const issueRows = (v.issues || []).slice(0, 4).map(i => `
@@ -1519,6 +1520,9 @@ function generateRenderAuditHTML(result) {
                     <div class="p-2 bg-gray-50 rounded"><span class="text-gray-600">Изменено meta:</span> <span class="font-medium">${(metaCmp.changed || 0) + (metaCmp.only_rendered || 0) + (metaCmp.only_raw || 0)}</span></div>
                     <div class="p-2 bg-gray-50 rounded"><span class="text-gray-600">SEO FAIL:</span> <span class="font-medium text-red-700">${seoReq.fail || 0}</span></div>
                     <div class="p-2 bg-gray-50 rounded"><span class="text-gray-600">SEO WARN:</span> <span class="font-medium text-amber-700">${seoReq.warn || 0}</span></div>
+                    <div class="p-2 bg-gray-50 rounded"><span class="text-gray-600">is_mobile:</span> <span class="font-medium">${String(emulation.is_mobile ?? v.mobile ?? false)}</span></div>
+                    <div class="p-2 bg-gray-50 rounded"><span class="text-gray-600">has_touch:</span> <span class="font-medium">${String(emulation.has_touch ?? false)}</span></div>
+                    <div class="p-2 bg-gray-50 rounded col-span-2"><span class="text-gray-600">Viewport:</span> <span class="font-medium">${emulation.viewport ? `${emulation.viewport.width}x${emulation.viewport.height}` : '-'}</span></div>
                 </div>
                 ${firstShot ? `
                     <div class="rounded-lg overflow-hidden border cursor-zoom-in mb-3" onclick="openMobileLightbox(${Math.max(0, shotIndex)})">
