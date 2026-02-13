@@ -379,7 +379,7 @@ class DOCXGenerator:
         if added == 0:
             doc.add_paragraph("Скриншоты отсутствуют.")
 
-        self._add_heading(doc, '7. Итог для клиента', level=1)
+        self._add_heading(doc, '7. Итоги', level=1)
         if actionable_issues:
             doc.add_paragraph(
                 "Обнаружены ошибки мобильной версии, которые требуют исправления для повышения "
