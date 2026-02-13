@@ -27,12 +27,12 @@ class MobileDevice:
 
 DEVICE_PROFILES: List[MobileDevice] = [
     MobileDevice(
-        "iPhone 17",
+        "iPhone 16 Pro",
         "phone",
         402,
         874,
         3.0,
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.0 Mobile/15E148 Safari/604.1",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
     ),
     MobileDevice(
         "Samsung Galaxy S25",
@@ -85,7 +85,7 @@ DEVICE_PROFILES: List[MobileDevice] = [
 ]
 
 DEFAULT_DEVICE_NAMES = [
-    "iPhone 17",
+    "iPhone 16 Pro",
     "Samsung Galaxy S25",
     "Google Pixel 9 Pro",
     "Samsung Galaxy A55",
@@ -95,7 +95,7 @@ DEFAULT_DEVICE_NAMES = [
 ]
 
 QUICK_DEVICE_NAMES = [
-    "iPhone 17",
+    "iPhone 16 Pro",
     "Samsung Galaxy S25",
 ]
 

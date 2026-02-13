@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     # Mobile check v2
     MOBILE_CHECK_ENGINE: str = os.getenv("MOBILE_CHECK_ENGINE", "v2")
     MOBILE_CHECK_TIMEOUT: int = int(os.getenv("MOBILE_CHECK_TIMEOUT", "20"))
-    MOBILE_CHECK_MODE: str = os.getenv("MOBILE_CHECK_MODE", "full")
+    MOBILE_CHECK_MODE: str = os.getenv("MOBILE_CHECK_MODE", "quick")
     
     # History
     HISTORY_SIZE: int = 10

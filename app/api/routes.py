@@ -2715,7 +2715,7 @@ def check_mobile_full(
             from app.tools.mobile.service_v2 import MobileCheckServiceV2
 
             checker = MobileCheckServiceV2(timeout=getattr(settings, "MOBILE_CHECK_TIMEOUT", 20))
-            selected_mode = (mode or getattr(settings, "MOBILE_CHECK_MODE", "full") or "full").lower()
+            selected_mode = (mode or getattr(settings, "MOBILE_CHECK_MODE", "quick") or "quick").lower()
             if selected_mode not in ("quick", "full"):
                 selected_mode = "full"
             return checker.run(
@@ -2759,7 +2759,7 @@ class RenderAuditRequest(BaseModel):
 
 class MobileCheckRequest(BaseModel):
     url: str
-    mode: Optional[str] = "full"
+    mode: Optional[str] = "quick"
     devices: Optional[List[str]] = None
 
 
@@ -2804,7 +2804,8 @@ async def create_render_audit(data: RenderAuditRequest):
 async def create_mobile_check(data: MobileCheckRequest, background_tasks: BackgroundTasks):
     """Mobile check with background progress updates."""
     url = data.url
-    mode = data.mode or "full"
+    from app.config import settings
+    mode = data.mode or getattr(settings, "MOBILE_CHECK_MODE", "quick") or "quick"
     devices = data.devices
 
     print(f"[API] Mobile check queued for: {url}")
