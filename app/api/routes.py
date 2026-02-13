@@ -2749,13 +2749,74 @@ def check_render_full(
     """Feature-flagged render audit with v2 service fallback."""
     from app.config import settings
 
+    def _ensure_render_profiles(payload: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(payload, dict):
+            return payload
+        results = payload.get("results")
+        if not isinstance(results, dict):
+            return payload
+
+        variants = results.get("variants")
+        if not isinstance(variants, list):
+            variants = []
+            results["variants"] = variants
+
+        required = [
+            ("googlebot_desktop", "Googlebot Desktop", False),
+            ("googlebot_mobile", "Googlebot Mobile", True),
+        ]
+        existing_ids = {str(v.get("variant_id", "")).lower() for v in variants if isinstance(v, dict)}
+
+        for variant_id, label, is_mobile in required:
+            if variant_id in existing_ids:
+                continue
+            fail_issue = {
+                "severity": "critical",
+                "code": "variant_missing_in_result",
+                "title": "Профиль рендеринга отсутствует в результате",
+                "details": f"Профиль {label} не вернулся из движка и добавлен как ошибка.",
+            }
+            variants.append(
+                {
+                    "variant_id": variant_id,
+                    "variant_label": label,
+                    "mobile": is_mobile,
+                    "profile_type": "mobile" if is_mobile else "desktop",
+                    "raw": {},
+                    "rendered": {},
+                    "missing": {"visible_text": [], "headings": [], "links": [], "images": [], "structured_data": []},
+                    "meta_non_seo": {"raw": {}, "rendered": {}, "comparison": {"total": 0, "same": 0, "changed": 0, "only_rendered": 0, "only_raw": 0, "items": []}},
+                    "seo_required": {"total": 0, "pass": 0, "warn": 0, "fail": 0, "items": []},
+                    "metrics": {"total_missing": 0.0, "rendered_total": 0.0, "missing_pct": 0.0, "score": 0.0},
+                    "timings": {"raw_s": 0.0, "rendered_s": 0.0},
+                    "timing_nojs_ms": {},
+                    "timing_js_ms": {},
+                    "issues": [fail_issue],
+                    "recommendations": ["Проверьте логи рендер-движка и окружение Playwright для этого профиля."],
+                    "screenshots": {},
+                }
+            )
+            issues = results.get("issues")
+            if not isinstance(issues, list):
+                issues = []
+                results["issues"] = issues
+            issues.append({**fail_issue, "variant": label})
+
+        summary = results.get("summary")
+        if not isinstance(summary, dict):
+            summary = {}
+            results["summary"] = summary
+        summary["variants_total"] = len(results.get("variants", []))
+        results["issues_count"] = len(results.get("issues", []) or [])
+        return payload
+
     engine = (getattr(settings, "RENDER_AUDIT_ENGINE", "v2") or "v2").lower()
     if engine == "v2":
         try:
             from app.tools.render.service_v2 import RenderAuditServiceV2
 
             checker = RenderAuditServiceV2(timeout=getattr(settings, "RENDER_AUDIT_TIMEOUT", 35))
-            return checker.run(url=url, task_id=task_id, progress_callback=progress_callback)
+            return _ensure_render_profiles(checker.run(url=url, task_id=task_id, progress_callback=progress_callback))
         except Exception as e:
             print(f"[API] render v2 failed, fallback to simple: {e}")
             fallback = check_render_simple(url)
