@@ -2653,7 +2653,7 @@ def check_mobile_full(
     """Feature-flagged mobile check with v2 service fallback."""
     from app.config import settings
 
-    engine = (getattr(settings, "MOBILE_CHECK_ENGINE", "legacy") or "legacy").lower()
+    engine = (getattr(settings, "MOBILE_CHECK_ENGINE", "v2") or "v2").lower()
     if engine == "v2":
         try:
             from app.tools.mobile.service_v2 import MobileCheckServiceV2
