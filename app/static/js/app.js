@@ -49,13 +49,29 @@ async function startTask(event, endpoint) {
     const formData = new FormData(form);
     const data = {};
     
+    const parseValue = (value) => {
+        if (value === 'true') return true;
+        if (value === 'false') return false;
+        if (!isNaN(value) && value !== '') return parseInt(value);
+        return value;
+    };
+
     formData.forEach((value, key) => {
-        // Convert boolean strings
-        if (value === 'true') data[key] = true;
-        else if (value === 'false') data[key] = false;
-        // Convert numbers
-        else if (!isNaN(value) && value !== '') data[key] = parseInt(value);
-        else data[key] = value;
+        const parsed = parseValue(value);
+        if (Object.prototype.hasOwnProperty.call(data, key)) {
+            if (!Array.isArray(data[key])) {
+                data[key] = [data[key]];
+            }
+            data[key].push(parsed);
+        } else {
+            data[key] = parsed;
+        }
+    });
+
+    ['selected_bots', 'bot_groups'].forEach((key) => {
+        if (Object.prototype.hasOwnProperty.call(data, key) && !Array.isArray(data[key])) {
+            data[key] = [data[key]];
+        }
     });
     
     // Show loading state

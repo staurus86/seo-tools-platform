@@ -1084,11 +1084,18 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
         }
 
 
-def check_bots_full(url: str) -> Dict[str, Any]:
+def check_bots_full(
+    url: str,
+    selected_bots: Optional[List[str]] = None,
+    bot_groups: Optional[List[str]] = None,
+) -> Dict[str, Any]:
     """Bot accessibility check with feature-flagged v2 engine."""
     from app.config import settings
 
     engine = (getattr(settings, "BOT_CHECK_ENGINE", "legacy") or "legacy").lower()
+    has_custom_selection = bool(selected_bots or bot_groups)
+    if has_custom_selection:
+        engine = "v2"
     if engine == "v2":
         try:
             from app.tools.bots.service_v2 import BotAccessibilityServiceV2
@@ -1097,13 +1104,15 @@ def check_bots_full(url: str) -> Dict[str, Any]:
                 timeout=getattr(settings, "BOT_CHECK_TIMEOUT", 15),
                 max_workers=getattr(settings, "BOT_CHECK_MAX_WORKERS", 10),
             )
-            return checker.run(url)
+            return checker.run(url, selected_bots=selected_bots, bot_groups=bot_groups)
         except Exception as e:
             print(f"[API] bot v2 failed, fallback to legacy: {e}")
             legacy = _check_bots_legacy(url)
             legacy_results = legacy.get("results", {})
             legacy_results["engine"] = "legacy-fallback"
             legacy_results["engine_error"] = str(e)
+            legacy_results["selected_bots_ignored"] = selected_bots or []
+            legacy_results["selected_groups_ignored"] = bot_groups or []
             return legacy
 
     return _check_bots_legacy(url)
@@ -1157,6 +1166,8 @@ class SitemapValidateRequest(BaseModel):
 
 class BotCheckRequest(BaseModel):
     url: str
+    selected_bots: Optional[List[str]] = None
+    bot_groups: Optional[List[str]] = None
 
 
 # ============ API ENDPOINTS ============
@@ -1465,7 +1476,7 @@ async def create_bot_check(data: BotCheckRequest):
     
     print(f"[API] Full bot check for: {url}")
     
-    result = check_bots_full(url)
+    result = check_bots_full(url, selected_bots=data.selected_bots, bot_groups=data.bot_groups)
     task_id = f"bots-{datetime.now().timestamp()}"
     create_task_result(task_id, "bot_check", url, result)
     

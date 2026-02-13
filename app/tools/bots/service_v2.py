@@ -63,7 +63,9 @@ BOT_DEFINITIONS: List[BotDefinition] = [
     BotDefinition("GPTBot", "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; GPTBot/1.0; +https://openai.com/gptbot", "AI"),
     BotDefinition("OpenAI Bot", "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; OpenAIbot/1.0; +https://openai.com/bot", "AI"),
     BotDefinition("Google-Extended", "Mozilla/5.0 (compatible; Google-Extended/1.0; +http://www.google.com/bot.html)", "AI"),
+    BotDefinition("Gemini", "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Gemini-AI/1.0; +https://developers.google.com/search/docs/crawling-indexing/google-common-crawlers)", "AI"),
     BotDefinition("Google-CloudVertexBot", "Mozilla/5.0 (compatible; Google-CloudVertexBot/1.0; +https://cloud.google.com/vertex-ai)", "AI"),
+    BotDefinition("DeepSeekBot", "Mozilla/5.0 (compatible; DeepseekBot/1.0; +https://www.deepseek.com/bot)", "AI"),
     BotDefinition("ClaudeBot", "Mozilla/5.0 (compatible; ClaudeBot/1.0; +https://claude.ai/bot)", "AI"),
     BotDefinition("Claude-Web", "Mozilla/5.0 (compatible; Claude-Web/1.0; +https://claude.ai)", "AI"),
     BotDefinition("Anthropic AI", "Mozilla/5.0 (compatible; Anthropic-AI/1.0; +https://anthropic.com/bot)", "AI"),
@@ -87,6 +89,24 @@ BOT_DEFINITIONS: List[BotDefinition] = [
     BotDefinition("Cursor.sh", "Mozilla/5.0 (compatible; Cursor/1.0; +https://cursor.sh/bot)", "AI"),
     BotDefinition("GitHub Copilot", "Mozilla/5.0 (compatible; GitHub-Copilot/1.0; +https://github.com/features/copilot)", "AI"),
 ]
+
+DEFAULT_BOT_NAMES: List[str] = [
+    "YandexBot",
+    "Googlebot Desktop",
+    "Bingbot",
+    "ChatGPT-User",
+    "ClaudeBot",
+    "Gemini",
+    "DeepSeekBot",
+    "SemrushBot",
+    "AhrefsBot",
+]
+
+BOT_GROUPS: Dict[str, List[str]] = {
+    "search": ["Google", "Yandex", "Bing", "Search"],
+    "ai": ["AI"],
+    "crawlers": ["SEO Crawler"],
+}
 
 
 def normalize_url(raw_url: str) -> str:
@@ -190,6 +210,26 @@ class BotAccessibilityServiceV2:
             return None, resp.status_code
         except Exception:
             return None, None
+
+    def _resolve_bots(self, selected_bots: Optional[List[str]], bot_groups: Optional[List[str]]) -> List[BotDefinition]:
+        selected_names = {
+            (name or "").strip().lower()
+            for name in (selected_bots or DEFAULT_BOT_NAMES)
+            if (name or "").strip()
+        }
+        selected_categories = set()
+        for group in (bot_groups or []):
+            selected_categories.update(BOT_GROUPS.get((group or "").strip().lower(), []))
+
+        resolved: List[BotDefinition] = []
+        for bot in BOT_DEFINITIONS:
+            if bot.name.lower() in selected_names or bot.category in selected_categories:
+                resolved.append(bot)
+
+        if not resolved:
+            fallback_names = {name.lower() for name in DEFAULT_BOT_NAMES}
+            resolved = [bot for bot in BOT_DEFINITIONS if bot.name.lower() in fallback_names]
+        return resolved
 
     def _check_one(self, url: str, bot: BotDefinition, robots_text: Optional[str]) -> Dict[str, Any]:
         headers = {
@@ -316,13 +356,14 @@ class BotAccessibilityServiceV2:
             })
         return stats
 
-    def run(self, raw_url: str) -> Dict[str, Any]:
+    def run(self, raw_url: str, selected_bots: Optional[List[str]] = None, bot_groups: Optional[List[str]] = None) -> Dict[str, Any]:
         url = normalize_url(raw_url)
         robots_text, robots_status = self._load_robots(url)
+        bots_to_check = self._resolve_bots(selected_bots, bot_groups)
 
         rows: List[Dict[str, Any]] = []
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            futures = [executor.submit(self._check_one, url, bot, robots_text) for bot in BOT_DEFINITIONS]
+            futures = [executor.submit(self._check_one, url, bot, robots_text) for bot in bots_to_check]
             for fut in as_completed(futures):
                 rows.append(fut.result())
         rows.sort(key=lambda x: (x["category"], x["bot_name"]))
@@ -366,7 +407,8 @@ class BotAccessibilityServiceV2:
             "results": {
                 "engine": "v2",
                 "domain": domain,
-                "bots_checked": [b.name for b in BOT_DEFINITIONS],
+                "bots_checked": [b.name for b in bots_to_check],
+                "selected_bot_groups": bot_groups or [],
                 "bot_results": by_bot,
                 "bot_rows": rows,
                 "summary": {
@@ -389,4 +431,3 @@ class BotAccessibilityServiceV2:
                 "recommendations": recommendations,
             },
         }
-
