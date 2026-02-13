@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     # Reports
     REPORTS_DIR: str = "reports_output"
     MAX_REPORT_AGE_DAYS: int = 7
+
+    # Bot check v2
+    BOT_CHECK_ENGINE: str = os.getenv("BOT_CHECK_ENGINE", "legacy")
+    BOT_CHECK_TIMEOUT: int = int(os.getenv("BOT_CHECK_TIMEOUT", "15"))
+    BOT_CHECK_MAX_WORKERS: int = int(os.getenv("BOT_CHECK_MAX_WORKERS", "10"))
     
     # History
     HISTORY_SIZE: int = 10

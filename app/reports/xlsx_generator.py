@@ -349,30 +349,184 @@ class XLSXGenerator:
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         wb.save(filepath)
         return filepath
-    
+
     def generate_bot_report(self, task_id: str, data: Dict[str, Any]) -> str:
-        """Р В РІР‚СљР В Р’ВµР В Р вЂ¦Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋР вЂљР РЋРЎвЂњР В Р’ВµР РЋРІР‚С™ Р В РЎвЂўР РЋРІР‚С™Р РЋРІР‚РЋР В Р’ВµР РЋРІР‚С™ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂќР В РЎвЂ Р В Р’В±Р В РЎвЂўР РЋРІР‚С™Р В РЎвЂўР В Р вЂ """
+        """Generate detailed bot accessibility report with severity styling."""
         wb = Workbook()
+        header_style = self._create_header_style()
+        cell_style = self._create_cell_style()
+        results = data.get("results", {}) or {}
+        report_url = data.get("url", "N/A")
+        summary = results.get("summary", {}) or {}
+        bot_rows = results.get("bot_rows", []) or []
+        bot_results = results.get("bot_results", {}) or {}
+        category_stats = results.get("category_stats", []) or []
+        issues = results.get("issues", []) or []
+        recommendations = results.get("recommendations", []) or []
+
         ws = wb.active
-        ws.title = "Bot Check"
-        
-        ws['A1'] = 'Bot Accessibility Report'
-        ws['A1'].font = Font(bold=True, size=16)
-        ws.merge_cells('A1:D1')
-        
-        ws['A3'] = 'URL:'
-        ws['B3'] = data.get('url', 'N/A')
-        
-        results = data.get('results', {})
-        bots = results.get('bots_checked', [])
-        
-        ws['A5'] = 'Bots Checked:'
-        ws['A6'] = ', '.join(bots) if bots else 'N/A'
-        
+        ws.title = "Summary"
+        ws["A1"] = "Bot Accessibility Report"
+        ws["A1"].font = Font(bold=True, size=16)
+        ws.merge_cells("A1:E1")
+
+        summary_rows = [
+            ("URL", report_url),
+            ("Engine", results.get("engine", "legacy")),
+            ("Domain", results.get("domain", "")),
+            ("Bots Checked", len(results.get("bots_checked", []) or list(bot_results.keys()))),
+            ("Accessible", summary.get("accessible", 0)),
+            ("Unavailable", summary.get("unavailable", 0)),
+            ("With Content", summary.get("with_content", 0)),
+            ("Without Content", summary.get("without_content", 0)),
+            ("Robots Disallowed", summary.get("robots_disallowed", 0)),
+            ("X-Robots Forbidden", summary.get("x_robots_forbidden", 0)),
+            ("Meta Forbidden", summary.get("meta_forbidden", 0)),
+            ("Avg Response (ms)", summary.get("avg_response_time_ms", "")),
+        ]
+        row = 3
+        for key, value in summary_rows:
+            ws.cell(row=row, column=1, value=key).font = Font(bold=True)
+            ws.cell(row=row, column=2, value=value)
+            row += 1
+        ws.column_dimensions["A"].width = 30
+        ws.column_dimensions["B"].width = 90
+
+        results_ws = wb.create_sheet("Bot Results")
+        result_headers = [
+            "Bot",
+            "Category",
+            "HTTP",
+            "Accessible",
+            "Has Content",
+            "Robots Allowed",
+            "X-Robots-Tag",
+            "X-Robots Forbidden",
+            "Meta Robots",
+            "Meta Forbidden",
+            "Response (ms)",
+            "Final URL",
+            "Error",
+            "Severity",
+        ]
+        for col, header in enumerate(result_headers, 1):
+            self._apply_style(results_ws.cell(row=1, column=col, value=header), header_style)
+
+        if not bot_rows and bot_results:
+            for bot, item in bot_results.items():
+                bot_rows.append({
+                    "bot_name": bot,
+                    "category": item.get("category", ""),
+                    "status": item.get("status"),
+                    "accessible": item.get("accessible"),
+                    "has_content": item.get("has_content"),
+                    "robots_allowed": item.get("robots_allowed"),
+                    "x_robots_tag": item.get("x_robots_tag"),
+                    "x_robots_forbidden": item.get("x_robots_forbidden"),
+                    "meta_robots": item.get("meta_robots"),
+                    "meta_forbidden": item.get("meta_forbidden"),
+                    "response_time_ms": item.get("response_time_ms"),
+                    "final_url": item.get("final_url"),
+                    "error": item.get("error"),
+                })
+
+        for row_idx, item in enumerate(bot_rows, start=2):
+            if item.get("error") or not item.get("accessible"):
+                severity = "critical"
+            elif not item.get("has_content"):
+                severity = "warning"
+            elif item.get("x_robots_forbidden") or item.get("meta_forbidden"):
+                severity = "info"
+            else:
+                severity = "ok"
+
+            values = [
+                item.get("bot_name", ""),
+                item.get("category", ""),
+                item.get("status", ""),
+                "Yes" if item.get("accessible") else "No",
+                "Yes" if item.get("has_content") else "No",
+                "Yes" if item.get("robots_allowed") is True else ("No" if item.get("robots_allowed") is False else "N/A"),
+                item.get("x_robots_tag", ""),
+                "Yes" if item.get("x_robots_forbidden") else "No",
+                item.get("meta_robots", ""),
+                "Yes" if item.get("meta_forbidden") else "No",
+                item.get("response_time_ms", ""),
+                item.get("final_url", ""),
+                item.get("error", ""),
+                severity.capitalize(),
+            ]
+            for col, value in enumerate(values, 1):
+                self._apply_style(results_ws.cell(row=row_idx, column=col, value=value), cell_style)
+            self._apply_row_severity_fill(results_ws, row_idx, 1, len(result_headers), severity)
+            self._apply_severity_cell_style(results_ws.cell(row=row_idx, column=len(result_headers)), severity)
+
+        results_ws.freeze_panes = "A2"
+        results_ws.auto_filter.ref = f"A1:{get_column_letter(len(result_headers))}1"
+        for col, width in enumerate([26, 16, 10, 10, 12, 14, 28, 16, 28, 14, 14, 40, 38, 12], 1):
+            results_ws.column_dimensions[get_column_letter(col)].width = width
+
+        categories_ws = wb.create_sheet("Categories")
+        category_headers = ["Category", "Total", "Accessible", "With Content", "Restrictive Directives", "Severity"]
+        for col, header in enumerate(category_headers, 1):
+            self._apply_style(categories_ws.cell(row=1, column=col, value=header), header_style)
+        for row_idx, item in enumerate(category_stats, start=2):
+            total = item.get("total", 0) or 0
+            accessible = item.get("accessible", 0) or 0
+            ratio = (accessible / total) if total else 0
+            severity = "ok" if ratio >= 0.9 else ("warning" if ratio >= 0.6 else "critical")
+            values = [
+                item.get("category", ""),
+                total,
+                accessible,
+                item.get("with_content", 0),
+                item.get("restrictive_directives", 0),
+                severity.capitalize(),
+            ]
+            for col, value in enumerate(values, 1):
+                self._apply_style(categories_ws.cell(row=row_idx, column=col, value=value), cell_style)
+            self._apply_row_severity_fill(categories_ws, row_idx, 1, len(category_headers), severity)
+            self._apply_severity_cell_style(categories_ws.cell(row=row_idx, column=len(category_headers)), severity)
+        categories_ws.freeze_panes = "A2"
+        categories_ws.auto_filter.ref = "A1:F1"
+        for col, width in enumerate([24, 10, 12, 14, 22, 12], 1):
+            categories_ws.column_dimensions[get_column_letter(col)].width = width
+
+        issues_ws = wb.create_sheet("Issues")
+        issue_headers = ["Severity", "Bot", "Category", "Title", "Details"]
+        for col, header in enumerate(issue_headers, 1):
+            self._apply_style(issues_ws.cell(row=1, column=col, value=header), header_style)
+        for row_idx, item in enumerate(issues, start=2):
+            severity = (item.get("severity") or "info").lower()
+            values = [
+                severity.capitalize(),
+                item.get("bot", ""),
+                item.get("category", ""),
+                item.get("title", ""),
+                item.get("details", ""),
+            ]
+            for col, value in enumerate(values, 1):
+                self._apply_style(issues_ws.cell(row=row_idx, column=col, value=value), cell_style)
+            self._apply_row_severity_fill(issues_ws, row_idx, 1, len(issue_headers), severity)
+            self._apply_severity_cell_style(issues_ws.cell(row=row_idx, column=1), severity)
+        issues_ws.freeze_panes = "A2"
+        issues_ws.auto_filter.ref = "A1:E1"
+        for col, width in enumerate([12, 24, 16, 28, 80], 1):
+            issues_ws.column_dimensions[get_column_letter(col)].width = width
+
+        rec_ws = wb.create_sheet("Recommendations")
+        self._apply_style(rec_ws.cell(row=1, column=1, value="Recommendation"), header_style)
+        for idx, text in enumerate(recommendations, start=2):
+            cell = rec_ws.cell(row=idx, column=1, value=text)
+            self._apply_style(cell, cell_style)
+        rec_ws.column_dimensions["A"].width = 160
+        rec_ws.freeze_panes = "A2"
+        rec_ws.auto_filter.ref = "A1:A1"
+
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         wb.save(filepath)
         return filepath
-    
+
     def generate_report(self, task_id: str, task_type: str, data: Dict[str, Any]) -> str:
         """Р В РІР‚СљР В Р’ВµР В Р вЂ¦Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋР вЂљР РЋРЎвЂњР В Р’ВµР РЋРІР‚С™ Р В РЎвЂўР РЋРІР‚С™Р РЋРІР‚РЋР В Р’ВµР РЋРІР‚С™ Р В Р вЂ  Р В Р’В·Р В Р’В°Р В Р вЂ Р В РЎвЂР РЋР С“Р В РЎвЂР В РЎВР В РЎвЂўР РЋР С“Р РЋРІР‚С™Р В РЎвЂ Р В РЎвЂўР РЋРІР‚С™ Р РЋРІР‚С™Р В РЎвЂР В РЎвЂ”Р В Р’В° Р В Р’В·Р В Р’В°Р В РўвЂР В Р’В°Р РЋРІР‚РЋР В РЎвЂ"""
         generators = {

@@ -1085,9 +1085,33 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
 
 
 def check_bots_full(url: str) -> Dict[str, Any]:
-    """Full bot accessibility check"""
+    """Bot accessibility check with feature-flagged v2 engine."""
+    from app.config import settings
+
+    engine = (getattr(settings, "BOT_CHECK_ENGINE", "legacy") or "legacy").lower()
+    if engine == "v2":
+        try:
+            from app.tools.bots.service_v2 import BotAccessibilityServiceV2
+
+            checker = BotAccessibilityServiceV2(
+                timeout=getattr(settings, "BOT_CHECK_TIMEOUT", 15),
+                max_workers=getattr(settings, "BOT_CHECK_MAX_WORKERS", 10),
+            )
+            return checker.run(url)
+        except Exception as e:
+            print(f"[API] bot v2 failed, fallback to legacy: {e}")
+            legacy = _check_bots_legacy(url)
+            legacy_results = legacy.get("results", {})
+            legacy_results["engine"] = "legacy-fallback"
+            legacy_results["engine_error"] = str(e)
+            return legacy
+
+    return _check_bots_legacy(url)
+
+
+def _check_bots_legacy(url: str) -> Dict[str, Any]:
     import requests
-    
+
     bots = [
         ("Googlebot", "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"),
         ("YandexBot", "Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)"),
@@ -1113,6 +1137,7 @@ def check_bots_full(url: str) -> Dict[str, Any]:
         "url": url,
         "completed_at": datetime.utcnow().isoformat(),
         "results": {
+            "engine": "legacy",
             "bots_checked": [b[0] for b in bots],
             "bot_results": results,
             "summary": {
@@ -1367,6 +1392,49 @@ async def export_sitemap_xlsx(data: ExportRequest):
             content=content,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.post("/export/bot-xlsx")
+async def export_bot_xlsx(data: ExportRequest):
+    """Export bot check report to XLSX."""
+    import os
+    import re
+    from fastapi.responses import Response
+    from app.reports.xlsx_generator import xlsx_generator
+
+    try:
+        task_id = data.task_id
+        task = get_task_result(task_id)
+        if not task:
+            return {"error": "Task not found", "task_id": task_id}
+
+        task_type = task.get("task_type")
+        if task_type != "bot_check":
+            return {"error": f"Unsupported task type for bot XLSX export: {task_type}"}
+
+        task_result = task.get("result", {})
+        url = task.get("url", "") or task_result.get("url", "")
+        report_payload = {
+            "url": url,
+            "results": task_result.get("results", task_result),
+        }
+        filepath = xlsx_generator.generate_bot_report(task_id, report_payload)
+        if not filepath or not os.path.exists(filepath):
+            return {"error": "Report generation failed"}
+
+        with open(filepath, "rb") as f:
+            content = f.read()
+
+        domain = re.sub(r"[^a-zA-Z0-9._-]+", "_", (urlparse(url).netloc or "site"))
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+        filename = f"bot_report_{domain}_{timestamp}.xlsx"
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
     except Exception as e:
         return {"error": str(e)}

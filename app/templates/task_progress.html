@@ -119,6 +119,12 @@ function showResults(data) {
             task_id: data.task_id || taskId,
             url: data.url || ''
         };
+    } else if (data.task_type === 'bot_check') {
+        botData = {
+            ...data,
+            task_id: data.task_id || taskId,
+            url: data.url || ''
+        };
     }
     
     const resultsContent = document.getElementById('results-content');
@@ -150,6 +156,7 @@ function showError(data) {
 // Global variables for robots data
 let robotsData = null;
 let sitemapData = null;
+let botData = null;
 let sitemapExportUrls = [];
 let sitemapDuplicateLines = [];
 let sitemapFilePreviewUrls = [];
@@ -339,6 +346,38 @@ async function downloadSitemapXlsxReport() {
     } catch (error) {
         console.error('Error downloading sitemap xlsx:', error);
         alert('Failed to download sitemap XLSX report');
+    }
+}
+
+async function downloadBotXlsxReport() {
+    if (!botData) {
+        alert('No bot data available');
+        return;
+    }
+    try {
+        const response = await fetch('/api/export/bot-xlsx', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task_id: botData.task_id || taskId })
+        });
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || `HTTP ${response.status}`);
+        }
+        const blob = await response.blob();
+        const href = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const cd = response.headers.get('Content-Disposition') || '';
+        const m = cd.match(/filename=([^;]+)/i);
+        a.download = m ? m[1].replace(/\"/g, '') : `bot-report-${new Date().toISOString().slice(0,10)}.xlsx`;
+        a.href = href;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(href);
+    } catch (error) {
+        console.error('Error downloading bot xlsx:', error);
+        alert('Failed to download bot XLSX report');
     }
 }
 
@@ -829,35 +868,78 @@ function generateSitemapHTML(result) {
     `;
 }
 
+
 function generateBotHTML(result) {
     const r = result.results || result;
     const botResults = r.bot_results || {};
-    
+    const summary = r.summary || {};
+    const categoryStats = r.category_stats || [];
+    const issues = r.issues || [];
+
     let botsHTML = '';
     for (const [bot, data] of Object.entries(botResults)) {
+        const statusText = data.status || data.error || 'N/A';
+        const timing = data.response_time_ms ? ` (${data.response_time_ms} ms)` : '';
         botsHTML += `
             <div class="flex justify-between items-center py-2 border-b">
-                <span class="font-medium">${bot}</span>
-                <span class="${data.accessible ? 'text-green-600' : 'text-red-600'}">${data.status || data.error || 'N/A'}</span>
+                <div>
+                    <span class="font-medium">${bot}</span>
+                    ${data.category ? `<span class="ml-2 text-xs text-gray-500">[${data.category}]</span>` : ''}
+                </div>
+                <span class="${data.accessible ? 'text-green-600' : 'text-red-600'}">${statusText}${timing}</span>
             </div>
         `;
     }
-    
+
+    const categoriesHTML = categoryStats.length > 0
+        ? categoryStats.map(c => `
+            <div class="flex justify-between items-center py-2 border-b text-sm">
+                <span class="font-medium">${c.category}</span>
+                <span class="text-gray-700">${c.accessible}/${c.total} accessible</span>
+            </div>
+        `).join('')
+        : '<div class="text-sm text-gray-500">No category stats</div>';
+
+    const issueRows = issues.slice(0, 20).map(i => `
+        <div class="py-2 border-b text-sm">
+            <div class="font-medium ${i.severity === 'critical' ? 'text-red-700' : (i.severity === 'warning' ? 'text-amber-700' : 'text-blue-700')}">
+                ${(i.severity || 'info').toUpperCase()} - ${i.bot || 'Bot'}
+            </div>
+            <div class="text-gray-700">${i.title || ''}</div>
+            <div class="text-gray-500">${i.details || ''}</div>
+        </div>
+    `).join('');
+
     return `
         <div class="bg-white rounded-xl shadow-md p-6">
             <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-semibold">Проверка ботов</h3>
-                <button onclick="copyToClipboard('${result.url}')" class="text-blue-600 hover:text-blue-800 text-sm">
-                    <i class="fas fa-copy mr-1"></i>Копировать URL
-                </button>
+                <h3 class="text-lg font-semibold">Bot Check</h3>
+                <div class="flex gap-3">
+                    <button onclick="downloadBotXlsxReport()" class="text-green-600 hover:text-green-800 text-sm">
+                        <i class="fas fa-file-excel mr-1"></i>Download XLSX
+                    </button>
+                    <button onclick="copyToClipboard('${result.url}')" class="text-blue-600 hover:text-blue-800 text-sm">
+                        <i class="fas fa-copy mr-1"></i>Copy URL
+                    </button>
+                </div>
             </div>
             <div class="grid grid-cols-2 gap-4 text-sm mb-4">
                 <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
-                <div><span class="text-gray-600">Проверено ботов:</span> <span class="font-medium">${(r.bots_checked || []).length}</span></div>
+                <div><span class="text-gray-600">Bots checked:</span> <span class="font-medium">${(r.bots_checked || []).length}</span></div>
+                ${summary.total ? `<div><span class="text-gray-600">Accessible:</span> <span class="font-medium">${summary.accessible || 0}/${summary.total}</span></div>` : ''}
+                ${summary.avg_response_time_ms ? `<div><span class="text-gray-600">Avg response:</span> <span class="font-medium">${summary.avg_response_time_ms} ms</span></div>` : ''}
             </div>
             <div class="border-t pt-4">
-                <h4 class="font-semibold mb-2">Результаты по ботам:</h4>
+                <h4 class="font-semibold mb-2">Bot Results:</h4>
                 ${botsHTML}
+            </div>
+            <div class="border-t pt-4 mt-4">
+                <h4 class="font-semibold mb-2">Category Summary</h4>
+                ${categoriesHTML}
+            </div>
+            <div class="border-t pt-4 mt-4">
+                <h4 class="font-semibold mb-2">Top Issues</h4>
+                ${issueRows || '<div class="text-sm text-gray-500">No issues found</div>'}
             </div>
         </div>
     `;
