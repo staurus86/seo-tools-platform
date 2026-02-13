@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     BOT_CHECK_ENGINE: str = os.getenv("BOT_CHECK_ENGINE", "legacy")
     BOT_CHECK_TIMEOUT: int = int(os.getenv("BOT_CHECK_TIMEOUT", "15"))
     BOT_CHECK_MAX_WORKERS: int = int(os.getenv("BOT_CHECK_MAX_WORKERS", "10"))
+
+    # Mobile check v2
+    MOBILE_CHECK_ENGINE: str = os.getenv("MOBILE_CHECK_ENGINE", "legacy")
+    MOBILE_CHECK_TIMEOUT: int = int(os.getenv("MOBILE_CHECK_TIMEOUT", "20"))
+    MOBILE_CHECK_MODE: str = os.getenv("MOBILE_CHECK_MODE", "full")
     
     # History
     HISTORY_SIZE: int = 10

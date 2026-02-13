@@ -45,6 +45,17 @@ def get_task_result(task_id: str) -> Optional[Dict[str, Any]]:
     # Fallback to memory (for development without Redis)
     return task_results_memory.get(task_id)
 
+def _save_task_payload(task_id: str, data: Dict[str, Any]) -> None:
+    """Persist task payload in Redis (24h TTL) or memory fallback."""
+    redis_client = get_redis_client()
+    if redis_client:
+        try:
+            redis_client.setex(f"task:{task_id}", 86400, json.dumps(data))
+            return
+        except Exception as e:
+            print(f"[API] Error saving task in Redis: {e}")
+    task_results_memory[task_id] = data
+
 def create_task_result(task_id: str, task_type: str, url: str, result: Dict[str, Any]):
     """Store task result in Redis with 24 hour TTL"""
     data = {
@@ -55,19 +66,35 @@ def create_task_result(task_id: str, task_type: str, url: str, result: Dict[str,
         "completed_at": datetime.utcnow().isoformat()
     }
     
+    _save_task_payload(task_id, data)
+    print(f"[API] Task {task_id} stored")
+
+
+def append_task_artifact(task_id: str, artifact_path: str, kind: str = "report") -> None:
+    """Attach generated artifact path to task payload for future cleanup."""
+    task = get_task_result(task_id)
+    if not task:
+        return
+    bucket = task.setdefault("artifacts", {})
+    by_kind = bucket.setdefault(kind, [])
+    if artifact_path not in by_kind:
+        by_kind.append(artifact_path)
+    _save_task_payload(task_id, task)
+
+
+def delete_task_result(task_id: str) -> bool:
+    """Delete task result from Redis/memory storage."""
+    deleted = False
     redis_client = get_redis_client()
     if redis_client:
         try:
-            redis_client.setex(f"task:{task_id}", 86400, json.dumps(data))
-            print(f"[API] Task {task_id} stored in Redis")
+            deleted = bool(redis_client.delete(f"task:{task_id}")) or deleted
         except Exception as e:
-            print(f"[API] Error storing task in Redis: {e}")
-            # Fallback to memory
-            task_results_memory[task_id] = data
-    else:
-        # Use memory fallback
-        task_results_memory[task_id] = data
-        print(f"[API] Task {task_id} stored in memory (Redis unavailable)")
+            print(f"[API] Error deleting task from Redis: {e}")
+    if task_id in task_results_memory:
+        del task_results_memory[task_id]
+        deleted = True
+    return deleted
 
 # Memory fallback storage
 task_results_memory = {}
@@ -1463,6 +1490,120 @@ async def export_bot_xlsx(data: ExportRequest):
         return {"error": str(e)}
 
 
+@router.post("/export/mobile-docx")
+async def export_mobile_docx(data: ExportRequest):
+    """Export mobile check report to DOCX."""
+    import os
+    import re
+    from fastapi.responses import Response
+    from app.reports.docx_generator import docx_generator
+
+    try:
+        task_id = data.task_id
+        task = get_task_result(task_id)
+        if not task:
+            return {"error": "Task not found", "task_id": task_id}
+
+        task_type = task.get("task_type")
+        if task_type != "mobile_check":
+            return {"error": f"Unsupported task type for mobile DOCX export: {task_type}"}
+
+        task_result = task.get("result", {})
+        url = task.get("url", "") or task_result.get("url", "")
+        report_payload = {
+            "url": url,
+            "results": task_result.get("results", task_result),
+        }
+        filepath = docx_generator.generate_mobile_report(task_id, report_payload)
+        if not filepath or not os.path.exists(filepath):
+            return {"error": "Report generation failed"}
+        append_task_artifact(task_id, filepath, kind="export")
+
+        with open(filepath, "rb") as f:
+            content = f.read()
+
+        domain = re.sub(r"[^a-zA-Z0-9._-]+", "_", (urlparse(url).netloc or "site"))
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+        filename = f"mobile_report_{domain}_{timestamp}.docx"
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.post("/export/mobile-xlsx")
+async def export_mobile_xlsx(data: ExportRequest):
+    """Export mobile issues report to XLSX only if issues exist."""
+    import os
+    import re
+    from fastapi.responses import Response
+    from app.reports.xlsx_generator import xlsx_generator
+
+    try:
+        task_id = data.task_id
+        task = get_task_result(task_id)
+        if not task:
+            return {"error": "Task not found", "task_id": task_id}
+
+        task_type = task.get("task_type")
+        if task_type != "mobile_check":
+            return {"error": f"Unsupported task type for mobile XLSX export: {task_type}"}
+
+        task_result = task.get("result", {})
+        url = task.get("url", "") or task_result.get("url", "")
+        results = task_result.get("results", task_result) or {}
+        issues_count = results.get("issues_count")
+        if issues_count is None:
+            issues_count = len(results.get("issues", []) or [])
+        if issues_count <= 0:
+            return {"error": "No issues found, XLSX report is not generated"}
+
+        report_payload = {"url": url, "results": results}
+        filepath = xlsx_generator.generate_mobile_report(task_id, report_payload)
+        if not filepath or not os.path.exists(filepath):
+            return {"error": "Report generation failed"}
+        append_task_artifact(task_id, filepath, kind="export")
+
+        with open(filepath, "rb") as f:
+            content = f.read()
+
+        domain = re.sub(r"[^a-zA-Z0-9._-]+", "_", (urlparse(url).netloc or "site"))
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+        filename = f"mobile_issues_{domain}_{timestamp}.xlsx"
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.get("/mobile-artifacts/{task_id}/{filename}")
+async def get_mobile_artifact(task_id: str, filename: str):
+    """Serve mobile screenshot artifact for UI gallery."""
+    from pathlib import Path
+    from fastapi.responses import FileResponse
+
+    try:
+        task = get_task_result(task_id)
+        if not task:
+            return {"error": "Task not found", "task_id": task_id}
+        task_result = task.get("result", {})
+        results = task_result.get("results", task_result) or {}
+        for item in results.get("device_results", []) or []:
+            if item.get("screenshot_name") == filename:
+                shot_path = item.get("screenshot_path")
+                if shot_path and Path(shot_path).exists():
+                    return FileResponse(shot_path)
+        return {"error": "Artifact not found"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.post("/tasks/sitemap-validate")
 async def create_sitemap_validate(data: SitemapValidateRequest):
     """Full sitemap validation"""
@@ -1528,6 +1669,24 @@ async def get_task_status(task_id: str):
         "result": None,
         "error": "Task not found",
         "can_continue": False
+    }
+
+
+@router.delete("/tasks/{task_id}")
+async def delete_task(task_id: str):
+    """Delete task result and linked artifact files."""
+    from app.core.task_cleanup import delete_task_artifacts
+
+    task = get_task_result(task_id)
+    if not task:
+        return {"task_id": task_id, "deleted": False, "error": "Task not found"}
+
+    cleanup = delete_task_artifacts(task)
+    removed = delete_task_result(task_id)
+    return {
+        "task_id": task_id,
+        "deleted": bool(removed),
+        "artifacts_cleanup": cleanup,
     }
 
 
@@ -2485,6 +2644,39 @@ def check_mobile_simple(url: str) -> Dict[str, Any]:
         }
 
 
+def check_mobile_full(
+    url: str,
+    task_id: str,
+    mode: str = "full",
+    devices: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Feature-flagged mobile check with v2 service fallback."""
+    from app.config import settings
+
+    engine = (getattr(settings, "MOBILE_CHECK_ENGINE", "legacy") or "legacy").lower()
+    if engine == "v2":
+        try:
+            from app.tools.mobile.service_v2 import MobileCheckServiceV2
+
+            checker = MobileCheckServiceV2(timeout=getattr(settings, "MOBILE_CHECK_TIMEOUT", 20))
+            selected_mode = (mode or getattr(settings, "MOBILE_CHECK_MODE", "full") or "full").lower()
+            if selected_mode not in ("quick", "full"):
+                selected_mode = "full"
+            return checker.run(url=url, task_id=task_id, mode=selected_mode, selected_devices=devices)
+        except Exception as e:
+            print(f"[API] mobile v2 failed, fallback to simple: {e}")
+            fallback = check_mobile_simple(url)
+            fallback_results = fallback.get("results", {})
+            fallback_results["engine"] = "legacy-fallback"
+            fallback_results["engine_error"] = str(e)
+            return fallback
+
+    legacy = check_mobile_simple(url)
+    legacy_results = legacy.get("results", {})
+    legacy_results["engine"] = "legacy"
+    return legacy
+
+
 class SiteAnalyzeRequest(BaseModel):
     url: str
     max_pages: int = 20
@@ -2494,6 +2686,8 @@ class RenderAuditRequest(BaseModel):
 
 class MobileCheckRequest(BaseModel):
     url: str
+    mode: Optional[str] = "full"
+    devices: Optional[List[str]] = None
 
 
 @router.post("/tasks/site-analyze")
@@ -2535,13 +2729,12 @@ async def create_render_audit(data: RenderAuditRequest):
 
 @router.post("/tasks/mobile-check")
 async def create_mobile_check(data: MobileCheckRequest):
-    """Simple mobile check"""
+    """Mobile check with v2 support."""
     url = data.url
     
     print(f"[API] Mobile check for: {url}")
-    
-    result = check_mobile_simple(url)
     task_id = f"mobile-{datetime.now().timestamp()}"
+    result = check_mobile_full(url, task_id=task_id, mode=data.mode or "full", devices=data.devices)
     create_task_result(task_id, "mobile_check", url, result)
     
     return {

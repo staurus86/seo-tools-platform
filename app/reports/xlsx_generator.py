@@ -327,25 +327,122 @@ class XLSXGenerator:
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         wb.save(filepath)
         return filepath
+
     def generate_mobile_report(self, task_id: str, data: Dict[str, Any]) -> str:
-        """Р В РІР‚СљР В Р’ВµР В Р вЂ¦Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋР вЂљР РЋРЎвЂњР В Р’ВµР РЋРІР‚С™ Р В РЎвЂўР РЋРІР‚С™Р РЋРІР‚РЋР В Р’ВµР РЋРІР‚С™ Р В РЎВР В РЎвЂўР В Р’В±Р В РЎвЂР В Р’В»Р РЋР Р‰Р В Р вЂ¦Р В РЎвЂўР В РІвЂћвЂ“ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂќР В РЎвЂ"""
+        """Generate detailed mobile XLSX report."""
         wb = Workbook()
+        header_style = self._create_header_style()
+        cell_style = self._create_cell_style()
+
+        results = data.get("results", {}) or {}
+        summary = results.get("summary", {}) or {}
+        devices = results.get("device_results", []) or []
+        issues = results.get("issues", []) or []
+        recommendations = results.get("recommendations", []) or []
+
         ws = wb.active
-        ws.title = "Mobile Check"
-        
-        ws['A1'] = 'Mobile Compatibility Report'
-        ws['A1'].font = Font(bold=True, size=16)
-        ws.merge_cells('A1:D1')
-        
-        ws['A3'] = 'URL:'
-        ws['B3'] = data.get('url', 'N/A')
-        
-        results = data.get('results', {})
-        devices = results.get('devices_tested', [])
-        
-        ws['A5'] = 'Devices Tested:'
-        ws['A6'] = ', '.join(devices) if devices else 'N/A'
-        
+        ws.title = "Summary"
+        ws["A1"] = "Mobile Compatibility Report"
+        ws["A1"].font = Font(bold=True, size=16)
+        ws.merge_cells("A1:E1")
+
+        rows = [
+            ("URL", data.get("url", "N/A")),
+            ("Engine", results.get("engine", "legacy")),
+            ("Mode", results.get("mode", "full")),
+            ("Score", results.get("score", 0)),
+            ("Mobile Friendly", "Yes" if results.get("mobile_friendly") else "No"),
+            ("Devices", summary.get("total_devices", len(results.get("devices_tested", [])))),
+            ("Friendly Devices", summary.get("mobile_friendly_devices", 0)),
+            ("Non-Friendly Devices", summary.get("non_friendly_devices", 0)),
+            ("Avg Load (ms)", summary.get("avg_load_time_ms", 0)),
+            ("Issues Count", results.get("issues_count", 0)),
+            ("Critical", summary.get("critical_issues", 0)),
+            ("Warning", summary.get("warning_issues", 0)),
+            ("Info", summary.get("info_issues", 0)),
+        ]
+        r = 3
+        for key, val in rows:
+            ws.cell(row=r, column=1, value=key).font = Font(bold=True)
+            ws.cell(row=r, column=2, value=val)
+            r += 1
+        ws.column_dimensions["A"].width = 28
+        ws.column_dimensions["B"].width = 80
+
+        dws = wb.create_sheet("Devices")
+        headers = ["Device", "Type", "HTTP", "Mobile Friendly", "Issues", "Load (ms)", "Screenshot", "Severity"]
+        for col, header in enumerate(headers, 1):
+            self._apply_style(dws.cell(row=1, column=col, value=header), header_style)
+
+        for row_idx, d in enumerate(devices, start=2):
+            if d.get("issues_count", 0) > 0 and not d.get("mobile_friendly"):
+                severity = "warning"
+            elif d.get("issues_count", 0) > 0:
+                severity = "info"
+            else:
+                severity = "ok"
+
+            values = [
+                d.get("device_name", ""),
+                d.get("category", ""),
+                d.get("status_code", "N/A"),
+                "Yes" if d.get("mobile_friendly") else "No",
+                d.get("issues_count", 0),
+                d.get("load_time_ms", 0),
+                d.get("screenshot_name", ""),
+                severity.capitalize(),
+            ]
+            for col, value in enumerate(values, 1):
+                self._apply_style(dws.cell(row=row_idx, column=col, value=value), cell_style)
+            self._apply_row_severity_fill(dws, row_idx, 1, len(headers), severity)
+            self._apply_severity_cell_style(dws.cell(row=row_idx, column=len(headers)), severity)
+        dws.freeze_panes = "A2"
+        dws.auto_filter.ref = "A1:H1"
+        for col, width in enumerate([28, 12, 10, 14, 10, 12, 40, 12], 1):
+            dws.column_dimensions[get_column_letter(col)].width = width
+
+        iws = wb.create_sheet("Issues")
+        issue_headers = ["Severity", "Device", "Code", "Issue", "Details"]
+        for col, header in enumerate(issue_headers, 1):
+            self._apply_style(iws.cell(row=1, column=col, value=header), header_style)
+        for row_idx, issue in enumerate(issues, start=2):
+            severity = (issue.get("severity") or "info").lower()
+            values = [
+                severity.capitalize(),
+                issue.get("device", ""),
+                issue.get("code", ""),
+                issue.get("title", ""),
+                issue.get("details", ""),
+            ]
+            for col, value in enumerate(values, 1):
+                self._apply_style(iws.cell(row=row_idx, column=col, value=value), cell_style)
+            self._apply_row_severity_fill(iws, row_idx, 1, len(issue_headers), severity)
+            self._apply_severity_cell_style(iws.cell(row=row_idx, column=1), severity)
+        iws.freeze_panes = "A2"
+        iws.auto_filter.ref = "A1:E1"
+        for col, width in enumerate([12, 24, 20, 30, 80], 1):
+            iws.column_dimensions[get_column_letter(col)].width = width
+
+        rws = wb.create_sheet("Recommendations")
+        self._apply_style(rws.cell(row=1, column=1, value="Recommendation"), header_style)
+        for idx, rec in enumerate(recommendations, start=2):
+            self._apply_style(rws.cell(row=idx, column=1, value=rec), cell_style)
+        rws.column_dimensions["A"].width = 160
+        rws.freeze_panes = "A2"
+
+        sws = wb.create_sheet("Screenshots")
+        shot_headers = ["Device", "Screenshot Name", "Path", "URL"]
+        for col, header in enumerate(shot_headers, 1):
+            self._apply_style(sws.cell(row=1, column=col, value=header), header_style)
+        for row_idx, d in enumerate(devices, start=2):
+            vals = [d.get("device_name", ""), d.get("screenshot_name", ""), d.get("screenshot_path", ""), d.get("screenshot_url", "")]
+            for col, value in enumerate(vals, 1):
+                self._apply_style(sws.cell(row=row_idx, column=col, value=value), cell_style)
+        sws.freeze_panes = "A2"
+        sws.auto_filter.ref = "A1:D1"
+        for col, width in enumerate([26, 40, 80, 48], 1):
+            sws.column_dimensions[get_column_letter(col)].width = width
+
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         wb.save(filepath)
         return filepath

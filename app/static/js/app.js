@@ -68,7 +68,7 @@ async function startTask(event, endpoint) {
         }
     });
 
-    ['selected_bots', 'bot_groups'].forEach((key) => {
+    ['selected_bots', 'bot_groups', 'devices'].forEach((key) => {
         if (Object.prototype.hasOwnProperty.call(data, key) && !Array.isArray(data[key])) {
             data[key] = [data[key]];
         }
