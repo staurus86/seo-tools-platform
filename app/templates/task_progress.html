@@ -1,4 +1,4 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 
 {% block title %}Результаты анализа - SEO Инструменты{% endblock %}
 
@@ -10,7 +10,7 @@
             <i class="fas fa-arrow-left mr-1"></i>Назад к инструментам
         </a>
         <h2 class="text-2xl font-bold text-gray-800">Результаты анализа</h2>
-        <p class="text-gray-600">Task ID: <span id="task-id">{{ task_id }}</span></p>
+        <p class="text-gray-600">ID задачи: <span id="task-id">{{ task_id }}</span></p>
     </div>
 
     <!-- Progress Section -->
@@ -221,7 +221,7 @@ function generateTextReport() {
     report += 'User-Agents: ' + (r.user_agents || 0) + '\n';
     report += 'Disallow правил: ' + totalDisallow + '\n';
     report += 'Allow правил: ' + totalAllow + '\n';
-    report += 'SEO Оценка: ' + (r.quality_score ?? 'N/A') + ' (' + (r.quality_grade || 'N/A') + ')\n';
+    report += 'SEO Оценка: ' + (r.quality_score ?? 'н/д') + ' (' + (r.quality_grade || 'н/д') + ')\n';
     report += 'Готовность к продакшену: ' + (r.production_ready ? 'Да' : 'Нет') + '\n';
     report += 'Размер файла: ' + (r.content_length || 0) + ' байт\n';
     report += 'РЎС‚СЂРѕРє: ' + (r.lines_count || 0) + '\n\n';
@@ -657,7 +657,7 @@ function generateRobotsHTML(data) {
     const topFixes = r.top_fixes || [];
     const rawContent = r.raw_content || '';
     const qualityScore = Number.isFinite(r.quality_score) ? r.quality_score : 0;
-    const qualityGrade = r.quality_grade || 'N/A';
+    const qualityGrade = r.quality_grade || 'н/д';
     const productionReady = !!r.production_ready;
     
     let totalDisallow = 0;
@@ -981,7 +981,7 @@ function generateSitemapHTMLV2(result) {
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div><span class="text-gray-600">URL:</span> <span class="font-medium break-all">${result.url}</span></div>
                     <div><span class="text-gray-600">Валиден:</span> <span class="font-medium">${r.valid ? 'Да' : 'Нет'}</span></div>
-                    <div><span class="text-gray-600">HTTP:</span> <span class="font-medium">${r.status_code || 'N/A'}</span></div>
+                    <div><span class="text-gray-600">HTTP:</span> <span class="font-medium">${r.status_code || 'н/д'}</span></div>
                     <div><span class="text-gray-600">Всего URL:</span> <span class="font-medium">${r.urls_count || 0}</span></div>
                     <div><span class="text-gray-600">Уникальных URL:</span> <span class="font-medium">${r.unique_urls_count || 0}</span></div>
                     <div><span class="text-gray-600">Дубликатов:</span> <span class="font-medium">${r.duplicate_urls_count || 0}</span></div>
@@ -1044,7 +1044,7 @@ function generateSitemapHTMLV2(result) {
                                 <div class="text-sm font-medium break-all">${f.sitemap_url}</div>
                                 <div class="text-xs ${f.ok ? 'text-green-600' : 'text-red-600'}">${f.ok ? 'ОК' : 'ОШИБКА'}</div>
                             </div>
-                            <div class="text-xs text-gray-600 mb-2">тип: ${f.type || 'неизвестно'} | HTTP: ${f.status_code || 'N/A'} | URL: ${f.urls_count || 0}</div>
+                            <div class="text-xs text-gray-600 mb-2">тип: ${f.type || 'неизвестно'} | HTTP: ${f.status_code || 'н/д'} | URL: ${f.urls_count || 0}</div>
                             ${f.duplicate_count > 0 ? `<div class="text-xs text-rose-700 mb-2">дубликатов в этом sitemap: ${f.duplicate_count}</div>` : ''}
                             ${(f.urls || []).length > 0 ? `
                                 <button onclick='downloadSitemapFilePreview(${idx}, "sitemap-${safeDomain}-${dateStamp}-${idx + 1}-urls-preview.txt")' class="text-xs text-green-700 hover:text-green-900 mb-2">
@@ -1080,7 +1080,7 @@ function generateSitemapHTML(result) {
                 <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
                 <div><span class="text-gray-600">Валиден:</span> <span class="font-medium">${r.valid ? 'Да' : 'Нет'}</span></div>
                 <div><span class="text-gray-600">URLs найдено:</span> <span class="font-medium">${r.urls_count || 0}</span></div>
-                <div><span class="text-gray-600">Статус:</span> <span class="font-medium">${r.status || 'N/A'}</span></div>
+                <div><span class="text-gray-600">Статус:</span> <span class="font-medium">${r.status || 'н/д'}</span></div>
                 ${r.error ? `<div class="col-span-2 text-red-600"><span class="font-medium">Ошибка: ${r.error}</span></div>` : ''}
             </div>
         </div>
@@ -1097,7 +1097,7 @@ function generateBotHTML(result) {
 
     let botsHTML = '';
     for (const [bot, data] of Object.entries(botResults)) {
-        const statusText = data.status || data.error || 'N/A';
+        const statusText = data.status || data.error || 'н/д';
         const timing = data.response_time_ms ? ` (${data.response_time_ms} ms)` : '';
         botsHTML += `
             <div class="flex justify-between items-center py-2 border-b">
@@ -1445,8 +1445,20 @@ function generateRenderAuditHTML(result) {
     mobileLightboxItems = screenshotItems;
 
     const scoreBadgeClass = (score) => score >= 80 ? 'bg-emerald-100 text-emerald-700' : score >= 60 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700';
+    const severityLabel = (sev) => {
+        const s = String(sev || 'info').toLowerCase();
+        if (s === 'critical') return 'КРИТИЧНО';
+        if (s === 'warning') return 'ПРЕДУПРЕЖДЕНИЕ';
+        return 'ИНФО';
+    };
+    const profileTypeLabel = (v) => {
+        const profile = String(v?.profile_type || '').toLowerCase();
+        if (profile === 'mobile' || v?.mobile === true) return 'мобильный';
+        if (profile === 'desktop' || v?.mobile === false) return 'ПК';
+        return 'неизвестно';
+    };
     const previewIssues = (arr) => (arr || []).slice(0, 5).map(i => `
-        <li><span class="font-medium ${(i.severity || '') === 'critical' ? 'text-rose-700' : 'text-amber-700'}">${(i.severity || 'info').toUpperCase()}</span> - ${i.title || ''}</li>
+        <li><span class="font-medium ${(i.severity || '') === 'critical' ? 'text-rose-700' : 'text-amber-700'}">${severityLabel(i.severity)}</span> - ${i.title || ''}</li>
     `).join('');
 
     const renderProfileCard = (v, accent = 'blue') => {
@@ -1473,15 +1485,15 @@ function generateRenderAuditHTML(result) {
                 <div class="flex items-start justify-between mb-3">
                     <div>
                         <h4 class="text-lg font-semibold text-gray-800">${v.variant_label || v.variant_id}</h4>
-                        <div class="mt-1 inline-flex text-[11px] px-2 py-1 rounded-full ${typePill}">${(v.profile_type || (v.mobile ? 'mobile' : 'desktop')).toUpperCase()}</div>
+                        <div class="mt-1 inline-flex text-[11px] px-2 py-1 rounded-full ${typePill}">${(v.profile_type || (v.mobile ? 'mobile' : 'desktop')) === 'mobile' ? 'МОБИЛЬНЫЙ' : 'ПК'}</div>
                     </div>
-                    <span class="text-xs px-2 py-1 rounded-full ${scoreBadgeClass(score)}">Score ${score.toFixed(1)}</span>
+                    <span class="text-xs px-2 py-1 rounded-full ${scoreBadgeClass(score)}">Оценка ${score.toFixed(1)}</span>
                 </div>
                 <div class="grid grid-cols-2 gap-2 text-sm mb-3">
-                    <div class="bg-white/70 rounded-lg p-2"><span class="text-gray-600">Missing:</span> <span class="font-medium">${miss}</span></div>
-                    <div class="bg-white/70 rounded-lg p-2"><span class="text-gray-600">Missing %:</span> <span class="font-medium">${missPct}%</span></div>
+                    <div class="bg-white/70 rounded-lg p-2"><span class="text-gray-600">Потери:</span> <span class="font-medium">${miss}</span></div>
+                    <div class="bg-white/70 rounded-lg p-2"><span class="text-gray-600">Потери %:</span> <span class="font-medium">${missPct}%</span></div>
                     <div class="bg-white/70 rounded-lg p-2"><span class="text-gray-600">Скриншоты:</span> <span class="font-medium">${Object.keys(shots).join(', ') || 'нет'}</span></div>
-                    <div class="bg-white/70 rounded-lg p-2"><span class="text-gray-600">Viewport:</span> <span class="font-medium">${emulation.viewport ? `${emulation.viewport.width}x${emulation.viewport.height}` : '-'}</span></div>
+                    <div class="bg-white/70 rounded-lg p-2"><span class="text-gray-600">Вьюпорт:</span> <span class="font-medium">${emulation.viewport ? `${emulation.viewport.width}x${emulation.viewport.height}` : '-'}</span></div>
                 </div>
                 ${firstShot ? `
                     <div class="rounded-xl overflow-hidden border border-white/70 shadow cursor-zoom-in mb-3" onclick="openMobileLightbox(${Math.max(0, shotIndex)})">
@@ -1501,7 +1513,7 @@ function generateRenderAuditHTML(result) {
     const topIssuesHtml = (issues || []).slice(0, 20).map(i => `
         <div class="py-2 border-b text-sm">
             <div class="font-medium ${(i.severity || '') === 'critical' ? 'text-red-700' : (i.severity || '') === 'warning' ? 'text-amber-700' : 'text-blue-700'}">
-                ${(i.severity || 'info').toUpperCase()} | ${i.variant || 'Профиль'}
+                ${severityLabel(i.severity)} | ${i.variant || 'Профиль'}
             </div>
             <div class="text-gray-700">${i.title || ''}</div>
             <div class="text-gray-500">${i.details || ''}</div>
@@ -1512,7 +1524,7 @@ function generateRenderAuditHTML(result) {
     const recommendationsHtml = (r.recommendations || []).map(rec => `<li>${rec}</li>`).join('');
     const diagnosticsHtml = variantDiagnostics.length
         ? `<ul class="list-disc pl-5 text-xs text-gray-700">${variantDiagnostics.map(d =>
-            `<li>${d.variant_id || '-'} | ${d.variant_label || '-'} | profile=${d.profile_type || '-'} | mobile=${String(d.mobile)} | issues=${d.issues} | shots=${d.screenshots.join(',') || '-'}</li>`
+            `<li>${d.variant_id || '-'} | ${d.variant_label || '-'} | профиль=${profileTypeLabel(d)} | мобильный=${d.mobile === true ? 'да' : (d.mobile === false ? 'нет' : 'н/д')} | проблем=${d.issues} | скриншоты=${d.screenshots.join(',') || '-'}</li>`
         ).join('')}</ul>`
         : '<div class="text-xs text-gray-500">Профили отсутствуют в JSON результата.</div>';
 
@@ -1534,13 +1546,13 @@ function generateRenderAuditHTML(result) {
                     <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
                     <div><span class="text-gray-600">Движок:</span> <span class="font-medium">${r.engine || 'legacy'}</span></div>
                     <div><span class="text-gray-600">Профилей:</span> <span class="font-medium">${summary.variants_total || variants.length || 0}</span></div>
-                    <div><span class="text-gray-600">Score:</span> <span class="font-medium">${summary.score ?? 'N/A'}</span></div>
-                    <div><span class="text-gray-600">Critical:</span> <span class="font-medium text-red-700">${summary.critical_issues || 0}</span></div>
-                    <div><span class="text-gray-600">Warnings:</span> <span class="font-medium text-amber-700">${summary.warning_issues || 0}</span></div>
-                    <div><span class="text-gray-600">Missing:</span> <span class="font-medium">${summary.missing_total || 0}</span></div>
-                    <div><span class="text-gray-600">Missing %:</span> <span class="font-medium">${summary.avg_missing_pct || 0}%</span></div>
-                    <div><span class="text-gray-600">SEO FAIL:</span> <span class="font-medium text-red-700">${summary.seo_required_failures || 0}</span></div>
-                    <div><span class="text-gray-600">SEO WARN:</span> <span class="font-medium text-amber-700">${summary.seo_required_warnings || 0}</span></div>
+                    <div><span class="text-gray-600">Оценка:</span> <span class="font-medium">${summary.score ?? 'н/д'}</span></div>
+                    <div><span class="text-gray-600">Критичных:</span> <span class="font-medium text-red-700">${summary.critical_issues || 0}</span></div>
+                    <div><span class="text-gray-600">Предупреждений:</span> <span class="font-medium text-amber-700">${summary.warning_issues || 0}</span></div>
+                    <div><span class="text-gray-600">Потерь:</span> <span class="font-medium">${summary.missing_total || 0}</span></div>
+                    <div><span class="text-gray-600">Потери %:</span> <span class="font-medium">${summary.avg_missing_pct || 0}%</span></div>
+                    <div><span class="text-gray-600">SEO критичных:</span> <span class="font-medium text-red-700">${summary.seo_required_failures || 0}</span></div>
+                    <div><span class="text-gray-600">SEO предупреждений:</span> <span class="font-medium text-amber-700">${summary.seo_required_warnings || 0}</span></div>
                 </div>
             </div>
 
@@ -1560,7 +1572,7 @@ function generateRenderAuditHTML(result) {
             </div>
 
             <details class="bg-white rounded-xl shadow-md p-4 border border-gray-100">
-                <summary class="cursor-pointer text-sm font-medium">Диагностика профилей (debug)</summary>
+                <summary class="cursor-pointer text-sm font-medium">Диагностика профилей (отладка)</summary>
                 <div class="mt-3">${diagnosticsHtml}</div>
             </details>
         </div>
@@ -1629,7 +1641,7 @@ function generateMobileCheckHTML(result) {
                     <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
                     <div><span class="text-gray-600">Движок:</span> <span class="font-medium">${r.engine || 'legacy'}</span></div>
                     <div><span class="text-gray-600">Устройств:</span> <span class="font-medium">${summary.total_devices || (r.devices_tested || []).length}</span></div>
-                    <div><span class="text-gray-600">Оценка:</span> <span class="font-medium">${r.score ?? 'N/A'}</span></div>
+                    <div><span class="text-gray-600">Оценка:</span> <span class="font-medium">${r.score ?? 'н/д'}</span></div>
                     <div><span class="text-gray-600">Мобильно-дружелюбно:</span> <span class="font-medium ${r.mobile_friendly ? 'text-green-600' : 'text-red-600'}">${r.mobile_friendly ? 'Да' : 'Нет'}</span></div>
                     <div><span class="text-gray-600">Критичных:</span> <span class="font-medium text-red-700">${summary.critical_issues || 0}</span></div>
                     <div><span class="text-gray-600">Предупреждений:</span> <span class="font-medium text-amber-700">${summary.warning_issues || 0}</span></div>
@@ -1658,6 +1670,7 @@ function generateMobileCheckHTML(result) {
 window.copyToClipboard = copyToClipboard;
 </script>
 {% endblock %}
+
 
 
 

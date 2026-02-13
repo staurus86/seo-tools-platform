@@ -1,4 +1,4 @@
-﻿"""
+"""
 Excel РіРµРЅРµСЂР°С‚РѕСЂ РѕС‚С‡РµС‚РѕРІ
 """
 from openpyxl import Workbook
@@ -116,11 +116,11 @@ class XLSXGenerator:
         
         # Basic info
         ws['A3'] = 'URL:'
-        ws['B3'] = data.get('url', 'N/A')
+        ws['B3'] = data.get('url', 'н/д')
         ws['A4'] = 'РџСЂРѕРІРµСЂРµРЅРѕ СЃС‚СЂР°РЅРёС†:'
         ws['B4'] = data.get('pages_analyzed', 0)
         ws['A5'] = 'Р”Р°С‚Р° Р·Р°РІРµСЂС€РµРЅРёСЏ:'
-        ws['B5'] = data.get('completed_at', 'N/A')
+        ws['B5'] = data.get('completed_at', 'н/д')
         
         # Results section
         ws['A7'] = 'Р РµР·СѓР»СЊС‚Р°С‚С‹'
@@ -138,8 +138,8 @@ class XLSXGenerator:
         # Sample data (will be replaced with real data from tools)
         sample_data = [
             ['Р’СЃРµРіРѕ СЃС‚СЂР°РЅРёС†', results.get('total_pages', 0), 'OK'],
-            ['РЎС‚Р°С‚СѓСЃ', results.get('status', 'N/A'), 'OK'],
-            ['РЎРІРѕРґРєР°', results.get('summary', 'N/A'), 'OK']
+            ['РЎС‚Р°С‚СѓСЃ', results.get('status', 'н/д'), 'OK'],
+            ['РЎРІРѕРґРєР°', results.get('summary', 'н/д'), 'OK']
         ]
         
         for data_row in sample_data:
@@ -168,7 +168,7 @@ class XLSXGenerator:
         ws.merge_cells('A1:D1')
         
         ws['A3'] = 'URL:'
-        ws['B3'] = data.get('url', 'N/A')
+        ws['B3'] = data.get('url', 'н/д')
         
         results = data.get('results', {})
         ws['A5'] = 'Р¤Р°Р№Р» robots.txt РЅР°Р№РґРµРЅ:'
@@ -184,7 +184,7 @@ class XLSXGenerator:
         header_style = self._create_header_style()
         cell_style = self._create_cell_style()
         results = data.get('results', {}) or {}
-        report_url = data.get('url', 'N/A')
+        report_url = data.get('url', 'н/д')
 
         ws = wb.active
         ws.title = "РЎРІРѕРґРєР°"
@@ -195,7 +195,7 @@ class XLSXGenerator:
         summary_rows = [
             ("URL", report_url),
             ("Р’Р°Р»РёРґРµРЅ", "Р”Р°" if results.get("valid") else "РќРµС‚"),
-            ("HTTP СЃС‚Р°С‚СѓСЃ", results.get("status_code", "N/A")),
+            ("HTTP СЃС‚Р°С‚СѓСЃ", results.get("status_code", "н/д")),
             ("РџСЂРѕРІРµСЂРµРЅРѕ sitemap", results.get("sitemaps_scanned", 0)),
             ("Р’Р°Р»РёРґРЅС‹С… sitemap", results.get("sitemaps_valid", 0)),
             ("Р’СЃРµРіРѕ URL", results.get("urls_count", 0)),
@@ -308,7 +308,7 @@ class XLSXGenerator:
         return filepath
 
     def generate_render_report(self, task_id: str, data: Dict[str, Any]) -> str:
-        """Generate detailed render audit XLSX report (issues-first)."""
+        """Генерирует детальный XLSX-отчет по аудиту рендеринга (фокус на проблемах)."""
         wb = Workbook()
         header_style = self._create_header_style()
         cell_style = self._create_cell_style()
@@ -321,20 +321,20 @@ class XLSXGenerator:
 
         ws = wb.active
         ws.title = 'Сводка'
-        ws['A1'] = 'Отчет аудита рендеринга (JS vs no-JS)'
+        ws['A1'] = 'Отчет аудита рендеринга (JS и без JS)'
         ws['A1'].font = Font(bold=True, size=16)
         ws.merge_cells('A1:E1')
 
         rows = [
-            ('URL', data.get('url', 'N/A')),
+            ('Адрес URL', data.get('url', 'н/д')),
             ('Движок', results.get('engine', 'legacy')),
             ('Профилей', summary.get('variants_total', len(variants))),
-            ('Score', summary.get('score', 'N/A')),
+            ('Оценка', summary.get('score', 'н/д')),
             ('Критичные', summary.get('critical_issues', 0)),
             ('Предупреждения', summary.get('warning_issues', 0)),
-            ('Missing всего', summary.get('missing_total', 0)),
-            ('Missing средний %', summary.get('avg_missing_pct', 0)),
-            ('Ср. загрузка no-JS (мс)', summary.get('avg_raw_load_ms', 0)),
+            ('Потерянных элементов всего', summary.get('missing_total', 0)),
+            ('Потери средний %', summary.get('avg_missing_pct', 0)),
+            ('Ср. загрузка без JS (мс)', summary.get('avg_raw_load_ms', 0)),
             ('Ср. загрузка JS (мс)', summary.get('avg_js_load_ms', 0)),
         ]
         row_num = 3
@@ -346,7 +346,7 @@ class XLSXGenerator:
         ws.column_dimensions['B'].width = 80
 
         variant_ws = wb.create_sheet('Профили')
-        headers = ['Профиль', 'Score', 'Missing', 'Missing %', 'H1 no-JS', 'H1 JS', 'Links no-JS', 'Links JS', 'Schema no-JS', 'Schema JS']
+        headers = ['Профиль', 'Оценка', 'Потери', 'Потери %', 'H1 без JS', 'H1 с JS', 'Ссылки без JS', 'Ссылки с JS', 'Структурированные данные без JS', 'Структурированные данные с JS']
         for col, header in enumerate(headers, 1):
             self._apply_style(variant_ws.cell(row=1, column=col, value=header), header_style)
 
@@ -411,7 +411,7 @@ class XLSXGenerator:
         rec_ws.freeze_panes = 'A2'
         rec_ws.auto_filter.ref = 'A1:A1'
 
-        missing_ws = wb.create_sheet('Missing элементы')
+        missing_ws = wb.create_sheet('Потерянные элементы')
         missing_headers = ['Профиль', 'Категория', 'Элемент']
         for col, header in enumerate(missing_headers, 1):
             self._apply_style(missing_ws.cell(row=1, column=col, value=header), header_style)
@@ -423,7 +423,7 @@ class XLSXGenerator:
                 ('visible_text', 'Текст только в JS'),
                 ('headings', 'Заголовки только в JS'),
                 ('links', 'Ссылки только в JS'),
-                ('structured_data', 'Structured data только в JS'),
+                ('structured_data', 'Структурированные данные только в JS'),
             ]:
                 values = missing.get(key, []) or []
                 for value in values:
@@ -437,8 +437,8 @@ class XLSXGenerator:
         missing_ws.column_dimensions['B'].width = 28
         missing_ws.column_dimensions['C'].width = 140
 
-        meta_ws = wb.create_sheet('Meta non-SEO')
-        meta_headers = ['Профиль', 'Ключ', 'no-JS', 'JS', 'Статус']
+        meta_ws = wb.create_sheet('Мета (не SEO)')
+        meta_headers = ['Профиль', 'Ключ', 'Без JS', 'С JS', 'Статус']
         for col, header in enumerate(meta_headers, 1):
             self._apply_style(meta_ws.cell(row=1, column=col, value=header), header_style)
         row_idx = 2
@@ -446,7 +446,7 @@ class XLSXGenerator:
             'same': 'Совпадает',
             'changed': 'Изменено',
             'only_rendered': 'Только в JS',
-            'only_raw': 'Только в no-JS',
+            'only_raw': 'Только без JS',
         }
         for variant in variants:
             profile = variant.get('variant_label') or variant.get('variant_id', '')
@@ -470,11 +470,11 @@ class XLSXGenerator:
         meta_ws.column_dimensions['E'].width = 18
 
         seo_ws = wb.create_sheet('SEO обязательные')
-        seo_headers = ['Профиль', 'Элемент', 'no-JS', 'JS', 'Статус', 'Что исправить']
+        seo_headers = ['Профиль', 'Элемент', 'Без JS', 'С JS', 'Статус', 'Что исправить']
         for col, header in enumerate(seo_headers, 1):
             self._apply_style(seo_ws.cell(row=1, column=col, value=header), header_style)
         row_idx = 2
-        status_map = {'pass': 'PASS', 'warn': 'WARN', 'fail': 'FAIL'}
+        status_map = {'pass': 'Пройдено', 'warn': 'Предупреждение', 'fail': 'Критично'}
         for variant in variants:
             profile = variant.get('variant_label') or variant.get('variant_id', '')
             for item in ((variant.get('seo_required') or {}).get('items') or []):
@@ -519,11 +519,11 @@ class XLSXGenerator:
         ws.merge_cells("A1:E1")
 
         rows = [
-            ("URL", data.get("url", "N/A")),
+            ("URL", data.get("url", "н/д")),
             ("Р”РІРёР¶РѕРє", results.get("engine", "legacy")),
             ("Р РµР¶РёРј", results.get("mode", "full")),
             ("РћС†РµРЅРєР°", results.get("score", 0)),
-            ("Mobile friendly", "Р”Р°" if results.get("mobile_friendly") else "РќРµС‚"),
+            ("Мобильная совместимость", "Р”Р°" if results.get("mobile_friendly") else "РќРµС‚"),
             ("РЈСЃС‚СЂРѕР№СЃС‚РІ", summary.get("total_devices", len(results.get("devices_tested", [])))),
             ("Р‘РµР· РєСЂРёС‚РёС‡РЅС‹С… РїСЂРѕР±Р»РµРј", summary.get("mobile_friendly_devices", 0)),
             ("РЎ РїСЂРѕР±Р»РµРјР°РјРё", summary.get("non_friendly_devices", 0)),
@@ -557,7 +557,7 @@ class XLSXGenerator:
             values = [
                 d.get("device_name", ""),
                 d.get("category", ""),
-                d.get("status_code", "N/A"),
+                d.get("status_code", "н/д"),
                 "Р”Р°" if d.get("mobile_friendly") else "РќРµС‚",
                 d.get("issues_count", 0),
                 d.get("load_time_ms", 0),
@@ -625,7 +625,7 @@ class XLSXGenerator:
         header_style = self._create_header_style()
         cell_style = self._create_cell_style()
         results = data.get("results", {}) or {}
-        report_url = data.get("url", "N/A")
+        report_url = data.get("url", "н/д")
         summary = results.get("summary", {}) or {}
         bot_rows = results.get("bot_rows", []) or []
         bot_results = results.get("bot_results", {}) or {}
@@ -715,7 +715,7 @@ class XLSXGenerator:
                 item.get("status", ""),
                 "Р”Р°" if item.get("accessible") else "РќРµС‚",
                 "Р”Р°" if item.get("has_content") else "РќРµС‚",
-                "Р”Р°" if item.get("robots_allowed") is True else ("РќРµС‚" if item.get("robots_allowed") is False else "N/A"),
+                "Р”Р°" if item.get("robots_allowed") is True else ("РќРµС‚" if item.get("robots_allowed") is False else "н/д"),
                 item.get("x_robots_tag", ""),
                 "Р”Р°" if item.get("x_robots_forbidden") else "РќРµС‚",
                 item.get("meta_robots", ""),
@@ -813,3 +813,4 @@ class XLSXGenerator:
 
 # Singleton
 xlsx_generator = XLSXGenerator()
+

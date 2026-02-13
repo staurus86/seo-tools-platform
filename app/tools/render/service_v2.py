@@ -250,7 +250,7 @@ def _build_required_seo_checks(raw: Dict[str, Any], rendered: Dict[str, Any]) ->
     title_len = len(title_js)
     add(
         "title_length",
-        "Длина Title (20-70 символов)",
+        "Длина заголовка title (20-70 символов)",
         "warning",
         20 <= title_len <= 70,
         len(title_raw),
@@ -263,7 +263,7 @@ def _build_required_seo_checks(raw: Dict[str, Any], rendered: Dict[str, Any]) ->
     desc_js = (rendered.get("meta_description") or "").strip()
     add(
         "description_present_js",
-        "Meta Description присутствует в JS-рендере",
+        "Мета-описание (description) присутствует в JS-рендере",
         "critical",
         bool(desc_js),
         desc_raw,
@@ -273,7 +273,7 @@ def _build_required_seo_checks(raw: Dict[str, Any], rendered: Dict[str, Any]) ->
     )
     add(
         "description_present_nojs",
-        "Meta Description присутствует без JavaScript",
+        "Мета-описание (description) присутствует без JavaScript",
         "warning",
         bool(desc_raw),
         desc_raw,
@@ -371,7 +371,7 @@ def _build_required_seo_checks(raw: Dict[str, Any], rendered: Dict[str, Any]) ->
     schema_js = int(rendered.get("structured_data_count", 0) or 0)
     add(
         "structured_data_presence",
-        "Structured data присутствует",
+        "Структурированные данные присутствуют",
         "warning",
         schema_js > 0,
         schema_raw,
@@ -406,15 +406,15 @@ def _build_seo_recommendations(seo_checks: Dict[str, Any]) -> List[str]:
 def _build_recommendations(missing: Dict[str, List[str]]) -> List[str]:
     recs: List[str] = []
     if len(missing.get("Visible text", [])) > 10:
-        recs.append("[High] Ensure key content is available without JavaScript (SSR/SSG).")
+        recs.append("[Высокий] Обеспечьте доступность ключевого контента без JavaScript (SSR/SSG).")
     if missing.get("Headings"):
-        recs.append("[High] Ensure H1-H2 headings are present in source HTML.")
+        recs.append("[Высокий] Добавьте H1-H2 в исходный HTML.")
     if missing.get("Links"):
-        recs.append("[Medium] Place important internal links into source HTML.")
+        recs.append("[Средний] Разместите важные внутренние ссылки в исходном HTML.")
     if missing.get("Structured data"):
-        recs.append("[Medium] Render JSON-LD on server side where possible.")
+        recs.append("[Средний] По возможности рендерьте JSON-LD на стороне сервера.")
     if missing.get("Images"):
-        recs.append("[Low] Ensure critical images and alt texts are visible before JS execution.")
+        recs.append("[Низкий] Убедитесь, что критичные изображения и alt доступны до выполнения JS.")
     return recs
 
 
@@ -583,24 +583,24 @@ class RenderAuditServiceV2:
             if callable(progress_callback):
                 progress_callback(progress, message)
 
-        notify(5, "Preparing render audit")
+        notify(5, "Подготовка рендер-аудита")
         self._dbg(task_id, f"start url={url} timeout={self.timeout}s")
         try:
             from playwright.sync_api import sync_playwright
         except Exception as exc:
             self._dbg(task_id, f"playwright import failed: {exc}")
-            return {"task_type": "render_audit", "url": url, "completed_at": datetime.utcnow().isoformat(), "results": {"engine": "v2", "variants": [], "issues": [{"severity": "critical", "code": "playwright_unavailable", "title": "Playwright runtime unavailable", "details": str(exc)}], "issues_count": 1, "summary": {"variants_total": 0, "critical_issues": 1, "warning_issues": 0, "info_issues": 0, "score": None, "missing_total": 0, "avg_missing_pct": 0, "avg_raw_load_ms": 0, "avg_js_load_ms": 0}, "recommendations": ["Install Playwright/Chromium for full render audit."], "artifacts": {"screenshot_dir": str(Path(settings.REPORTS_DIR) / "render" / task_id / "screenshots"), "screenshots": []}}}
+            return {"task_type": "render_audit", "url": url, "completed_at": datetime.utcnow().isoformat(), "results": {"engine": "v2", "variants": [], "issues": [{"severity": "critical", "code": "playwright_unavailable", "title": "Среда Playwright недоступна", "details": str(exc)}], "issues_count": 1, "summary": {"variants_total": 0, "critical_issues": 1, "warning_issues": 0, "info_issues": 0, "score": None, "missing_total": 0, "avg_missing_pct": 0, "avg_raw_load_ms": 0, "avg_js_load_ms": 0}, "recommendations": ["Установите Playwright/Chromium для полноценного рендер-аудита."], "artifacts": {"screenshot_dir": str(Path(settings.REPORTS_DIR) / "render" / task_id / "screenshots"), "screenshots": []}}}
 
         shot_dir = Path(settings.REPORTS_DIR) / "render" / task_id / "screenshots"
         shot_dir.mkdir(parents=True, exist_ok=True)
-        variants = [("googlebot_desktop", "Googlebot Desktop", UA_DESKTOP, False), ("googlebot_mobile", "Googlebot Mobile", UA_MOBILE, True)]
+        variants = [("googlebot_desktop", "Googlebot (ПК)", UA_DESKTOP, False), ("googlebot_mobile", "Googlebot (мобильный)", UA_MOBILE, True)]
         all_variants: List[Dict[str, Any]] = []
         all_issues: List[Dict[str, Any]] = []
         all_shots: List[str] = []
 
         with sync_playwright() as p:
             for idx, (vid, label, ua, mobile) in enumerate(variants, start=1):
-                notify(10 + int((idx - 1) * 40), f"Auditing {label} ({idx}/2)")
+                notify(10 + int((idx - 1) * 40), f"Аудит профиля {label} ({idx}/2)")
                 self._dbg(task_id, f"variant-start id={vid} label={label} mobile={mobile}")
                 try:
                     try:
@@ -665,25 +665,25 @@ class RenderAuditServiceV2:
                     seo_required = _build_required_seo_checks(raw_stats, rendered_stats)
                     issues: List[Dict[str, Any]] = []
                     if missing["Visible text"]:
-                        issues.append({"severity": "warning" if len(missing["Visible text"]) <= 10 else "critical", "code": "content_missing_nojs", "title": "Content appears only after JavaScript", "details": f"Missing in no-JS version: {len(missing['Visible text'])} text lines.", "examples": _sample(missing["Visible text"])})
+                        issues.append({"severity": "warning" if len(missing["Visible text"]) <= 10 else "critical", "code": "content_missing_nojs", "title": "Контент появляется только после JavaScript", "details": f"В версии без JS отсутствует {len(missing['Visible text'])} строк текста.", "examples": _sample(missing["Visible text"])})
                     if missing["Headings"]:
-                        issues.append({"severity": "critical", "code": "headings_missing_nojs", "title": "Headings missing without JavaScript", "details": f"Found {len(missing['Headings'])} headings only after JS.", "examples": _sample(missing["Headings"])})
+                        issues.append({"severity": "critical", "code": "headings_missing_nojs", "title": "Заголовки отсутствуют без JavaScript", "details": f"Найдено {len(missing['Headings'])} заголовков только после JS.", "examples": _sample(missing["Headings"])})
                     if missing["Links"]:
-                        issues.append({"severity": "warning", "code": "links_missing_nojs", "title": "Links appear only after JavaScript", "details": f"Found {len(missing['Links'])} links only in JS-rendered version.", "examples": _sample(missing["Links"])})
+                        issues.append({"severity": "warning", "code": "links_missing_nojs", "title": "Ссылки появляются только после JavaScript", "details": f"Найдено {len(missing['Links'])} ссылок только в JS-рендере.", "examples": _sample(missing["Links"])})
                     if missing["Structured data"]:
-                        issues.append({"severity": "warning", "code": "schema_missing_nojs", "title": "Structured data depends on JavaScript", "details": f"Found {len(missing['Structured data'])} JSON-LD items only with JS.", "examples": _sample(missing["Structured data"])})
+                        issues.append({"severity": "warning", "code": "schema_missing_nojs", "title": "Структурированные данные зависят от JavaScript", "details": f"Найдено {len(missing['Structured data'])} элементов JSON-LD только с JS.", "examples": _sample(missing["Structured data"])})
                     if elapsed > 12:
-                        issues.append({"severity": "warning", "code": "render_too_slow", "title": "Slow JS render", "details": f"JS render time: {elapsed:.2f} sec."})
+                        issues.append({"severity": "warning", "code": "render_too_slow", "title": "Медленный JS-рендер", "details": f"Время JS-рендера: {elapsed:.2f} сек."})
                     if metrics["score"] < 70:
-                        issues.append({"severity": "critical", "code": "low_render_score", "title": "Low render score", "details": f"Current score: {metrics['score']:.1f}/100."})
+                        issues.append({"severity": "critical", "code": "low_render_score", "title": "Низкий балл рендеринга", "details": f"Текущий балл: {metrics['score']:.1f}/100."})
                     if meta_cmp["changed"] or meta_cmp["only_rendered"] or meta_cmp["only_raw"]:
                         issues.append({
                             "severity": "warning",
                             "code": "meta_non_seo_diff",
-                            "title": "Non-SEO meta differs between no-JS and JS",
+                            "title": "Не-SEO мета-данные отличаются между версиями без JS и с JS",
                             "details": (
-                                f"Changed: {meta_cmp['changed']}, only JS: {meta_cmp['only_rendered']}, "
-                                f"only no-JS: {meta_cmp['only_raw']}."
+                                f"Изменено: {meta_cmp['changed']}, только в JS: {meta_cmp['only_rendered']}, "
+                                f"только в no-JS: {meta_cmp['only_raw']}."
                             ),
                             "examples": [x["key"] for x in meta_cmp["items"] if x["status"] != "same"][:8],
                         })
@@ -705,8 +705,8 @@ class RenderAuditServiceV2:
                             "title": f"Обязательный SEO-элемент: {check.get('label')}",
                             "details": f"{check.get('details')} Рекомендация: {check.get('fix')}",
                             "examples": [
-                                f"no-JS: {check.get('raw', '-')}",
-                                f"JS: {check.get('rendered', '-')}",
+                                f"Без JS: {check.get('raw', '-')}",
+                                f"С JS: {check.get('rendered', '-')}",
                             ],
                         })
 
@@ -770,7 +770,7 @@ class RenderAuditServiceV2:
                         "recommendations": ["Проверьте окружение Playwright и доступность целевого URL."],
                         "screenshots": {},
                     })
-                notify(10 + int(idx * 40), f"Completed: {label}")
+                notify(10 + int(idx * 40), f"Завершено: {label}")
 
         self._dbg(
             task_id,
@@ -788,7 +788,7 @@ class RenderAuditServiceV2:
         seo_required_failures = sum(int(v.get("seo_required", {}).get("fail", 0) or 0) for v in all_variants)
         seo_required_warnings = sum(int(v.get("seo_required", {}).get("warn", 0) or 0) for v in all_variants)
 
-        notify(98, "Building final render report")
+        notify(98, "Формирование итогового рендер-отчета")
         self._dbg(
             task_id,
             f"final summary variants={len(all_variants)} issues={len(all_issues)} "
@@ -817,8 +817,8 @@ class RenderAuditServiceV2:
                 "issues": all_issues,
                 "issues_count": len(all_issues),
                 "recommendations": [
-                    "Fix critical JS/no-JS differences first." if critical > 0 else "No critical JS/no-JS differences detected.",
-                    "Reduce SEO content dependency on client-side JavaScript." if warning > 0 else "",
+                    "Сначала исправьте критичные расхождения между JS и no-JS." if critical > 0 else "Критичных расхождений между JS и no-JS не обнаружено.",
+                    "Снизьте зависимость SEO-контента от клиентского JavaScript." if warning > 0 else "",
                 ],
                 "artifacts": {"screenshot_dir": str(shot_dir), "screenshots": all_shots},
             },

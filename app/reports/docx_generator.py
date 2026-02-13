@@ -1,4 +1,4 @@
-﻿"""
+"""
 Word Report Generator
 """
 from docx import Document
@@ -54,9 +54,9 @@ class DOCXGenerator:
 
         title = doc.add_heading('РћС‚С‡РµС‚ РїРѕ SEO-Р°РЅР°Р»РёР·Сѓ СЃР°Р№С‚Р°', 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        doc.add_paragraph(f"URL: {data.get('url', 'N/A')}")
+        doc.add_paragraph(f"URL: {data.get('url', 'н/д')}")
         doc.add_paragraph(f"РџСЂРѕРІРµСЂРµРЅРѕ СЃС‚СЂР°РЅРёС†: {data.get('pages_analyzed', 0)}")
-        doc.add_paragraph(f"Р”Р°С‚Р° Р·Р°РІРµСЂС€РµРЅРёСЏ: {data.get('completed_at', 'N/A')}")
+        doc.add_paragraph(f"Р”Р°С‚Р° Р·Р°РІРµСЂС€РµРЅРёСЏ: {data.get('completed_at', 'н/д')}")
         doc.add_paragraph(
             "РћРїРёСЃР°РЅРёРµ: РґР°РЅРЅС‹Р№ РѕС‚С‡РµС‚ С„РёРєСЃРёСЂСѓРµС‚ РѕР±С‰РµРµ С‚РµС…РЅРёС‡РµСЃРєРѕРµ СЃРѕСЃС‚РѕСЏРЅРёРµ СЃР°Р№С‚Р° СЃ С‚РѕС‡РєРё Р·СЂРµРЅРёСЏ SEO, "
             "С‡С‚РѕР±С‹ РѕРїСЂРµРґРµР»РёС‚СЊ РїСЂРёРѕСЂРёС‚РµС‚С‹ РґРѕСЂР°Р±РѕС‚РѕРє Рё СЃРЅРёР·РёС‚СЊ СЂРёСЃРєРё РїРѕС‚РµСЂРё РѕСЂРіР°РЅРёС‡РµСЃРєРѕРіРѕ С‚СЂР°С„РёРєР°."
@@ -67,8 +67,8 @@ class DOCXGenerator:
         headers = ['РџРѕРєР°Р·Р°С‚РµР»СЊ', 'Р—РЅР°С‡РµРЅРёРµ', 'РЎС‚Р°С‚СѓСЃ']
         rows = [
             ['Р’СЃРµРіРѕ СЃС‚СЂР°РЅРёС†', results.get('total_pages', 0), 'OK'],
-            ['РЎС‚Р°С‚СѓСЃ Р°РЅР°Р»РёР·Р°', results.get('status', 'N/A'), 'OK'],
-            ['РЎРІРѕРґРєР°', results.get('summary', 'N/A'), 'OK']
+            ['РЎС‚Р°С‚СѓСЃ Р°РЅР°Р»РёР·Р°', results.get('status', 'н/д'), 'OK'],
+            ['РЎРІРѕРґРєР°', results.get('summary', 'н/д'), 'OK']
         ]
         self._add_table(doc, headers, rows)
 
@@ -95,7 +95,7 @@ class DOCXGenerator:
         title = doc.add_heading('РћС‚С‡РµС‚ РїРѕ robots.txt', 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        doc.add_paragraph(f"URL: {data.get('url', 'N/A')}")
+        doc.add_paragraph(f"URL: {data.get('url', 'н/д')}")
         results = data.get('results', {})
         doc.add_paragraph(f"Р¤Р°Р№Р» robots.txt РЅР°Р№РґРµРЅ: {'Р”Р°' if results.get('robots_txt_found') else 'РќРµС‚'}")
         doc.add_paragraph(
@@ -125,7 +125,7 @@ class DOCXGenerator:
         title = doc.add_heading('РћС‚С‡РµС‚ РїРѕ РІР°Р»РёРґР°С†РёРё sitemap', 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        doc.add_paragraph(f"URL: {data.get('url', 'N/A')}")
+        doc.add_paragraph(f"URL: {data.get('url', 'н/д')}")
         results = data.get('results', {})
         doc.add_paragraph(f"Р’Р°Р»РёРґРµРЅ: {'Р”Р°' if results.get('valid') else 'РќРµС‚'}")
         doc.add_paragraph(f"РљРѕР»РёС‡РµСЃС‚РІРѕ URL: {results.get('urls_count', 0)}")
@@ -153,12 +153,12 @@ class DOCXGenerator:
         """Генерирует расширенный клиентский отчет аудита рендеринга."""
         doc = Document()
 
-        title = doc.add_heading('SEO RENDERING AUDIT', 0)
+        title = doc.add_heading('SEO-АУДИТ РЕНДЕРИНГА', 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
         subtitle = doc.add_paragraph('Анализ контента с JavaScript и без него')
         subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        url = data.get('url', 'N/A')
+        url = data.get('url', 'н/д')
         results = data.get('results', {}) or {}
         summary = results.get('summary', {}) or {}
         variants = results.get('variants', []) or []
@@ -178,14 +178,14 @@ class DOCXGenerator:
         self._add_heading(doc, '1. Ключевые выводы', level=1)
         totals = [
             ['Профилей проверки', summary.get('variants_total', len(variants)), 'Инфо'],
-            ['Общий Score', summary.get('score', 'N/A'), 'Инфо'],
+            ['Общая оценка', summary.get('score', 'н/д'), 'Инфо'],
             ['Критичные проблемы', summary.get('critical_issues', 0), 'Важно'],
             ['Предупреждения', summary.get('warning_issues', 0), 'Важно'],
-            ['Всего missing-элементов', summary.get('missing_total', 0), 'Важно'],
-            ['Средний missing %', f"{summary.get('avg_missing_pct', 0)}%", 'Инфо'],
+            ['Всего потерянных элементов', summary.get('missing_total', 0), 'Важно'],
+            ['Средний процент потерь', f"{summary.get('avg_missing_pct', 0)}%", 'Инфо'],
         ]
         self._add_table(doc, ['Показатель', 'Значение', 'Статус'], totals)
-        doc.add_paragraph(f"• SEO Score: {summary.get('score', 'N/A')}/100")
+        doc.add_paragraph(f"• SEO-оценка: {summary.get('score', 'н/д')}/100")
         doc.add_paragraph(f"• Критических проблем: {summary.get('critical_issues', 0)}")
         doc.add_paragraph(f"• Предупреждений: {summary.get('warning_issues', 0)}")
         doc.add_paragraph(f"• Добавлено элементов через JS: {summary.get('missing_total', 0)}")
@@ -204,15 +204,15 @@ class DOCXGenerator:
 
         self._add_heading(doc, '2. Сравнение SEO-элементов', level=1)
         compare_rows = [
-            ['Title', raw_p.get('title', ''), js_p.get('title', ''), _status(raw_p.get('title', ''), js_p.get('title', ''))],
-            ['Meta Description', raw_p.get('meta_description', ''), js_p.get('meta_description', ''), _status(raw_p.get('meta_description', ''), js_p.get('meta_description', ''))],
+            ['Заголовок страницы (title)', raw_p.get('title', ''), js_p.get('title', ''), _status(raw_p.get('title', ''), js_p.get('title', ''))],
+            ['Мета-описание (description)', raw_p.get('meta_description', ''), js_p.get('meta_description', ''), _status(raw_p.get('meta_description', ''), js_p.get('meta_description', ''))],
             ['H1 заголовки', f"{raw_p.get('h1_count', 0)} шт", f"{js_p.get('h1_count', 0)} шт", _status(raw_p.get('h1_count', 0), js_p.get('h1_count', 0))],
             ['H2 заголовки', f"{raw_p.get('h2_count', 0)} шт", f"{js_p.get('h2_count', 0)} шт", _status(raw_p.get('h2_count', 0), js_p.get('h2_count', 0))],
             ['Изображения', f"{raw_p.get('images_count', 0)} шт", f"{js_p.get('images_count', 0)} шт", _status(raw_p.get('images_count', 0), js_p.get('images_count', 0))],
             ['Ссылки', f"{raw_p.get('links_count', 0)} шт", f"{js_p.get('links_count', 0)} шт", _status(raw_p.get('links_count', 0), js_p.get('links_count', 0))],
             ['Canonical', raw_p.get('canonical', ''), js_p.get('canonical', ''), _status(raw_p.get('canonical', ''), js_p.get('canonical', ''))],
-            ['Schema Markup', raw_schema, js_schema, _status(raw_schema, js_schema)],
-            ['Viewport', '✅ Есть' if raw_meta.get('meta:viewport') else '❌ Нет', '✅ Есть' if js_meta.get('meta:viewport') else '❌ Нет', _status(bool(raw_meta.get('meta:viewport')), bool(js_meta.get('meta:viewport')))],
+            ['Schema-разметка', raw_schema, js_schema, _status(raw_schema, js_schema)],
+            ['Мета viewport', '✅ Есть' if raw_meta.get('meta:viewport') else '❌ Нет', '✅ Есть' if js_meta.get('meta:viewport') else '❌ Нет', _status(bool(raw_meta.get('meta:viewport')), bool(js_meta.get('meta:viewport')))],
         ]
         self._add_table(doc, ['Элемент', 'Без JS', 'С JS', 'Статус'], compare_rows)
 
@@ -229,7 +229,7 @@ class DOCXGenerator:
                     f"{int(metrics.get('total_missing', 0) or 0)}",
                     ", ".join(list(shots.keys())) if shots else 'нет',
                 ])
-            self._add_table(doc, ['Устройство', 'Тип профиля', 'Score', 'Missing', 'Скриншоты'], device_rows)
+            self._add_table(doc, ['Устройство', 'Тип профиля', 'Оценка', 'Потери', 'Скриншоты'], device_rows)
         else:
             doc.add_paragraph("Профили устройств отсутствуют.")
 
@@ -251,12 +251,12 @@ class DOCXGenerator:
                 doc.add_heading(label, level=2)
 
                 rows = [
-                    ['Score', f"{metrics.get('score', 0):.1f}/100", ''],
-                    ['Missing элементы', int(metrics.get('total_missing', 0) or 0), ''],
-                    ['Missing %', f"{metrics.get('missing_pct', 0):.1f}%", ''],
-                    ['H1 (no-JS / JS)', f"{raw.get('h1_count', 0)} / {rendered.get('h1_count', 0)}", ''],
-                    ['Links (no-JS / JS)', f"{raw.get('links_count', 0)} / {rendered.get('links_count', 0)}", ''],
-                    ['Structured data (no-JS / JS)', f"{raw.get('structured_data_count', 0)} / {rendered.get('structured_data_count', 0)}", ''],
+                    ['Оценка', f"{metrics.get('score', 0):.1f}/100", ''],
+                    ['Потерянные элементы', int(metrics.get('total_missing', 0) or 0), ''],
+                    ['Потери %', f"{metrics.get('missing_pct', 0):.1f}%", ''],
+                    ['H1 (без JS / с JS)', f"{raw.get('h1_count', 0)} / {rendered.get('h1_count', 0)}", ''],
+                    ['Ссылки (без JS / с JS)', f"{raw.get('links_count', 0)} / {rendered.get('links_count', 0)}", ''],
+                    ['Структурированные данные (без JS / с JS)', f"{raw.get('structured_data_count', 0)} / {rendered.get('structured_data_count', 0)}", ''],
                 ]
                 self._add_table(doc, ['Параметр', 'Значение', ''], rows)
 
@@ -264,11 +264,11 @@ class DOCXGenerator:
                 seo_items = seo_required.get('items', []) or []
                 if seo_items:
                     doc.add_paragraph(
-                        f"Обязательные SEO-элементы: PASS {seo_required.get('pass', 0)}, "
-                        f"WARN {seo_required.get('warn', 0)}, FAIL {seo_required.get('fail', 0)}."
+                        f"Обязательные SEO-элементы: Пройдено {seo_required.get('pass', 0)}, "
+                        f"Предупреждений {seo_required.get('warn', 0)}, Критичных {seo_required.get('fail', 0)}."
                     )
                     seo_rows = []
-                    status_map = {'pass': 'PASS', 'warn': 'WARN', 'fail': 'FAIL'}
+                    status_map = {'pass': 'Пройдено', 'warn': 'Предупреждение', 'fail': 'Критично'}
                     for item in seo_items:
                         seo_rows.append([
                             item.get('label', ''),
@@ -277,7 +277,7 @@ class DOCXGenerator:
                             status_map.get(item.get('status', ''), item.get('status', '')),
                             item.get('fix', ''),
                         ])
-                    self._add_table(doc, ['Элемент', 'no-JS', 'JS', 'Статус', 'Что исправить'], seo_rows[:80])
+                    self._add_table(doc, ['Элемент', 'Без JS', 'С JS', 'Статус', 'Что исправить'], seo_rows[:80])
 
                 var_issues = variant.get('issues', []) or []
                 if var_issues:
@@ -298,7 +298,7 @@ class DOCXGenerator:
                     ('visible_text', 'Текст, который появляется только после JS'),
                     ('headings', 'Заголовки, которые появляются только после JS'),
                     ('links', 'Ссылки, которые появляются только после JS'),
-                    ('structured_data', 'Structured data, которая появляется только после JS'),
+                    ('structured_data', 'Структурированные данные, которые появляются только после JS'),
                 ]:
                     values = missing.get(key, []) or []
                     if not values:
@@ -313,7 +313,7 @@ class DOCXGenerator:
                     doc.add_paragraph(
                         f"Мета-данные (не SEO): всего {meta_cmp.get('total', 0)}, "
                         f"совпадает {meta_cmp.get('same', 0)}, изменено {meta_cmp.get('changed', 0)}, "
-                        f"только JS {meta_cmp.get('only_rendered', 0)}, только no-JS {meta_cmp.get('only_raw', 0)}."
+                        f"только JS {meta_cmp.get('only_rendered', 0)}, только без JS {meta_cmp.get('only_raw', 0)}."
                     )
                     meta_rows = []
                     for item in meta_items:
@@ -321,7 +321,7 @@ class DOCXGenerator:
                             'same': 'Совпадает',
                             'changed': 'Изменено',
                             'only_rendered': 'Только в JS',
-                            'only_raw': 'Только в no-JS',
+                            'only_raw': 'Только без JS',
                         }
                         meta_rows.append([
                             item.get('key', ''),
@@ -329,7 +329,7 @@ class DOCXGenerator:
                             item.get('rendered', ''),
                             status_map.get(item.get('status', ''), item.get('status', '')),
                         ])
-                    self._add_table(doc, ['Ключ', 'no-JS', 'JS', 'Статус'], meta_rows[:50])
+                    self._add_table(doc, ['Ключ', 'Без JS', 'С JS', 'Статус'], meta_rows[:50])
 
                 var_recs = variant.get('recommendations', []) or []
                 if var_recs:
@@ -345,8 +345,8 @@ class DOCXGenerator:
                         caption = {
                             'js': 'Скриншот: рендер с JavaScript',
                             'nojs': 'Скриншот: версия без JavaScript',
-                            'js_landscape': 'Скриншот: mobile landscape с JavaScript',
-                            'nojs_landscape': 'Скриншот: mobile landscape без JavaScript',
+                            'js_landscape': 'Скриншот: мобильный (горизонтальный), с JavaScript',
+                            'nojs_landscape': 'Скриншот: мобильный (горизонтальный), без JavaScript',
                         }.get(key, 'Скриншот')
                         doc.add_paragraph(caption)
                         doc.add_picture(shot_path, width=Inches(6.5))
@@ -480,7 +480,7 @@ class DOCXGenerator:
         title = doc.add_heading('РљР»РёРµРЅС‚СЃРєРёР№ РѕС‚С‡РµС‚: РјРѕР±РёР»СЊРЅР°СЏ РІРµСЂСЃРёСЏ СЃР°Р№С‚Р°', 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        url = data.get("url", "N/A")
+        url = data.get("url", "н/д")
         generated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         doc.add_paragraph(f"РЎР°Р№С‚: {url}")
         doc.add_paragraph(f"Р”Р°С‚Р° Рё РІСЂРµРјСЏ РѕС‚С‡РµС‚Р°: {generated_at}")
@@ -506,14 +506,14 @@ class DOCXGenerator:
             ["РЎСЂРµРґРЅРµРµ РІСЂРµРјСЏ Р·Р°РіСЂСѓР·РєРё, РјСЃ", summary.get("avg_load_time_ms", 0)],
             ["РљРѕР»РёС‡РµСЃС‚РІРѕ РѕС€РёР±РѕРє (critical + warning)", len(actionable_issues)],
             ["РРЅС„РѕСЂРјР°С†РёРѕРЅРЅС‹Рµ Р·Р°РјРµС‡Р°РЅРёСЏ", len(info_issues)],
-            ["РРЅС‚РµРіСЂР°Р»СЊРЅР°СЏ РѕС†РµРЅРєР°", results.get("score", "N/A")],
+            ["РРЅС‚РµРіСЂР°Р»СЊРЅР°СЏ РѕС†РµРЅРєР°", results.get("score", "н/д")],
             ["РС‚РѕРі", "РЎР°Р№С‚ СЃРѕРѕС‚РІРµС‚СЃС‚РІСѓРµС‚ РјРѕР±РёР»СЊРЅС‹Рј С‚СЂРµР±РѕРІР°РЅРёСЏРј" if results.get("mobile_friendly") else "РўСЂРµР±СѓСЋС‚СЃСЏ РґРѕСЂР°Р±РѕС‚РєРё РјРѕР±РёР»СЊРЅРѕР№ РІРµСЂСЃРёРё"],
         ]
         self._add_table(doc, ["РџРѕРєР°Р·Р°С‚РµР»СЊ", "Р—РЅР°С‡РµРЅРёРµ"], summary_rows)
 
         self._add_heading(doc, '2. РўРµС…РЅРёС‡РµСЃРєРёРµ РїР°СЂР°РјРµС‚СЂС‹ Р°СѓРґРёС‚Р°', level=1)
         tech_rows = [
-            ["HTTP СЃС‚Р°С‚СѓСЃ", results.get("status_code", "N/A")],
+            ["HTTP СЃС‚Р°С‚СѓСЃ", results.get("status_code", "н/д")],
             ["Р¤РёРЅР°Р»СЊРЅС‹Р№ URL", results.get("final_url", url)],
             ["Viewport РЅР°Р№РґРµРЅ", "Р”Р°" if results.get("viewport_found") else "РќРµС‚"],
             ["РЎРѕРґРµСЂР¶РёРјРѕРµ viewport", results.get("viewport_content") or "РќРµ РЅР°Р№РґРµРЅРѕ"],
@@ -527,7 +527,7 @@ class DOCXGenerator:
                 d.get("device_name", ""),
                 "РўРµР»РµС„РѕРЅ" if d.get("category") == "phone" else ("РџР»Р°РЅС€РµС‚" if d.get("category") == "tablet" else d.get("category", "")),
                 f"{(d.get('viewport') or {}).get('width', '-') }x{(d.get('viewport') or {}).get('height', '-')}",
-                d.get("status_code", "N/A"),
+                d.get("status_code", "н/д"),
                 d.get("load_time_ms", 0),
                 d.get("issues_count", 0),
                 "Р”Р°" if d.get("mobile_friendly") else "РќРµС‚",
@@ -633,7 +633,7 @@ class DOCXGenerator:
         title = doc.add_heading('РћС‚С‡РµС‚ РїРѕ РґРѕСЃС‚СѓРїРЅРѕСЃС‚Рё Р±РѕС‚РѕРІ', 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        doc.add_paragraph(f"URL: {data.get('url', 'N/A')}")
+        doc.add_paragraph(f"URL: {data.get('url', 'н/д')}")
         results = data.get('results', {})
         bots = results.get('bots_checked', [])
         doc.add_paragraph(
@@ -678,3 +678,4 @@ class DOCXGenerator:
 
 # Singleton
 docx_generator = DOCXGenerator()
+

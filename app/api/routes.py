@@ -1299,7 +1299,7 @@ async def export_robots_word(data: ExportRequest):
         task = get_task_result(task_id)
         
         if not task:
-            return {"error": "Task not found", "task_id": task_id}
+            return {"error": "Задача не найдена", "task_id": task_id}
         
         task_result = task.get("result", {})
         result = task_result.get("results", task_result)
@@ -1332,16 +1332,16 @@ async def export_robots_word(data: ExportRequest):
             ("URL сайта:", url),
             ("Дата проверки:", now),
             ("Robots.txt найден:", "Да" if result.get("robots_txt_found") else "Нет"),
-            ("Статус HTTP:", str(result.get("status_code", "N/A"))),
+            ("Статус HTTP:", str(result.get("status_code", "н/д"))),
             ("Размер файла:", f"{result.get('content_length', 0)} байт"),
             ("Кол-во строк:", str(result.get("lines_count", 0))),
             ("User-Agents:", user_agents_str),
         ]
         
         info_data.extend([
-            ("SEO Score:", str(result.get("quality_score", "N/A"))),
-            ("Grade:", str(result.get("quality_grade", "N/A"))),
-            ("Production-ready:", "Yes" if result.get("production_ready") else "No"),
+            ("SEO-оценка:", str(result.get("quality_score", "н/д"))),
+            ("Класс оценки:", str(result.get("quality_grade", "н/д"))),
+            ("Готовность к продакшену:", "Да" if result.get("production_ready") else "Нет"),
         ])
 
         for i, (label, value) in enumerate(info_data):
@@ -1467,11 +1467,11 @@ async def export_sitemap_xlsx(data: ExportRequest):
         task_id = data.task_id
         task = get_task_result(task_id)
         if not task:
-            return {"error": "Task not found", "task_id": task_id}
+            return {"error": "Задача не найдена", "task_id": task_id}
 
         task_type = task.get("task_type")
         if task_type != "sitemap_validate":
-            return {"error": f"Unsupported task type for sitemap XLSX export: {task_type}"}
+            return {"error": f"Неподдерживаемый тип задачи для экспорта sitemap XLSX: {task_type}"}
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
@@ -1481,7 +1481,7 @@ async def export_sitemap_xlsx(data: ExportRequest):
         }
         filepath = xlsx_generator.generate_sitemap_report(task_id, report_payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Report generation failed"}
+            return {"error": "Не удалось сформировать отчет"}
 
         with open(filepath, "rb") as f:
             content = f.read()
@@ -1510,11 +1510,11 @@ async def export_bot_xlsx(data: ExportRequest):
         task_id = data.task_id
         task = get_task_result(task_id)
         if not task:
-            return {"error": "Task not found", "task_id": task_id}
+            return {"error": "Задача не найдена", "task_id": task_id}
 
         task_type = task.get("task_type")
         if task_type != "bot_check":
-            return {"error": f"Unsupported task type for bot XLSX export: {task_type}"}
+            return {"error": f"Неподдерживаемый тип задачи для экспорта bot XLSX: {task_type}"}
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
@@ -1524,7 +1524,7 @@ async def export_bot_xlsx(data: ExportRequest):
         }
         filepath = xlsx_generator.generate_bot_report(task_id, report_payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Report generation failed"}
+            return {"error": "Не удалось сформировать отчет"}
 
         with open(filepath, "rb") as f:
             content = f.read()
@@ -1553,11 +1553,11 @@ async def export_mobile_docx(data: ExportRequest):
         task_id = data.task_id
         task = get_task_result(task_id)
         if not task:
-            return {"error": "Task not found", "task_id": task_id}
+            return {"error": "Задача не найдена", "task_id": task_id}
 
         task_type = task.get("task_type")
         if task_type != "mobile_check":
-            return {"error": f"Unsupported task type for mobile DOCX export: {task_type}"}
+            return {"error": f"Неподдерживаемый тип задачи для экспорта mobile DOCX: {task_type}"}
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
@@ -1567,7 +1567,7 @@ async def export_mobile_docx(data: ExportRequest):
         }
         filepath = docx_generator.generate_mobile_report(task_id, report_payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Report generation failed"}
+            return {"error": "Не удалось сформировать отчет"}
         append_task_artifact(task_id, filepath, kind="export")
 
         with open(filepath, "rb") as f:
@@ -1597,11 +1597,11 @@ async def export_render_docx(data: ExportRequest):
         task_id = data.task_id
         task = get_task_result(task_id)
         if not task:
-            return {"error": "Task not found", "task_id": task_id}
+            return {"error": "Задача не найдена", "task_id": task_id}
 
         task_type = task.get("task_type")
         if task_type != "render_audit":
-            return {"error": f"Unsupported task type for render DOCX export: {task_type}"}
+            return {"error": f"Неподдерживаемый тип задачи для экспорта отчета рендер-аудита (DOCX): {task_type}"}
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
@@ -1611,7 +1611,7 @@ async def export_render_docx(data: ExportRequest):
         }
         filepath = docx_generator.generate_render_report(task_id, report_payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Report generation failed"}
+            return {"error": "Не удалось сформировать отчет"}
         append_task_artifact(task_id, filepath, kind="export")
 
         with open(filepath, "rb") as f:
@@ -1641,11 +1641,11 @@ async def export_render_xlsx(data: ExportRequest):
         task_id = data.task_id
         task = get_task_result(task_id)
         if not task:
-            return {"error": "Task not found", "task_id": task_id}
+            return {"error": "Задача не найдена", "task_id": task_id}
 
         task_type = task.get("task_type")
         if task_type != "render_audit":
-            return {"error": f"Unsupported task type for render XLSX export: {task_type}"}
+            return {"error": f"Неподдерживаемый тип задачи для экспорта отчета рендер-аудита (XLSX): {task_type}"}
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
@@ -1654,12 +1654,12 @@ async def export_render_xlsx(data: ExportRequest):
         if issues_count is None:
             issues_count = len(results.get("issues", []) or [])
         if issues_count <= 0:
-            return {"error": "No issues found, XLSX report is not generated"}
+            return {"error": "Проблемы не найдены, XLSX-отчет не формируется"}
 
         report_payload = {"url": url, "results": results}
         filepath = xlsx_generator.generate_render_report(task_id, report_payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Report generation failed"}
+            return {"error": "Не удалось сформировать отчет"}
         append_task_artifact(task_id, filepath, kind="export")
 
         with open(filepath, "rb") as f:
@@ -1689,11 +1689,11 @@ async def export_mobile_xlsx(data: ExportRequest):
         task_id = data.task_id
         task = get_task_result(task_id)
         if not task:
-            return {"error": "Task not found", "task_id": task_id}
+            return {"error": "Задача не найдена", "task_id": task_id}
 
         task_type = task.get("task_type")
         if task_type != "mobile_check":
-            return {"error": f"Unsupported task type for mobile XLSX export: {task_type}"}
+            return {"error": f"Неподдерживаемый тип задачи для экспорта mobile XLSX: {task_type}"}
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
@@ -1702,12 +1702,12 @@ async def export_mobile_xlsx(data: ExportRequest):
         if issues_count is None:
             issues_count = len(results.get("issues", []) or [])
         if issues_count <= 0:
-            return {"error": "No issues found, XLSX report is not generated"}
+            return {"error": "Проблемы не найдены, XLSX-отчет не формируется"}
 
         report_payload = {"url": url, "results": results}
         filepath = xlsx_generator.generate_mobile_report(task_id, report_payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Report generation failed"}
+            return {"error": "Не удалось сформировать отчет"}
         append_task_artifact(task_id, filepath, kind="export")
 
         with open(filepath, "rb") as f:
@@ -1734,7 +1734,7 @@ async def get_mobile_artifact(task_id: str, filename: str):
     try:
         task = get_task_result(task_id)
         if not task:
-            return {"error": "Task not found", "task_id": task_id}
+            return {"error": "Задача не найдена", "task_id": task_id}
         task_result = task.get("result", {})
         results = task_result.get("results", task_result) or {}
         for item in results.get("device_results", []) or []:
@@ -1742,7 +1742,7 @@ async def get_mobile_artifact(task_id: str, filename: str):
                 shot_path = item.get("screenshot_path")
                 if shot_path and Path(shot_path).exists():
                     return FileResponse(shot_path)
-        return {"error": "Artifact not found"}
+        return {"error": "Артефакт не найден"}
     except Exception as e:
         return {"error": str(e)}
 
@@ -1756,7 +1756,7 @@ async def get_render_artifact(task_id: str, filename: str):
     try:
         task = get_task_result(task_id)
         if not task:
-            return {"error": "Task not found", "task_id": task_id}
+            return {"error": "Задача не найдена", "task_id": task_id}
         task_result = task.get("result", {})
         results = task_result.get("results", task_result) or {}
         variants = results.get("variants", []) or []
@@ -1766,7 +1766,7 @@ async def get_render_artifact(task_id: str, filename: str):
                     shot_path = shot.get("path")
                     if shot_path and Path(shot_path).exists():
                         return FileResponse(shot_path)
-        return {"error": "Artifact not found"}
+        return {"error": "Артефакт не найден"}
     except Exception as e:
         return {"error": str(e)}
 
@@ -1832,13 +1832,13 @@ async def get_task_status(task_id: str):
         "task_id": task_id,
         "status": "PENDING",
         "progress": 0,
-        "status_message": "Task not found yet",
+        "status_message": "Задача пока не найдена",
         "task_type": "site_analyze",
         "url": "",
         "created_at": datetime.utcnow(),
         "completed_at": None,
         "result": None,
-        "error": "Task not found",
+        "error": "Задача не найдена",
         "can_continue": False
     }
 
@@ -1850,7 +1850,7 @@ async def delete_task(task_id: str):
 
     task = get_task_result(task_id)
     if not task:
-        return {"task_id": task_id, "deleted": False, "error": "Task not found"}
+        return {"task_id": task_id, "deleted": False, "error": "Задача не найдена"}
 
     cleanup = delete_task_artifacts(task)
     removed = delete_task_result(task_id)
@@ -2409,21 +2409,21 @@ def check_site_full(input_url: str, max_pages: int = 20) -> Dict[str, Any]:
         
         page_issues = []
         if not title:
-            page_issues.append({'type': 'critical', 'issue': 'Missing title tag', 'url': page_url})
+            page_issues.append({'type': 'critical', 'issue': 'Отсутствует тег title', 'url': page_url})
         if title and len(title.text) < 30:
-            page_issues.append({'type': 'warning', 'issue': 'Title too short (< 30 chars)', 'url': page_url})
+            page_issues.append({'type': 'warning', 'issue': 'Слишком короткий title (< 30 символов)', 'url': page_url})
         if title and len(title.text) > 70:
-            page_issues.append({'type': 'warning', 'issue': 'Title too long (> 70 chars)', 'url': page_url})
+            page_issues.append({'type': 'warning', 'issue': 'Слишком длинный title (> 70 символов)', 'url': page_url})
         if not meta_desc:
-            page_issues.append({'type': 'critical', 'issue': 'Missing meta description', 'url': page_url})
+            page_issues.append({'type': 'critical', 'issue': 'Отсутствует meta description', 'url': page_url})
         if meta_desc and len(meta_desc.get('content', '')) < 120:
-            page_issues.append({'type': 'warning', 'issue': 'Meta description too short', 'url': page_url})
+            page_issues.append({'type': 'warning', 'issue': 'Слишком короткий meta description', 'url': page_url})
         if len(h1_tags) == 0:
-            page_issues.append({'type': 'warning', 'issue': 'No H1 tags found', 'url': page_url})
+            page_issues.append({'type': 'warning', 'issue': 'Не найден H1', 'url': page_url})
         elif len(h1_tags) > 1:
-            page_issues.append({'type': 'warning', 'issue': f'Multiple H1 tags ({len(h1_tags)})', 'url': page_url})
+            page_issues.append({'type': 'warning', 'issue': f'Несколько H1 ({len(h1_tags)})', 'url': page_url})
         if len(images_without_alt) > 0:
-            page_issues.append({'type': 'warning', 'issue': f'{len(images_without_alt)} images without alt text', 'url': page_url})
+            page_issues.append({'type': 'warning', 'issue': f'Изображений без alt: {len(images_without_alt)}', 'url': page_url})
         
         return {
             'url': page_url,
@@ -2606,9 +2606,9 @@ def generate_recommendations_full(site_url: str, critical_issues: list, warning_
     if score < 30:
         recommendations.append({"priority": "critical", "text": "КРИТИЧЕСКИ НИЗКИЙ SEO SCORE! Требуется немедленный аудит и исправления всех критических проблем."})
     elif score < 50:
-        recommendations.append({"priority": "high", "text": "Низкий SEO Score. Необходимо исправить критические проблемы в первую очередь."})
+        recommendations.append({"priority": "high", "text": "Низкая SEO-оценка. Необходимо исправить критические проблемы в первую очередь."})
     elif score < 70:
-        recommendations.append({"priority": "medium", "text": "Средний SEO Score. Есть возможности для улучшения."})
+        recommendations.append({"priority": "medium", "text": "Средняя SEO-оценка. Есть возможности для улучшения."})
     
     # Критические проблемы
     if any('title' in i.get('issue', '').lower() for i in critical_issues):
@@ -2779,11 +2779,11 @@ def check_render_full(
                 v["variant_id"] = variant_id
 
             if variant_id == "googlebot_mobile":
-                v["variant_label"] = "Googlebot Mobile"
+                v["variant_label"] = "Googlebot (мобильный)"
                 v["mobile"] = True
                 v["profile_type"] = "mobile"
             elif variant_id == "googlebot_desktop":
-                v["variant_label"] = "Googlebot Desktop"
+                v["variant_label"] = "Googlebot (ПК)"
                 v["mobile"] = False
                 v["profile_type"] = "desktop"
             normalized.append(v)
@@ -2796,8 +2796,8 @@ def check_render_full(
             )
 
         required = [
-            ("googlebot_desktop", "Googlebot Desktop", False),
-            ("googlebot_mobile", "Googlebot Mobile", True),
+            ("googlebot_desktop", "Googlebot (ПК)", False),
+            ("googlebot_mobile", "Googlebot (мобильный)", True),
         ]
         existing_ids = {str(v.get("variant_id", "")).lower() for v in variants if isinstance(v, dict)}
 
@@ -2915,11 +2915,11 @@ def check_mobile_simple(url: str) -> Dict[str, Any]:
         # Check viewport meta tag
         viewport = soup.find('meta', attrs={'name': 'viewport'})
         if not viewport:
-            issues.append("Missing viewport meta tag")
+            issues.append("Отсутствует мета-тег viewport")
         else:
             content = viewport.get('content', '')
             if 'width=device-width' not in content:
-                issues.append("Viewport not set to device-width")
+                issues.append("В viewport не задано width=device-width")
         
         # Check for responsive images
         images = soup.find_all('img')
@@ -3191,5 +3191,6 @@ async def create_mobile_check(data: MobileCheckRequest, background_tasks: Backgr
 
     background_tasks.add_task(_run_mobile_task)
     return {"task_id": task_id, "status": "PENDING", "message": "Проверка мобильной версии запущена"}
+
 
 
