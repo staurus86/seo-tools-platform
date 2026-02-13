@@ -1,15 +1,15 @@
 ﻿{% extends "base.html" %}
 
-{% block title %}Р РµР·СѓР»СЊС‚Р°С‚С‹ Р°РЅР°Р»РёР·Р° - SEO РРЅСЃС‚СЂСѓРјРµРЅС‚С‹{% endblock %}
+{% block title %}Результаты анализа - SEO Инструменты{% endblock %}
 
 {% block content %}
 <div class="max-w-4xl mx-auto">
     <!-- Header -->
     <div class="mb-6">
         <a href="/" class="text-blue-600 hover:text-blue-800 mb-2 inline-block">
-            <i class="fas fa-arrow-left mr-1"></i>РќР°Р·Р°Рґ Рє РёРЅСЃС‚СЂСѓРјРµРЅС‚Р°Рј
+            <i class="fas fa-arrow-left mr-1"></i>Назад к инструментам
         </a>
-        <h2 class="text-2xl font-bold text-gray-800">Р РµР·СѓР»СЊС‚Р°С‚С‹ Р°РЅР°Р»РёР·Р°</h2>
+        <h2 class="text-2xl font-bold text-gray-800">Результаты анализа</h2>
         <p class="text-gray-600">Task ID: <span id="task-id">{{ task_id }}</span></p>
     </div>
 
@@ -17,8 +17,8 @@
     <div id="progress-section" class="bg-white rounded-xl shadow-md p-6 mb-6">
         <div class="flex items-center justify-between mb-4">
             <div>
-                <h3 class="text-lg font-semibold" id="status-title">Р’С‹РїРѕР»РЅРµРЅРёРµ...</h3>
-                <p class="text-gray-600" id="status-message">РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ...</p>
+                <h3 class="text-lg font-semibold" id="status-title">Выполнение...</h3>
+                <p class="text-gray-600" id="status-message">Инициализация...</p>
             </div>
             <div id="status-icon" class="text-4xl">
                 <i class="fas fa-spinner fa-spin text-blue-500"></i>
@@ -44,7 +44,7 @@
         <div class="flex items-start">
             <i class="fas fa-exclamation-triangle text-red-500 text-xl mr-3 mt-1"></i>
             <div>
-                <h3 class="text-red-800 font-semibold mb-2">РћС€РёР±РєР° РІС‹РїРѕР»РЅРµРЅРёСЏ</h3>
+                <h3 class="text-red-800 font-semibold mb-2">Ошибка выполнения</h3>
                 <p id="error-message" class="text-red-700"></p>
             </div>
         </div>
@@ -52,7 +52,7 @@
 
     <!-- Copy Notification -->
     <div id="copy-notification" class="fixed bottom-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg transform translate-y-20 transition-transform duration-300 z-50">
-        <i class="fas fa-check mr-2"></i>РЎРєРѕРїРёСЂРѕРІР°РЅРѕ РІ Р±СѓС„РµСЂ РѕР±РјРµРЅР°
+        <i class="fas fa-check mr-2"></i>Скопировано в буфер обмена
     </div>
 </div>
 {% endblock %}
@@ -93,8 +93,8 @@ function updateProgress(data) {
     const statusIcon = document.getElementById('status-icon');
 
     if (data.status === 'SUCCESS') {
-        statusTitle.textContent = 'Р—Р°РІРµСЂС€РµРЅРѕ';
-        statusMessage.textContent = data.status_message || 'РђРЅР°Р»РёР· СѓСЃРїРµС€РЅРѕ РІС‹РїРѕР»РЅРµРЅ';
+        statusTitle.textContent = 'Завершено';
+        statusMessage.textContent = data.status_message || 'Анализ успешно выполнен';
         progressBar.style.width = '100%';
         progressBar.classList.remove('bg-blue-500');
         progressBar.classList.add('bg-green-500');
@@ -103,8 +103,8 @@ function updateProgress(data) {
     }
 
     if (data.status === 'FAILURE') {
-        statusTitle.textContent = 'РћС€РёР±РєР°';
-        statusMessage.textContent = data.error || data.status_message || 'РђРЅР°Р»РёР· Р·Р°РІРµСЂС€РёР»СЃСЏ СЃ РѕС€РёР±РєРѕР№';
+        statusTitle.textContent = 'Ошибка';
+        statusMessage.textContent = data.error || data.status_message || 'Анализ завершился с ошибкой';
         progressBar.style.width = `${data.progress || 100}%`;
         progressBar.classList.remove('bg-blue-500');
         progressBar.classList.add('bg-red-500');
@@ -113,8 +113,8 @@ function updateProgress(data) {
     }
 
     const p = Number.isFinite(Number(data.progress)) ? Number(data.progress) : 10;
-    statusTitle.textContent = data.status === 'RUNNING' ? 'Р’С‹РїРѕР»РЅРµРЅРёРµ...' : 'РћР¶РёРґР°РЅРёРµ...';
-    statusMessage.textContent = data.status_message || (data.status === 'RUNNING' ? 'РРґРµС‚ РїСЂРѕРІРµСЂРєР° СѓСЃС‚СЂРѕР№СЃС‚РІ' : 'Р—Р°РґР°С‡Р° РІ РѕС‡РµСЂРµРґРё');
+    statusTitle.textContent = data.status === 'RUNNING' ? 'Выполнение...' : 'Ожидание...';
+    statusMessage.textContent = data.status_message || (data.status === 'RUNNING' ? 'Идет проверка устройств' : 'Задача в очереди');
     progressBar.style.width = `${Math.max(5, Math.min(95, p))}%`;
     progressBar.classList.remove('bg-green-500', 'bg-red-500');
     progressBar.classList.add('bg-blue-500');
@@ -197,7 +197,7 @@ let sitemapDuplicateLines = [];
 let sitemapFilePreviewUrls = [];
 
 function generateTextReport() {
-    if (!robotsData) return 'РќРµС‚ РґР°РЅРЅС‹С… РґР»СЏ РѕС‚С‡РµС‚Р°';
+    if (!robotsData) return 'Нет данных для отчета';
     const r = robotsData.results || robotsData;
     const groups = r.groups_detail || r.groups || [];
     
@@ -208,32 +208,32 @@ function generateTextReport() {
         totalAllow += (g.allow || []).length;
     });
     
-    let report = 'РћРўР§Р•Рў РђРќРђР›РР—Рђ ROBOTS.TXT\n';
+    let report = 'ОТЧЕТ АНАЛИЗА ROBOTS.TXT\n';
     report += '='.repeat(50) + '\n';
-    report += 'URL СЃР°Р№С‚Р°: ' + robotsData.url + '\n';
-    report += 'Р”Р°С‚Р° РїСЂРѕРІРµСЂРєРё: ' + new Date().toLocaleString() + '\n';
+    report += 'URL сайта: ' + robotsData.url + '\n';
+    report += 'Дата проверки: ' + new Date().toLocaleString() + '\n';
     report += '='.repeat(50) + '\n\n';
     
-    report += 'РЎРўРђРўРРЎРўРРљРђ\n';
+    report += 'СТАТИСТИКА\n';
     report += '-'.repeat(30) + '\n';
     report += 'User-Agents: ' + (r.user_agents || 0) + '\n';
-    report += 'Disallow РїСЂР°РІРёР»: ' + totalDisallow + '\n';
-    report += 'Allow РїСЂР°РІРёР»: ' + totalAllow + '\n';
-    report += 'SEO РћС†РµРЅРєР°: ' + (r.quality_score ?? 'N/A') + ' (' + (r.quality_grade || 'N/A') + ')\n';
-    report += 'Р“РѕС‚РѕРІРЅРѕСЃС‚СЊ Рє РїСЂРѕРґР°РєС€РµРЅСѓ: ' + (r.production_ready ? 'Р”Р°' : 'РќРµС‚') + '\n';
-    report += 'Р Р°Р·РјРµСЂ С„Р°Р№Р»Р°: ' + (r.content_length || 0) + ' Р±Р°Р№С‚\n';
+    report += 'Disallow правил: ' + totalDisallow + '\n';
+    report += 'Allow правил: ' + totalAllow + '\n';
+    report += 'SEO Оценка: ' + (r.quality_score ?? 'N/A') + ' (' + (r.quality_grade || 'N/A') + ')\n';
+    report += 'Готовность к продакшену: ' + (r.production_ready ? 'Да' : 'Нет') + '\n';
+    report += 'Размер файла: ' + (r.content_length || 0) + ' байт\n';
     report += 'РЎС‚СЂРѕРє: ' + (r.lines_count || 0) + '\n\n';
     
     const issues = r.issues || [];
     if (issues.length > 0) {
-        report += 'РџР РћР‘Р›Р•РњР«\n' + '-'.repeat(30) + '\n';
+        report += 'ПРОБЛЕМЫ\n' + '-'.repeat(30) + '\n';
         issues.forEach(i => report += '! ' + i + '\n');
         report += '\n';
     }
     
     const warnings = r.warnings || [];
     if (warnings.length > 0) {
-        report += 'РџР Р•Р”РЈРџР Р•Р–Р”Р•РќРРЇ\n' + '-'.repeat(30) + '\n';
+        report += 'ПРЕДУПРЕЖДЕНИЯ\n' + '-'.repeat(30) + '\n';
         warnings.forEach(w => report += '- ' + w + '\n');
         report += '\n';
     }
@@ -247,9 +247,9 @@ function generateTextReport() {
     }
     
     if (groups.length > 0) {
-        report += 'Р“Р РЈРџРџР« РџР РђР’РР›\n' + '-'.repeat(30) + '\n';
+        report += 'ГРУППЫ ПРАВИЛ\n' + '-'.repeat(30) + '\n';
         groups.forEach((group, idx) => {
-            report += '\nР“СЂСѓРїРїР° ' + (idx + 1) + ': ' + group.user_agents.join(', ') + '\n';
+            report += '\nГруппа ' + (idx + 1) + ': ' + group.user_agents.join(', ') + '\n';
             (group.disallow || []).forEach(d => {
                 report += '  Disallow: ' + d.path + ' (СЃС‚СЂ ' + d.line + ')\n';
             });
@@ -262,7 +262,7 @@ function generateTextReport() {
     
     const recommendations = r.recommendations || [];
     if (recommendations.length > 0) {
-        report += 'Р Р•РљРћРњР•РќР”РђР¦РР\n' + '-'.repeat(30) + '\n';
+        report += 'РЕКОМЕНДАЦИИ\n' + '-'.repeat(30) + '\n';
         recommendations.forEach(rec => report += '- ' + rec + '\n');
     }
 
@@ -293,7 +293,7 @@ function copyToClipboard(text) {
             notification.classList.add('translate-y-20');
         }, 2000);
     }).catch(err => {
-        console.error('РћС€РёР±РєР° РєРѕРїРёСЂРѕРІР°РЅРёСЏ:', err);
+        console.error('Ошибка копирования:', err);
     });
 }
 
@@ -354,7 +354,7 @@ function downloadSitemapFilePreview(index, filename) {
 
 async function downloadSitemapXlsxReport() {
     if (!sitemapData) {
-        alert('РќРµС‚ РґР°РЅРЅС‹С… sitemap');
+        alert('Нет данных sitemap');
         return;
     }
     try {
@@ -380,13 +380,13 @@ async function downloadSitemapXlsxReport() {
         URL.revokeObjectURL(href);
     } catch (error) {
         console.error('Error downloading sitemap xlsx:', error);
-        alert('РќРµ СѓРґР°Р»РѕСЃСЊ СЃРєР°С‡Р°С‚СЊ XLSX-РѕС‚С‡РµС‚ РїРѕ sitemap');
+        alert('Не удалось скачать XLSX-отчет по sitemap');
     }
 }
 
 async function downloadBotXlsxReport() {
     if (!botData) {
-        alert('РќРµС‚ РґР°РЅРЅС‹С… РїСЂРѕРІРµСЂРєРё Р±РѕС‚РѕРІ');
+        alert('Нет данных проверки ботов');
         return;
     }
     try {
@@ -412,13 +412,13 @@ async function downloadBotXlsxReport() {
         URL.revokeObjectURL(href);
     } catch (error) {
         console.error('Error downloading bot xlsx:', error);
-        alert('РќРµ СѓРґР°Р»РѕСЃСЊ СЃРєР°С‡Р°С‚СЊ XLSX-РѕС‚С‡РµС‚ РїРѕ Р±РѕС‚Р°Рј');
+        alert('Не удалось скачать XLSX-отчет по ботам');
     }
 }
 
 async function downloadWordReport() {
     if (!robotsData) {
-        alert('РќРµС‚ РґР°РЅРЅС‹С… РґР»СЏ РѕС‚С‡РµС‚Р°');
+        alert('Нет данных для отчета');
         return;
     }
     
@@ -443,17 +443,17 @@ async function downloadWordReport() {
             URL.revokeObjectURL(url);
         } else {
             const error = await response.json();
-            alert('РћС€РёР±РєР° РїСЂРё СЃРѕР·РґР°РЅРёРё РѕС‚С‡РµС‚Р°: ' + (error.error || response.statusText));
+            alert('Ошибка при создании отчета: ' + (error.error || response.statusText));
         }
     } catch (error) {
         console.error('Error downloading Word report:', error);
-        alert('РћС€РёР±РєР° РїСЂРё СЃРєР°С‡РёРІР°РЅРёРё РѕС‚С‡РµС‚Р°');
+        alert('Ошибка при скачивании отчета');
     }
 }
 
 async function downloadMobileDocxReport() {
     if (!mobileData) {
-        alert('РќРµС‚ РґР°РЅРЅС‹С… РјРѕР±РёР»СЊРЅРѕР№ РїСЂРѕРІРµСЂРєРё');
+        alert('Нет данных мобильной проверки');
         return;
     }
     try {
@@ -478,14 +478,14 @@ async function downloadMobileDocxReport() {
         document.body.removeChild(a);
         URL.revokeObjectURL(href);
     } catch (error) {
-        console.error('РћС€РёР±РєР° СЃРєР°С‡РёРІР°РЅРёСЏ РјРѕР±РёР»СЊРЅРѕРіРѕ DOCX:', error);
-        alert('РќРµ СѓРґР°Р»РѕСЃСЊ СЃРєР°С‡Р°С‚СЊ DOCX-РѕС‚С‡РµС‚');
+        console.error('Ошибка скачивания мобильного DOCX:', error);
+        alert('Не удалось скачать DOCX-отчет');
     }
 }
 
 async function downloadMobileXlsxReport() {
     if (!mobileData) {
-        alert('РќРµС‚ РґР°РЅРЅС‹С… РјРѕР±РёР»СЊРЅРѕР№ РїСЂРѕРІРµСЂРєРё');
+        alert('Нет данных мобильной проверки');
         return;
     }
     try {
@@ -511,14 +511,14 @@ async function downloadMobileXlsxReport() {
         document.body.removeChild(a);
         URL.revokeObjectURL(href);
     } catch (error) {
-        console.error('РћС€РёР±РєР° СЃРєР°С‡РёРІР°РЅРёСЏ РјРѕР±РёР»СЊРЅРѕРіРѕ XLSX:', error);
-        alert(error.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ СЃРєР°С‡Р°С‚СЊ XLSX-РѕС‚С‡РµС‚');
+        console.error('Ошибка скачивания мобильного XLSX:', error);
+        alert(error.message || 'Не удалось скачать XLSX-отчет');
     }
 }
 
 async function downloadRenderDocxReport() {
     if (!renderData) {
-        alert('РќРµС‚ РґР°РЅРЅС‹С… СЂРµРЅРґРµСЂ-Р°СѓРґРёС‚Р°');
+        alert('Нет данных рендер-аудита');
         return;
     }
     try {
@@ -543,14 +543,14 @@ async function downloadRenderDocxReport() {
         document.body.removeChild(a);
         URL.revokeObjectURL(href);
     } catch (error) {
-        console.error('РћС€РёР±РєР° СЃРєР°С‡РёРІР°РЅРёСЏ render DOCX:', error);
-        alert('РќРµ СѓРґР°Р»РѕСЃСЊ СЃРєР°С‡Р°С‚СЊ DOCX-РѕС‚С‡РµС‚');
+        console.error('Ошибка скачивания render DOCX:', error);
+        alert('Не удалось скачать DOCX-отчет');
     }
 }
 
 async function downloadRenderXlsxReport() {
     if (!renderData) {
-        alert('РќРµС‚ РґР°РЅРЅС‹С… СЂРµРЅРґРµСЂ-Р°СѓРґРёС‚Р°');
+        alert('Нет данных рендер-аудита');
         return;
     }
     try {
@@ -576,8 +576,8 @@ async function downloadRenderXlsxReport() {
         document.body.removeChild(a);
         URL.revokeObjectURL(href);
     } catch (error) {
-        console.error('РћС€РёР±РєР° СЃРєР°С‡РёРІР°РЅРёСЏ render XLSX:', error);
-        alert(error.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ СЃРєР°С‡Р°С‚СЊ XLSX-РѕС‚С‡РµС‚');
+        console.error('Ошибка скачивания render XLSX:', error);
+        alert(error.message || 'Не удалось скачать XLSX-отчет');
     }
 }
 
@@ -627,7 +627,7 @@ function generateRobotsHTML(data) {
     const r = resultData.results || resultData;
     const sourceUrl = data.url || resultData.url || robotsData?.url || '';
     
-    let userAgents = 'РќРµ РЅР°Р№РґРµРЅРѕ';
+    let userAgents = 'Не найдено';
     if (Array.isArray(r.user_agents)) {
         userAgents = r.user_agents.join(', ');
     } else if (typeof r.user_agents === 'number') {
@@ -700,7 +700,7 @@ function generateRobotsHTML(data) {
         groupsHTML = groups.map((group, idx) => `
             <div class="border rounded-lg mb-4 overflow-hidden">
                 <div class="bg-gray-100 px-4 py-2 border-b">
-                    <span class="font-semibold text-gray-700">Р“СЂСѓРїРїР° ${idx + 1}:</span>
+                    <span class="font-semibold text-gray-700">Группа ${idx + 1}:</span>
                     <span class="text-gray-600 ml-2">${group.user_agents.join(', ')}</span>
                 </div>
                 <div class="p-4">
@@ -763,7 +763,7 @@ function generateRobotsHTML(data) {
         sitemapChecksHTML = sitemapChecks.map(check => {
             const ok = check.ok;
             const badge = ok === true ? 'bg-green-100 text-green-700' : (ok === null ? 'bg-gray-100 text-gray-700' : 'bg-red-100 text-red-700');
-            const status = ok === true ? 'РћРљ' : (ok === null ? 'РџР РћРџРЈР©Р•РќРћ' : 'РћРЁРР‘РљРђ');
+            const status = ok === true ? 'ОК' : (ok === null ? 'ПРОПУЩЕНО' : 'ОШИБКА');
             return `
                 <div class="border rounded-lg p-3 mb-2">
                     <div class="flex items-center justify-between">
@@ -784,28 +784,28 @@ function generateRobotsHTML(data) {
             <div class="bg-white rounded-xl shadow-md p-4 flex flex-wrap gap-3">
                 <button onclick="downloadTextReport()" class="inline-flex items-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition cursor-pointer">
                     <i class="fas fa-file-download mr-2"></i>
-                    РЎРєР°С‡Р°С‚СЊ РѕС‚С‡РµС‚ (.txt)
+                    Скачать отчет (.txt)
                 </button>
                 <button onclick="downloadWordReport()" class="inline-flex items-center bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition cursor-pointer">
                     <i class="fas fa-file-word mr-2"></i>
-                    РЎРєР°С‡Р°С‚СЊ РѕС‚С‡РµС‚ (.docx)
+                    Скачать отчет (.docx)
                 </button>
                 <button onclick="copyToClipboard(JSON.stringify(robotsData, null, 2))" class="inline-flex items-center bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition">
                     <i class="fas fa-copy mr-2"></i>
-                    РљРѕРїРёСЂРѕРІР°С‚СЊ JSON
+                    Копировать JSON
                 </button>
             </div>
             
             <!-- Summary Stats -->
             <div class="bg-white rounded-xl shadow-md p-6">
                 <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-lg font-semibold">РџСЂРѕРІРµСЂРєР° Robots.txt</h3>
+                    <h3 class="text-lg font-semibold">Проверка Robots.txt</h3>
                 </div>
                 
                 <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-4">
                     <div class="text-center p-3 ${productionReady ? 'bg-emerald-50' : 'bg-amber-50'} rounded-lg">
                         <div class="text-2xl font-bold ${productionReady ? 'text-emerald-600' : 'text-amber-600'}">${qualityScore}</div>
-                        <div class="text-xs text-gray-500">РћС†РµРЅРєР° (${qualityGrade})</div>
+                        <div class="text-xs text-gray-500">Оценка (${qualityGrade})</div>
                     </div>
                     <div class="text-center p-3 bg-blue-50 rounded-lg">
                         <div class="text-2xl font-bold text-blue-600">${userAgentCount}</div>
@@ -821,7 +821,7 @@ function generateRobotsHTML(data) {
                     </div>
                     <div class="text-center p-3 bg-purple-50 rounded-lg">
                         <div class="text-2xl font-bold text-purple-600">${r.content_length || 0}</div>
-                        <div class="text-xs text-gray-500">Р‘Р°Р№С‚</div>
+                        <div class="text-xs text-gray-500">Байт</div>
                     </div>
                     <div class="text-center p-3 bg-gray-50 rounded-lg">
                         <div class="text-2xl font-bold text-gray-600">${r.lines_count || 0}</div>
@@ -833,7 +833,7 @@ function generateRobotsHTML(data) {
                     <span class="font-medium">URL:</span> <a href="${sourceUrl}" target="_blank" class="text-blue-600 hover:underline">${sourceUrl}</a>
                     <span class="mx-2">|</span>
                     <span class="font-medium">Robots.txt:</span> 
-                    <a href="${sourceUrl.replace(/\/$/, '')}/robots.txt" target="_blank" class="text-blue-600 hover:underline">РїРѕРєР°Р·Р°С‚СЊ С„Р°Р№Р»</a>
+                    <a href="${sourceUrl.replace(/\/$/, '')}/robots.txt" target="_blank" class="text-blue-600 hover:underline">показать файл</a>
                 </div>
             </div>
             
@@ -841,17 +841,17 @@ function generateRobotsHTML(data) {
             ${issuesHTML ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-red-600 mb-3">
-                        <i class="fas fa-exclamation-triangle mr-2"></i>РџСЂРѕР±Р»РµРјС‹ (${issues.length})
+                        <i class="fas fa-exclamation-triangle mr-2"></i>Проблемы (${issues.length})
                     </h4>
                     ${issuesHTML}
                 </div>
-            ` : '<div class="bg-white rounded-xl shadow-md p-6"><div class="text-green-600"><i class="fas fa-check mr-2"></i>РљСЂРёС‚РёС‡РµСЃРєРёС… РїСЂРѕР±Р»РµРј РЅРµ РѕР±РЅР°СЂСѓР¶РµРЅРѕ</div></div>'}
+            ` : '<div class="bg-white rounded-xl shadow-md p-6"><div class="text-green-600"><i class="fas fa-check mr-2"></i>Критических проблем не обнаружено</div></div>'}
             
             <!-- Warnings -->
             ${warningsHTML ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-yellow-600 mb-3">
-                        <i class="fas fa-exclamation-circle mr-2"></i>РџСЂРµРґСѓРїСЂРµР¶РґРµРЅРёСЏ (${warnings.length})
+                        <i class="fas fa-exclamation-circle mr-2"></i>Предупреждения (${warnings.length})
                     </h4>
                     ${warningsHTML}
                 </div>
@@ -860,7 +860,7 @@ function generateRobotsHTML(data) {
             ${infoIssues.length > 0 ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-sky-600 mb-3">
-                        <i class="fas fa-info-circle mr-2"></i>РРЅС„Рѕ (${infoIssues.length})
+                        <i class="fas fa-info-circle mr-2"></i>Инфо (${infoIssues.length})
                     </h4>
                     ${infoIssues.map(item => `
                         <div class="bg-sky-50 border border-sky-200 rounded-lg p-3 mb-2 text-sky-700 text-sm">${item}</div>
@@ -880,7 +880,7 @@ function generateRobotsHTML(data) {
             ${sitemapChecksHTML ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-indigo-600 mb-3">
-                        <i class="fas fa-shield-alt mr-2"></i>РџСЂРѕРІРµСЂРєРё URL РёР· sitemap (${sitemapChecks.length})
+                        <i class="fas fa-shield-alt mr-2"></i>Проверки URL из sitemap (${sitemapChecks.length})
                     </h4>
                     ${sitemapChecksHTML}
                 </div>
@@ -890,7 +890,7 @@ function generateRobotsHTML(data) {
             ${groupsHTML ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-gray-700 mb-3">
-                        <i class="fas fa-list mr-2"></i>Р”РµС‚Р°Р»СЊРЅС‹Р№ Р°РЅР°Р»РёР· РіСЂСѓРїРї
+                        <i class="fas fa-list mr-2"></i>Детальный анализ групп
                     </h4>
                     ${groupsHTML}
                 </div>
@@ -909,7 +909,7 @@ function generateRobotsHTML(data) {
             ${recommendationsHTML ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-blue-600 mb-3">
-                        <i class="fas fa-lightbulb mr-2"></i>Р РµРєРѕРјРµРЅРґР°С†РёРё
+                        <i class="fas fa-lightbulb mr-2"></i>Рекомендации
                     </h4>
                     ${recommendationsHTML}
                 </div>
@@ -918,7 +918,7 @@ function generateRobotsHTML(data) {
             ${topFixesHTML ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-indigo-700 mb-3">
-                        <i class="fas fa-wrench mr-2"></i>РџСЂРёРѕСЂРёС‚РµС‚РЅС‹Рµ РёСЃРїСЂР°РІР»РµРЅРёСЏ (${topFixes.length})
+                        <i class="fas fa-wrench mr-2"></i>Приоритетные исправления (${topFixes.length})
                     </h4>
                     ${topFixesHTML}
                 </div>
@@ -935,7 +935,7 @@ function generateSitemapHTMLV2(result) {
     const errors = r.errors || [];
     const recommendations = r.recommendations || [];
     const duplicateDetails = r.duplicate_details || [];
-    const duplicateLines = duplicateDetails.map(d => `${d.url}\tРїРµСЂРІС‹Р№: ${d.first_sitemap || '-'}\tРґСѓР±Р»РёРєР°С‚: ${d.duplicate_sitemap || '-'}`);
+    const duplicateLines = duplicateDetails.map(d => `${d.url}\tпервый: ${d.first_sitemap || '-'}\tдубликат: ${d.duplicate_sitemap || '-'}`);
     const exportChunkSize = r.export_chunk_size || 25000;
     const dateStamp = new Date().toISOString().slice(0, 10);
     const safeDomain = (result.url || 'sitemap').replace(/https?:\/\//, '').replace(/[^\w.-]+/g, '_');
@@ -947,52 +947,52 @@ function generateSitemapHTMLV2(result) {
         <div class="space-y-4">
             <div class="bg-white rounded-xl shadow-md p-6">
                 <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-lg font-semibold">Р’Р°Р»РёРґР°С†РёСЏ Sitemap</h3>
+                    <h3 class="text-lg font-semibold">Валидация Sitemap</h3>
                     <div class="flex gap-2">
                         <button onclick="copyToClipboard('${result.url}')" class="text-blue-600 hover:text-blue-800 text-sm">
-                            <i class="fas fa-copy mr-1"></i>РљРѕРїРёСЂРѕРІР°С‚СЊ URL
+                            <i class="fas fa-copy mr-1"></i>Копировать URL
                         </button>
                         ${exportUrls.length > 0 ? `
                             <button onclick='downloadCurrentSitemapUrls("sitemap-urls-${safeDomain}-${dateStamp}")' class="text-green-600 hover:text-green-800 text-sm">
-                                <i class="fas fa-file-download mr-1"></i>Р­РєСЃРїРѕСЂС‚ URL (.txt)
+                                <i class="fas fa-file-download mr-1"></i>Экспорт URL (.txt)
                             </button>
                             <button onclick='downloadCurrentSitemapUrlsParts("sitemap-urls-${safeDomain}-${dateStamp}", ${exportChunkSize})' class="text-green-600 hover:text-green-800 text-sm">
-                                <i class="fas fa-layer-group mr-1"></i>Р­РєСЃРїРѕСЂС‚ URL (С‡Р°СЃС‚СЏРјРё)
+                                <i class="fas fa-layer-group mr-1"></i>Экспорт URL (частями)
                             </button>
                         ` : ''}
                         <button onclick="downloadSitemapXlsxReport()" class="text-indigo-600 hover:text-indigo-800 text-sm">
-                            <i class="fas fa-file-excel mr-1"></i>РЎРєР°С‡Р°С‚СЊ XLSX
+                            <i class="fas fa-file-excel mr-1"></i>Скачать XLSX
                         </button>
                     </div>
                 </div>
                 <p class="text-sm text-gray-600 mb-4">
-                    РћС‚С‡РµС‚ РїРѕРєР°Р·С‹РІР°РµС‚ РєРѕСЂСЂРµРєС‚РЅРѕСЃС‚СЊ СЃС‚СЂСѓРєС‚СѓСЂС‹ sitemap, РєР°С‡РµСЃС‚РІРѕ URL Рё СЂРёСЃРєРё РґР»СЏ РёРЅРґРµРєСЃР°С†РёРё.
+                    Отчет показывает корректность структуры sitemap, качество URL и риски для индексации.
                 </p>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div><span class="text-gray-600">URL:</span> <span class="font-medium break-all">${result.url}</span></div>
-                    <div><span class="text-gray-600">Р’Р°Р»РёРґРµРЅ:</span> <span class="font-medium">${r.valid ? 'Р”Р°' : 'РќРµС‚'}</span></div>
+                    <div><span class="text-gray-600">Валиден:</span> <span class="font-medium">${r.valid ? 'Да' : 'Нет'}</span></div>
                     <div><span class="text-gray-600">HTTP:</span> <span class="font-medium">${r.status_code || 'N/A'}</span></div>
-                    <div><span class="text-gray-600">Р’СЃРµРіРѕ URL:</span> <span class="font-medium">${r.urls_count || 0}</span></div>
-                    <div><span class="text-gray-600">РЈРЅРёРєР°Р»СЊРЅС‹С… URL:</span> <span class="font-medium">${r.unique_urls_count || 0}</span></div>
-                    <div><span class="text-gray-600">Р”СѓР±Р»РёРєР°С‚РѕРІ:</span> <span class="font-medium">${r.duplicate_urls_count || 0}</span></div>
-                    <div><span class="text-gray-600">Sitemap РїСЂРѕРІРµСЂРµРЅРѕ:</span> <span class="font-medium">${r.sitemaps_scanned || 0}</span></div>
-                    <div><span class="text-gray-600">Sitemap РІР°Р»РёРґРЅРѕ:</span> <span class="font-medium">${r.sitemaps_valid || 0}</span></div>
+                    <div><span class="text-gray-600">Всего URL:</span> <span class="font-medium">${r.urls_count || 0}</span></div>
+                    <div><span class="text-gray-600">Уникальных URL:</span> <span class="font-medium">${r.unique_urls_count || 0}</span></div>
+                    <div><span class="text-gray-600">Дубликатов:</span> <span class="font-medium">${r.duplicate_urls_count || 0}</span></div>
+                    <div><span class="text-gray-600">Sitemap проверено:</span> <span class="font-medium">${r.sitemaps_scanned || 0}</span></div>
+                    <div><span class="text-gray-600">Sitemap валидно:</span> <span class="font-medium">${r.sitemaps_valid || 0}</span></div>
                 </div>
-                ${r.error ? `<div class="mt-3 text-red-600 font-medium">РћС€РёР±РєР°: ${r.error}</div>` : ''}
-                ${r.urls_export_truncated ? `<div class="mt-3 text-amber-700 text-sm">Р­РєСЃРїРѕСЂС‚ РѕРіСЂР°РЅРёС‡РµРЅ РґРѕ ${r.max_export_urls || 0} URL.</div>` : ''}
-                ${(r.export_parts_count || 0) > 1 ? `<div class="mt-2 text-gray-600 text-sm">Р РµРєРѕРјРµРЅРґСѓРµРјРѕРµ С‡РёСЃР»Рѕ С‡Р°СЃС‚РµР№: ${r.export_parts_count} (РїРѕ ${exportChunkSize} URL).</div>` : ''}
+                ${r.error ? `<div class="mt-3 text-red-600 font-medium">Ошибка: ${r.error}</div>` : ''}
+                ${r.urls_export_truncated ? `<div class="mt-3 text-amber-700 text-sm">Экспорт ограничен до ${r.max_export_urls || 0} URL.</div>` : ''}
+                ${(r.export_parts_count || 0) > 1 ? `<div class="mt-2 text-gray-600 text-sm">Рекомендуемое число частей: ${r.export_parts_count} (по ${exportChunkSize} URL).</div>` : ''}
             </div>
 
             ${errors.length > 0 ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold text-red-600 mb-2">РћС€РёР±РєРё (${errors.length})</h4>
+                    <h4 class="font-semibold text-red-600 mb-2">Ошибки (${errors.length})</h4>
                     ${errors.slice(0, 50).map(e => `<div class="text-sm text-red-700 mb-1">${e}</div>`).join('')}
                 </div>
             ` : ''}
 
             ${warnings.length > 0 ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold text-amber-600 mb-2">РџСЂРµРґСѓРїСЂРµР¶РґРµРЅРёСЏ (${warnings.length})</h4>
+                    <h4 class="font-semibold text-amber-600 mb-2">Предупреждения (${warnings.length})</h4>
                     ${warnings.slice(0, 50).map(w => `<div class="text-sm text-amber-700 mb-1">${w}</div>`).join('')}
                 </div>
             ` : ''}
@@ -1000,18 +1000,18 @@ function generateSitemapHTMLV2(result) {
             ${duplicateDetails.length > 0 ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <div class="flex items-center justify-between mb-2">
-                        <h4 class="font-semibold text-rose-700">Р”СѓР±Р»Рё URL (${duplicateDetails.length})</h4>
+                        <h4 class="font-semibold text-rose-700">Дубли URL (${duplicateDetails.length})</h4>
                         <button onclick='downloadCurrentSitemapDuplicates("sitemap-duplicates-${safeDomain}-${dateStamp}.txt")' class="text-xs text-rose-700 hover:text-rose-900">
-                            <i class="fas fa-file-download mr-1"></i>Р­РєСЃРїРѕСЂС‚ РґСѓР±Р»РµР№
+                            <i class="fas fa-file-download mr-1"></i>Экспорт дублей
                         </button>
                     </div>
-                    ${r.duplicate_details_truncated ? `<div class="text-xs text-amber-700 mb-2">РЎРїРёСЃРѕРє СЃРѕРєСЂР°С‰РµРЅ.</div>` : ''}
+                    ${r.duplicate_details_truncated ? `<div class="text-xs text-amber-700 mb-2">Список сокращен.</div>` : ''}
                     <div class="max-h-72 overflow-auto border rounded">
                         ${duplicateDetails.slice(0, 500).map(d => `
                             <div class="text-xs border-b p-2">
                                 <div class="font-medium break-all text-gray-800">${d.url}</div>
-                                <div class="text-gray-600">РїРµСЂРІС‹Р№: <span class="break-all">${d.first_sitemap || '-'}</span></div>
-                                <div class="text-gray-600">РґСѓР±Р»РёРєР°С‚: <span class="break-all">${d.duplicate_sitemap || '-'}</span></div>
+                                <div class="text-gray-600">первый: <span class="break-all">${d.first_sitemap || '-'}</span></div>
+                                <div class="text-gray-600">дубликат: <span class="break-all">${d.duplicate_sitemap || '-'}</span></div>
                             </div>
                         `).join('')}
                     </div>
@@ -1020,30 +1020,30 @@ function generateSitemapHTMLV2(result) {
 
             ${recommendations.length > 0 ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold text-blue-600 mb-2">Р РµРєРѕРјРµРЅРґР°С†РёРё</h4>
+                    <h4 class="font-semibold text-blue-600 mb-2">Рекомендации</h4>
                     ${recommendations.map(rec => `<div class="text-sm text-blue-700 mb-1">- ${rec}</div>`).join('')}
                 </div>
             ` : ''}
 
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold text-gray-700 mb-3">Р¤Р°Р№Р»С‹ Sitemap (${sitemapFiles.length})</h4>
+                <h4 class="font-semibold text-gray-700 mb-3">Файлы Sitemap (${sitemapFiles.length})</h4>
                 <div class="space-y-3">
                     ${sitemapFiles.map((f, idx) => `
                         <div class="border rounded-lg p-3">
                             <div class="flex justify-between items-center mb-1">
                                 <div class="text-sm font-medium break-all">${f.sitemap_url}</div>
-                                <div class="text-xs ${f.ok ? 'text-green-600' : 'text-red-600'}">${f.ok ? 'РћРљ' : 'РћРЁРР‘РљРђ'}</div>
+                                <div class="text-xs ${f.ok ? 'text-green-600' : 'text-red-600'}">${f.ok ? 'ОК' : 'ОШИБКА'}</div>
                             </div>
-                            <div class="text-xs text-gray-600 mb-2">С‚РёРї: ${f.type || 'РЅРµРёР·РІРµСЃС‚РЅРѕ'} | HTTP: ${f.status_code || 'N/A'} | URL: ${f.urls_count || 0}</div>
-                            ${f.duplicate_count > 0 ? `<div class="text-xs text-rose-700 mb-2">РґСѓР±Р»РёРєР°С‚РѕРІ РІ СЌС‚РѕРј sitemap: ${f.duplicate_count}</div>` : ''}
+                            <div class="text-xs text-gray-600 mb-2">тип: ${f.type || 'неизвестно'} | HTTP: ${f.status_code || 'N/A'} | URL: ${f.urls_count || 0}</div>
+                            ${f.duplicate_count > 0 ? `<div class="text-xs text-rose-700 mb-2">дубликатов в этом sitemap: ${f.duplicate_count}</div>` : ''}
                             ${(f.urls || []).length > 0 ? `
                                 <button onclick='downloadSitemapFilePreview(${idx}, "sitemap-${safeDomain}-${dateStamp}-${idx + 1}-urls-preview.txt")' class="text-xs text-green-700 hover:text-green-900 mb-2">
-                                    <i class="fas fa-file-download mr-1"></i>Р­РєСЃРїРѕСЂС‚ URL СЌС‚РѕРіРѕ sitemap
+                                    <i class="fas fa-file-download mr-1"></i>Экспорт URL этого sitemap
                                 </button>
                             ` : ''}
-                            ${(f.urls_omitted || 0) > 0 ? `<div class="text-xs text-amber-700 mb-1">С‚РѕР»СЊРєРѕ РїСЂРµРґРїСЂРѕСЃРјРѕС‚СЂ, РїСЂРѕРїСѓС‰РµРЅРѕ: ${f.urls_omitted}</div>` : ''}
+                            ${(f.urls_omitted || 0) > 0 ? `<div class="text-xs text-amber-700 mb-1">только предпросмотр, пропущено: ${f.urls_omitted}</div>` : ''}
                             ${(f.duplicate_urls || []).length > 0 ? `
-                                <div class="text-xs text-rose-700 mb-1">РџСЂРёРјРµСЂС‹ РґСѓР±Р»РµР№ URL:</div>
+                                <div class="text-xs text-rose-700 mb-1">Примеры дублей URL:</div>
                                 <div class="text-xs text-rose-700 break-all">${(f.duplicate_urls || []).slice(0, 10).join(' | ')}</div>
                             ` : ''}
                             ${(f.errors || []).length > 0 ? `<div class="text-xs text-red-600">${(f.errors || []).join(' | ')}</div>` : ''}
@@ -1061,17 +1061,17 @@ function generateSitemapHTML(result) {
     return `
         <div class="bg-white rounded-xl shadow-md p-6">
             <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-semibold">Р’Р°Р»РёРґР°С†РёСЏ Sitemap</h3>
+                <h3 class="text-lg font-semibold">Валидация Sitemap</h3>
                 <button onclick="copyToClipboard('${result.url}')" class="text-blue-600 hover:text-blue-800 text-sm">
-                    <i class="fas fa-copy mr-1"></i>РљРѕРїРёСЂРѕРІР°С‚СЊ URL
+                    <i class="fas fa-copy mr-1"></i>Копировать URL
                 </button>
             </div>
             <div class="grid grid-cols-2 gap-4 text-sm">
                 <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
-                <div><span class="text-gray-600">Р’Р°Р»РёРґРµРЅ:</span> <span class="font-medium">${r.valid ? 'Р”Р°' : 'РќРµС‚'}</span></div>
-                <div><span class="text-gray-600">URLs РЅР°Р№РґРµРЅРѕ:</span> <span class="font-medium">${r.urls_count || 0}</span></div>
-                <div><span class="text-gray-600">РЎС‚Р°С‚СѓСЃ:</span> <span class="font-medium">${r.status || 'N/A'}</span></div>
-                ${r.error ? `<div class="col-span-2 text-red-600"><span class="font-medium">РћС€РёР±РєР°: ${r.error}</span></div>` : ''}
+                <div><span class="text-gray-600">Валиден:</span> <span class="font-medium">${r.valid ? 'Да' : 'Нет'}</span></div>
+                <div><span class="text-gray-600">URLs найдено:</span> <span class="font-medium">${r.urls_count || 0}</span></div>
+                <div><span class="text-gray-600">Статус:</span> <span class="font-medium">${r.status || 'N/A'}</span></div>
+                ${r.error ? `<div class="col-span-2 text-red-600"><span class="font-medium">Ошибка: ${r.error}</span></div>` : ''}
             </div>
         </div>
     `;
@@ -1107,7 +1107,7 @@ function generateBotHTML(result) {
                 <span class="text-gray-700">${c.accessible}/${c.total} РґРѕСЃС‚СѓРїРЅРѕ</span>
             </div>
         `).join('')
-        : '<div class="text-sm text-gray-500">РќРµС‚ РґР°РЅРЅС‹С… РїРѕ РєР°С‚РµРіРѕСЂРёСЏРј</div>';
+        : '<div class="text-sm text-gray-500">Нет данных по категориям</div>';
 
     const issueRows = issues.slice(0, 20).map(i => `
         <div class="py-2 border-b text-sm">
@@ -1122,36 +1122,36 @@ function generateBotHTML(result) {
     return `
         <div class="bg-white rounded-xl shadow-md p-6">
             <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-semibold">РџСЂРѕРІРµСЂРєР° Р±РѕС‚РѕРІ</h3>
+                <h3 class="text-lg font-semibold">Проверка ботов</h3>
                 <div class="flex gap-3">
                     <button onclick="downloadBotXlsxReport()" class="text-green-600 hover:text-green-800 text-sm">
-                        <i class="fas fa-file-excel mr-1"></i>РЎРєР°С‡Р°С‚СЊ XLSX
+                        <i class="fas fa-file-excel mr-1"></i>Скачать XLSX
                     </button>
                     <button onclick="copyToClipboard('${result.url}')" class="text-blue-600 hover:text-blue-800 text-sm">
-                        <i class="fas fa-copy mr-1"></i>РљРѕРїРёСЂРѕРІР°С‚СЊ URL
+                        <i class="fas fa-copy mr-1"></i>Копировать URL
                     </button>
                 </div>
             </div>
             <p class="text-sm text-gray-600 mb-4">
-                РћС‚С‡РµС‚ РїРѕРєР°Р·С‹РІР°РµС‚ РґРѕСЃС‚СѓРїРЅРѕСЃС‚СЊ СЃР°Р№С‚Р° РґР»СЏ РїРѕРёСЃРєРѕРІС‹С… Рё AI-Р±РѕС‚РѕРІ Рё РІС‹СЏРІР»СЏРµС‚ РѕРіСЂР°РЅРёС‡РµРЅРёСЏ РёРЅРґРµРєСЃР°С†РёРё.
+                Отчет показывает доступность сайта для поисковых и AI-ботов и выявляет ограничения индексации.
             </p>
             <div class="grid grid-cols-2 gap-4 text-sm mb-4">
                 <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
-                <div><span class="text-gray-600">РџСЂРѕРІРµСЂРµРЅРѕ Р±РѕС‚РѕРІ:</span> <span class="font-medium">${(r.bots_checked || []).length}</span></div>
+                <div><span class="text-gray-600">Проверено ботов:</span> <span class="font-medium">${(r.bots_checked || []).length}</span></div>
                 ${summary.total ? `<div><span class="text-gray-600">Р”РѕСЃС‚СѓРїРЅРѕ:</span> <span class="font-medium">${summary.accessible || 0}/${summary.total}</span></div>` : ''}
-                ${summary.avg_response_time_ms ? `<div><span class="text-gray-600">РЎСЂРµРґРЅРёР№ РѕС‚РІРµС‚:</span> <span class="font-medium">${summary.avg_response_time_ms} РјСЃ</span></div>` : ''}
+                ${summary.avg_response_time_ms ? `<div><span class="text-gray-600">Средний ответ:</span> <span class="font-medium">${summary.avg_response_time_ms} мс</span></div>` : ''}
             </div>
             <div class="border-t pt-4">
-                <h4 class="font-semibold mb-2">Р РµР·СѓР»СЊС‚Р°С‚С‹ РїРѕ Р±РѕС‚Р°Рј:</h4>
+                <h4 class="font-semibold mb-2">Результаты по ботам:</h4>
                 ${botsHTML}
             </div>
             <div class="border-t pt-4 mt-4">
-                <h4 class="font-semibold mb-2">РЎРІРѕРґРєР° РїРѕ РєР°С‚РµРіРѕСЂРёСЏРј</h4>
+                <h4 class="font-semibold mb-2">Сводка по категориям</h4>
                 ${categoriesHTML}
             </div>
             <div class="border-t pt-4 mt-4">
-                <h4 class="font-semibold mb-2">РљР»СЋС‡РµРІС‹Рµ РїСЂРѕР±Р»РµРјС‹</h4>
-                ${issueRows || '<div class="text-sm text-gray-500">РџСЂРѕР±Р»РµРј РЅРµ РѕР±РЅР°СЂСѓР¶РµРЅРѕ</div>'}
+                <h4 class="font-semibold mb-2">Ключевые проблемы</h4>
+                ${issueRows || '<div class="text-sm text-gray-500">Проблем не обнаружено</div>'}
             </div>
         </div>
     `;
@@ -1163,13 +1163,13 @@ function generateSiteAnalysisHTML(result) {
         return `
             <div class="bg-white rounded-xl shadow-md p-6">
                 <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-lg font-semibold">РђРЅР°Р»РёР· СЃР°Р№С‚Р°</h3>
+                    <h3 class="text-lg font-semibold">Анализ сайта</h3>
                     <button onclick="copyToClipboard(JSON.stringify(result, null, 2))" class="text-blue-600 hover:text-blue-800 text-sm">
-                        <i class="fas fa-copy mr-1"></i>РљРѕРїРёСЂРѕРІР°С‚СЊ JSON
+                        <i class="fas fa-copy mr-1"></i>Копировать JSON
                     </button>
                 </div>
                 <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded-r">
-                    <p class="text-red-700">РћС€РёР±РєР°: ${r.error}</p>
+                    <p class="text-red-700">Ошибка: ${r.error}</p>
                 </div>
             </div>
         `;
@@ -1199,14 +1199,14 @@ function generateSiteAnalysisHTML(result) {
             </span>
         `).join('');
     } else {
-        techHTML = '<span class="text-gray-500">РўРµС…РЅРѕР»РѕРіРёРё РЅРµ РѕРїСЂРµРґРµР»РµРЅС‹</span>';
+        techHTML = '<span class="text-gray-500">Технологии не определены</span>';
     }
     
     let issuesHTML = '';
     if (critical.length > 0) {
         issuesHTML += `
             <div class="mb-4">
-                <h4 class="font-semibold text-red-600 mb-2"><i class="fas fa-exclamation-triangle mr-2"></i>РљСЂРёС‚РёС‡РµСЃРєРёРµ РїСЂРѕР±Р»РµРјС‹ (${critical.length}):</h4>
+                <h4 class="font-semibold text-red-600 mb-2"><i class="fas fa-exclamation-triangle mr-2"></i>Критические проблемы (${critical.length}):</h4>
                 <ul class="list-disc pl-5 text-sm text-red-700 space-y-1">
                     ${critical.slice(0, 10).map(i => `<li>${i.issue} <span class="text-gray-500 ml-2">- ${i.url.substring(0, 60)}...</span></li>`).join('')}
                 </ul>
@@ -1216,7 +1216,7 @@ function generateSiteAnalysisHTML(result) {
     if (warnings.length > 0) {
         issuesHTML += `
             <div class="mb-4">
-                <h4 class="font-semibold text-yellow-600 mb-2"><i class="fas fa-exclamation-circle mr-2"></i>РџСЂРµРґСѓРїСЂРµР¶РґРµРЅРёСЏ (${warnings.length}):</h4>
+                <h4 class="font-semibold text-yellow-600 mb-2"><i class="fas fa-exclamation-circle mr-2"></i>Предупреждения (${warnings.length}):</h4>
                 <ul class="list-disc pl-5 text-sm text-yellow-700 space-y-1">
                     ${warnings.slice(0, 10).map(i => `<li>${i.issue} <span class="text-gray-500 ml-2">- ${i.url.substring(0, 60)}...</span></li>`).join('')}
                 </ul>
@@ -1226,7 +1226,7 @@ function generateSiteAnalysisHTML(result) {
     if (info.length > 0) {
         issuesHTML += `
             <div class="mb-4">
-                <h4 class="font-semibold text-blue-600 mb-2"><i class="fas fa-info-circle mr-2"></i>Р РµРєРѕРјРµРЅРґР°С†РёРё (${info.length}):</h4>
+                <h4 class="font-semibold text-blue-600 mb-2"><i class="fas fa-info-circle mr-2"></i>Рекомендации (${info.length}):</h4>
                 <ul class="list-disc pl-5 text-sm text-blue-700 space-y-1">
                     ${info.slice(0, 5).map(i => `<li>${i.issue}</li>`).join('')}
                 </ul>
@@ -1234,7 +1234,7 @@ function generateSiteAnalysisHTML(result) {
         `;
     }
     if (issues.length === 0) {
-        issuesHTML = '<p class="text-green-600"><i class="fas fa-check mr-2"></i>РџСЂРѕР±Р»РµРј РЅРµ РѕР±РЅР°СЂСѓР¶РµРЅРѕ!</p>';
+        issuesHTML = '<p class="text-green-600"><i class="fas fa-check mr-2"></i>Проблем не обнаружено!</p>';
     }
     
     let recsHTML = '';
@@ -1267,11 +1267,11 @@ function generateSiteAnalysisHTML(result) {
             <div class="bg-white rounded-xl shadow-md p-6">
                 <div class="flex justify-between items-start mb-4">
                     <div>
-                        <h3 class="text-lg font-semibold">РђРЅР°Р»РёР· СЃР°Р№С‚Р°</h3>
+                        <h3 class="text-lg font-semibold">Анализ сайта</h3>
                         <p class="text-gray-500 text-sm break-all">${result.url}</p>
                     </div>
                     <button onclick="copyToClipboard(JSON.stringify(result, null, 2))" class="text-blue-600 hover:text-blue-800 text-sm">
-                        <i class="fas fa-copy mr-1"></i>РљРѕРїРёСЂРѕРІР°С‚СЊ JSON
+                        <i class="fas fa-copy mr-1"></i>Копировать JSON
                     </button>
                 </div>
                 
@@ -1279,13 +1279,13 @@ function generateSiteAnalysisHTML(result) {
                 <div class="flex items-center mb-6 p-4 rounded-lg ${scoreBadge}">
                     <div class="text-4xl font-bold mr-4">${score}</div>
                     <div>
-                        <div class="font-semibold text-lg">SEO РћС†РµРЅРєР°</div>
+                        <div class="font-semibold text-lg">SEO Оценка</div>
                         <div class="text-sm opacity-90">
-                            ${score >= 80 ? 'РћС‚Р»РёС‡РЅС‹Р№ СЂРµР·СѓР»СЊС‚Р°С‚!' : 
-                              score >= 70 ? 'РҐРѕСЂРѕС€РёР№ СЂРµР·СѓР»СЊС‚Р°С‚' : 
-                              score >= 50 ? 'РўСЂРµР±СѓРµС‚ СѓР»СѓС‡С€РµРЅРёСЏ' : 
-                              score >= 30 ? 'РќРёР·РєРёР№ СЂРµР·СѓР»СЊС‚Р°С‚' : 
-                              'РљСЂРёС‚РёС‡РµСЃРєРё РЅРёР·РєРёР№!'}
+                            ${score >= 80 ? 'Отличный результат!' : 
+                              score >= 70 ? 'Хороший результат' : 
+                              score >= 50 ? 'Требует улучшения' : 
+                              score >= 30 ? 'Низкий результат' : 
+                              'Критически низкий!'}
                         </div>
                     </div>
                 </div>
@@ -1294,42 +1294,42 @@ function generateSiteAnalysisHTML(result) {
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                     <div class="text-center p-3 bg-gray-50 rounded-lg">
                         <div class="text-2xl font-bold text-blue-600">${summary.pages_crawled || 0}</div>
-                        <div class="text-xs text-gray-500">РЎС‚СЂР°РЅРёС† РїСЂРѕСЃРєР°РЅРёСЂРѕРІР°РЅРѕ</div>
+                        <div class="text-xs text-gray-500">Страниц просканировано</div>
                     </div>
                     <div class="text-center p-3 bg-gray-50 rounded-lg">
                         <div class="text-2xl font-bold text-green-600">${summary.internal_links_count || 0}</div>
-                        <div class="text-xs text-gray-500">Р’РЅСѓС‚СЂРµРЅРЅРёС… СЃСЃС‹Р»РѕРє</div>
+                        <div class="text-xs text-gray-500">Внутренних ссылок</div>
                     </div>
                     <div class="text-center p-3 bg-gray-50 rounded-lg">
                         <div class="text-2xl font-bold text-red-600">${summary.broken_links_count || 0}</div>
-                        <div class="text-xs text-gray-500">Р‘РёС‚С‹С… СЃСЃС‹Р»РѕРє</div>
+                        <div class="text-xs text-gray-500">Битых ссылок</div>
                     </div>
                     <div class="text-center p-3 bg-gray-50 rounded-lg">
                         <div class="text-2xl font-bold text-orange-600">${(summary.critical_issues || 0) + (summary.warning_issues || 0)}</div>
-                        <div class="text-xs text-gray-500">Р’СЃРµРіРѕ РїСЂРѕР±Р»РµРј</div>
+                        <div class="text-xs text-gray-500">Всего проблем</div>
                     </div>
                 </div>
                 
                 <!-- Pages Quality -->
                 <div class="border-t pt-4">
-                    <h4 class="font-semibold text-gray-700 mb-3">РљР°С‡РµСЃС‚РІРѕ СЃС‚СЂР°РЅРёС†:</h4>
+                    <h4 class="font-semibold text-gray-700 mb-3">Качество страниц:</h4>
                     <div class="space-y-2">
                         <div class="flex items-center">
-                            <div class="w-20 text-sm text-gray-600">РҐРѕСЂРѕС€РёРµ</div>
+                            <div class="w-20 text-sm text-gray-600">Хорошие</div>
                             <div class="flex-1 bg-gray-200 rounded-full h-3 mx-2">
                                 <div class="bg-green-500 h-3 rounded-full" style="width: ${goodPercent}%"></div>
                             </div>
                             <div class="w-16 text-right text-sm font-medium">${goodPercent}%</div>
                         </div>
                         <div class="flex items-center">
-                            <div class="w-20 text-sm text-gray-600">РЎСЂРµРґРЅРёРµ</div>
+                            <div class="w-20 text-sm text-gray-600">Средние</div>
                             <div class="flex-1 bg-gray-200 rounded-full h-3 mx-2">
                                 <div class="bg-yellow-500 h-3 rounded-full" style="width: ${avgPercent}%"></div>
                             </div>
                             <div class="w-16 text-right text-sm font-medium">${avgPercent}%</div>
                         </div>
                         <div class="flex items-center">
-                            <div class="w-20 text-sm text-gray-600">РџСЂРѕР±Р»РµРјРЅС‹Рµ</div>
+                            <div class="w-20 text-sm text-gray-600">Проблемные</div>
                             <div class="flex-1 bg-gray-200 rounded-full h-3 mx-2">
                                 <div class="bg-red-500 h-3 rounded-full" style="width: ${badPercent}%"></div>
                             </div>
@@ -1341,42 +1341,42 @@ function generateSiteAnalysisHTML(result) {
             
             <!-- Content Analysis -->
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h3 class="text-lg font-semibold mb-4"><i class="fas fa-chart-bar mr-2 text-blue-500"></i>РђРЅР°Р»РёР· РєРѕРЅС‚РµРЅС‚Р°</h3>
+                <h3 class="text-lg font-semibold mb-4"><i class="fas fa-chart-bar mr-2 text-blue-500"></i>Анализ контента</h3>
                 <div class="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                     <div class="p-2 bg-gray-50 rounded">
-                        <span class="text-gray-600">Р’СЃРµРіРѕ РёР·РѕР±СЂР°Р¶РµРЅРёР№:</span>
+                        <span class="text-gray-600">Всего изображений:</span>
                         <span class="font-medium ml-2">${content.total_images || 0}</span>
                     </div>
                     <div class="p-2 bg-red-50 rounded">
-                        <span class="text-gray-600">Р‘РµР· alt-С‚РµРєСЃС‚Р°:</span>
+                        <span class="text-gray-600">Без alt-текста:</span>
                         <span class="font-medium ml-2 text-red-600">${content.images_without_alt || 0}</span>
                     </div>
                     <div class="p-2 bg-gray-50 rounded">
-                        <span class="text-gray-600">Р’СЃРµРіРѕ СЃСЃС‹Р»РѕРє:</span>
+                        <span class="text-gray-600">Всего ссылок:</span>
                         <span class="font-medium ml-2">${content.total_links || 0}</span>
                     </div>
                     <div class="p-2 bg-gray-50 rounded">
-                        <span class="text-gray-600">РЎС‚СЂР°РЅРёС† СЃ Title:</span>
+                        <span class="text-gray-600">Страниц с Title:</span>
                         <span class="font-medium ml-2">${content.pages_with_title || 0}/${summary.pages_crawled || 0}</span>
                     </div>
                     <div class="p-2 bg-gray-50 rounded">
-                        <span class="text-gray-600">РЎС‚СЂР°РЅРёС† СЃ H1:</span>
+                        <span class="text-gray-600">Страниц с H1:</span>
                         <span class="font-medium ml-2">${content.pages_with_h1 || 0}/${summary.pages_crawled || 0}</span>
                     </div>
                     <div class="p-2 bg-gray-50 rounded">
-                        <span class="text-gray-600">РЎС‚СЂР°РЅРёС† СЃРѕ Schema:</span>
+                        <span class="text-gray-600">Страниц со Schema:</span>
                         <span class="font-medium ml-2">${content.pages_with_schema_org || 0}/${summary.pages_crawled || 0}</span>
                     </div>
                     <div class="p-2 bg-gray-50 rounded">
-                        <span class="text-gray-600">РЎСЂРµРґРЅРµРµ СЃР»РѕРІ РЅР° СЃС‚СЂР°РЅРёС†Рµ:</span>
+                        <span class="text-gray-600">Среднее слов на странице:</span>
                         <span class="font-medium ml-2">${Math.round(content.average_word_count || 0)}</span>
                     </div>
                     <div class="p-2 bg-gray-50 rounded">
-                        <span class="text-gray-600">Р’СЂРµРјСЏ Р·Р°РіСЂСѓР·РєРё:</span>
+                        <span class="text-gray-600">Время загрузки:</span>
                         <span class="font-medium ml-2">${(content.average_load_time || 0) * 1000}ms</span>
                     </div>
                     <div class="p-2 bg-gray-50 rounded">
-                        <span class="text-gray-600">Р РµРґРёСЂРµРєС‚С‹:</span>
+                        <span class="text-gray-600">Редиректы:</span>
                         <span class="font-medium ml-2">${summary.redirects_count || 0}</span>
                     </div>
                 </div>
@@ -1384,7 +1384,7 @@ function generateSiteAnalysisHTML(result) {
             
             <!-- Technology Stack -->
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h3 class="text-lg font-semibold mb-4"><i class="fas fa-microchip mr-2 text-purple-500"></i>РўРµС…РЅРѕР»РѕРіРёРё</h3>
+                <h3 class="text-lg font-semibold mb-4"><i class="fas fa-microchip mr-2 text-purple-500"></i>Технологии</h3>
                 <div class="flex flex-wrap">
                     ${techHTML}
                 </div>
@@ -1392,13 +1392,13 @@ function generateSiteAnalysisHTML(result) {
             
             <!-- Issues -->
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h3 class="text-lg font-semibold mb-4"><i class="fas fa-bug mr-2 text-red-500"></i>РџСЂРѕР±Р»РµРјС‹</h3>
+                <h3 class="text-lg font-semibold mb-4"><i class="fas fa-bug mr-2 text-red-500"></i>Проблемы</h3>
                 ${issuesHTML}
             </div>
             
             <!-- Recommendations -->
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h3 class="text-lg font-semibold mb-4"><i class="fas fa-lightbulb mr-2 text-yellow-500"></i>Р РµРєРѕРјРµРЅРґР°С†РёРё</h3>
+                <h3 class="text-lg font-semibold mb-4"><i class="fas fa-lightbulb mr-2 text-yellow-500"></i>Рекомендации</h3>
                 ${recsHTML}
             </div>
         </div>
@@ -1435,6 +1435,25 @@ function generateRenderAuditHTML(result) {
             <li><span class="font-medium ${(i.severity || '') === 'critical' ? 'text-red-700' : 'text-amber-700'}">${(i.severity || 'info').toUpperCase()}</span> - ${i.title || ''}</li>
         `).join('');
         const missing = v.missing || {};
+        const metaCmp = v.meta_non_seo?.comparison || {};
+        const metaItems = metaCmp.items || [];
+        const metaRows = metaItems.slice(0, 30).map(item => {
+            const statusMap = {
+                same: { text: 'Совпадает', cls: 'bg-green-100 text-green-700' },
+                changed: { text: 'Изменено', cls: 'bg-amber-100 text-amber-700' },
+                only_rendered: { text: 'Только в JS', cls: 'bg-blue-100 text-blue-700' },
+                only_raw: { text: 'Только в no-JS', cls: 'bg-purple-100 text-purple-700' },
+            };
+            const st = statusMap[item.status] || { text: item.status || 'N/A', cls: 'bg-gray-100 text-gray-700' };
+            return `
+                <tr class="border-b border-gray-100 align-top">
+                    <td class="py-1 pr-2 break-all">${item.key || '-'}</td>
+                    <td class="py-1 pr-2 break-all text-gray-700">${item.raw || '—'}</td>
+                    <td class="py-1 pr-2 break-all text-gray-700">${item.rendered || '—'}</td>
+                    <td class="py-1"><span class="text-[11px] px-2 py-0.5 rounded-full ${st.cls}">${st.text}</span></td>
+                </tr>
+            `;
+        }).join('');
         const missingLists = [
             { key: 'visible_text', label: 'Текст только в JS' },
             { key: 'headings', label: 'Заголовки только в JS' },
@@ -1462,6 +1481,8 @@ function generateRenderAuditHTML(result) {
                     <div class="p-2 bg-gray-50 rounded"><span class="text-gray-600">Missing %:</span> <span class="font-medium">${missPct}%</span></div>
                     <div class="p-2 bg-gray-50 rounded"><span class="text-gray-600">H1 no-JS/JS:</span> <span class="font-medium">${raw.h1_count || 0}/${rendered.h1_count || 0}</span></div>
                     <div class="p-2 bg-gray-50 rounded"><span class="text-gray-600">Links no-JS/JS:</span> <span class="font-medium">${raw.links_count || 0}/${rendered.links_count || 0}</span></div>
+                    <div class="p-2 bg-gray-50 rounded"><span class="text-gray-600">Meta (non-SEO):</span> <span class="font-medium">${metaCmp.total || 0}</span></div>
+                    <div class="p-2 bg-gray-50 rounded"><span class="text-gray-600">Изменено meta:</span> <span class="font-medium">${(metaCmp.changed || 0) + (metaCmp.only_rendered || 0) + (metaCmp.only_raw || 0)}</span></div>
                 </div>
                 ${firstShot ? `
                     <div class="rounded-lg overflow-hidden border cursor-zoom-in mb-3" onclick="openMobileLightbox(${Math.max(0, shotIndex)})">
@@ -1475,6 +1496,27 @@ function generateRenderAuditHTML(result) {
                         ${missingLists}
                     </div>
                 ` : '<div class="text-sm text-green-700">Проблем не обнаружено.</div>'}
+                <details class="mt-3 rounded border border-gray-200 p-2 bg-gray-50">
+                    <summary class="cursor-pointer text-sm font-medium">Мета-данные (не SEO): сравнение no-JS и JS</summary>
+                    ${metaRows ? `
+                        <div class="text-xs text-gray-600 mt-2 mb-2">
+                            Совпадает: ${metaCmp.same || 0}, изменено: ${metaCmp.changed || 0}, только JS: ${metaCmp.only_rendered || 0}, только no-JS: ${metaCmp.only_raw || 0}
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full text-xs">
+                                <thead>
+                                    <tr class="text-left border-b">
+                                        <th class="py-1 pr-2">Ключ</th>
+                                        <th class="py-1 pr-2">no-JS</th>
+                                        <th class="py-1 pr-2">JS</th>
+                                        <th class="py-1">Статус</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${metaRows}</tbody>
+                            </table>
+                        </div>
+                    ` : '<div class="text-sm text-gray-500 mt-2">Сравниваемые мета-данные не обнаружены.</div>'}
+                </details>
             </div>
         `;
     }).join('');
@@ -1542,23 +1584,23 @@ function generateMobileCheckHTML(result) {
 
     mobileLightboxItems = devices
         .filter(d => d.screenshot_url)
-        .map(d => ({ src: d.screenshot_url, caption: `${d.device_name} (${d.category || 'СѓСЃС‚СЂРѕР№СЃС‚РІРѕ'})` }));
+        .map(d => ({ src: d.screenshot_url, caption: `${d.device_name} (${d.category || 'устройство'})` }));
 
     const deviceCards = devices.map((d, idx) => `
         <div class="bg-white rounded-xl shadow-md p-4 border border-gray-100">
             <div class="flex justify-between items-center mb-2">
                 <h4 class="font-semibold text-gray-800">${d.device_name}</h4>
-                <span class="text-xs px-2 py-1 rounded-full ${d.mobile_friendly ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}">${d.mobile_friendly ? 'РћРљ' : 'РџСЂРѕР±Р»РµРјС‹'}</span>
+                <span class="text-xs px-2 py-1 rounded-full ${d.mobile_friendly ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}">${d.mobile_friendly ? 'ОК' : 'Проблемы'}</span>
             </div>
-            <div class="text-sm text-gray-600 mb-2">${d.viewport?.width || '-'}x${d.viewport?.height || '-'} | ${d.load_time_ms || 0} РјСЃ | РїСЂРѕР±Р»РµРј: ${d.issues_count || 0}</div>
+            <div class="text-sm text-gray-600 mb-2">${d.viewport?.width || '-'}x${d.viewport?.height || '-'} | ${d.load_time_ms || 0} мс | проблем: ${d.issues_count || 0}</div>
             ${d.screenshot_url ? `
                 <div class="rounded-lg overflow-hidden border cursor-zoom-in" onclick="openMobileLightbox(${idx})">
                     <img src="${d.screenshot_url}" alt="${d.device_name}" class="w-full h-44 object-cover">
                 </div>
-            ` : `<div class="text-sm text-gray-500">РЎРєСЂРёРЅС€РѕС‚ РѕС‚СЃСѓС‚СЃС‚РІСѓРµС‚</div>`}
+            ` : `<div class="text-sm text-gray-500">Скриншот отсутствует</div>`}
             ${(d.issues || []).length ? `
                 <div class="mt-3 text-sm">
-                    <div class="font-medium mb-1">РљР»СЋС‡РµРІС‹Рµ РїСЂРѕР±Р»РµРјС‹:</div>
+                    <div class="font-medium mb-1">Ключевые проблемы:</div>
                     <ul class="list-disc pl-5 text-red-600">
                         ${(d.issues || []).slice(0, 3).map(i => `<li>${i.title}</li>`).join('')}
                     </ul>
@@ -1570,7 +1612,7 @@ function generateMobileCheckHTML(result) {
     const topIssuesHtml = (issues || []).slice(0, 20).map(i => `
             <div class="py-2 border-b text-sm">
             <div class="font-medium ${i.severity === 'critical' ? 'text-red-700' : (i.severity === 'warning' ? 'text-amber-700' : 'text-blue-700')}">
-                ${(i.severity || 'info').toUpperCase()} | ${i.device || 'РЈСЃС‚СЂРѕР№СЃС‚РІРѕ'}
+                ${(i.severity || 'info').toUpperCase()} | ${i.device || 'Устройство'}
             </div>
             <div class="text-gray-700">${i.title || ''}</div>
             <div class="text-gray-500">${i.details || ''}</div>
@@ -1583,40 +1625,40 @@ function generateMobileCheckHTML(result) {
         <div class="space-y-6">
             <div class="bg-white rounded-xl shadow-md p-6">
                 <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-lg font-semibold">РџСЂРѕРІРµСЂРєР° РјРѕР±РёР»СЊРЅРѕР№ РІРµСЂСЃРёРё</h3>
+                    <h3 class="text-lg font-semibold">Проверка мобильной версии</h3>
                     <div class="flex gap-3">
-                        <button onclick="downloadMobileDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>РЎРєР°С‡Р°С‚СЊ DOCX</button>
-                        <button onclick="downloadMobileXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>РЎРєР°С‡Р°С‚СЊ XLSX (РѕС€РёР±РєРё)</button>
-                        <button onclick="copyToClipboard(JSON.stringify(result, null, 2))" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>РљРѕРїРёСЂРѕРІР°С‚СЊ JSON</button>
+                        <button onclick="downloadMobileDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>Скачать DOCX</button>
+                        <button onclick="downloadMobileXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>Скачать XLSX (ошибки)</button>
+                        <button onclick="copyToClipboard(JSON.stringify(result, null, 2))" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
                     </div>
                 </div>
                 <p class="text-sm text-gray-600 mb-4">
-                    РћС‚С‡РµС‚ РїРѕРєР°Р·С‹РІР°РµС‚ РєР°С‡РµСЃС‚РІРѕ РјРѕР±РёР»СЊРЅРѕР№ Р°РґР°РїС‚Р°С†РёРё, РїСЂРѕР±Р»РµРјС‹ РёРЅС‚РµСЂС„РµР№СЃР° РЅР° СѓСЃС‚СЂРѕР№СЃС‚РІР°С… Рё СЂРёСЃРєРё РґР»СЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЊСЃРєРѕРіРѕ РѕРїС‹С‚Р°.
+                    Отчет показывает качество мобильной адаптации, проблемы интерфейса на устройствах и риски для пользовательского опыта.
                 </p>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
-                    <div><span class="text-gray-600">Р”РІРёР¶РѕРє:</span> <span class="font-medium">${r.engine || 'legacy'}</span></div>
-                    <div><span class="text-gray-600">РЈСЃС‚СЂРѕР№СЃС‚РІ:</span> <span class="font-medium">${summary.total_devices || (r.devices_tested || []).length}</span></div>
-                    <div><span class="text-gray-600">РћС†РµРЅРєР°:</span> <span class="font-medium">${r.score ?? 'N/A'}</span></div>
-                    <div><span class="text-gray-600">РњРѕР±РёР»СЊРЅРѕ-РґСЂСѓР¶РµР»СЋР±РЅРѕ:</span> <span class="font-medium ${r.mobile_friendly ? 'text-green-600' : 'text-red-600'}">${r.mobile_friendly ? 'Р”Р°' : 'РќРµС‚'}</span></div>
-                    <div><span class="text-gray-600">РљСЂРёС‚РёС‡РЅС‹С…:</span> <span class="font-medium text-red-700">${summary.critical_issues || 0}</span></div>
-                    <div><span class="text-gray-600">РџСЂРµРґСѓРїСЂРµР¶РґРµРЅРёР№:</span> <span class="font-medium text-amber-700">${summary.warning_issues || 0}</span></div>
-                    <div><span class="text-gray-600">РЎСЂРµРґРЅСЏСЏ Р·Р°РіСЂСѓР·РєР°:</span> <span class="font-medium">${summary.avg_load_time_ms || 0} РјСЃ</span></div>
+                    <div><span class="text-gray-600">Движок:</span> <span class="font-medium">${r.engine || 'legacy'}</span></div>
+                    <div><span class="text-gray-600">Устройств:</span> <span class="font-medium">${summary.total_devices || (r.devices_tested || []).length}</span></div>
+                    <div><span class="text-gray-600">Оценка:</span> <span class="font-medium">${r.score ?? 'N/A'}</span></div>
+                    <div><span class="text-gray-600">Мобильно-дружелюбно:</span> <span class="font-medium ${r.mobile_friendly ? 'text-green-600' : 'text-red-600'}">${r.mobile_friendly ? 'Да' : 'Нет'}</span></div>
+                    <div><span class="text-gray-600">Критичных:</span> <span class="font-medium text-red-700">${summary.critical_issues || 0}</span></div>
+                    <div><span class="text-gray-600">Предупреждений:</span> <span class="font-medium text-amber-700">${summary.warning_issues || 0}</span></div>
+                    <div><span class="text-gray-600">Средняя загрузка:</span> <span class="font-medium">${summary.avg_load_time_ms || 0} мс</span></div>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                ${deviceCards || '<div class="text-sm text-gray-500">РќРµС‚ СЂРµР·СѓР»СЊС‚Р°С‚РѕРІ РїРѕ СѓСЃС‚СЂРѕР№СЃС‚РІР°Рј.</div>'}
+                ${deviceCards || '<div class="text-sm text-gray-500">Нет результатов по устройствам.</div>'}
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-2">РќР°Р№РґРµРЅРЅС‹Рµ РїСЂРѕР±Р»РµРјС‹</h4>
-                ${topIssuesHtml || '<div class="text-sm text-gray-500">РџСЂРѕР±Р»РµРј РЅРµ РѕР±РЅР°СЂСѓР¶РµРЅРѕ.</div>'}
+                <h4 class="font-semibold mb-2">Найденные проблемы</h4>
+                ${topIssuesHtml || '<div class="text-sm text-gray-500">Проблем не обнаружено.</div>'}
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-2">Р РµРєРѕРјРµРЅРґР°С†РёРё</h4>
-                <ul class="list-disc pl-5 text-sm text-gray-700">${recommendationsHtml || '<li>Р РµРєРѕРјРµРЅРґР°С†РёР№ РЅРµС‚.</li>'}</ul>
+                <h4 class="font-semibold mb-2">Рекомендации</h4>
+                <ul class="list-disc pl-5 text-sm text-gray-700">${recommendationsHtml || '<li>Рекомендаций нет.</li>'}</ul>
             </div>
         </div>
     `;

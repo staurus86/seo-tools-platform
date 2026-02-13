@@ -189,6 +189,7 @@ class DOCXGenerator:
             "Если значимый контент появляется только после JS, поисковый робот может увидеть неполную страницу."
         )
         doc.add_paragraph("Проверяются элементы: title, meta description, canonical, H1-H2, ссылки, изображения, schema.org, видимый текст.")
+        doc.add_paragraph("Дополнительно сравниваются не-SEO meta-данные между no-JS и JS: viewport, charset, referrer, theme-color, manifest и др.")
 
         self._add_heading(doc, '3. Результаты по профилям', level=1)
         if variants:
@@ -236,6 +237,30 @@ class DOCXGenerator:
                     doc.add_paragraph(f"{label}: {len(values)}", style='List Bullet')
                     for item in values[:20]:
                         doc.add_paragraph(str(item), style='List Bullet')
+
+                meta_cmp = ((variant.get('meta_non_seo') or {}).get('comparison') or {})
+                meta_items = meta_cmp.get('items', []) or []
+                if meta_items:
+                    doc.add_paragraph(
+                        f"Мета-данные (не SEO): всего {meta_cmp.get('total', 0)}, "
+                        f"совпадает {meta_cmp.get('same', 0)}, изменено {meta_cmp.get('changed', 0)}, "
+                        f"только JS {meta_cmp.get('only_rendered', 0)}, только no-JS {meta_cmp.get('only_raw', 0)}."
+                    )
+                    meta_rows = []
+                    for item in meta_items:
+                        status_map = {
+                            'same': 'Совпадает',
+                            'changed': 'Изменено',
+                            'only_rendered': 'Только в JS',
+                            'only_raw': 'Только в no-JS',
+                        }
+                        meta_rows.append([
+                            item.get('key', ''),
+                            item.get('raw', ''),
+                            item.get('rendered', ''),
+                            status_map.get(item.get('status', ''), item.get('status', '')),
+                        ])
+                    self._add_table(doc, ['Ключ', 'no-JS', 'JS', 'Статус'], meta_rows[:50])
 
                 var_recs = variant.get('recommendations', []) or []
                 if var_recs:

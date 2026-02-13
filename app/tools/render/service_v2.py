@@ -24,6 +24,30 @@ UA_MOBILE = (
     "(compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
 )
 
+NON_SEO_META_NAMES = [
+    "viewport",
+    "charset",
+    "theme-color",
+    "color-scheme",
+    "referrer",
+    "format-detection",
+    "mobile-web-app-capable",
+    "apple-mobile-web-app-capable",
+    "apple-mobile-web-app-status-bar-style",
+    "apple-mobile-web-app-title",
+    "application-name",
+    "generator",
+    "author",
+    "msapplication-tilecolor",
+    "msapplication-config",
+]
+
+NON_SEO_HTTP_EQUIV = [
+    "content-security-policy",
+    "x-ua-compatible",
+    "content-language",
+]
+
 
 @dataclass
 class Snapshot:
@@ -36,6 +60,7 @@ class Snapshot:
     images: List[str]
     structured_data: List[str]
     visible_text: List[str]
+    meta_non_seo: Dict[str, str]
     html_bytes: int
     errors: List[str]
 
@@ -95,6 +120,54 @@ def _schema_types(values: List[str]) -> List[str]:
     return _uniq(out)
 
 
+def _extract_non_seo_meta_soup(soup: BeautifulSoup) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    for tag in soup.find_all("meta"):
+        name = (tag.get("name") or "").strip().lower()
+        http_equiv = (tag.get("http-equiv") or "").strip().lower()
+        content = (tag.get("content") or "").strip()
+        charset = (tag.get("charset") or "").strip()
+        if charset:
+            out["meta:charset"] = charset
+        if name in NON_SEO_META_NAMES:
+            out[f"meta:{name}"] = content
+        if http_equiv in NON_SEO_HTTP_EQUIV:
+            out[f"http-equiv:{http_equiv}"] = content
+
+    manifest = soup.find("link", attrs={"rel": re.compile(r"\bmanifest\b", re.I)})
+    if manifest:
+        href = (manifest.get("href") or "").strip()
+        if href:
+            out["link:manifest"] = href
+    return out
+
+
+def _compare_meta(raw_meta: Dict[str, str], rendered_meta: Dict[str, str]) -> Dict[str, Any]:
+    keys = sorted(set(raw_meta.keys()) | set(rendered_meta.keys()))
+    items: List[Dict[str, str]] = []
+    for key in keys:
+        raw_value = (raw_meta.get(key) or "").strip()
+        rendered_value = (rendered_meta.get(key) or "").strip()
+        if raw_value and rendered_value:
+            status = "same" if _norm(raw_value) == _norm(rendered_value) else "changed"
+        elif rendered_value:
+            status = "only_rendered"
+        elif raw_value:
+            status = "only_raw"
+        else:
+            status = "empty"
+        items.append({"key": key, "raw": raw_value, "rendered": rendered_value, "status": status})
+
+    return {
+        "total": len(items),
+        "same": sum(1 for x in items if x["status"] == "same"),
+        "changed": sum(1 for x in items if x["status"] == "changed"),
+        "only_rendered": sum(1 for x in items if x["status"] == "only_rendered"),
+        "only_raw": sum(1 for x in items if x["status"] == "only_raw"),
+        "items": items,
+    }
+
+
 def _score(rendered: Snapshot, missing: Dict[str, List[str]]) -> Dict[str, float]:
     total_missing = float(sum(len(v) for v in missing.values()))
     rendered_total = float(
@@ -151,8 +224,22 @@ class RenderAuditServiceV2:
             if val:
                 schema.append(val)
         text = _uniq([x.strip() for x in soup.get_text("\n", strip=True).splitlines() if x.strip()])
+        meta_non_seo = _extract_non_seo_meta_soup(soup)
         errors = [] if status_code is not None else ["raw fetch failed"]
-        return Snapshot(status_code, title, desc.strip(), canonical.strip(), _uniq(headings), _uniq(links), _uniq(images), _uniq(schema), text, len((html or "").encode("utf-8", errors="ignore")), errors)
+        return Snapshot(
+            status_code,
+            title,
+            desc.strip(),
+            canonical.strip(),
+            _uniq(headings),
+            _uniq(links),
+            _uniq(images),
+            _uniq(schema),
+            text,
+            meta_non_seo,
+            len((html or "").encode("utf-8", errors="ignore")),
+            errors,
+        )
 
     def _render(self, p: Any, url: str, ua: str, mobile: bool, shot_js: Path, shot_nojs: Path) -> Tuple[Snapshot, Dict[str, float], Dict[str, float]]:
         errors: List[str] = []
@@ -178,9 +265,22 @@ class RenderAuditServiceV2:
             () => {
               const n=(t)=> (t||'').trim();
               const v=(el)=>{const s=getComputedStyle(el); if(!s||s.display==='none'||s.visibility==='hidden'||s.opacity==='0') return false; const r=el.getClientRects(); return r&&r.length>0&&el.offsetWidth>0&&el.offsetHeight>0;};
-              const o={title:n(document.title||''),meta_description:'',canonical:'',headings:[],links:[],images:[],structured_data:[],visible_text:[]};
+              const o={title:n(document.title||''),meta_description:'',canonical:'',headings:[],links:[],images:[],structured_data:[],visible_text:[],meta_non_seo:{}};
               const m=[...document.querySelectorAll('meta[name]')].find(x=>(x.getAttribute('name')||'').toLowerCase()==='description'); o.meta_description=n(m?.getAttribute('content')||'');
               const c=[...document.querySelectorAll('link[rel]')].find(x=>(x.getAttribute('rel')||'').toLowerCase().includes('canonical')); o.canonical=n(c?.getAttribute('href')||'');
+              const nameKeys=new Set(['viewport','charset','theme-color','color-scheme','referrer','format-detection','mobile-web-app-capable','apple-mobile-web-app-capable','apple-mobile-web-app-status-bar-style','apple-mobile-web-app-title','application-name','generator','author','msapplication-tilecolor','msapplication-config']);
+              const equivKeys=new Set(['content-security-policy','x-ua-compatible','content-language']);
+              document.querySelectorAll('meta').forEach(meta=>{
+                const name=n(meta.getAttribute('name')||'').toLowerCase();
+                const equiv=n(meta.getAttribute('http-equiv')||'').toLowerCase();
+                const content=n(meta.getAttribute('content')||'');
+                const charset=n(meta.getAttribute('charset')||'');
+                if(charset){o.meta_non_seo['meta:charset']=charset;}
+                if(nameKeys.has(name)){o.meta_non_seo['meta:'+name]=content;}
+                if(equivKeys.has(equiv)){o.meta_non_seo['http-equiv:'+equiv]=content;}
+              });
+              const manifest=[...document.querySelectorAll('link[rel]')].find(x=>(x.getAttribute('rel')||'').toLowerCase().includes('manifest'));
+              if(manifest){const href=n(manifest.getAttribute('href')||''); if(href){o.meta_non_seo['link:manifest']=href;}}
               for(let i=1;i<=6;i++){document.querySelectorAll('h'+i).forEach(h=>{if(v(h)){const t=n(h.innerText||h.textContent||''); if(t) o.headings.push('h'+i+': '+t);}});}
               document.querySelectorAll('a').forEach(a=>{if(!v(a)) return; const h=n(a.getAttribute('href')||''); const t=n(a.innerText||a.textContent||''); if(h||t) o.links.push((h+' | '+t).trim());});
               document.querySelectorAll('img').forEach(i=>{if(!v(i)) return; const s=n(i.getAttribute('src')||''); const a=n(i.getAttribute('alt')||''); if(s||a) o.images.push((s+' | alt='+a).trim());});
@@ -214,7 +314,20 @@ class RenderAuditServiceV2:
             except Exception:
                 pass
 
-        snap = Snapshot(None, out.get("title", ""), out.get("meta_description", ""), out.get("canonical", ""), _uniq(out.get("headings", []) or []), _uniq(out.get("links", []) or []), _uniq(out.get("images", []) or []), _uniq(out.get("structured_data", []) or []), _uniq(out.get("visible_text", []) or []), 0, errors)
+        snap = Snapshot(
+            None,
+            out.get("title", ""),
+            out.get("meta_description", ""),
+            out.get("canonical", ""),
+            _uniq(out.get("headings", []) or []),
+            _uniq(out.get("links", []) or []),
+            _uniq(out.get("images", []) or []),
+            _uniq(out.get("structured_data", []) or []),
+            _uniq(out.get("visible_text", []) or []),
+            out.get("meta_non_seo", {}) or {},
+            0,
+            errors,
+        )
         return snap, js_timing, nojs_timing
 
     def run(self, url: str, task_id: str, progress_callback=None) -> Dict[str, Any]:
@@ -259,6 +372,7 @@ class RenderAuditServiceV2:
                     "Structured data": _diff(rendered.structured_data, raw.structured_data),
                 }
                 metrics = _score(rendered, missing)
+                meta_cmp = _compare_meta(raw.meta_non_seo, rendered.meta_non_seo)
                 issues: List[Dict[str, Any]] = []
                 if missing["Visible text"]:
                     issues.append({"severity": "warning" if len(missing["Visible text"]) <= 10 else "critical", "code": "content_missing_nojs", "title": "Content appears only after JavaScript", "details": f"Missing in no-JS version: {len(missing['Visible text'])} text lines.", "examples": _sample(missing["Visible text"])})
@@ -272,6 +386,17 @@ class RenderAuditServiceV2:
                     issues.append({"severity": "warning", "code": "render_too_slow", "title": "Slow JS render", "details": f"JS render time: {elapsed:.2f} sec."})
                 if metrics["score"] < 70:
                     issues.append({"severity": "critical", "code": "low_render_score", "title": "Low render score", "details": f"Current score: {metrics['score']:.1f}/100."})
+                if meta_cmp["changed"] or meta_cmp["only_rendered"] or meta_cmp["only_raw"]:
+                    issues.append({
+                        "severity": "warning",
+                        "code": "meta_non_seo_diff",
+                        "title": "Non-SEO meta differs between no-JS and JS",
+                        "details": (
+                            f"Changed: {meta_cmp['changed']}, only JS: {meta_cmp['only_rendered']}, "
+                            f"only no-JS: {meta_cmp['only_raw']}."
+                        ),
+                        "examples": [x["key"] for x in meta_cmp["items"] if x["status"] != "same"][:8],
+                    })
 
                 all_issues.extend([{**i, "variant": label} for i in issues])
                 shots = {}
@@ -288,6 +413,7 @@ class RenderAuditServiceV2:
                     "raw": {"status_code": raw.status_code, "title": raw.title, "meta_description": raw.meta_description, "canonical": raw.canonical, "h1_count": _count_h(raw.headings, 1), "h2_count": _count_h(raw.headings, 2), "links_count": len(raw.links), "images_count": len(raw.images), "structured_data_count": len(raw.structured_data), "schema_types": _schema_types(raw.structured_data), "visible_text_count": len(raw.visible_text), "html_bytes": raw.html_bytes, "errors": raw.errors},
                     "rendered": {"title": rendered.title, "meta_description": rendered.meta_description, "canonical": rendered.canonical, "h1_count": _count_h(rendered.headings, 1), "h2_count": _count_h(rendered.headings, 2), "links_count": len(rendered.links), "images_count": len(rendered.images), "structured_data_count": len(rendered.structured_data), "schema_types": _schema_types(rendered.structured_data), "visible_text_count": len(rendered.visible_text), "html_bytes": rendered.html_bytes, "errors": rendered.errors},
                     "missing": {"visible_text": missing["Visible text"], "headings": missing["Headings"], "links": missing["Links"], "images": missing["Images"], "structured_data": missing["Structured data"]},
+                    "meta_non_seo": {"raw": raw.meta_non_seo, "rendered": rendered.meta_non_seo, "comparison": meta_cmp},
                     "metrics": metrics,
                     "timings": {"raw_s": 0.0, "rendered_s": elapsed},
                     "timing_nojs_ms": timing_nojs,

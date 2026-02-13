@@ -437,6 +437,38 @@ class XLSXGenerator:
         missing_ws.column_dimensions['B'].width = 28
         missing_ws.column_dimensions['C'].width = 140
 
+        meta_ws = wb.create_sheet('Meta non-SEO')
+        meta_headers = ['Профиль', 'Ключ', 'no-JS', 'JS', 'Статус']
+        for col, header in enumerate(meta_headers, 1):
+            self._apply_style(meta_ws.cell(row=1, column=col, value=header), header_style)
+        row_idx = 2
+        status_map = {
+            'same': 'Совпадает',
+            'changed': 'Изменено',
+            'only_rendered': 'Только в JS',
+            'only_raw': 'Только в no-JS',
+        }
+        for variant in variants:
+            profile = variant.get('variant_label') or variant.get('variant_id', '')
+            comparison = ((variant.get('meta_non_seo') or {}).get('comparison') or {})
+            for item in (comparison.get('items') or []):
+                self._apply_style(meta_ws.cell(row=row_idx, column=1, value=profile), cell_style)
+                self._apply_style(meta_ws.cell(row=row_idx, column=2, value=item.get('key', '')), cell_style)
+                self._apply_style(meta_ws.cell(row=row_idx, column=3, value=item.get('raw', '')), cell_style)
+                self._apply_style(meta_ws.cell(row=row_idx, column=4, value=item.get('rendered', '')), cell_style)
+                self._apply_style(
+                    meta_ws.cell(row=row_idx, column=5, value=status_map.get(item.get('status', ''), item.get('status', ''))),
+                    cell_style,
+                )
+                row_idx += 1
+        meta_ws.freeze_panes = 'A2'
+        meta_ws.auto_filter.ref = f"A1:E{max(2, row_idx-1)}"
+        meta_ws.column_dimensions['A'].width = 24
+        meta_ws.column_dimensions['B'].width = 36
+        meta_ws.column_dimensions['C'].width = 80
+        meta_ws.column_dimensions['D'].width = 80
+        meta_ws.column_dimensions['E'].width = 18
+
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         wb.save(filepath)
         return filepath
