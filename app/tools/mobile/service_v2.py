@@ -309,21 +309,21 @@ class MobileCheckServiceV2:
     def _collect_issues(self, eval_data: Dict[str, Any], viewport_content: Optional[str], console_errors: int) -> List[Dict[str, Any]]:
         issues: List[Dict[str, Any]] = []
         if not viewport_content:
-            issues.append({"severity": "critical", "code": "viewport_missing", "title": "Missing viewport meta tag", "details": "Add viewport for mobile rendering."})
+            issues.append({"severity": "critical", "code": "viewport_missing", "title": "Отсутствует meta viewport", "details": "Добавьте meta viewport для корректного отображения на мобильных устройствах."})
         elif "width=device-width" not in viewport_content:
-            issues.append({"severity": "critical", "code": "viewport_invalid", "title": "Viewport missing width=device-width", "details": viewport_content})
+            issues.append({"severity": "critical", "code": "viewport_invalid", "title": "Некорректный viewport", "details": f"Текущее значение: {viewport_content}"})
         if eval_data.get("horizontal_overflow"):
-            issues.append({"severity": "critical", "code": "horizontal_overflow", "title": "Horizontal overflow detected", "details": f"doc width {eval_data.get('document_width')} > viewport {eval_data.get('viewport_width')}"})
+            issues.append({"severity": "critical", "code": "horizontal_overflow", "title": "Обнаружен горизонтальный скролл", "details": f"Ширина документа {eval_data.get('document_width')}px превышает viewport {eval_data.get('viewport_width')}px"})
         if _safe_int(eval_data.get("small_touch_targets")) > 0:
-            issues.append({"severity": "warning", "code": "small_touch_targets", "title": "Small touch targets", "details": f"{eval_data.get('small_touch_targets')} elements under 44x44."})
+            issues.append({"severity": "warning", "code": "small_touch_targets", "title": "Слишком маленькие интерактивные элементы", "details": f"{eval_data.get('small_touch_targets')} элементов меньше 44x44px."})
         if _safe_int(eval_data.get("small_fonts")) > 0:
-            issues.append({"severity": "warning", "code": "small_fonts", "title": "Small fonts detected", "details": f"{eval_data.get('small_fonts')} elements below 16px."})
+            issues.append({"severity": "warning", "code": "small_fonts", "title": "Слишком мелкий текст", "details": f"{eval_data.get('small_fonts')} элементов с размером шрифта меньше 16px."})
         if _safe_int(eval_data.get("large_images")) > 0:
-            issues.append({"severity": "warning", "code": "large_images", "title": "Images wider than viewport", "details": f"{eval_data.get('large_images')} oversized images."})
+            issues.append({"severity": "warning", "code": "large_images", "title": "Изображения шире экрана", "details": f"{eval_data.get('large_images')} изображений выходят за границы viewport."})
         if console_errors > 0:
-            issues.append({"severity": "warning", "code": "console_errors", "title": "JavaScript console errors", "details": f"{console_errors} severe console errors."})
+            issues.append({"severity": "warning", "code": "console_errors", "title": "Ошибки JavaScript в консоли", "details": f"Зафиксировано {console_errors} ошибок в консоли браузера."})
         if not eval_data.get("has_hamburger_menu"):
-            issues.append({"severity": "info", "code": "nav_menu", "title": "No hamburger menu detected", "details": "Navigation may be hard to use on small screens."})
+            issues.append({"severity": "info", "code": "nav_menu", "title": "Не найдено мобильное меню", "details": "Навигация может быть неудобной на узких экранах."})
         return issues
 
     def run(
@@ -342,7 +342,7 @@ class MobileCheckServiceV2:
                     pass
 
         devices = self._select_devices(mode=mode, selected=selected_devices)
-        _notify(8, "Fetching page metadata")
+        _notify(8, "Получение метаданных страницы")
         prefetch = self._http_prefetch(url)
         domain = urlparse(url).netloc or "site"
         stamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
@@ -354,7 +354,7 @@ class MobileCheckServiceV2:
         try:
             from playwright.sync_api import sync_playwright
         except Exception as e:
-            _notify(100, "Playwright runtime unavailable")
+            _notify(100, "Среда Playwright недоступна")
             return {
                 "task_type": "mobile_check",
                 "url": url,
@@ -372,13 +372,13 @@ class MobileCheckServiceV2:
             }
 
         with sync_playwright() as p:
-            _notify(12, "Launching browser engine")
+            _notify(12, "Запуск браузерного движка")
             browser = p.chromium.launch(headless=True)
             total_devices = len(devices) or 1
             for device in devices:
                 started = time.perf_counter()
                 device_idx = len(results) + 1
-                _notify(12 + int(((device_idx - 1) / total_devices) * 80), f"Testing {device.name} ({device_idx}/{total_devices})")
+                _notify(12 + int(((device_idx - 1) / total_devices) * 80), f"Проверка {device.name} ({device_idx}/{total_devices})")
                 shot_name = f"mobile_{_slug(domain)}_{stamp}_{_slug(device.name)}.png"
                 shot_path = shot_dir / shot_name
                 context = browser.new_context(
@@ -431,7 +431,7 @@ class MobileCheckServiceV2:
                         "screenshot_url": f"/api/mobile-artifacts/{task_id}/{shot_name}",
                     }
                 )
-                _notify(12 + int((device_idx / total_devices) * 80), f"Completed {device.name} ({device_idx}/{total_devices})")
+                _notify(12 + int((device_idx / total_devices) * 80), f"Завершено: {device.name} ({device_idx}/{total_devices})")
             browser.close()
 
         total = len(results)
@@ -448,13 +448,13 @@ class MobileCheckServiceV2:
         }
         recommendations = []
         if summary["critical_issues"] > 0:
-            recommendations.append("Fix critical mobile issues first: viewport and overflow problems.")
+            recommendations.append("В первую очередь устраните критические проблемы мобильной версии: viewport и горизонтальный скролл.")
         if summary["warning_issues"] > 0:
-            recommendations.append("Resolve warning issues: touch targets, font sizes, and oversized images.")
+            recommendations.append("Устраните предупреждения: размеры интерактивных элементов, шрифтов и изображений.")
         if summary["critical_issues"] == 0 and summary["warning_issues"] == 0:
-            recommendations.append("No blocking mobile issues detected across selected devices.")
+            recommendations.append("Критических проблем мобильной версии не обнаружено.")
 
-        _notify(98, "Finalizing report")
+        _notify(98, "Формирование итогового отчета")
         return {
             "task_type": "mobile_check",
             "url": url,

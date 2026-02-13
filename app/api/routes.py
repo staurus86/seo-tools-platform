@@ -2737,7 +2737,7 @@ def check_mobile_full(
                 {
                     "severity": "critical",
                     "code": "mobile_engine_error",
-                    "title": "Mobile v2 engine failed",
+                    "title": "Ошибка движка mobile v2",
                     "details": str(e),
                 }
             ]
@@ -2809,11 +2809,11 @@ async def create_mobile_check(data: MobileCheckRequest, background_tasks: Backgr
 
     print(f"[API] Mobile check queued for: {url}")
     task_id = f"mobile-{datetime.now().timestamp()}"
-    create_task_pending(task_id, "mobile_check", url, status_message="Queued for mobile analysis")
+    create_task_pending(task_id, "mobile_check", url, status_message="Задача поставлена в очередь")
 
     def _run_mobile_task() -> None:
         try:
-            update_task_state(task_id, status="RUNNING", progress=5, status_message="Preparing mobile audit")
+            update_task_state(task_id, status="RUNNING", progress=5, status_message="Подготовка мобильного аудита")
 
             def _progress(progress: int, message: str) -> None:
                 update_task_state(task_id, status="RUNNING", progress=progress, status_message=message)
@@ -2831,12 +2831,12 @@ async def create_mobile_check(data: MobileCheckRequest, background_tasks: Backgr
             has_engine_error = bool(results.get("engine_error")) or engine in ("legacy-fallback", "")
 
             if has_engine_error:
-                error_message = results.get("engine_error") or "Mobile engine failed"
+                error_message = results.get("engine_error") or "Ошибка движка mobile"
                 update_task_state(
                     task_id,
                     status="FAILURE",
                     progress=100,
-                    status_message="Mobile audit failed",
+                    status_message="Мобильный аудит завершился с ошибкой",
                     result=result,
                     error=error_message,
                 )
@@ -2846,7 +2846,7 @@ async def create_mobile_check(data: MobileCheckRequest, background_tasks: Backgr
                 task_id,
                 status="SUCCESS",
                 progress=100,
-                status_message="Mobile audit completed",
+                status_message="Мобильный аудит завершен",
                 result=result,
                 error=None,
             )
@@ -2855,11 +2855,11 @@ async def create_mobile_check(data: MobileCheckRequest, background_tasks: Backgr
                 task_id,
                 status="FAILURE",
                 progress=100,
-                status_message="Mobile audit failed",
+                status_message="Мобильный аудит завершился с ошибкой",
                 error=str(e),
             )
 
     background_tasks.add_task(_run_mobile_task)
-    return {"task_id": task_id, "status": "PENDING", "message": "Mobile check started"}
+    return {"task_id": task_id, "status": "PENDING", "message": "Проверка мобильной версии запущена"}
 
 
