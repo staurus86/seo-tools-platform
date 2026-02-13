@@ -1625,6 +1625,29 @@ function generateRenderAuditHTML(result) {
             </div>
         </div>
     `;
+    const mobileIssuesPreview = (mobileVariant?.issues || []).slice(0, 6).map(i => `
+        <li><span class="font-medium ${(i.severity || '') === 'critical' ? 'text-red-700' : 'text-amber-700'}">${(i.severity || 'info').toUpperCase()}</span> - ${i.title || ''}</li>
+    `).join('');
+    const mobileDetailsHtml = mobileVariant ? `
+        <div class="bg-white rounded-xl shadow-md p-6 border border-blue-100">
+            <h4 class="font-semibold mb-2">Детализация мобильного профиля</h4>
+            <div class="text-sm text-gray-700 mb-2">Профиль: ${mobileVariant.variant_label || mobileVariant.variant_id}</div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mb-3">
+                <div class="p-2 bg-gray-50 rounded"><span class="text-gray-600">Score:</span> <span class="font-medium">${Number(mobileVariant.metrics?.score ?? 0).toFixed(1)}</span></div>
+                <div class="p-2 bg-gray-50 rounded"><span class="text-gray-600">Missing:</span> <span class="font-medium">${Math.round(mobileVariant.metrics?.total_missing || 0)}</span></div>
+                <div class="p-2 bg-gray-50 rounded"><span class="text-gray-600">Missing %:</span> <span class="font-medium">${Number(mobileVariant.metrics?.missing_pct ?? 0).toFixed(1)}%</span></div>
+                <div class="p-2 bg-gray-50 rounded"><span class="text-gray-600">Viewport:</span> <span class="font-medium">${mobileVariant.emulation?.viewport ? `${mobileVariant.emulation.viewport.width}x${mobileVariant.emulation.viewport.height}` : '-'}</span></div>
+            </div>
+            ${(Object.keys(mobileVariant.screenshots || {}).length) ? `
+                <div class="text-xs text-gray-600 mb-2">Скриншоты: ${Object.keys(mobileVariant.screenshots || {}).join(', ')}</div>
+            ` : '<div class="text-xs text-red-700 mb-2">Скриншоты мобильного профиля отсутствуют.</div>'}
+            ${mobileIssuesPreview ? `<ul class="list-disc pl-5 text-sm text-gray-700">${mobileIssuesPreview}</ul>` : '<div class="text-sm text-green-700">Проблем не обнаружено.</div>'}
+        </div>
+    ` : `
+        <div class="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-800">
+            Детализация мобильного профиля недоступна: профиль не найден в результате.
+        </div>
+    `;
 
     return `
         <div class="space-y-6">
@@ -1662,6 +1685,8 @@ function generateRenderAuditHTML(result) {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 ${variantCards || '<div class="text-sm text-gray-500">Нет данных по профилям рендеринга.</div>'}
             </div>
+
+            ${mobileDetailsHtml}
 
             <div class="bg-white rounded-xl shadow-md p-6">
                 <h4 class="font-semibold mb-2">Найденные проблемы</h4>
