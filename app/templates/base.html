@@ -18,7 +18,7 @@
     </style>
     {% block extra_css %}{% endblock %}
 </head>
-<body class="bg-gray-50 min-h-screen">
+<body class="bg-gray-50 min-h-screen flex flex-col">
     <!-- Header -->
     <header class="gradient-bg text-white shadow-lg">
         <div class="container mx-auto px-4 py-4">
@@ -41,12 +41,12 @@
     </header>
 
     <!-- Main Content -->
-    <main class="container mx-auto px-4 py-8">
+    <main class="container mx-auto px-4 py-8 flex-1 w-full">
         {% block content %}{% endblock %}
     </main>
 
     <!-- Footer -->
-    <footer class="bg-gray-800 text-gray-400 py-6 mt-12">
+    <footer class="bg-gray-800 text-gray-400 py-6 mt-auto">
         <div class="container mx-auto px-4 text-center">
             <p>&copy; 2024 SEO Tools Platform. All rights reserved.</p>
         </div>

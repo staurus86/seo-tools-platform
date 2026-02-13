@@ -288,7 +288,10 @@ class MobileCheckServiceV2:
                 error = None
                 eval_data: Dict[str, Any] = {}
                 try:
-                    response = page.goto(url, wait_until="networkidle", timeout=self.timeout * 1000)
+                    try:
+                        response = page.goto(url, wait_until="networkidle", timeout=self.timeout * 1000)
+                    except Exception:
+                        response = page.goto(url, wait_until="domcontentloaded", timeout=self.timeout * 1000)
                     status_code = response.status if response else prefetch.get("status_code")
                     final_url = page.url or final_url
                     page.screenshot(path=str(shot_path), full_page=True)
