@@ -2761,6 +2761,32 @@ def check_render_full(
             variants = []
             results["variants"] = variants
 
+        # Normalize profile identity/labels so mobile cannot be shown as desktop.
+        normalized: List[Dict[str, Any]] = []
+        for v in variants:
+            if not isinstance(v, dict):
+                continue
+            variant_id = str(v.get("variant_id", "")).lower().strip()
+            if not variant_id:
+                profile_type = str(v.get("profile_type", "")).lower().strip()
+                if profile_type == "mobile" or bool(v.get("mobile")):
+                    variant_id = "googlebot_mobile"
+                else:
+                    variant_id = "googlebot_desktop"
+                v["variant_id"] = variant_id
+
+            if variant_id == "googlebot_mobile":
+                v["variant_label"] = "Googlebot Mobile"
+                v["mobile"] = True
+                v["profile_type"] = "mobile"
+            elif variant_id == "googlebot_desktop":
+                v["variant_label"] = "Googlebot Desktop"
+                v["mobile"] = False
+                v["profile_type"] = "desktop"
+            normalized.append(v)
+        variants = normalized
+        results["variants"] = variants
+
         required = [
             ("googlebot_desktop", "Googlebot Desktop", False),
             ("googlebot_mobile", "Googlebot Mobile", True),
