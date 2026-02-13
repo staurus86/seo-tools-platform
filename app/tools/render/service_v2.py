@@ -523,7 +523,11 @@ class RenderAuditServiceV2:
             }""").strip()
             out = page.evaluate(script)
             js_timing = page.evaluate("() => { const nav=performance.getEntriesByType('navigation')[0]||performance.timing||{}; return {tti:(nav.loadEventEnd||0), dcl:(nav.domContentLoadedEventEnd||0)}; }")
-            page.screenshot(path=str(shot_js), full_page=True)
+            try:
+                page.screenshot(path=str(shot_js), full_page=True)
+            except Exception:
+                # On long/complex mobile pages full-page capture may fail; fallback to viewport screenshot.
+                page.screenshot(path=str(shot_js), full_page=False)
 
             nojs = browser.new_context(**{**ctx_kwargs, "java_script_enabled": False})
             np = nojs.new_page()
@@ -533,7 +537,10 @@ class RenderAuditServiceV2:
             except Exception:
                 np.goto(url, wait_until="domcontentloaded")
             nojs_timing = np.evaluate("() => { const nav=performance.getEntriesByType('navigation')[0]||performance.timing||{}; return {tti:(nav.loadEventEnd||0), dcl:(nav.domContentLoadedEventEnd||0)}; }")
-            np.screenshot(path=str(shot_nojs), full_page=True)
+            try:
+                np.screenshot(path=str(shot_nojs), full_page=True)
+            except Exception:
+                np.screenshot(path=str(shot_nojs), full_page=False)
             try:
                 nojs.close()
                 ctx.close()
@@ -671,6 +678,14 @@ class RenderAuditServiceV2:
                                 f"only no-JS: {meta_cmp['only_raw']}."
                             ),
                             "examples": [x["key"] for x in meta_cmp["items"] if x["status"] != "same"][:8],
+                        })
+                    if rendered.errors:
+                        issues.append({
+                            "severity": "critical",
+                            "code": "render_profile_runtime_error",
+                            "title": "Ошибки выполнения профиля рендеринга",
+                            "details": "; ".join(rendered.errors[:3]),
+                            "examples": rendered.errors[:5],
                         })
                     for check in seo_required.get("items", []):
                         status = check.get("status")
