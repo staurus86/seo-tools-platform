@@ -299,7 +299,11 @@ class MobileCheckServiceV2:
                 except Exception as e:
                     error = str(e)
                 finally:
-                    context.close()
+                    try:
+                        context.close()
+                    except Exception:
+                        # Context can already be closed by Playwright/browser crash; keep audit running.
+                        pass
 
                 elapsed_ms = int((time.perf_counter() - started) * 1000)
                 issues = self._collect_issues(eval_data, prefetch.get("viewport_content"), len(console_errors))
@@ -327,7 +331,11 @@ class MobileCheckServiceV2:
                     }
                 )
                 _notify(12 + int((device_idx / total_devices) * 80), f"Завершено: {device.name} ({device_idx}/{total_devices})")
-            browser.close()
+            try:
+                browser.close()
+            except Exception:
+                # Browser may already be terminated; do not fail whole task on teardown.
+                pass
 
         total = len(results)
         mobile_friendly_devices = sum(1 for r in results if r.get("mobile_friendly"))
