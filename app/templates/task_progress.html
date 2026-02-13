@@ -125,6 +125,7 @@ function showResults(data) {
     document.getElementById('progress-section').classList.add('hidden');
     document.getElementById('results-section').classList.remove('hidden');
     const result = data;
+    lastTaskResult = data;
     
     // Store data for download functions (include task_id from API response)
     if (data.task_type === 'robots_check') {
@@ -192,6 +193,7 @@ let sitemapData = null;
 let botData = null;
 let mobileData = null;
 let renderData = null;
+let lastTaskResult = null;
 let sitemapExportUrls = [];
 let sitemapDuplicateLines = [];
 let sitemapFilePreviewUrls = [];
@@ -295,6 +297,14 @@ function copyToClipboard(text) {
     }).catch(err => {
         console.error('Ошибка копирования:', err);
     });
+}
+
+function copyCurrentTaskJson() {
+    if (!lastTaskResult) {
+        alert('Нет данных для копирования');
+        return;
+    }
+    copyToClipboard(JSON.stringify(lastTaskResult, null, 2));
 }
 
 function downloadTextReport() {
@@ -1164,7 +1174,7 @@ function generateSiteAnalysisHTML(result) {
             <div class="bg-white rounded-xl shadow-md p-6">
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="text-lg font-semibold">Анализ сайта</h3>
-                    <button onclick="copyToClipboard(JSON.stringify(result, null, 2))" class="text-blue-600 hover:text-blue-800 text-sm">
+                    <button onclick="copyCurrentTaskJson()" class="text-blue-600 hover:text-blue-800 text-sm">
                         <i class="fas fa-copy mr-1"></i>Копировать JSON
                     </button>
                 </div>
@@ -1270,7 +1280,7 @@ function generateSiteAnalysisHTML(result) {
                         <h3 class="text-lg font-semibold">Анализ сайта</h3>
                         <p class="text-gray-500 text-sm break-all">${result.url}</p>
                     </div>
-                    <button onclick="copyToClipboard(JSON.stringify(result, null, 2))" class="text-blue-600 hover:text-blue-800 text-sm">
+                    <button onclick="copyCurrentTaskJson()" class="text-blue-600 hover:text-blue-800 text-sm">
                         <i class="fas fa-copy mr-1"></i>Копировать JSON
                     </button>
                 </div>
@@ -1681,7 +1691,7 @@ function generateRenderAuditHTML(result) {
                     <div class="flex gap-3">
                         <button onclick="downloadRenderDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>Скачать DOCX</button>
                         <button onclick="downloadRenderXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>Скачать XLSX (ошибки)</button>
-                        <button onclick="copyToClipboard(JSON.stringify(result, null, 2))" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
+                        <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
                     </div>
                 </div>
                 <p class="text-sm text-gray-600 mb-4">
@@ -1779,7 +1789,7 @@ function generateMobileCheckHTML(result) {
                     <div class="flex gap-3">
                         <button onclick="downloadMobileDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>Скачать DOCX</button>
                         <button onclick="downloadMobileXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>Скачать XLSX (ошибки)</button>
-                        <button onclick="copyToClipboard(JSON.stringify(result, null, 2))" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
+                        <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
                     </div>
                 </div>
                 <p class="text-sm text-gray-600 mb-4">
