@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     # Render audit v2
     RENDER_AUDIT_ENGINE: str = os.getenv("RENDER_AUDIT_ENGINE", "v2")
     RENDER_AUDIT_TIMEOUT: int = int(os.getenv("RENDER_AUDIT_TIMEOUT", "35"))
+    RENDER_AUDIT_DEBUG: bool = os.getenv("RENDER_AUDIT_DEBUG", "false").lower() == "true"
     
     # History
     HISTORY_SIZE: int = 10

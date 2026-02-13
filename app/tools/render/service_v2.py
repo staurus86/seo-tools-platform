@@ -422,6 +422,11 @@ class RenderAuditServiceV2:
     def __init__(self, timeout: int = 35):
         self.timeout = max(10, int(timeout))
         self.timeout_ms = self.timeout * 1000
+        self.debug_enabled = bool(getattr(settings, "RENDER_AUDIT_DEBUG", False) or getattr(settings, "DEBUG", False))
+
+    def _dbg(self, task_id: str, message: str) -> None:
+        if self.debug_enabled:
+            print(f"[RENDER-DEBUG][{task_id}] {message}")
 
     def _parse_raw(self, html: str, status_code: Optional[int]) -> Snapshot:
         soup = BeautifulSoup(html or "", "lxml")
@@ -564,9 +569,11 @@ class RenderAuditServiceV2:
                 progress_callback(progress, message)
 
         notify(5, "Preparing render audit")
+        self._dbg(task_id, f"start url={url} timeout={self.timeout}s")
         try:
             from playwright.sync_api import sync_playwright
         except Exception as exc:
+            self._dbg(task_id, f"playwright import failed: {exc}")
             return {"task_type": "render_audit", "url": url, "completed_at": datetime.utcnow().isoformat(), "results": {"engine": "v2", "variants": [], "issues": [{"severity": "critical", "code": "playwright_unavailable", "title": "Playwright runtime unavailable", "details": str(exc)}], "issues_count": 1, "summary": {"variants_total": 0, "critical_issues": 1, "warning_issues": 0, "info_issues": 0, "score": None, "missing_total": 0, "avg_missing_pct": 0, "avg_raw_load_ms": 0, "avg_js_load_ms": 0}, "recommendations": ["Install Playwright/Chromium for full render audit."], "artifacts": {"screenshot_dir": str(Path(settings.REPORTS_DIR) / "render" / task_id / "screenshots"), "screenshots": []}}}
 
         shot_dir = Path(settings.REPORTS_DIR) / "render" / task_id / "screenshots"
@@ -579,6 +586,7 @@ class RenderAuditServiceV2:
         with sync_playwright() as p:
             for idx, (vid, label, ua, mobile) in enumerate(variants, start=1):
                 notify(10 + int((idx - 1) * 40), f"Auditing {label} ({idx}/2)")
+                self._dbg(task_id, f"variant-start id={vid} label={label} mobile={mobile}")
                 try:
                     try:
                         r = requests.get(url, timeout=self.timeout, headers={"User-Agent": ua}, allow_redirects=True)
@@ -592,6 +600,11 @@ class RenderAuditServiceV2:
                     shot_nojs = shot_dir / f"{base}_nojs.png"
                     rendered, timing_js, timing_nojs = self._render(p, url, ua, mobile, shot_js, shot_nojs)
                     elapsed = max(0.0, time.time() - t0)
+                    self._dbg(
+                        task_id,
+                        f"variant-rendered id={vid} elapsed={elapsed:.2f}s raw_status={raw.status_code} "
+                        f"render_errors={len(rendered.errors)} raw_text={len(raw.visible_text)} js_text={len(rendered.visible_text)}",
+                    )
 
                     raw_stats = {
                         "status_code": raw.status_code,
@@ -700,7 +713,13 @@ class RenderAuditServiceV2:
                         "recommendations": _build_recommendations(missing) + _build_seo_recommendations(seo_required),
                         "screenshots": shots,
                     })
+                    self._dbg(
+                        task_id,
+                        f"variant-done id={vid} issues={len(issues)} shots={list(shots.keys())} "
+                        f"profile_type={'mobile' if mobile else 'desktop'}",
+                    )
                 except Exception as variant_exc:
+                    self._dbg(task_id, f"variant-failed id={vid} error={variant_exc}")
                     issues = [{
                         "severity": "critical",
                         "code": "variant_execution_failed",
@@ -729,6 +748,12 @@ class RenderAuditServiceV2:
                     })
                 notify(10 + int(idx * 40), f"Completed: {label}")
 
+        self._dbg(
+            task_id,
+            "variants-collected=" + ", ".join(
+                [f"{v.get('variant_id')}:{v.get('variant_label')}:{v.get('profile_type')}" for v in all_variants]
+            ),
+        )
         critical = sum(1 for i in all_issues if i.get("severity") == "critical")
         warning = sum(1 for i in all_issues if i.get("severity") == "warning")
         info = sum(1 for i in all_issues if i.get("severity") == "info")
@@ -740,6 +765,11 @@ class RenderAuditServiceV2:
         seo_required_warnings = sum(int(v.get("seo_required", {}).get("warn", 0) or 0) for v in all_variants)
 
         notify(98, "Building final render report")
+        self._dbg(
+            task_id,
+            f"final summary variants={len(all_variants)} issues={len(all_issues)} "
+            f"critical={critical} warning={warning} info={info}",
+        )
         return {
             "task_type": "render_audit",
             "url": url,

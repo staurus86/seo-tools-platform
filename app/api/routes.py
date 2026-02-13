@@ -2748,6 +2748,7 @@ def check_render_full(
 ) -> Dict[str, Any]:
     """Feature-flagged render audit with v2 service fallback."""
     from app.config import settings
+    debug_render = bool(getattr(settings, "RENDER_AUDIT_DEBUG", False) or getattr(settings, "DEBUG", False))
 
     def _ensure_render_profiles(payload: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(payload, dict):
@@ -2760,6 +2761,8 @@ def check_render_full(
         if not isinstance(variants, list):
             variants = []
             results["variants"] = variants
+        if debug_render:
+            print(f"[RENDER-DEBUG][{task_id}] pre-normalize variants={len(variants)}")
 
         # Normalize profile identity/labels so mobile cannot be shown as desktop.
         normalized: List[Dict[str, Any]] = []
@@ -2786,6 +2789,11 @@ def check_render_full(
             normalized.append(v)
         variants = normalized
         results["variants"] = variants
+        if debug_render:
+            print(
+                f"[RENDER-DEBUG][{task_id}] post-normalize variants="
+                + ", ".join([f"{v.get('variant_id')}:{v.get('variant_label')}:{v.get('profile_type')}" for v in variants])
+            )
 
         required = [
             ("googlebot_desktop", "Googlebot Desktop", False),
@@ -2834,6 +2842,11 @@ def check_render_full(
             results["summary"] = summary
         summary["variants_total"] = len(results.get("variants", []))
         results["issues_count"] = len(results.get("issues", []) or [])
+        if debug_render:
+            print(
+                f"[RENDER-DEBUG][{task_id}] ensured variants_total={summary['variants_total']} "
+                f"issues_count={results['issues_count']}"
+            )
         return payload
 
     engine = (getattr(settings, "RENDER_AUDIT_ENGINE", "v2") or "v2").lower()
@@ -2842,7 +2855,16 @@ def check_render_full(
             from app.tools.render.service_v2 import RenderAuditServiceV2
 
             checker = RenderAuditServiceV2(timeout=getattr(settings, "RENDER_AUDIT_TIMEOUT", 35))
-            return _ensure_render_profiles(checker.run(url=url, task_id=task_id, progress_callback=progress_callback))
+            result = checker.run(url=url, task_id=task_id, progress_callback=progress_callback)
+            ensured = _ensure_render_profiles(result)
+            if debug_render:
+                ensured_results = ensured.get("results", {}) if isinstance(ensured, dict) else {}
+                ensured_variants = ensured_results.get("variants", []) if isinstance(ensured_results, dict) else []
+                print(
+                    f"[RENDER-DEBUG][{task_id}] return variants="
+                    + ", ".join([f"{v.get('variant_id')}:{v.get('variant_label')}:{v.get('profile_type')}" for v in ensured_variants if isinstance(v, dict)])
+                )
+            return ensured
         except Exception as e:
             print(f"[API] render v2 failed, fallback to simple: {e}")
             fallback = check_render_simple(url)
@@ -3040,6 +3062,8 @@ async def create_site_analyze(data: SiteAnalyzeRequest):
 async def create_render_audit(data: RenderAuditRequest, background_tasks: BackgroundTasks):
     """Render audit with background progress updates."""
     url = data.url
+    from app.config import settings
+    debug_render = bool(getattr(settings, "RENDER_AUDIT_DEBUG", False) or getattr(settings, "DEBUG", False))
 
     print(f"[API] Render audit queued for: {url}")
     task_id = f"render-{datetime.now().timestamp()}"
@@ -3054,6 +3078,18 @@ async def create_render_audit(data: RenderAuditRequest, background_tasks: Backgr
 
             result = check_render_full(url, task_id=task_id, progress_callback=_progress)
             results = result.get("results", {}) if isinstance(result, dict) else {}
+            if debug_render:
+                variants = results.get("variants", []) if isinstance(results, dict) else []
+                print(
+                    f"[RENDER-DEBUG][{task_id}] background-result variants="
+                    + ", ".join(
+                        [
+                            f"{v.get('variant_id')}:{v.get('variant_label')}:{v.get('profile_type')}:{v.get('mobile')}"
+                            for v in variants
+                            if isinstance(v, dict)
+                        ]
+                    )
+                )
             engine = (results.get("engine") or "").lower()
             has_engine_error = bool(results.get("engine_error")) or engine in ("legacy-fallback", "")
 
