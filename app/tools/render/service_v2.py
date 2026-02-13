@@ -115,6 +115,21 @@ def _score(rendered: Snapshot, missing: Dict[str, List[str]]) -> Dict[str, float
     }
 
 
+def _build_recommendations(missing: Dict[str, List[str]]) -> List[str]:
+    recs: List[str] = []
+    if len(missing.get("Visible text", [])) > 10:
+        recs.append("[High] Ensure key content is available without JavaScript (SSR/SSG).")
+    if missing.get("Headings"):
+        recs.append("[High] Ensure H1-H2 headings are present in source HTML.")
+    if missing.get("Links"):
+        recs.append("[Medium] Place important internal links into source HTML.")
+    if missing.get("Structured data"):
+        recs.append("[Medium] Render JSON-LD on server side where possible.")
+    if missing.get("Images"):
+        recs.append("[Low] Ensure critical images and alt texts are visible before JS execution.")
+    return recs
+
+
 class RenderAuditServiceV2:
     def __init__(self, timeout: int = 35):
         self.timeout = max(10, int(timeout))
@@ -319,4 +334,3 @@ class RenderAuditServiceV2:
                 "artifacts": {"screenshot_dir": str(shot_dir), "screenshots": all_shots},
             },
         }
-
