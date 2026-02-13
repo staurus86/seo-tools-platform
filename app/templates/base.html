@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}SEO Tools Platform{% endblock %}</title>
+    <title>{% block title %}SEO Инструменты{% endblock %}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -15,6 +15,34 @@
         .card-hover { transition: all 0.3s ease; }
         .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 40px rgba(0,0,0,0.1); }
         .progress-bar { transition: width 0.3s ease; }
+        select {
+            -webkit-appearance: none;
+            appearance: none;
+            background-image:
+                linear-gradient(45deg, transparent 50%, #6b7280 50%),
+                linear-gradient(135deg, #6b7280 50%, transparent 50%);
+            background-position:
+                calc(100% - 18px) calc(50% - 3px),
+                calc(100% - 12px) calc(50% - 3px);
+            background-size: 6px 6px, 6px 6px;
+            background-repeat: no-repeat;
+            padding-right: 2.25rem;
+        }
+        details > summary {
+            list-style: none;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        details > summary::-webkit-details-marker { display: none; }
+        details > summary::after {
+            content: "▾";
+            color: #6b7280;
+            font-size: 0.9rem;
+            transition: transform 0.2s ease;
+        }
+        details[open] > summary::after { transform: rotate(180deg); }
     </style>
     {% block extra_css %}{% endblock %}
 </head>
@@ -25,7 +53,7 @@
             <div class="flex items-center justify-between">
                 <a href="/" class="flex items-center space-x-2">
                     <i class="fas fa-search-plus text-2xl"></i>
-                    <h1 class="text-xl font-bold">SEO Tools Platform</h1>
+                    <h1 class="text-xl font-bold">SEO Инструменты</h1>
                 </a>
                 <div class="flex items-center space-x-4">
                     <span id="rate-limit-badge" class="bg-white/20 px-3 py-1 rounded-full text-sm hidden">
@@ -33,7 +61,7 @@
                         <span id="rate-limit-text">10/10</span>
                     </span>
                     <a href="/api/docs" target="_blank" class="text-sm hover:underline">
-                        <i class="fas fa-code mr-1"></i>API Docs
+                        <i class="fas fa-code mr-1"></i>Документация API
                     </a>
                 </div>
             </div>
@@ -48,7 +76,7 @@
     <!-- Footer -->
     <footer class="bg-gray-800 text-gray-400 py-6 mt-auto">
         <div class="container mx-auto px-4 text-center">
-            <p>&copy; 2024 SEO Tools Platform. All rights reserved.</p>
+            <p>&copy; 2024 SEO Инструменты. Все права защищены.</p>
         </div>
     </footer>
 

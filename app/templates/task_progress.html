@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Результаты анализа - SEO Tools Platform{% endblock %}
+{% block title %}Результаты анализа - SEO Инструменты{% endblock %}
 
 {% block content %}
 <div class="max-w-4xl mx-auto">
@@ -212,8 +212,8 @@ function generateTextReport() {
     report += 'User-Agents: ' + (r.user_agents || 0) + '\n';
     report += 'Disallow правил: ' + totalDisallow + '\n';
     report += 'Allow правил: ' + totalAllow + '\n';
-    report += 'SEO Score: ' + (r.quality_score ?? 'N/A') + ' (' + (r.quality_grade || 'N/A') + ')\n';
-    report += 'Production-ready: ' + (r.production_ready ? 'Yes' : 'No') + '\n';
+    report += 'SEO Оценка: ' + (r.quality_score ?? 'N/A') + ' (' + (r.quality_grade || 'N/A') + ')\n';
+    report += 'Готовность к продакшену: ' + (r.production_ready ? 'Да' : 'Нет') + '\n';
     report += 'Размер файла: ' + (r.content_length || 0) + ' байт\n';
     report += 'Строк: ' + (r.lines_count || 0) + '\n\n';
     
@@ -286,7 +286,7 @@ function copyToClipboard(text) {
             notification.classList.add('translate-y-20');
         }, 2000);
     }).catch(err => {
-        console.error('Failed to copy:', err);
+        console.error('Ошибка копирования:', err);
     });
 }
 
@@ -347,7 +347,7 @@ function downloadSitemapFilePreview(index, filename) {
 
 async function downloadSitemapXlsxReport() {
     if (!sitemapData) {
-        alert('No sitemap data available');
+        alert('Нет данных sitemap');
         return;
     }
     try {
@@ -373,13 +373,13 @@ async function downloadSitemapXlsxReport() {
         URL.revokeObjectURL(href);
     } catch (error) {
         console.error('Error downloading sitemap xlsx:', error);
-        alert('Failed to download sitemap XLSX report');
+        alert('Не удалось скачать XLSX-отчет по sitemap');
     }
 }
 
 async function downloadBotXlsxReport() {
     if (!botData) {
-        alert('No bot data available');
+        alert('Нет данных проверки ботов');
         return;
     }
     try {
@@ -405,7 +405,7 @@ async function downloadBotXlsxReport() {
         URL.revokeObjectURL(href);
     } catch (error) {
         console.error('Error downloading bot xlsx:', error);
-        alert('Failed to download bot XLSX report');
+        alert('Не удалось скачать XLSX-отчет по ботам');
     }
 }
 
@@ -691,7 +691,7 @@ function generateRobotsHTML(data) {
         sitemapChecksHTML = sitemapChecks.map(check => {
             const ok = check.ok;
             const badge = ok === true ? 'bg-green-100 text-green-700' : (ok === null ? 'bg-gray-100 text-gray-700' : 'bg-red-100 text-red-700');
-            const status = ok === true ? 'OK' : (ok === null ? 'SKIPPED' : 'FAIL');
+            const status = ok === true ? 'ОК' : (ok === null ? 'ПРОПУЩЕНО' : 'ОШИБКА');
             return `
                 <div class="border rounded-lg p-3 mb-2">
                     <div class="flex items-center justify-between">
@@ -733,7 +733,7 @@ function generateRobotsHTML(data) {
                 <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-4">
                     <div class="text-center p-3 ${productionReady ? 'bg-emerald-50' : 'bg-amber-50'} rounded-lg">
                         <div class="text-2xl font-bold ${productionReady ? 'text-emerald-600' : 'text-amber-600'}">${qualityScore}</div>
-                        <div class="text-xs text-gray-500">Score (${qualityGrade})</div>
+                        <div class="text-xs text-gray-500">Оценка (${qualityGrade})</div>
                     </div>
                     <div class="text-center p-3 bg-blue-50 rounded-lg">
                         <div class="text-2xl font-bold text-blue-600">${userAgentCount}</div>
@@ -788,7 +788,7 @@ function generateRobotsHTML(data) {
             ${infoIssues.length > 0 ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-sky-600 mb-3">
-                        <i class="fas fa-info-circle mr-2"></i>Info (${infoIssues.length})
+                        <i class="fas fa-info-circle mr-2"></i>Инфо (${infoIssues.length})
                     </h4>
                     ${infoIssues.map(item => `
                         <div class="bg-sky-50 border border-sky-200 rounded-lg p-3 mb-2 text-sky-700 text-sm">${item}</div>
@@ -800,7 +800,7 @@ function generateRobotsHTML(data) {
             ${processedSitemaps.length > 0 ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-green-600 mb-3">
-                        <i class="fas fa-sitemap mr-2"></i>Sitemaps (${processedSitemaps.length})</h4>
+                        <i class="fas fa-sitemap mr-2"></i>Sitemap (${processedSitemaps.length})</h4>
                     ${sitemapsHtml}
                 </div>
             ` : ''}
@@ -808,7 +808,7 @@ function generateRobotsHTML(data) {
             ${sitemapChecksHTML ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-indigo-600 mb-3">
-                        <i class="fas fa-shield-alt mr-2"></i>Sitemap URL Checks (${sitemapChecks.length})
+                        <i class="fas fa-shield-alt mr-2"></i>Проверки URL из sitemap (${sitemapChecks.length})
                     </h4>
                     ${sitemapChecksHTML}
                 </div>
@@ -846,7 +846,7 @@ function generateRobotsHTML(data) {
             ${topFixesHTML ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-indigo-700 mb-3">
-                        <i class="fas fa-wrench mr-2"></i>Top Fixes (${topFixes.length})
+                        <i class="fas fa-wrench mr-2"></i>Приоритетные исправления (${topFixes.length})
                     </h4>
                     ${topFixesHTML}
                 </div>
@@ -863,7 +863,7 @@ function generateSitemapHTMLV2(result) {
     const errors = r.errors || [];
     const recommendations = r.recommendations || [];
     const duplicateDetails = r.duplicate_details || [];
-    const duplicateLines = duplicateDetails.map(d => `${d.url}\tfirst: ${d.first_sitemap || '-'}\tduplicate: ${d.duplicate_sitemap || '-'}`);
+    const duplicateLines = duplicateDetails.map(d => `${d.url}\tпервый: ${d.first_sitemap || '-'}\tдубликат: ${d.duplicate_sitemap || '-'}`);
     const exportChunkSize = r.export_chunk_size || 25000;
     const dateStamp = new Date().toISOString().slice(0, 10);
     const safeDomain = (result.url || 'sitemap').replace(/https?:\/\//, '').replace(/[^\w.-]+/g, '_');
@@ -875,49 +875,52 @@ function generateSitemapHTMLV2(result) {
         <div class="space-y-4">
             <div class="bg-white rounded-xl shadow-md p-6">
                 <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-lg font-semibold">Sitemap Validation</h3>
+                    <h3 class="text-lg font-semibold">Валидация Sitemap</h3>
                     <div class="flex gap-2">
                         <button onclick="copyToClipboard('${result.url}')" class="text-blue-600 hover:text-blue-800 text-sm">
-                            <i class="fas fa-copy mr-1"></i>Copy URL
+                            <i class="fas fa-copy mr-1"></i>Копировать URL
                         </button>
                         ${exportUrls.length > 0 ? `
                             <button onclick='downloadCurrentSitemapUrls("sitemap-urls-${safeDomain}-${dateStamp}")' class="text-green-600 hover:text-green-800 text-sm">
-                                <i class="fas fa-file-download mr-1"></i>Export URLs (.txt)
+                                <i class="fas fa-file-download mr-1"></i>Экспорт URL (.txt)
                             </button>
                             <button onclick='downloadCurrentSitemapUrlsParts("sitemap-urls-${safeDomain}-${dateStamp}", ${exportChunkSize})' class="text-green-600 hover:text-green-800 text-sm">
-                                <i class="fas fa-layer-group mr-1"></i>Export URLs (parts)
+                                <i class="fas fa-layer-group mr-1"></i>Экспорт URL (частями)
                             </button>
                         ` : ''}
                         <button onclick="downloadSitemapXlsxReport()" class="text-indigo-600 hover:text-indigo-800 text-sm">
-                            <i class="fas fa-file-excel mr-1"></i>Download XLSX
+                            <i class="fas fa-file-excel mr-1"></i>Скачать XLSX
                         </button>
                     </div>
                 </div>
+                <p class="text-sm text-gray-600 mb-4">
+                    Отчет показывает корректность структуры sitemap, качество URL и риски для индексации.
+                </p>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div><span class="text-gray-600">URL:</span> <span class="font-medium break-all">${result.url}</span></div>
-                    <div><span class="text-gray-600">Valid:</span> <span class="font-medium">${r.valid ? 'Yes' : 'No'}</span></div>
+                    <div><span class="text-gray-600">Валиден:</span> <span class="font-medium">${r.valid ? 'Да' : 'Нет'}</span></div>
                     <div><span class="text-gray-600">HTTP:</span> <span class="font-medium">${r.status_code || 'N/A'}</span></div>
-                    <div><span class="text-gray-600">Total URLs:</span> <span class="font-medium">${r.urls_count || 0}</span></div>
-                    <div><span class="text-gray-600">Unique URLs:</span> <span class="font-medium">${r.unique_urls_count || 0}</span></div>
-                    <div><span class="text-gray-600">Duplicates:</span> <span class="font-medium">${r.duplicate_urls_count || 0}</span></div>
-                    <div><span class="text-gray-600">Sitemaps scanned:</span> <span class="font-medium">${r.sitemaps_scanned || 0}</span></div>
-                    <div><span class="text-gray-600">Sitemaps valid:</span> <span class="font-medium">${r.sitemaps_valid || 0}</span></div>
+                    <div><span class="text-gray-600">Всего URL:</span> <span class="font-medium">${r.urls_count || 0}</span></div>
+                    <div><span class="text-gray-600">Уникальных URL:</span> <span class="font-medium">${r.unique_urls_count || 0}</span></div>
+                    <div><span class="text-gray-600">Дубликатов:</span> <span class="font-medium">${r.duplicate_urls_count || 0}</span></div>
+                    <div><span class="text-gray-600">Sitemap проверено:</span> <span class="font-medium">${r.sitemaps_scanned || 0}</span></div>
+                    <div><span class="text-gray-600">Sitemap валидно:</span> <span class="font-medium">${r.sitemaps_valid || 0}</span></div>
                 </div>
-                ${r.error ? `<div class="mt-3 text-red-600 font-medium">Error: ${r.error}</div>` : ''}
-                ${r.urls_export_truncated ? `<div class="mt-3 text-amber-700 text-sm">Export truncated to ${r.max_export_urls || 0} URLs.</div>` : ''}
-                ${(r.export_parts_count || 0) > 1 ? `<div class="mt-2 text-gray-600 text-sm">Recommended parts: ${r.export_parts_count} (${exportChunkSize} URLs each).</div>` : ''}
+                ${r.error ? `<div class="mt-3 text-red-600 font-medium">Ошибка: ${r.error}</div>` : ''}
+                ${r.urls_export_truncated ? `<div class="mt-3 text-amber-700 text-sm">Экспорт ограничен до ${r.max_export_urls || 0} URL.</div>` : ''}
+                ${(r.export_parts_count || 0) > 1 ? `<div class="mt-2 text-gray-600 text-sm">Рекомендуемое число частей: ${r.export_parts_count} (по ${exportChunkSize} URL).</div>` : ''}
             </div>
 
             ${errors.length > 0 ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold text-red-600 mb-2">Errors (${errors.length})</h4>
+                    <h4 class="font-semibold text-red-600 mb-2">Ошибки (${errors.length})</h4>
                     ${errors.slice(0, 50).map(e => `<div class="text-sm text-red-700 mb-1">${e}</div>`).join('')}
                 </div>
             ` : ''}
 
             ${warnings.length > 0 ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold text-amber-600 mb-2">Warnings (${warnings.length})</h4>
+                    <h4 class="font-semibold text-amber-600 mb-2">Предупреждения (${warnings.length})</h4>
                     ${warnings.slice(0, 50).map(w => `<div class="text-sm text-amber-700 mb-1">${w}</div>`).join('')}
                 </div>
             ` : ''}
@@ -925,18 +928,18 @@ function generateSitemapHTMLV2(result) {
             ${duplicateDetails.length > 0 ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <div class="flex items-center justify-between mb-2">
-                        <h4 class="font-semibold text-rose-700">Duplicate URLs (${duplicateDetails.length})</h4>
+                        <h4 class="font-semibold text-rose-700">Дубли URL (${duplicateDetails.length})</h4>
                         <button onclick='downloadCurrentSitemapDuplicates("sitemap-duplicates-${safeDomain}-${dateStamp}.txt")' class="text-xs text-rose-700 hover:text-rose-900">
-                            <i class="fas fa-file-download mr-1"></i>Export duplicates
+                            <i class="fas fa-file-download mr-1"></i>Экспорт дублей
                         </button>
                     </div>
-                    ${r.duplicate_details_truncated ? `<div class="text-xs text-amber-700 mb-2">List is truncated.</div>` : ''}
+                    ${r.duplicate_details_truncated ? `<div class="text-xs text-amber-700 mb-2">Список сокращен.</div>` : ''}
                     <div class="max-h-72 overflow-auto border rounded">
                         ${duplicateDetails.slice(0, 500).map(d => `
                             <div class="text-xs border-b p-2">
                                 <div class="font-medium break-all text-gray-800">${d.url}</div>
-                                <div class="text-gray-600">first: <span class="break-all">${d.first_sitemap || '-'}</span></div>
-                                <div class="text-gray-600">duplicate: <span class="break-all">${d.duplicate_sitemap || '-'}</span></div>
+                                <div class="text-gray-600">первый: <span class="break-all">${d.first_sitemap || '-'}</span></div>
+                                <div class="text-gray-600">дубликат: <span class="break-all">${d.duplicate_sitemap || '-'}</span></div>
                             </div>
                         `).join('')}
                     </div>
@@ -945,30 +948,30 @@ function generateSitemapHTMLV2(result) {
 
             ${recommendations.length > 0 ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold text-blue-600 mb-2">Recommendations</h4>
+                    <h4 class="font-semibold text-blue-600 mb-2">Рекомендации</h4>
                     ${recommendations.map(rec => `<div class="text-sm text-blue-700 mb-1">- ${rec}</div>`).join('')}
                 </div>
             ` : ''}
 
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold text-gray-700 mb-3">Sitemap Files (${sitemapFiles.length})</h4>
+                <h4 class="font-semibold text-gray-700 mb-3">Файлы Sitemap (${sitemapFiles.length})</h4>
                 <div class="space-y-3">
                     ${sitemapFiles.map((f, idx) => `
                         <div class="border rounded-lg p-3">
                             <div class="flex justify-between items-center mb-1">
                                 <div class="text-sm font-medium break-all">${f.sitemap_url}</div>
-                                <div class="text-xs ${f.ok ? 'text-green-600' : 'text-red-600'}">${f.ok ? 'OK' : 'FAIL'}</div>
+                                <div class="text-xs ${f.ok ? 'text-green-600' : 'text-red-600'}">${f.ok ? 'ОК' : 'ОШИБКА'}</div>
                             </div>
-                            <div class="text-xs text-gray-600 mb-2">type: ${f.type || 'unknown'} | HTTP: ${f.status_code || 'N/A'} | URLs: ${f.urls_count || 0}</div>
-                            ${f.duplicate_count > 0 ? `<div class="text-xs text-rose-700 mb-2">duplicates in this sitemap: ${f.duplicate_count}</div>` : ''}
+                            <div class="text-xs text-gray-600 mb-2">тип: ${f.type || 'неизвестно'} | HTTP: ${f.status_code || 'N/A'} | URL: ${f.urls_count || 0}</div>
+                            ${f.duplicate_count > 0 ? `<div class="text-xs text-rose-700 mb-2">дубликатов в этом sitemap: ${f.duplicate_count}</div>` : ''}
                             ${(f.urls || []).length > 0 ? `
                                 <button onclick='downloadSitemapFilePreview(${idx}, "sitemap-${safeDomain}-${dateStamp}-${idx + 1}-urls-preview.txt")' class="text-xs text-green-700 hover:text-green-900 mb-2">
-                                    <i class="fas fa-file-download mr-1"></i>Export this sitemap URLs
+                                    <i class="fas fa-file-download mr-1"></i>Экспорт URL этого sitemap
                                 </button>
                             ` : ''}
-                            ${(f.urls_omitted || 0) > 0 ? `<div class="text-xs text-amber-700 mb-1">preview only, omitted: ${f.urls_omitted}</div>` : ''}
+                            ${(f.urls_omitted || 0) > 0 ? `<div class="text-xs text-amber-700 mb-1">только предпросмотр, пропущено: ${f.urls_omitted}</div>` : ''}
                             ${(f.duplicate_urls || []).length > 0 ? `
-                                <div class="text-xs text-rose-700 mb-1">Duplicate URL examples:</div>
+                                <div class="text-xs text-rose-700 mb-1">Примеры дублей URL:</div>
                                 <div class="text-xs text-rose-700 break-all">${(f.duplicate_urls || []).slice(0, 10).join(' | ')}</div>
                             ` : ''}
                             ${(f.errors || []).length > 0 ? `<div class="text-xs text-red-600">${(f.errors || []).join(' | ')}</div>` : ''}
@@ -1029,15 +1032,15 @@ function generateBotHTML(result) {
         ? categoryStats.map(c => `
             <div class="flex justify-between items-center py-2 border-b text-sm">
                 <span class="font-medium">${c.category}</span>
-                <span class="text-gray-700">${c.accessible}/${c.total} accessible</span>
+                <span class="text-gray-700">${c.accessible}/${c.total} доступно</span>
             </div>
         `).join('')
-        : '<div class="text-sm text-gray-500">No category stats</div>';
+        : '<div class="text-sm text-gray-500">Нет данных по категориям</div>';
 
     const issueRows = issues.slice(0, 20).map(i => `
         <div class="py-2 border-b text-sm">
             <div class="font-medium ${i.severity === 'critical' ? 'text-red-700' : (i.severity === 'warning' ? 'text-amber-700' : 'text-blue-700')}">
-                ${(i.severity || 'info').toUpperCase()} - ${i.bot || 'Bot'}
+                ${(i.severity || 'info').toUpperCase()} - ${i.bot || 'Бот'}
             </div>
             <div class="text-gray-700">${i.title || ''}</div>
             <div class="text-gray-500">${i.details || ''}</div>
@@ -1047,33 +1050,36 @@ function generateBotHTML(result) {
     return `
         <div class="bg-white rounded-xl shadow-md p-6">
             <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-semibold">Bot Check</h3>
+                <h3 class="text-lg font-semibold">Проверка ботов</h3>
                 <div class="flex gap-3">
                     <button onclick="downloadBotXlsxReport()" class="text-green-600 hover:text-green-800 text-sm">
-                        <i class="fas fa-file-excel mr-1"></i>Download XLSX
+                        <i class="fas fa-file-excel mr-1"></i>Скачать XLSX
                     </button>
                     <button onclick="copyToClipboard('${result.url}')" class="text-blue-600 hover:text-blue-800 text-sm">
-                        <i class="fas fa-copy mr-1"></i>Copy URL
+                        <i class="fas fa-copy mr-1"></i>Копировать URL
                     </button>
                 </div>
             </div>
+            <p class="text-sm text-gray-600 mb-4">
+                Отчет показывает доступность сайта для поисковых и AI-ботов и выявляет ограничения индексации.
+            </p>
             <div class="grid grid-cols-2 gap-4 text-sm mb-4">
                 <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
-                <div><span class="text-gray-600">Bots checked:</span> <span class="font-medium">${(r.bots_checked || []).length}</span></div>
-                ${summary.total ? `<div><span class="text-gray-600">Accessible:</span> <span class="font-medium">${summary.accessible || 0}/${summary.total}</span></div>` : ''}
-                ${summary.avg_response_time_ms ? `<div><span class="text-gray-600">Avg response:</span> <span class="font-medium">${summary.avg_response_time_ms} ms</span></div>` : ''}
+                <div><span class="text-gray-600">Проверено ботов:</span> <span class="font-medium">${(r.bots_checked || []).length}</span></div>
+                ${summary.total ? `<div><span class="text-gray-600">Доступно:</span> <span class="font-medium">${summary.accessible || 0}/${summary.total}</span></div>` : ''}
+                ${summary.avg_response_time_ms ? `<div><span class="text-gray-600">Средний ответ:</span> <span class="font-medium">${summary.avg_response_time_ms} мс</span></div>` : ''}
             </div>
             <div class="border-t pt-4">
-                <h4 class="font-semibold mb-2">Bot Results:</h4>
+                <h4 class="font-semibold mb-2">Результаты по ботам:</h4>
                 ${botsHTML}
             </div>
             <div class="border-t pt-4 mt-4">
-                <h4 class="font-semibold mb-2">Category Summary</h4>
+                <h4 class="font-semibold mb-2">Сводка по категориям</h4>
                 ${categoriesHTML}
             </div>
             <div class="border-t pt-4 mt-4">
-                <h4 class="font-semibold mb-2">Top Issues</h4>
-                ${issueRows || '<div class="text-sm text-gray-500">No issues found</div>'}
+                <h4 class="font-semibold mb-2">Ключевые проблемы</h4>
+                ${issueRows || '<div class="text-sm text-gray-500">Проблем не обнаружено</div>'}
             </div>
         </div>
     `;
@@ -1201,7 +1207,7 @@ function generateSiteAnalysisHTML(result) {
                 <div class="flex items-center mb-6 p-4 rounded-lg ${scoreBadge}">
                     <div class="text-4xl font-bold mr-4">${score}</div>
                     <div>
-                        <div class="font-semibold text-lg">SEO Score</div>
+                        <div class="font-semibold text-lg">SEO Оценка</div>
                         <div class="text-sm opacity-90">
                             ${score >= 80 ? 'Отличный результат!' : 
                               score >= 70 ? 'Хороший результат' : 
@@ -1406,6 +1412,9 @@ function generateMobileCheckHTML(result) {
                         <button onclick="copyToClipboard(JSON.stringify(result, null, 2))" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
                     </div>
                 </div>
+                <p class="text-sm text-gray-600 mb-4">
+                    Отчет показывает качество мобильной адаптации, проблемы интерфейса на устройствах и риски для пользовательского опыта.
+                </p>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
                     <div><span class="text-gray-600">Движок:</span> <span class="font-medium">${r.engine || 'legacy'}</span></div>
@@ -1439,4 +1448,6 @@ function generateMobileCheckHTML(result) {
 window.copyToClipboard = copyToClipboard;
 </script>
 {% endblock %}
+
+
 
