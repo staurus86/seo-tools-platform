@@ -2,7 +2,7 @@
 SEO Tools API Routes - Full integration with original scripts
 """
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 import re
@@ -1168,6 +1168,18 @@ class BotCheckRequest(BaseModel):
     url: str
     selected_bots: Optional[List[str]] = None
     bot_groups: Optional[List[str]] = None
+
+    @field_validator("selected_bots", "bot_groups", mode="before")
+    @classmethod
+    def _normalize_list_fields(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            v = value.strip()
+            return [v] if v else []
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return value
 
 
 # ============ API ENDPOINTS ============
