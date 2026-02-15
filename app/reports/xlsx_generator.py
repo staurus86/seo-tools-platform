@@ -39,12 +39,29 @@ class XLSXGenerator:
         if original_bad == 0:
             return text
 
+        def recode_lossless(src: str, src_enc: str, dst_enc: str) -> str:
+            # Strict mode only: skip conversion if it is lossy or invalid.
+            raw = src.encode(src_enc, errors="strict")
+            return raw.decode(dst_enc, errors="strict")
+
         candidates = [text]
-        for src_enc, dst_enc in (("latin1", "utf-8"), ("cp1251", "utf-8"), ("latin1", "cp1251")):
+        pipelines = (
+            ("latin1", "utf-8"),
+            ("cp1251", "utf-8"),
+            ("latin1", "cp1251"),
+        )
+        for src_enc, dst_enc in pipelines:
             try:
-                fixed = text.encode(src_enc, errors="ignore").decode(dst_enc, errors="ignore")
+                fixed = recode_lossless(text, src_enc, dst_enc)
                 if fixed:
                     candidates.append(fixed)
+                    # Try one more pass for double-mojibake strings.
+                    try:
+                        fixed2 = recode_lossless(fixed, src_enc, dst_enc)
+                        if fixed2:
+                            candidates.append(fixed2)
+                    except Exception:
+                        pass
             except Exception:
                 continue
 
@@ -55,7 +72,10 @@ class XLSXGenerator:
             elif bad_score(cand) == bad_score(best) and cyr_score(cand) > cyr_score(best):
                 best = cand
 
-        return best if bad_score(best) <= max(0, original_bad - 1) else text
+        # Accept replacement only if mojibake markers are reduced and the output is not shorter.
+        if bad_score(best) <= max(0, original_bad - 1) and len(best) >= len(text):
+            return best
+        return text
 
     def _sanitize_cell_value(self, value: Any) -> Any:
         if isinstance(value, str):
