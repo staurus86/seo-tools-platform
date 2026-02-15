@@ -807,6 +807,7 @@ class XLSXGenerator:
         pages = results.get("pages", []) or []
         issues = results.get("issues", []) or []
         pipeline = results.get("pipeline", {}) or {}
+        pipeline_metrics = pipeline.get("metrics", {}) or {}
         report_url = data.get("url", "n/a")
         mode = results.get("mode", "quick")
 
@@ -879,6 +880,18 @@ class XLSXGenerator:
         ws["B13"].number_format = "0.00%"
         ws["B14"].number_format = "0.00%"
         ws["B15"].number_format = "0.00%"
+
+        ws["A17"] = "Avg Response (ms)"
+        ws["B17"] = pipeline_metrics.get("avg_response_time_ms", "")
+        ws["A18"] = "Avg Readability"
+        ws["B18"] = pipeline_metrics.get("avg_readability_score", "")
+        ws["A19"] = "Avg Link Quality"
+        ws["B19"] = pipeline_metrics.get("avg_link_quality_score", "")
+        ws["A20"] = "Orphan Pages"
+        ws["B20"] = pipeline_metrics.get("orphan_pages", "")
+        ws["A21"] = "Topic Hubs"
+        ws["B21"] = pipeline_metrics.get("topic_hubs", "")
+
         ws.column_dimensions["A"].width = 26
         ws.column_dimensions["B"].width = 80
 

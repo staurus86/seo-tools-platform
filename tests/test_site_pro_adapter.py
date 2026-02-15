@@ -82,6 +82,16 @@ class SiteProAdapterTests(unittest.TestCase):
         # About+Blog share duplicate title/description.
         self.assertTrue(len(pipeline["duplicates"]["title_groups"]) >= 1)
         self.assertTrue(len(pipeline["duplicates"]["description_groups"]) >= 1)
+        self.assertIn("metrics", pipeline)
+        self.assertIn("avg_response_time_ms", pipeline["metrics"])
+        self.assertIn("avg_readability_score", pipeline["metrics"])
+        self.assertIn("avg_link_quality_score", pipeline["metrics"])
+        self.assertIn("orphan_pages", pipeline["metrics"])
+
+        for page in public["pages"]:
+            self.assertIn("recommendation", page)
+            self.assertIn("orphan_page", page)
+            self.assertIn("topic_hub", page)
 
     def test_respects_max_pages_limit(self):
         adapter = SiteAuditProAdapter()

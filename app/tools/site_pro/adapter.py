@@ -644,6 +644,24 @@ class SiteAuditProAdapter:
                 duplicate_desc_groups[desc].append(row.url)
             topic_clusters[(row.topic_label or "misc")].append(row.url)
 
+        total_pages = max(1, len(normalized.rows))
+        orphan_pages = sum(1 for row in normalized.rows if row.orphan_page)
+        topic_hubs = sum(1 for row in normalized.rows if row.topic_hub)
+        pages_without_alt = sum(1 for row in normalized.rows if (row.images_without_alt or 0) > 0)
+        non_https_pages = sum(1 for row in normalized.rows if row.is_https is False)
+        avg_response_time = round(
+            sum((row.response_time_ms or 0) for row in normalized.rows) / total_pages,
+            1,
+        )
+        avg_readability = round(
+            sum((row.readability_score or 0.0) for row in normalized.rows) / total_pages,
+            1,
+        )
+        avg_link_quality = round(
+            sum((row.link_quality_score or 0.0) for row in normalized.rows) / total_pages,
+            1,
+        )
+
         pipeline = {
             "pagerank": pagerank,
             "tf_idf": tf_idf,
@@ -666,6 +684,15 @@ class SiteAuditProAdapter:
             },
             "topic_clusters": [{"topic": k, "urls": v, "count": len(v)} for k, v in topic_clusters.items()],
             "link_quality_scores": [{"url": row.url, "score": row.link_quality_score} for row in normalized.rows],
+            "metrics": {
+                "avg_response_time_ms": avg_response_time,
+                "avg_readability_score": avg_readability,
+                "avg_link_quality_score": avg_link_quality,
+                "orphan_pages": orphan_pages,
+                "topic_hubs": topic_hubs,
+                "pages_without_alt": pages_without_alt,
+                "non_https_pages": non_https_pages,
+            },
         }
         return {
             "engine": "site_pro_adapter_v0",

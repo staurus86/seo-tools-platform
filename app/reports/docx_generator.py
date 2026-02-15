@@ -670,6 +670,8 @@ class DOCXGenerator:
         results = data.get("results", {}) or {}
         summary = results.get("summary", {}) or {}
         pipeline = results.get("pipeline", {}) or {}
+        pipeline_metrics = pipeline.get("metrics", {}) or {}
+        pages = results.get("pages", []) or []
         issues = results.get("issues", []) or []
         url = data.get("url", "n/a")
 
@@ -685,6 +687,10 @@ class DOCXGenerator:
             ["Warning", summary.get("warning_issues", 0)],
             ["Info", summary.get("info_issues", 0)],
             ["Score", summary.get("score", "n/a")],
+            ["Avg response (ms)", pipeline_metrics.get("avg_response_time_ms", 0)],
+            ["Avg readability", pipeline_metrics.get("avg_readability_score", 0)],
+            ["Avg link quality", pipeline_metrics.get("avg_link_quality_score", 0)],
+            ["Orphan pages", pipeline_metrics.get("orphan_pages", 0)],
         ]
         self._add_table(doc, ["Metric", "Value"], summary_rows)
 
@@ -719,6 +725,14 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Topic clusters are not available.")
 
+        self._add_heading(doc, "5. Recommendations", level=1)
+        recommendations = [p.get("recommendation") for p in pages if p.get("recommendation")]
+        if recommendations:
+            for rec in recommendations[:20]:
+                doc.add_paragraph(str(rec), style="List Bullet")
+        else:
+            doc.add_paragraph("Recommendations are not available.")
+
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         doc.save(filepath)
         return filepath
@@ -740,6 +754,5 @@ class DOCXGenerator:
 
 # Singleton
 docx_generator = DOCXGenerator()
-
 
 

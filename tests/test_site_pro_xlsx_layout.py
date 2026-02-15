@@ -142,6 +142,39 @@ class SiteProXlsxLayoutTests(unittest.TestCase):
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
+    def test_full_report_adds_deep_sheets(self):
+        data = {
+            "url": "https://site.test",
+            "results": {
+                "mode": "full",
+                "summary": {"total_pages": 1, "issues_total": 0, "critical_issues": 0, "warning_issues": 0, "info_issues": 0},
+                "pages": [{"url": "https://site.test", "topic_label": "home", "top_terms": ["home"], "issues": []}],
+                "issues": [],
+                "pipeline": {
+                    "tf_idf": [{"url": "https://site.test", "top_terms": ["home"]}],
+                    "semantic_linking_map": [
+                        {"source_url": "https://site.test", "target_url": "https://site.test/a", "topic": "home", "reason": "test"}
+                    ],
+                    "duplicates": {"title_groups": [], "description_groups": []},
+                },
+            },
+        }
+
+        temp_dir = Path("tests") / ".tmp_site_pro_xlsx_full"
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            generator = XLSXGenerator()
+            generator.reports_dir = str(temp_dir)
+            report_path = generator.generate_site_audit_pro_report("site-pro-layout-full", data)
+            wb = load_workbook(report_path)
+            self.assertIn("9_SemanticMap", wb.sheetnames)
+            self.assertIn("10_DuplicatesDeep", wb.sheetnames)
+            self.assertIn("11_IssuesRaw", wb.sheetnames)
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()

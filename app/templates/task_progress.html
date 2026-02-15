@@ -1747,9 +1747,11 @@ function generateSiteAuditProHTML(result) {
     const pages = r.pages || [];
     const issues = r.issues || [];
     const pipeline = r.pipeline || {};
+    const metrics = pipeline.metrics || {};
     const mode = r.mode || result.mode || 'quick';
     const topPagerank = (pipeline.pagerank || []).slice(0, 5);
     const clusters = pipeline.topic_clusters || [];
+    const topRecommendations = pages.map(p => p.recommendation).filter(Boolean).slice(0, 6);
 
     const issuesHtml = issues.slice(0, 20).map(i => `
         <div class="text-sm border-l-4 ${i.severity === 'critical' ? 'border-red-500 bg-red-50' : i.severity === 'warning' ? 'border-yellow-500 bg-yellow-50' : 'border-blue-500 bg-blue-50'} p-3 rounded-r mb-2">
@@ -1808,6 +1810,26 @@ function generateSiteAuditProHTML(result) {
                     ${clusterHtml || '<div class="text-sm text-gray-500">Нет данных.</div>'}
                 </div>
             </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h4 class="font-semibold mb-3">Pipeline Metrics</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                    <div><span class="text-gray-600">Avg response:</span> <span class="font-medium">${metrics.avg_response_time_ms ?? 0} ms</span></div>
+                    <div><span class="text-gray-600">Avg readability:</span> <span class="font-medium">${metrics.avg_readability_score ?? 0}</span></div>
+                    <div><span class="text-gray-600">Avg link quality:</span> <span class="font-medium">${metrics.avg_link_quality_score ?? 0}</span></div>
+                    <div><span class="text-gray-600">Orphans:</span> <span class="font-medium">${metrics.orphan_pages ?? 0}</span></div>
+                    <div><span class="text-gray-600">Topic hubs:</span> <span class="font-medium">${metrics.topic_hubs ?? 0}</span></div>
+                    <div><span class="text-gray-600">No HTTPS:</span> <span class="font-medium">${metrics.non_https_pages ?? 0}</span></div>
+                    <div><span class="text-gray-600">No ALT pages:</span> <span class="font-medium">${metrics.pages_without_alt ?? 0}</span></div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h4 class="font-semibold mb-2">Top Recommendations</h4>
+                <ul class="list-disc pl-5 text-sm text-gray-700">
+                    ${(topRecommendations.map(x => `<li>${x}</li>`).join('')) || '<li>Рекомендаций нет.</li>'}
+                </ul>
+            </div>
         </div>
     `;
 }
@@ -1816,7 +1838,5 @@ function generateSiteAuditProHTML(result) {
 window.copyToClipboard = copyToClipboard;
 </script>
 {% endblock %}
-
-
 
 
