@@ -547,7 +547,6 @@ class SiteAuditProAdapter:
             row_by_url[self._normalize_url(r.url)] = r
             if r.final_url:
                 row_by_url[self._normalize_url(r.final_url)] = r
-        start_norm = self._normalize_url(start_url)
 
         for row in rows:
             canonical_raw = (row.canonical or "").strip()
@@ -603,46 +602,48 @@ class SiteAuditProAdapter:
         if not extended_hreflang_checks:
             return
 
-        homepage = row_by_url.get(start_norm)
-        if not homepage:
-            return
-
-        langs = list(homepage.hreflang_langs or [])
-        targets = dict(homepage.hreflang_targets or {})
-        if not langs:
-            return
-
         lang_re = re.compile(r"^[a-z]{2}(?:-[a-z]{2})?$|^x-default$", re.I)
-        seen_langs: Set[str] = set()
-        for lang in langs:
-            if lang in seen_langs:
-                homepage.hreflang_issues.append(f"duplicate_lang:{lang}")
+        for row in rows:
+            langs = list(row.hreflang_langs or [])
+            targets = dict(row.hreflang_targets or {})
+            if not langs:
                 continue
-            seen_langs.add(lang)
-            if not lang_re.match(lang):
-                homepage.hreflang_issues.append(f"invalid_lang_code:{lang}")
 
-        if len(langs) > 1 and not homepage.hreflang_has_x_default:
-            homepage.hreflang_issues.append("missing_x_default")
+            seen_langs: Set[str] = set()
+            for lang in langs:
+                if lang in seen_langs:
+                    row.hreflang_issues.append(f"duplicate_lang:{lang}")
+                    continue
+                seen_langs.add(lang)
+                if not lang_re.match(lang):
+                    row.hreflang_issues.append(f"invalid_lang_code:{lang}")
 
-        for lang, target_url in targets.items():
-            target_row = row_by_url.get(self._normalize_url(target_url))
-            if not target_row:
-                homepage.hreflang_issues.append(f"target_not_scanned:{lang}")
-                continue
-            back_targets = set((target_row.hreflang_targets or {}).values())
-            if start_norm not in {self._normalize_url(x) for x in back_targets}:
-                homepage.hreflang_issues.append(f"missing_reciprocal:{lang}")
+            if len(langs) > 1 and not row.hreflang_has_x_default:
+                row.hreflang_issues.append("missing_x_default")
 
-        for item in homepage.hreflang_issues[:15]:
-            homepage.issues.append(
-                SiteAuditProIssue(
-                    severity="warning",
-                    code="hreflang_extended_check",
-                    title="Extended hreflang check warning",
-                    details=item,
+            row_norm = self._normalize_url(row.final_url or row.url)
+            for lang, target_url in targets.items():
+                target_row = row_by_url.get(self._normalize_url(target_url))
+                if not target_row:
+                    row.hreflang_issues.append(f"target_not_scanned:{lang}")
+                    continue
+                back_targets = {
+                    self._normalize_url(x)
+                    for x in (target_row.hreflang_targets or {}).values()
+                    if x
+                }
+                if row_norm not in back_targets:
+                    row.hreflang_issues.append(f"missing_reciprocal:{lang}")
+
+            for item in row.hreflang_issues[:15]:
+                row.issues.append(
+                    SiteAuditProIssue(
+                        severity="warning",
+                        code="hreflang_extended_check",
+                        title="Extended hreflang check warning",
+                        details=item,
+                    )
                 )
-            )
 
     def _detect_cloaking(self, body_text: str, hidden_content: bool, hidden_nodes_count: int) -> bool:
         if not hidden_content:
