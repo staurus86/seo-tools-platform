@@ -73,6 +73,35 @@ async function startTask(event, endpoint) {
             data[key] = [data[key]];
         }
     });
+
+    if (endpoint === 'site-audit-pro') {
+        const scanMode = (data.scan_mode || 'crawl').toString();
+        const batchMode = scanMode === 'batch';
+        const rawBatch = (data.batch_urls_text || '').toString();
+        const parsedBatchUrls = rawBatch
+            .split(/\r?\n/)
+            .map((x) => x.trim())
+            .filter((x) => x.length > 0);
+        if (batchMode && parsedBatchUrls.length > 500) {
+            showToast('Лимит пакетной проверки: максимум 500 URL', 'warning');
+            return;
+        }
+        const batchUrls = parsedBatchUrls.slice(0, 500);
+
+        data.batch_mode = batchMode;
+        if (batchMode) {
+            if (batchUrls.length === 0) {
+                showToast('Добавьте хотя бы 1 URL для пакетной проверки', 'warning');
+                return;
+            }
+            data.batch_urls = batchUrls;
+            data.max_pages = Math.min(500, Math.max(1, batchUrls.length));
+        } else {
+            delete data.batch_urls;
+        }
+        delete data.scan_mode;
+        delete data.batch_urls_text;
+    }
     
     // Show loading state
     const button = form.querySelector('button[type="submit"]');
@@ -127,6 +156,36 @@ async function startTask(event, endpoint) {
     }
 }
 
+function initSiteAuditProBatchUI() {
+    const form = document.querySelector('form[data-tool="site-audit-pro"]');
+    if (!form) return;
+
+    const modeSelect = form.querySelector('.js-sitepro-scan-mode');
+    const batchBox = form.querySelector('.js-sitepro-batch-box');
+    const batchFlag = form.querySelector('.js-sitepro-batch-flag');
+    const maxPagesInput = form.querySelector('input[name="max_pages"]');
+    if (!modeSelect || !batchBox || !batchFlag || !maxPagesInput) return;
+
+    const sync = () => {
+        const isBatch = modeSelect.value === 'batch';
+        batchBox.classList.toggle('hidden', !isBatch);
+        batchFlag.value = isBatch ? 'true' : 'false';
+        maxPagesInput.max = isBatch ? '500' : '5';
+        if (isBatch) {
+            maxPagesInput.value = '500';
+            maxPagesInput.title = 'Max URLs in batch mode';
+        } else {
+            if (parseInt(maxPagesInput.value || '5', 10) > 5) {
+                maxPagesInput.value = '5';
+            }
+            maxPagesInput.title = 'Max pages in crawl mode';
+        }
+    };
+
+    modeSelect.addEventListener('change', sync);
+    sync();
+}
+
 // Show rate limit modal
 function showRateLimitModal(detail) {
     const modal = document.getElementById('rate-limit-modal');
@@ -172,6 +231,7 @@ async function updateRateLimitBadge() {
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     updateRateLimitBadge();
+    initSiteAuditProBatchUI();
     
     // Update badge every minute
     setInterval(updateRateLimitBadge, 60000);

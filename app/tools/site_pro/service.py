@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import os
 import time
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from .adapter import SiteAuditProAdapter
 from .artifacts import SiteProArtifactStore
@@ -23,6 +23,8 @@ class SiteAuditProService:
         task_id: str,
         mode: str = "quick",
         max_pages: int = 5,
+        batch_mode: bool = False,
+        batch_urls: Optional[List[str]] = None,
         progress_callback: ProgressCallback = None,
     ) -> Dict[str, Any]:
         def notify(progress: int, message: str) -> None:
@@ -34,9 +36,18 @@ class SiteAuditProService:
         t0 = time.perf_counter()
 
         notify(5, "Preparing Site Audit Pro")
-        notify(20, "Collecting crawl scope")
+        if batch_mode:
+            notify(20, "Collecting batch URL scope")
+        else:
+            notify(20, "Collecting crawl scope")
         notify(45, "Running scoring pipeline")
-        normalized = self.adapter.run(url=url, mode=selected_mode, max_pages=max_pages)
+        normalized = self.adapter.run(
+            url=url,
+            mode=selected_mode,
+            max_pages=max_pages,
+            batch_mode=batch_mode,
+            batch_urls=batch_urls or [],
+        )
         notify(75, "Building normalized report payload")
         public_results = self.adapter.to_public_results(normalized)
         notify(85, "Preparing deep artifacts")
@@ -54,6 +65,8 @@ class SiteAuditProService:
             "task_type": "site_audit_pro",
             "url": url,
             "mode": selected_mode,
+            "batch_mode": bool(batch_mode),
+            "batch_urls_count": len(batch_urls or []),
             "completed_at": datetime.now(timezone.utc).isoformat(),
             "results": public_results,
             "meta": {

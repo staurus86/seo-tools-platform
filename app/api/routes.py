@@ -1,7 +1,7 @@
 """
 SEO Tools API Routes - Full integration with original scripts
 """
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
@@ -3196,6 +3196,8 @@ def check_site_audit_pro(
     task_id: str,
     mode: str = "quick",
     max_pages: int = 5,
+    batch_mode: bool = False,
+    batch_urls: Optional[List[str]] = None,
     progress_callback=None,
 ) -> Dict[str, Any]:
     """Feature-flagged Site Audit Pro entrypoint."""
@@ -3207,6 +3209,8 @@ def check_site_audit_pro(
         task_id=task_id,
         mode=mode,
         max_pages=max_pages,
+        batch_mode=batch_mode,
+        batch_urls=batch_urls or [],
         progress_callback=progress_callback,
     )
 
@@ -3228,6 +3232,19 @@ class SiteAuditProRequest(BaseModel):
     url: str
     mode: Optional[str] = "quick"
     max_pages: int = 5
+    batch_mode: bool = False
+    batch_urls: Optional[List[str]] = None
+
+    @field_validator("batch_urls", mode="before")
+    @classmethod
+    def _normalize_batch_urls(cls, value):
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, list):
+            return [str(v).strip() for v in value if str(v).strip()]
+        return []
 
 
 @router.post("/tasks/site-analyze")
@@ -3398,10 +3415,37 @@ async def create_site_audit_pro(data: SiteAuditProRequest, background_tasks: Bac
     mode = (data.mode or default_mode).lower()
     if mode not in ("quick", "full"):
         mode = "quick"
+    batch_mode = bool(getattr(data, "batch_mode", False))
     max_pages_limit = int(getattr(settings, "SITE_AUDIT_PRO_MAX_PAGES_LIMIT", 5) or 5)
-    max_pages = max(1, min(int(data.max_pages or 5), max_pages_limit))
+    effective_max_pages_limit = 500 if batch_mode else max_pages_limit
+    max_pages = max(1, min(int(data.max_pages or 5), effective_max_pages_limit))
 
-    print(f"[API] Site Audit Pro queued for: {url} (mode={mode}, max_pages={max_pages})")
+    raw_batch_urls = list(getattr(data, "batch_urls", []) or [])
+    normalized_batch_urls: List[str] = []
+    seen_batch_urls: set[str] = set()
+    for item in raw_batch_urls:
+        candidate = str(item or "").strip()
+        if not candidate:
+            continue
+        if not candidate.startswith(("http://", "https://")):
+            candidate = f"https://{candidate}"
+        parsed = urlparse(candidate)
+        if not parsed.scheme or not parsed.netloc:
+            continue
+        if candidate in seen_batch_urls:
+            continue
+        seen_batch_urls.add(candidate)
+        normalized_batch_urls.append(candidate)
+        if len(normalized_batch_urls) >= 500:
+            break
+
+    if batch_mode and not normalized_batch_urls:
+        raise HTTPException(status_code=422, detail="Batch mode requires at least one valid URL")
+
+    print(
+        f"[API] Site Audit Pro queued for: {url} "
+        f"(mode={mode}, max_pages={max_pages}, batch_mode={batch_mode}, batch_urls={len(normalized_batch_urls)})"
+    )
     task_id = f"sitepro-{datetime.now().timestamp()}"
     create_task_pending(task_id, "site_audit_pro", url, status_message="Site Audit Pro queued")
 
@@ -3417,6 +3461,8 @@ async def create_site_audit_pro(data: SiteAuditProRequest, background_tasks: Bac
                     "url": url,
                     "mode": mode,
                     "max_pages": max_pages,
+                    "batch_mode": batch_mode,
+                    "batch_urls_count": len(normalized_batch_urls),
                 },
                 ensure_ascii=False,
             )
@@ -3432,6 +3478,8 @@ async def create_site_audit_pro(data: SiteAuditProRequest, background_tasks: Bac
                 task_id=task_id,
                 mode=mode,
                 max_pages=max_pages,
+                batch_mode=batch_mode,
+                batch_urls=normalized_batch_urls,
                 progress_callback=_progress,
             )
             chunk_manifest = (((result or {}).get("results") or {}).get("artifacts") or {}).get("chunk_manifest", {})

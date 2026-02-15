@@ -982,7 +982,14 @@ class SiteAuditProAdapter:
 
             row.health_score = round(max(0.0, min(100.0, score)), 1)
 
-    def run(self, url: str, mode: str = "quick", max_pages: int = 5) -> NormalizedSiteAuditPayload:
+    def run(
+        self,
+        url: str,
+        mode: str = "quick",
+        max_pages: int = 5,
+        batch_urls: List[str] | None = None,
+        batch_mode: bool = False,
+    ) -> NormalizedSiteAuditPayload:
         selected_mode = "full" if mode == "full" else "quick"
         page_limit = max(1, min(int(max_pages or 5), 5000))
         timeout = 12
@@ -992,7 +999,18 @@ class SiteAuditProAdapter:
         if not base_host:
             raise ValueError("Invalid URL for Site Audit Pro")
 
-        queue: Deque[str] = deque([start_url])
+        prepared_batch_urls: List[str] = []
+        if batch_urls:
+            seen_batch: Set[str] = set()
+            for raw in batch_urls:
+                normalized = self._normalize_url(raw)
+                if not normalized or normalized in seen_batch:
+                    continue
+                seen_batch.add(normalized)
+                prepared_batch_urls.append(normalized)
+
+        effective_batch_mode = bool(batch_mode and prepared_batch_urls)
+        queue: Deque[str] = deque(prepared_batch_urls if effective_batch_mode else [start_url])
         visited: Set[str] = set()
         rows: List[NormalizedSiteAuditRow] = []
         titles_by_url: Dict[str, str] = {}
@@ -1049,7 +1067,7 @@ class SiteAuditProAdapter:
                 link_graph[row.url] = set(links)
                 for link in links:
                     incoming_counts[link] += 1
-                    if link not in visited and len(visited) + len(queue) < page_limit * 2:
+                    if (not effective_batch_mode) and link not in visited and len(visited) + len(queue) < page_limit * 2:
                         queue.append(link)
             except Exception as exc:
                 crawl_errors.append(f"{current}: {exc}")
@@ -1192,6 +1210,8 @@ class SiteAuditProAdapter:
             "migration_stage": "adapter_lightweight_crawl",
             "max_pages_requested": max_pages,
             "max_pages_scanned": len(rows),
+            "batch_mode": effective_batch_mode,
+            "batch_urls_requested": len(prepared_batch_urls),
             "crawl_errors": crawl_errors[:50],
             "topic_clusters_count": len(topic_clusters),
             "semantic_suggestions": semantic_suggestions,
@@ -1200,6 +1220,8 @@ class SiteAuditProAdapter:
                 "Full seopro calculation parity is pending",
             ],
         }
+        if effective_batch_mode:
+            artifacts["notes"].append("Batch URL mode active: only provided URLs were scanned")
 
         return NormalizedSiteAuditPayload(
             mode=selected_mode,

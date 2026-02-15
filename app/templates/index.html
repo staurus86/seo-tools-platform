@@ -1,14 +1,14 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 
-{% block title %}SEO Инструменты - Анализ сайтов{% endblock %}
+{% block title %}SEO РРЅСЃС‚СЂСѓРјРµРЅС‚С‹ - РђРЅР°Р»РёР· СЃР°Р№С‚ов{% endblock %}
 
 {% block content %}
 <!-- Hero Section -->
 <div class="text-center mb-12">
-    <h2 class="text-4xl font-bold text-gray-800 mb-4">Профессиональные SEO инструменты</h2>
+    <h2 class="text-4xl font-bold text-gray-800 mb-4">РџСЂРѕС„РµСЃСЃРёРѕРЅР°Р»СЊРЅС‹Рµ SEO РёРЅСЃС‚СЂСѓРјРµРЅС‚С‹</h2>
     <p class="text-xl text-gray-600 max-w-2xl mx-auto">
-        Асинхронная платформа для комплексного анализа сайтов. 
-        Все инструменты работают параллельно с отслеживанием прогресса.
+        РђСЃРёРЅС…СЂРѕРЅРЅР°СЏ РїР»Р°С‚С„РѕСЂРјР° РґР»СЏ РєРѕРјРїР»Рµксного Р°РЅР°Р»РёР·Р° СЃР°Р№С‚ов. 
+        Р’СЃРµ РёРЅСЃС‚СЂСѓРјРµРЅС‚С‹ СЂР°Р±РѕС‚Р°СЋС‚ РїР°СЂР°Р»Р»РµР»ьно СЃ РѕС‚СЃР»РµР¶РёРІР°РЅРёРµРј РїСЂРѕРіСЂРµСЃСЃР°.
     </p>
 </div>
 
@@ -22,27 +22,27 @@
                 <i class="fas fa-sitemap text-blue-600 text-xl"></i>
             </div>
             <div>
-                <h3 class="text-lg font-semibold text-gray-800">Анализ сайта</h3>
-                <p class="text-sm text-gray-500">Полный SEO аудит</p>
+                <h3 class="text-lg font-semibold text-gray-800">РђРЅР°Р»РёР· СЃР°Р№С‚Р°</h3>
+                <p class="text-sm text-gray-500">РџРѕР»РЅС‹Р№ SEO Р°СѓРґРёС‚</p>
             </div>
         </div>
         <p class="text-gray-600 mb-4 text-sm">
-            Глубокий анализ сайта: краулинг до 2000 страниц, мета-теги, заголовки, 
-            изображения, ссылки, скорость загрузки и многое другое.
+            Р“Р»СѓР±РѕРєРёР№ Р°РЅР°Р»РёР· СЃР°Р№С‚Р°: РєСЂР°СѓР»РёРЅРі РґРѕ 2000 СЃС‚СЂР°РЅРёС†, РјРµС‚Р°-С‚РµРіРё, Р·Р°РіРѕР»РѕРІРєРё, 
+            РёР·РѕР±СЂР°Р¶РµРЅРёСЏ, СЃСЃС‹Р»РєРё, СЃРєРѕСЂРѕСЃС‚СЊ Р·Р°РіСЂСѓР·РєРё Рё РјРЅРѕРіРѕРµ РґСЂСѓРіРѕРµ.
         </p>
         <form class="space-y-3" onsubmit="startTask(event, 'site-analyze')">
             <input type="url" name="url" placeholder="https://example.com" required
                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
             <div class="grid grid-cols-2 gap-2">
                 <input type="number" name="max_pages" value="100" min="1" max="2000"
-                       class="px-3 py-2 border rounded-lg text-sm" title="Макс. страниц">
+                       class="px-3 py-2 border rounded-lg text-sm" title="РњР°кс. СЃС‚СЂР°РЅРёС†">
                 <select name="use_js" class="px-3 py-2 border rounded-lg text-sm">
-                    <option value="true">С JavaScript</option>
-                    <option value="false">Без JavaScript</option>
+                    <option value="true">РЎ JavaScript</option>
+                    <option value="false">Р‘РµР· JavaScript</option>
                 </select>
             </div>
             <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition">
-                <i class="fas fa-play mr-2"></i>Запустить анализ
+                <i class="fas fa-play mr-2"></i>Р—Р°РїСѓСЃС‚РёС‚СЊ Р°РЅР°Р»РёР·
             </button>
         </form>
     </div>
@@ -55,28 +55,44 @@
             </div>
             <div>
                 <h3 class="text-lg font-semibold text-gray-800">Site Audit Pro</h3>
-                <p class="text-sm text-gray-500">Новый изолированный аудит</p>
+                <p class="text-sm text-gray-500">РќРѕРІС‹Р№ РёР·РѕР»РёСЂРѕРІР°РЅРЅС‹Р№ Р°СѓРґРёС‚</p>
             </div>
         </div>
         <p class="text-gray-600 mb-4 text-sm">
-            Новый инструмент для миграции расширенного аудита (SEOPRO) в платформу.
-            Работает отдельно от стабильного site_analyze и формирует compact quick-отчет.
+            РќРѕРІС‹Р№ РёРЅСЃС‚СЂСѓРјРµРЅС‚ РґР»СЏ РјРёРіСЂР°С†РёРё СЂР°СЃС€РёСЂРµнного Р°СѓРґРёС‚Р° (SEOPRO) РІ РїР»Р°С‚С„орму.
+            Р Р°Р±РѕС‚Р°РµС‚ РѕС‚РґРµР»ьно РѕС‚ СЃС‚Р°Р±РёР»ьного site_analyze Рё С„РѕСЂРјРёСЂСѓРµС‚ compact quick-РѕС‚С‡РµС‚.
         </p>
-        <form class="space-y-3" onsubmit="startTask(event, 'site-audit-pro')">
-            <input type="url" name="url" placeholder="https://example.com" required
-                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
-            <div class="grid grid-cols-2 gap-2">
-                <select name="mode" class="px-3 py-2 border rounded-lg text-sm">
-                    <option value="quick" selected>quick</option>
-                    <option value="full">full</option>
-                </select>
-                <input type="number" name="max_pages" value="5" min="1" max="5"
-                       class="px-3 py-2 border rounded-lg text-sm" title="Макс. страниц">
-            </div>
-            <button type="submit" class="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition">
-                <i class="fas fa-play mr-2"></i>Запустить Site Audit Pro
-            </button>
-        </form>
+        <form class="space-y-3" onsubmit="startTask(event, 'site-audit-pro')" data-tool="site-audit-pro">
+    <input type="url" name="url" placeholder="https://example.com" required
+           class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+    <div class="grid grid-cols-2 gap-2">
+        <select name="mode" class="px-3 py-2 border rounded-lg text-sm">
+            <option value="quick" selected>quick</option>
+            <option value="full">full</option>
+        </select>
+        <input type="number" name="max_pages" value="5" min="1" max="5"
+               class="px-3 py-2 border rounded-lg text-sm" title="Max pages">
+    </div>
+    <div class="grid grid-cols-1 gap-2">
+        <select name="scan_mode" class="px-3 py-2 border rounded-lg text-sm js-sitepro-scan-mode">
+            <option value="crawl" selected>crawl site</option>
+            <option value="batch">batch url list</option>
+        </select>
+        <input type="hidden" name="batch_mode" value="false" class="js-sitepro-batch-flag">
+        <div class="hidden js-sitepro-batch-box">
+            <textarea
+                name="batch_urls_text"
+                class="w-full px-3 py-2 border rounded-lg text-sm"
+                rows="8"
+                placeholder="https://example.com/page-1&#10;https://example.com/page-2&#10;https://example.com/page-3"
+            ></textarea>
+            <p class="text-xs text-gray-500 mt-1">Up to 500 URLs, one URL per line.</p>
+        </div>
+    </div>
+    <button type="submit" class="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition">
+        <i class="fas fa-play mr-2"></i>Запустить Site Audit Pro
+    </button>
+</form>
     </div>
 
     <!-- Tool 2: Robots.txt Checker -->
@@ -87,18 +103,18 @@
             </div>
             <div>
                 <h3 class="text-lg font-semibold text-gray-800">Robots.txt</h3>
-                <p class="text-sm text-gray-500">Проверка доступа</p>
+                <p class="text-sm text-gray-500">РџСЂРѕРІРµСЂРєР° РґРѕСЃС‚СѓРїР°</p>
             </div>
         </div>
         <p class="text-gray-600 mb-4 text-sm">
-            Проверка robots.txt на корректность синтаксиса, наличие sitemap, 
-            запреты для поисковых систем и рекомендации по исправлению.
+            РџСЂРѕРІРµСЂРєР° robots.txt РЅР° РєРѕСЂСЂРµРєС‚РЅРѕСЃС‚СЊ СЃРёРЅС‚Р°РєСЃРёСЃР°, РЅР°Р»РёС‡РёРµ sitemap, 
+            Р·Р°РїСЂРµС‚С‹ РґР»СЏ РїРѕРёСЃРєРѕРІС‹С… СЃРёСЃС‚РµРј Рё СЂРµРєРѕРјРµРЅРґР°С†РёРё по РёСЃРїСЂР°РІР»РµРЅРёСЋ.
         </p>
         <form class="space-y-3" onsubmit="startTask(event, 'robots-check')">
             <input type="url" name="url" placeholder="https://example.com" required
                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
             <button type="submit" class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition">
-                <i class="fas fa-play mr-2"></i>Проверить robots.txt
+                <i class="fas fa-play mr-2"></i>РџСЂРѕРІРµСЂРёС‚СЊ robots.txt
             </button>
         </form>
     </div>
@@ -111,18 +127,18 @@
             </div>
             <div>
                 <h3 class="text-lg font-semibold text-gray-800">Sitemap.xml</h3>
-                <p class="text-sm text-gray-500">Валидация карты сайта</p>
+                <p class="text-sm text-gray-500">Р’Р°Р»РёРґР°С†РёСЏ РєР°СЂС‚С‹ СЃР°Р№С‚Р°</p>
             </div>
         </div>
         <p class="text-gray-600 mb-4 text-sm">
-            Валидация XML sitemap по стандарту sitemaps.org: синтаксис, 
-            кодировка, дубли, URL-ы, lastmod, changefreq, priority.
+            Р’Р°Р»РёРґР°С†РёСЏ XML sitemap по СЃС‚Р°РЅРґР°СЂС‚Сѓ sitemaps.org: СЃРёРЅС‚Р°РєСЃРёСЃ, 
+            РєРѕРґРёСЂРѕРІРєР°, РґСѓР±Р»Рё, URL-С‹, lastmod, changefreq, priority.
         </p>
         <form class="space-y-3" onsubmit="startTask(event, 'sitemap-validate')">
             <input type="url" name="url" placeholder="https://example.com/sitemap.xml" required
                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
             <button type="submit" class="w-full bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700 transition">
-                <i class="fas fa-play mr-2"></i>Валидировать sitemap
+                <i class="fas fa-play mr-2"></i>Р’Р°Р»РёРґРёСЂРѕРІР°С‚СЊ sitemap
             </button>
         </form>
     </div>
@@ -134,19 +150,19 @@
                 <i class="fas fa-code text-orange-600 text-xl"></i>
             </div>
             <div>
-                <h3 class="text-lg font-semibold text-gray-800">Аудит рендеринга</h3>
-                <p class="text-sm text-gray-500">JavaScript vs без JavaScript</p>
+                <h3 class="text-lg font-semibold text-gray-800">РђСѓРґРёС‚ СЂРµРЅРґРµСЂРёРЅРіР°</h3>
+                <p class="text-sm text-gray-500">JavaScript vs Р±РµР· JavaScript</p>
             </div>
         </div>
         <p class="text-gray-600 mb-4 text-sm">
-            Сравнение HTML с JavaScript и без: проверка SSR, динамический контент, 
-            мета-теги, канонические URL и критические различия.
+            РЎСЂР°РІРЅРµРЅРёРµ HTML СЃ JavaScript Рё Р±РµР·: РїСЂРѕРІРµСЂРєР° SSR, РґРёРЅР°РјРёС‡РµСЃРєРёР№ РєРѕРЅС‚РµРЅС‚, 
+            РјРµС‚Р°-С‚РµРіРё, РєР°РЅРѕРЅРёС‡РµСЃРєРёРµ URL Рё РєСЂРёС‚РёС‡РµСЃРєРёРµ СЂР°Р·Р»РёС‡РёСЏ.
         </p>
         <form class="space-y-3" onsubmit="startTask(event, 'render-audit')">
             <input type="url" name="url" placeholder="https://example.com/page" required
                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent">
             <button type="submit" class="w-full bg-orange-600 text-white py-2 rounded-lg hover:bg-orange-700 transition">
-                <i class="fas fa-play mr-2"></i>Аудит рендеринга
+                <i class="fas fa-play mr-2"></i>РђСѓРґРёС‚ СЂРµРЅРґРµСЂРёРЅРіР°
             </button>
         </form>
     </div>
@@ -158,27 +174,27 @@
                 <i class="fas fa-mobile-alt text-pink-600 text-xl"></i>
             </div>
             <div>
-                <h3 class="text-lg font-semibold text-gray-800">Мобильная версия</h3>
-                <p class="text-sm text-gray-500">Тестирование устройств</p>
+                <h3 class="text-lg font-semibold text-gray-800">РњРѕР±РёР»СЊРЅР°СЏ РІРµСЂСЃРёСЏ</h3>
+                <p class="text-sm text-gray-500">РўРµСЃС‚РёСЂРѕРІР°РЅРёРµ СѓСЃС‚СЂРѕР№СЃС‚РІ</p>
             </div>
         </div>
         <p class="text-gray-600 mb-4 text-sm">
-            Тестирование на 20+ устройствах: iPhone, Samsung, Google Pixel, 
-            планшеты. Viewport, touch-элементы, шрифты, адаптивность.
+            РўРµСЃС‚РёСЂРѕРІР°РЅРёРµ РЅР° 20+ СѓСЃС‚СЂРѕР№СЃС‚РІР°С…: iPhone, Samsung, Google Pixel, 
+            РїР»Р°РЅС€РµС‚С‹. Viewport, touch-СЌР»РµРјРµРЅС‚С‹, С€СЂРёС„С‚С‹, Р°РґР°РїС‚РёРІРЅРѕСЃС‚СЊ.
         </p>
         <form class="space-y-3" onsubmit="startTask(event, 'mobile-check')">
             <input type="url" name="url" placeholder="https://example.com" required
                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent">
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Режим сканирования</label>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Р РµР¶РёРј СЃРєР°РЅРёСЂРѕРІР°РЅРёСЏ</label>
                 <select name="mode" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent">
-                    <option value="quick" selected>Быстрая (iPhone 16 Pro + Galaxy S25)</option>
-                    <option value="full">Полная (все устройства по умолчанию)</option>
+                    <option value="quick" selected>Р‘С‹СЃС‚СЂР°СЏ (iPhone 16 Pro + Galaxy S25)</option>
+                    <option value="full">РџРѕР»РЅР°СЏ (РІСЃРµ СѓСЃС‚СЂРѕР№СЃС‚РІР° по СѓРјРѕР»С‡Р°РЅРёСЋ)</option>
                 </select>
             </div>
             <details class="rounded-lg border border-pink-200 bg-pink-50/40 p-3">
-                <summary class="cursor-pointer text-sm font-medium text-pink-800">Выбор устройств (опционально)</summary>
-                <p class="mt-2 text-xs text-gray-600">Если ничего не выбрано, автоматически используется набор по умолчанию.</p>
+                <summary class="cursor-pointer text-sm font-medium text-pink-800">Р’С‹Р±ор СѓСЃС‚СЂРѕР№СЃС‚РІ (РѕРїС†РёРѕРЅР°Р»ьно)</summary>
+                <p class="mt-2 text-xs text-gray-600">Р•СЃР»Рё РЅРёС‡Рµго РЅРµ РІС‹Р±СЂР°РЅРѕ, Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё РёСЃРїРѕР»СЊР·СѓРµС‚ся РЅР°Р±ор по СѓРјРѕР»С‡Р°РЅРёСЋ.</p>
                 <div class="mt-3 grid grid-cols-1 gap-1 text-sm">
                     <label class="flex items-center gap-2"><input type="checkbox" name="devices" value="iPhone 16 Pro" class="rounded border-gray-300 text-pink-600 focus:ring-pink-500"><span>iPhone 16 Pro</span></label>
                     <label class="flex items-center gap-2"><input type="checkbox" name="devices" value="Samsung Galaxy S25" class="rounded border-gray-300 text-pink-600 focus:ring-pink-500"><span>Samsung Galaxy S25</span></label>
@@ -190,7 +206,7 @@
                 </div>
             </details>
             <button type="submit" class="w-full bg-pink-600 text-white py-2 rounded-lg hover:bg-pink-700 transition">
-                <i class="fas fa-play mr-2"></i>Проверить мобильную
+                <i class="fas fa-play mr-2"></i>РџСЂРѕРІРµСЂРёС‚СЊ РјРѕР±РёР»ьную
             </button>
         </form>
     </div>
@@ -202,37 +218,37 @@
                 <i class="fas fa-spider text-red-600 text-xl"></i>
             </div>
             <div>
-                <h3 class="text-lg font-semibold text-gray-800">Проверка ботов</h3>
-                <p class="text-sm text-gray-500">Доступность поисковиков</p>
+                <h3 class="text-lg font-semibold text-gray-800">РџСЂРѕРІРµСЂРєР° Р±РѕС‚ов</h3>
+                <p class="text-sm text-gray-500">Р”РѕСЃС‚СѓРїРЅРѕСЃС‚СЊ РїРѕРёСЃРєРѕРІРёРєРѕРІ</p>
             </div>
         </div>
         <p class="text-gray-600 mb-4 text-sm">
-            Проверка доступности сайта для Google, Yandex, Bing, ChatGPT, 
-            Claude и других AI-ботов. HTTP статусы, robots, meta-теги.
+            РџСЂРѕРІРµСЂРєР° РґРѕСЃС‚СѓРїРЅРѕСЃС‚Рё СЃР°Р№С‚Р° РґР»СЏ Google, Yandex, Bing, ChatGPT, 
+            Claude Рё РґСЂСѓРіРёС… AI-Р±РѕС‚ов. HTTP СЃС‚Р°С‚СѓСЃС‹, robots, meta-С‚РµРіРё.
         </p>
         <form class="space-y-3" onsubmit="startTask(event, 'bot-check')">
             <input type="url" name="url" placeholder="https://example.com" required
                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent">
             <details class="rounded-lg border border-red-200 bg-red-50/40 p-3">
-                <summary class="cursor-pointer text-sm font-medium text-red-800">Выбор ботов</summary>
+                <summary class="cursor-pointer text-sm font-medium text-red-800">Р’С‹Р±ор Р±РѕС‚ов</summary>
                 <div class="mt-3 space-y-3 text-sm">
                     <div>
-                        <div class="text-gray-700 font-medium mb-2">Добавить группы</div>
+                        <div class="text-gray-700 font-medium mb-2">Р”РѕР±Р°РІРёС‚СЊ РіСЂСѓРїРїС‹</div>
                         <label class="flex items-center gap-2">
                             <input type="checkbox" name="bot_groups" value="search" class="rounded border-gray-300 text-red-600 focus:ring-red-500">
-                            <span>Все боты поисковых систем</span>
+                            <span>Р’СЃРµ Р±РѕС‚С‹ РїРѕРёСЃРєРѕРІС‹С… СЃРёСЃС‚РµРј</span>
                         </label>
                         <label class="flex items-center gap-2">
                             <input type="checkbox" name="bot_groups" value="ai" class="rounded border-gray-300 text-red-600 focus:ring-red-500">
-                            <span>Все AI-боты</span>
+                            <span>Р’СЃРµ AI-Р±РѕС‚С‹</span>
                         </label>
                         <label class="flex items-center gap-2">
                             <input type="checkbox" name="bot_groups" value="crawlers" class="rounded border-gray-300 text-red-600 focus:ring-red-500">
-                            <span>Все краулеры</span>
+                            <span>Р’СЃРµ РєСЂР°СѓР»РµСЂС‹</span>
                         </label>
                     </div>
                     <div>
-                        <div class="text-gray-700 font-medium mb-2">Боты по умолчанию (предвыбраны)</div>
+                        <div class="text-gray-700 font-medium mb-2">Р‘РѕС‚С‹ по СѓРјРѕР»С‡Р°РЅРёСЋ (РїСЂРµРґРІС‹Р±СЂР°РЅС‹)</div>
                         <div class="grid grid-cols-1 gap-1">
                             <label class="flex items-center gap-2"><input type="checkbox" name="selected_bots" value="YandexBot" checked class="rounded border-gray-300 text-red-600 focus:ring-red-500"><span>Yandex</span></label>
                             <label class="flex items-center gap-2"><input type="checkbox" name="selected_bots" value="Googlebot Desktop" checked class="rounded border-gray-300 text-red-600 focus:ring-red-500"><span>Google</span></label>
@@ -248,7 +264,7 @@
                 </div>
             </details>
             <button type="submit" class="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition">
-                <i class="fas fa-play mr-2"></i>Проверить ботов
+                <i class="fas fa-play mr-2"></i>РџСЂРѕРІРµСЂРёС‚СЊ Р±РѕС‚ов
             </button>
         </form>
     </div>
@@ -258,14 +274,14 @@
 <div class="bg-white rounded-xl shadow-md p-6">
     <div class="flex items-center justify-between mb-4">
         <h3 class="text-lg font-semibold text-gray-800">
-            <i class="fas fa-history mr-2 text-gray-500"></i>История проверок
+            <i class="fas fa-history mr-2 text-gray-500"></i>РСЃС‚РѕСЂРёСЏ РїСЂРѕРІРµрок
         </h3>
         <button onclick="clearHistory()" class="text-sm text-red-500 hover:text-red-700">
-            <i class="fas fa-trash mr-1"></i>Очистить
+            <i class="fas fa-trash mr-1"></i>РћС‡РёСЃС‚РёС‚СЊ
         </button>
     </div>
     <div id="history-container" class="space-y-2">
-        <p class="text-gray-500 text-center py-4">История пуста</p>
+        <p class="text-gray-500 text-center py-4">РСЃС‚РѕСЂРёСЏ РїСѓСЃС‚Р°</p>
     </div>
 </div>
 
@@ -274,13 +290,13 @@
     <div class="bg-white rounded-xl p-6 max-w-md mx-4">
         <div class="text-center">
             <i class="fas fa-clock text-yellow-500 text-4xl mb-4"></i>
-            <h3 class="text-lg font-semibold mb-2">Лимит запросов исчерпан</h3>
+            <h3 class="text-lg font-semibold mb-2">Р›РёРјРёС‚ Р·Р°просов РёСЃС‡РµСЂРїР°РЅ</h3>
             <p class="text-gray-600 mb-4">
-                Вы достигли лимита в <span id="modal-limit">10</span> запросов в час.
-                Попробуйте снова через <span id="modal-time">60</span> минут.
+                Р’С‹ РґРѕСЃС‚РёРіР»Рё Р»РёРјРёС‚Р° РІ <span id="modal-limit">10</span> Р·Р°просов РІ С‡Р°СЃ.
+                РџРѕРїСЂРѕР±СѓР№С‚Рµ СЃРЅРѕРІР° С‡РµСЂРµР· <span id="modal-time">60</span> РјРёРЅСѓС‚.
             </p>
             <button onclick="closeRateLimitModal()" class="bg-gray-800 text-white px-6 py-2 rounded-lg hover:bg-gray-900">
-                Понятно
+                РџРѕРЅСЏС‚РЅРѕ
             </button>
         </div>
     </div>
@@ -290,5 +306,6 @@
 {% block extra_js %}
 <script src="/static/js/history.js"></script>
 {% endblock %}
+
 
 
