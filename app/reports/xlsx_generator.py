@@ -819,6 +819,23 @@ class XLSXGenerator:
         def bool_icon(value: Any, positive: str = "✅", negative: str = "❌") -> str:
             return positive if bool(value) else negative
 
+        def icon_score(value: Any, low: float = 60.0, high: float = 80.0) -> str:
+            v = to_float(value, 0.0)
+            if v >= high:
+                return f"✅ {v:.0f}"
+            if v >= low:
+                return f"⚠️ {v:.0f}"
+            return f"❌ {v:.0f}"
+
+        def icon_count(count: int, low: float = 20.0, high: float = 50.0) -> str:
+            # Smaller count is better; use inverted score scale.
+            score = 100.0 - min(100.0, float(count) * 5.0)
+            if score >= high:
+                return f"✅ {count}"
+            if score >= low:
+                return f"⚠️ {count}"
+            return f"❌ {count}"
+
         def as_percent(value: Any) -> str:
             try:
                 return f"{float(value):.1f}%"
@@ -1372,13 +1389,13 @@ class XLSXGenerator:
                     page.get("title", "") or "-",
                     page.get("meta_description", "") or "-",
                     page.get("h1_text", "") or "-",
-                    to_float(page.get("toxicity_score"), 0.0),
+                    icon_score(100.0 - to_float(page.get("toxicity_score"), 0.0), low=30.0, high=70.0),
                     page.get("h_hierarchy", "") or "-",
-                    to_float(page.get("health_score"), 0.0),
+                    icon_score(page.get("health_score"), low=60.0, high=80.0),
                     page.get("status_code", ""),
-                    bool_icon(page.get("indexable")),
+                    f"{bool_icon(page.get('indexable'))} {'Yes' if page.get('indexable') else 'No'}",
                     page.get("canonical_status", "") or "-",
-                    page.get("response_time_ms", ""),
+                    f"{page.get('response_time_ms', '')}" if page.get("response_time_ms") is not None else "-",
                     problem_text,
                     page_solution("main", page, page_issues),
                     sev,
@@ -1410,8 +1427,8 @@ class XLSXGenerator:
                 sev = infer_page_severity(page)
                 onpage_compat_rows.append([
                     page.get("url", ""),
-                    int(page.get("title_len") or len(str(page.get("title") or ""))),
-                    int(page.get("description_len") or len(str(page.get("meta_description") or ""))),
+                    f"{int(page.get('title_len') or len(str(page.get('title') or '')))} ch",
+                    f"{int(page.get('description_len') or len(str(page.get('meta_description') or '')))} ch",
                     int(page.get("h1_count") or 0),
                     bool_icon(bool(page.get("canonical"))),
                     page.get("canonical_status", "") or "-",
@@ -1436,9 +1453,9 @@ class XLSXGenerator:
                     page.get("url", ""),
                     int(page.get("word_count") or 0),
                     as_percent(page.get("unique_percent")),
-                    to_float(page.get("readability_score"), 0.0),
-                    to_float(page.get("toxicity_score"), 0.0),
-                    int(page.get("ai_markers_count") or 0),
+                    icon_score(page.get("readability_score"), low=60.0, high=80.0),
+                    icon_score(100.0 - to_float(page.get("toxicity_score"), 0.0), low=30.0, high=70.0),
+                    icon_count(int(page.get("ai_markers_count") or 0), low=20.0, high=50.0),
                     ai_found_list(page),
                     int(len(page.get("filler_phrases") or [])),
                     page_solution("content", page),
@@ -1456,14 +1473,14 @@ class XLSXGenerator:
                 technical_compat_rows.append([
                     page.get("url", ""),
                     page.get("status_code", ""),
-                    bool_icon(page.get("indexable")),
-                    page.get("response_time_ms", ""),
+                    f"{bool_icon(page.get('indexable'))} {'Yes' if page.get('indexable') else 'No'}",
+                    f"{page.get('response_time_ms', '')}" if page.get("response_time_ms") is not None else "-",
                     round((to_float(page.get("html_size_bytes"), 0.0) / 1024.0), 1),
                     int(page.get("dom_nodes_count") or 0),
-                    to_float(page.get("html_quality_score"), 0.0),
+                    icon_score(page.get("html_quality_score"), low=60.0, high=80.0),
                     bool_icon(page.get("is_https")),
-                    bool_icon(page.get("compression_enabled")),
-                    bool_icon(page.get("cache_enabled")),
+                    "Yes" if page.get("compression_enabled") else "No",
+                    "Set" if page.get("cache_enabled") else "No",
                     page.get("canonical_status", ""),
                     page.get("meta_robots", "") or page.get("x_robots_tag", ""),
                     len(page.get("deprecated_tags") or []),
@@ -1479,7 +1496,7 @@ class XLSXGenerator:
                 comp = page.get("eeat_components") or {}
                 eeat_rows.append([
                     page.get("url", ""),
-                    to_float(page.get("eeat_score"), 0.0),
+                    icon_score(page.get("eeat_score"), low=60.0, high=80.0),
                     to_float(comp.get("expertise"), 0.0),
                     to_float(comp.get("authoritativeness"), 0.0),
                     to_float(comp.get("trustworthiness"), 0.0),
@@ -1495,7 +1512,7 @@ class XLSXGenerator:
                 sev = infer_page_severity(page)
                 trust_rows.append([
                     page.get("url", ""),
-                    to_float(page.get("trust_score"), 0.0),
+                    icon_score(page.get("trust_score"), low=60.0, high=80.0),
                     bool_icon(page.get("has_contact_info")),
                     bool_icon(page.get("has_legal_docs")),
                     bool_icon(page.get("has_reviews")),
@@ -1514,14 +1531,14 @@ class XLSXGenerator:
                 sev = infer_page_severity(page)
                 health_rows.append([
                     page.get("url", ""),
-                    to_float(page.get("health_score"), 0.0),
-                    bool_icon(page.get("indexable")),
+                    icon_score(page.get("health_score"), low=60.0, high=80.0),
+                    f"{bool_icon(page.get('indexable'))} {'Yes' if page.get('indexable') else 'No'}",
                     int(page.get("word_count") or 0),
                     as_percent(page.get("unique_percent")),
-                    to_float(page.get("readability_score"), 0.0),
+                    f"{to_float(page.get('readability_score'), 0.0):.0f}",
                     int(page.get("duplicate_title_count") or 0),
                     int(page.get("duplicate_description_count") or 0),
-                    page.get("response_time_ms", ""),
+                    f"{page.get('response_time_ms', '')}" if page.get("response_time_ms") is not None else "-",
                     page_solution("health", page),
                     sev,
                 ])
@@ -1536,7 +1553,7 @@ class XLSXGenerator:
                     to_float(page.get("pagerank"), 0.0),
                     int(page.get("incoming_internal_links") or 0),
                     int(page.get("outgoing_internal_links") or 0),
-                    bool_icon(not page.get("orphan_page")),
+                    "❌ ORPHAN" if page.get("orphan_page") else "✅",
                     page_solution("links", page),
                     sev,
                 ])
@@ -1553,9 +1570,9 @@ class XLSXGenerator:
                 images_rows.append([
                     page.get("url", ""),
                     int(page.get("images_count") or img_opt.get("total") or 0),
-                    no_alt,
-                    no_width,
-                    no_lazy,
+                    f"❌ {no_alt}" if no_alt > 0 else "✅",
+                    f"⚠️ {no_width}" if no_width > 0 else "✅",
+                    f"⚠️ {no_lazy}" if no_lazy > 0 else "✅",
                     (no_alt + no_width + no_lazy),
                     page_solution("images", page),
                     sev,
@@ -1630,7 +1647,7 @@ class XLSXGenerator:
                     summary_links.append(f"[{anchor}] -> {target}")
                 topics_rows.append([
                     page.get("url", ""),
-                    "HUB" if page.get("topic_hub") else "-",
+                    "⭐ HUB" if page.get("topic_hub") else "-",
                     page.get("topic_label", ""),
                     int(page.get("incoming_internal_links") or 0),
                     "\n".join(summary_links),
@@ -1648,16 +1665,16 @@ class XLSXGenerator:
                 sev = infer_page_severity(page)
                 advanced_compat_rows.append([
                     page.get("url", ""),
-                    page.get("content_freshness_days", "Unknown"),
+                    page.get("content_freshness_days", "Unknown") if page.get("content_freshness_days") is not None else "Unknown",
                     page.get("last_modified", "not set"),
                     page.get("status_code", ""),
-                    bool_icon(page.get("indexable")),
-                    page.get("response_time_ms", ""),
+                    f"{bool_icon(page.get('indexable'))} {'Yes' if page.get('indexable') else 'No'}",
+                    f"{page.get('response_time_ms', '')}" if page.get("response_time_ms") is not None else "-",
                     round((to_float(page.get("html_size_bytes"), 0.0) / 1024.0), 1),
                     int(page.get("redirect_count") or 0),
                     page.get("final_url", ""),
-                    bool_icon(not page.get("hidden_content")),
-                    bool_icon(not page.get("cloaking_detected")),
+                    f"❌ {int(page.get('hidden_content') or 0)}" if page.get("hidden_content") else "✅",
+                    "❌" if page.get("cloaking_detected") else "✅",
                     int(page.get("cta_count") or 0),
                     f"{int(page.get('lists_count') or 0)}/{int(page.get('tables_count') or 0)}",
                     page_solution("advanced", page),
@@ -1674,13 +1691,13 @@ class XLSXGenerator:
                 sev = infer_page_severity(page)
                 link_quality_rows.append([
                     page.get("url", ""),
-                    to_float(page.get("link_quality_score"), 0.0),
+                    icon_score(page.get("link_quality_score"), low=60.0, high=80.0),
                     to_float(page.get("pagerank"), 0.0),
                     to_float(page.get("anchor_text_quality_score"), 0.0),
                     int(page.get("incoming_internal_links") or 0),
                     int(page.get("outgoing_internal_links") or 0),
-                    bool_icon(not page.get("orphan_page")),
-                    bool_icon(page.get("topic_hub")),
+                    "✅" if not page.get("orphan_page") else "❌",
+                    "✅" if page.get("topic_hub") else "-",
                     page_solution("link_quality", page),
                     sev,
                 ])
@@ -1693,7 +1710,7 @@ class XLSXGenerator:
                 ai_count = int(page.get("ai_markers_count") or 0)
                 ai_rows.append([
                     page.get("url", ""),
-                    ai_count,
+                    icon_count(ai_count, low=20.0, high=50.0),
                     ai_found_list(page),
                     page.get("ai_marker_sample", "") or ("Marker snippet not available in compact payload" if ai_count > 0 else "No text sample available"),
                     page_solution("content", page) if ai_count > 0 else "No AI markers detected",
