@@ -880,25 +880,25 @@ class XLSXGenerator:
         for issue in issues:
             issues_by_url.setdefault(issue.get("url", ""), []).append(issue)
 
-        def bool_icon(value: Any, positive: str = "вњ…", negative: str = "вќЊ") -> str:
+        def bool_icon(value: Any, positive: str = "YES", negative: str = "NO") -> str:
             return positive if bool(value) else negative
 
         def icon_score(value: Any, low: float = 60.0, high: float = 80.0) -> str:
             v = to_float(value, 0.0)
             if v >= high:
-                return f"вњ… {v:.0f}"
+                return f"GOOD {v:.0f}"
             if v >= low:
-                return f"вљ пёЏ {v:.0f}"
-            return f"вќЊ {v:.0f}"
+                return f"WARN {v:.0f}"
+            return f"BAD {v:.0f}"
 
         def icon_count(count: int, low: float = 20.0, high: float = 50.0) -> str:
             # Smaller count is better; use inverted score scale.
             score = 100.0 - min(100.0, float(count) * 5.0)
             if score >= high:
-                return f"вњ… {count}"
+                return f"GOOD {count}"
             if score >= low:
-                return f"вљ пёЏ {count}"
-            return f"вќЊ {count}"
+                return f"WARN {count}"
+            return f"BAD {count}"
 
         def as_percent(value: Any) -> str:
             try:
@@ -920,9 +920,9 @@ class XLSXGenerator:
             page_issues = page_issues or []
             if tab == "main":
                 if not page.get("indexable"):
-                    recs.append("РЈР±СЂР°С‚СЊ noindex/РёСЃРїСЂР°РІРёС‚СЊ СЃС‚Р°С‚ус/robots")
+                    recs.append("Fix noindex/status/robots")
                 if to_float(page.get("health_score"), 100.0) < 60:
-                    recs.append("РџРѕРґРЅСЏС‚СЊ С‚РµС….РєР°С‡РµСЃС‚во Рё РєРѕРЅС‚РµРЅС‚ РґРѕ 60+")
+                    recs.append("Improve technical and content quality to 60+")
                 if not page_issues and not recs:
                     return "OK"
                 if recs:
@@ -933,156 +933,156 @@ class XLSXGenerator:
             if tab == "hierarchy":
                 status = str(page.get("h_hierarchy") or "").lower()
                 if "wrong start" in status:
-                    return "Р”РѕР±Р°РІСЊС‚Рµ <h1> РІ РЅР°С‡Р°Р»Рѕ основного РєРѕРЅС‚РµРЅС‚Р°"
+                    return "Add H1 at the start of main content"
                 if "level skip" in status:
-                    return "РСЃРїСЂР°РІСЊС‚Рµ РїСЂРѕРїСѓСЃРєРё СѓСЂРѕРІРЅРµР№ (H1->H2->H3)"
+                    return "Fix heading level skips (H1->H2->H3)"
                 if "multiple h1" in status:
-                    return "РћСЃС‚Р°РІСЊС‚Рµ С‚РѕР»ько 1 H1, РѕСЃС‚Р°Р»СЊРЅС‹Рµ Р·Р°РјРµРЅРёС‚Рµ РЅР° H2"
+                    return "Keep only one H1 and convert others to H2"
                 if "missing h1" in status:
-                    return "Р”РѕР±Р°РІСЊС‚Рµ РѕРґРёРЅ РѕРїРёСЃР°С‚РµР»СЊРЅС‹Р№ H1"
+                    return "Add one descriptive H1"
                 return "OK"
 
             if tab == "onpage":
                 title_len = int(page.get("title_len") or len(str(page.get("title") or "")))
                 desc_len = int(page.get("description_len") or len(str(page.get("meta_description") or "")))
                 if title_len < 30 or title_len > 60:
-                    recs.append("Title 30-60 СЃРёРјРІРѕР»ов, СѓРЅРёРєР°Р»СЊРЅС‹Р№")
+                    recs.append("Keep title length in 30-60 chars and unique")
                 if desc_len < 50 or desc_len > 160:
-                    recs.append("Meta 100-160 СЃРёРјРІРѕР»ов СЃ CTA")
+                    recs.append("Keep meta description in 100-160 chars")
                 if int(page.get("h1_count") or 0) != 1:
-                    recs.append("РћСЃС‚Р°РІРёС‚СЊ 1 H1")
+                    recs.append("Keep exactly one H1")
                 if (page.get("canonical_status") or "") in ("missing", "external", "invalid"):
-                    recs.append("РџРѕСЃС‚Р°РІРёС‚СЊ РєРѕСЂСЂРµРєС‚РЅС‹Р№ canonical")
+                    recs.append("Set a valid canonical URL")
                 if int(page.get("duplicate_title_count") or 0) > 1:
-                    recs.append("РЈРЅРёРєР°Р»РёР·РёСЂРѕРІР°С‚СЊ Title")
+                    recs.append("Deduplicate title")
                 if int(page.get("duplicate_description_count") or 0) > 1:
-                    recs.append("РЈРЅРёРєР°Р»РёР·РёСЂРѕРІР°С‚СЊ Meta")
+                    recs.append("Deduplicate meta description")
                 return ok_if_empty(recs)
 
             if tab == "content":
                 unique_percent = to_float(page.get("unique_percent"), 0.0)
                 words = int(page.get("word_count") or 0)
                 if unique_percent < 30:
-                    recs.append("Р”РѕР±Р°РІРёС‚СЊ РЅРѕРІС‹Рµ С‚РµРєСЃС‚РѕРІС‹Рµ Р±Р»РѕРєРё (СѓРЅРёРєР°Р»СЊРЅРѕСЃС‚СЊ <30%)")
+                    recs.append("Add unique content blocks (uniqueness <30%)")
                 elif unique_percent < 50:
-                    recs.append("РџРѕРІС‹СЃРёС‚СЊ СѓРЅРёРєР°Р»СЊРЅРѕСЃС‚СЊ >50%")
+                    recs.append("Increase uniqueness above 50%")
                 if words < 300:
-                    recs.append("РЈРІРµР»РёС‡РёС‚СЊ РѕР±СЉРµРј РґРѕ 300+ СЃР»ов")
+                    recs.append("Increase content volume to 300+ words")
                 if to_float(page.get("toxicity_score"), 0.0) > 40:
-                    recs.append("РЎРЅРёР·РёС‚СЊ keyword-stuffing/СЃРїР°Рј")
+                    recs.append("Reduce keyword stuffing and spam")
                 return ok_if_empty(recs)
 
             if tab == "technical":
                 if not page.get("indexable"):
-                    recs.append("РЎРґРµР»Р°С‚СЊ СЃС‚СЂР°РЅРёС†Сѓ РёРЅРґРµРєСЃРёСЂСѓРµРјРѕР№")
+                    recs.append("Make page indexable")
                 if not page.get("is_https"):
-                    recs.append("Р’РєР»СЋС‡РёС‚СЊ HTTPS")
+                    recs.append("Enable HTTPS")
                 if not page.get("compression_enabled"):
-                    recs.append("Р’РєР»СЋС‡РёС‚СЊ gzip/br")
+                    recs.append("Enable gzip or brotli")
                 if not page.get("cache_enabled"):
-                    recs.append("РќР°СЃС‚СЂРѕРёС‚СЊ Cache-Control")
+                    recs.append("Configure Cache-Control")
                 if (page.get("canonical_status") or "") in ("missing", "external", "invalid"):
-                    recs.append("РџСЂРѕРІРµСЂРёС‚СЊ canonical")
+                    recs.append("Validate canonical")
                 if len(page.get("deprecated_tags") or []) > 0:
-                    recs.append("РЈРґР°Р»РёС‚СЊ СѓСЃС‚Р°СЂРµРІС€РёРµ С‚РµРіРё")
+                    recs.append("Remove deprecated HTML tags")
                 rt = page.get("response_time_ms")
                 if rt is not None and int(rt) > 2000:
-                    recs.append("РЈСЃРєРѕСЂРёС‚СЊ РѕС‚РІРµС‚ СЃРµСЂРІРµСЂР°")
+                    recs.append("Reduce server response time")
                 return ok_if_empty(recs)
 
             if tab == "eeat":
                 eeat = to_float(page.get("eeat_score"), 0.0)
                 if eeat < 50:
-                    recs.append("Р”РѕР±Р°РІРёС‚СЊ Р°РІС‚РѕСЂР°, Р±РёРѕ, РёСЃС‚РѕС‡РЅРёРєРё, РєРµР№СЃС‹")
+                    recs.append("Add author profile, bio, sources, and case studies")
                 elif eeat < 70:
-                    recs.append("РЈСЃРёР»РёС‚СЊ Р°РІС‚РѕСЂСЃС‚во Рё РґРѕРІРµСЂРёРµ")
+                    recs.append("Strengthen expertise and trust signals")
                 if not page.get("has_author_info"):
-                    recs.append("Р‘Р»ок Р°РІС‚РѕСЂР° + РєРѕРЅС‚Р°РєС‚/СЃРѕС†СЃРµС‚Рё")
+                    recs.append("Add author block with contacts/social links")
                 if not page.get("has_reviews"):
-                    recs.append("Р”РѕР±Р°РІРёС‚СЊ РѕС‚Р·С‹РІС‹/РєРµР№СЃС‹")
+                    recs.append("Add reviews and case studies")
                 return ok_if_empty(recs)
 
             if tab == "trust":
                 if not page.get("has_contact_info"):
-                    recs.append("Р”РѕР±Р°РІРёС‚СЊ РєРѕРЅС‚Р°РєС‚С‹/Р°РґСЂРµСЃ/С‚РµР»РµС„РѕРЅ")
+                    recs.append("Add contacts, address, and phone")
                 if not page.get("has_legal_docs"):
-                    recs.append("Р”РѕР±Р°РІРёС‚СЊ СЋСЂРёРґРёС‡РµСЃРєРёРµ РґРѕРєСѓРјРµРЅС‚С‹")
+                    recs.append("Add legal pages and policies")
                 if not page.get("has_reviews"):
-                    recs.append("Р”РѕР±Р°РІРёС‚СЊ РѕС‚Р·С‹РІС‹")
+                    recs.append("Add reviews")
                 if not page.get("trust_badges"):
-                    recs.append("Р”РѕР±Р°РІРёС‚СЊ trust-Р±РµР№РґР¶Рё/СЃРµСЂС‚РёС„РёРєР°С‚С‹")
+                    recs.append("Add trust badges/certifications")
                 return ok_if_empty(recs)
 
             if tab == "health":
                 if to_float(page.get("health_score"), 100.0) < 60:
-                    recs.append("РџРѕРґРЅСЏС‚СЊ РѕР±С‰РёР№ Health РґРѕ 60+")
+                    recs.append("Raise overall health score to 60+")
                 if not page.get("indexable"):
-                    recs.append("РРЅРґРµРєСЃРёСЂСѓРµРјРѕСЃС‚СЊ")
+                    recs.append("Fix indexability")
                 if int(page.get("duplicate_title_count") or 0) > 1:
-                    recs.append("РЈРЅРёРєР°Р»РёР·РёСЂРѕРІР°С‚СЊ Title")
+                    recs.append("Deduplicate title")
                 if int(page.get("duplicate_description_count") or 0) > 1:
-                    recs.append("РЈРЅРёРєР°Р»РёР·РёСЂРѕРІР°С‚СЊ Meta")
+                    recs.append("Deduplicate meta description")
                 return ok_if_empty(recs)
 
             if tab == "links":
                 if page.get("orphan_page"):
-                    recs.append("Р”РѕР±Р°РІРёС‚СЊ РІРЅСѓС‚СЂРµРЅРЅРёРµ СЃСЃС‹Р»РєРё РЅР° СЃС‚СЂР°РЅРёС†Сѓ")
+                    recs.append("Add internal links to this page")
                 if int(page.get("outgoing_internal_links") or 0) == 0:
-                    recs.append("Р”РѕР±Р°РІРёС‚СЊ СЃСЃС‹Р»РєРё РЅР° СЂРµР»РµРІР°РЅС‚РЅС‹Рµ СЃС‚СЂР°РЅРёС†С‹")
+                    recs.append("Add outgoing links to relevant pages")
                 return ok_if_empty(recs)
 
             if tab == "images":
                 img_opt = page.get("images_optimization") or {}
                 if int(img_opt.get("no_alt") or page.get("images_without_alt") or 0) > 0:
-                    recs.append("Р”РѕР±Р°РІРёС‚СЊ ALT РґР»СЏ РёР·РѕР±СЂР°Р¶РµРЅРёР№")
+                    recs.append("Add ALT text for images")
                 if int(img_opt.get("no_width_height") or 0) > 0:
-                    recs.append("Р”РѕР±Р°РІРёС‚СЊ width/height")
+                    recs.append("Add width/height attributes")
                 if int(img_opt.get("no_lazy_load") or 0) > 0:
-                    recs.append("Р’РєР»СЋС‡РёС‚СЊ lazy-loading")
+                    recs.append("Enable lazy loading")
                 return ok_if_empty(recs)
 
             if tab == "external":
                 total = int(page.get("outgoing_external_links") or 0)
                 if total == 0:
-                    recs.append("Р”РѕР±Р°РІРёС‚СЊ СЂРµР»РµРІР°РЅС‚РЅС‹Рµ РІРЅРµС€РЅРёРµ РёСЃС‚РѕС‡РЅРёРєРё")
+                    recs.append("Add relevant external sources")
                 return ok_if_empty(recs)
 
             if tab == "structured":
                 if int(page.get("structured_data") or 0) == 0:
-                    recs.append("Р’РЅРµРґСЂРёС‚СЊ schema.org (JSON-LD)")
+                    recs.append("Implement schema.org (JSON-LD)")
                 if int(page.get("hreflang_count") or 0) == 0:
-                    recs.append("Р”РѕР±Р°РІРёС‚СЊ hreflang РґР»СЏ СЏР·С‹РєРѕРІС‹С… РІРµСЂСЃРёР№")
+                    recs.append("Add hreflang for language versions")
                 return ok_if_empty(recs)
 
             if tab == "keywords":
                 if not (page.get("top_keywords") or page.get("top_terms") or page.get("tf_idf_keywords")):
-                    recs.append("РЈС‚РѕС‡РЅРёС‚СЊ СЃРµРјР°РЅС‚РёРєСѓ Рё РєР»СЋС‡Рё")
+                    recs.append("Refine semantic core and target keywords")
                 if to_float(page.get("toxicity_score"), 0.0) > 40:
-                    recs.append("РЎРЅРёР·РёС‚СЊ РїРµСЂРµСЃРїР°Рј РєР»СЋС‡Р°РјРё")
+                    recs.append("Reduce keyword over-optimization")
                 return ok_if_empty(recs)
 
             if tab == "topics":
                 if not page.get("topic_hub"):
-                    recs.append("РЎРІСЏР·Р°С‚СЊ СЃ СЂРµР»РµРІР°РЅС‚РЅС‹Рј С…Р°Р±ом")
+                    recs.append("Connect page to relevant hub pages")
                 if not page.get("topic_label"):
-                    recs.append("РћРїСЂРµРґРµР»РёС‚СЊ РєР»Р°СЃС‚РµСЂ С‚РµРјС‹")
+                    recs.append("Define a clear topic cluster")
                 return ok_if_empty(recs)
 
             if tab == "advanced":
                 freshness = page.get("content_freshness_days")
                 if freshness is not None and int(freshness) > 365:
-                    recs.append("РћР±РЅРѕРІРёС‚СЊ РєРѕРЅС‚РµРЅС‚")
+                    recs.append("Refresh stale content")
                 if bool(page.get("hidden_content")):
-                    recs.append("РЈР±СЂР°С‚СЊ СЃРєСЂС‹С‚С‹Р№ РєРѕРЅС‚РµРЅС‚")
+                    recs.append("Remove hidden content")
                 if bool(page.get("cloaking_detected")):
-                    recs.append("РСЃРєР»СЋС‡РёС‚СЊ РєР»РѕР°РєРёРЅРі")
+                    recs.append("Remove cloaking behavior")
                 return ok_if_empty(recs)
 
             if tab == "link_quality":
                 if to_float(page.get("link_quality_score"), 0.0) < 60:
-                    recs.append("РЈСЃРёР»РёС‚СЊ РІРЅСѓС‚СЂРµннюю РїРµСЂРµР»РёРЅРєРѕРІРєСѓ")
+                    recs.append("Improve internal linking")
                 if page.get("orphan_page"):
-                    recs.append("Р”РѕР±Р°РІРёС‚СЊ РІС…РѕРґСЏС‰РёРµ СЃСЃС‹Р»РєРё")
+                    recs.append("Add incoming links")
                 return ok_if_empty(recs)
 
             return "OK"
