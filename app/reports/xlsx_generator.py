@@ -1296,29 +1296,111 @@ class XLSXGenerator:
             ])
         fill_sheet("8_Keywords", keyword_headers, keyword_rows, severity_idx=3, widths=[64, 18, 76, 10])
 
-        # Optional full-mode deep sheets.
+        # Optional full-mode optimized deep sheets (no compatibility duplication).
         if str(mode).lower() == "full":
-            semantic_headers = ["Source URL", "Target URL", "Topic", "Reason"]
-            semantic_rows = []
-            for row in (pipeline.get("semantic_linking_map") or []):
-                semantic_rows.append([
-                    row.get("source_url", ""),
-                    row.get("target_url", ""),
-                    row.get("topic", ""),
-                    row.get("reason", ""),
+            indexability_headers = [
+                "URL", "Status", "Indexable", "Indexability reason", "Canonical status",
+                "Meta robots", "X-Robots-Tag", "Severity",
+            ]
+            indexability_rows = []
+            for page in pages:
+                sev = infer_page_severity(page)
+                indexability_rows.append([
+                    page.get("url", ""),
+                    page.get("status_code", ""),
+                    page.get("indexable", ""),
+                    page.get("indexability_reason", ""),
+                    page.get("canonical_status", ""),
+                    page.get("meta_robots", ""),
+                    page.get("x_robots_tag", ""),
+                    sev,
                 ])
-            fill_sheet("9_SemanticMap", semantic_headers, semantic_rows, widths=[60, 60, 18, 40])
+            fill_sheet("9_Indexability", indexability_headers, indexability_rows, severity_idx=7, widths=[56, 10, 12, 20, 16, 22, 22, 10])
 
-            dup_headers = ["Type", "Value", "URLs count", "Sample URLs"]
-            dup_rows = []
-            duplicates = pipeline.get("duplicates") or {}
-            for row in duplicates.get("title_groups") or []:
-                urls = row.get("urls") or []
-                dup_rows.append(["title", row.get("value", ""), len(urls), ", ".join(urls[:5])])
-            for row in duplicates.get("description_groups") or []:
-                urls = row.get("urls") or []
-                dup_rows.append(["description", row.get("value", ""), len(urls), ", ".join(urls[:5])])
-            fill_sheet("10_DuplicatesDeep", dup_headers, dup_rows, widths=[14, 60, 12, 80])
+            structured_headers = [
+                "URL", "Structured total", "JSON-LD", "Microdata", "RDFa",
+                "Structured types", "Hreflang", "Breadcrumbs", "Severity",
+            ]
+            structured_rows = []
+            for page in pages:
+                sev = infer_page_severity(page)
+                detail = page.get("structured_data_detail") or {}
+                structured_rows.append([
+                    page.get("url", ""),
+                    page.get("structured_data", 0),
+                    detail.get("json_ld", 0),
+                    detail.get("microdata", 0),
+                    detail.get("rdfa", 0),
+                    ", ".join((page.get("structured_types") or [])[:8]),
+                    page.get("hreflang_count", 0),
+                    page.get("breadcrumbs", ""),
+                    sev,
+                ])
+            fill_sheet("10_StructuredData", structured_headers, structured_rows, severity_idx=8, widths=[56, 14, 10, 10, 8, 48, 10, 12, 10])
+
+            trust_eeat_headers = [
+                "URL", "Trust score", "EEAT score", "Expertise", "Authority",
+                "Trustworthiness", "Experience", "Contact", "Legal", "Reviews", "Badges", "Severity",
+            ]
+            trust_eeat_rows = []
+            for page in pages:
+                sev = infer_page_severity(page)
+                comp = page.get("eeat_components") or {}
+                trust_eeat_rows.append([
+                    page.get("url", ""),
+                    page.get("trust_score", ""),
+                    page.get("eeat_score", ""),
+                    comp.get("expertise", ""),
+                    comp.get("authoritativeness", ""),
+                    comp.get("trustworthiness", ""),
+                    comp.get("experience", ""),
+                    page.get("has_contact_info", ""),
+                    page.get("has_legal_docs", ""),
+                    page.get("has_reviews", ""),
+                    page.get("trust_badges", ""),
+                    sev,
+                ])
+            fill_sheet("11_Trust_EEAT", trust_eeat_headers, trust_eeat_rows, severity_idx=11, widths=[56, 12, 10, 10, 10, 14, 10, 10, 10, 10, 10, 10])
+
+            topics_headers = ["URL", "Topic", "Is hub", "Incoming links", "Semantic links", "Severity"]
+            topics_rows = []
+            semantic_by_source: Dict[str, List[Dict[str, Any]]] = {}
+            for row in (pipeline.get("semantic_linking_map") or []):
+                semantic_by_source.setdefault(row.get("source_url", ""), []).append(row)
+            for page in pages:
+                sev = infer_page_severity(page)
+                src = page.get("url", "")
+                semantic_rows = semantic_by_source.get(src, [])
+                if not semantic_rows:
+                    semantic_rows = page.get("semantic_links") or []
+                summary = []
+                for item in semantic_rows[:4]:
+                    target = item.get("target_url", "")
+                    topic = item.get("topic") or item.get("suggested_anchor") or ""
+                    reason = item.get("reason", "")
+                    summary.append(f"[{topic}] {target} {reason}".strip())
+                topics_rows.append([
+                    src,
+                    page.get("topic_label", ""),
+                    page.get("topic_hub", ""),
+                    page.get("incoming_internal_links", 0),
+                    "\n".join(summary),
+                    sev,
+                ])
+            fill_sheet("12_Topics_Semantics", topics_headers, topics_rows, severity_idx=5, widths=[56, 18, 10, 14, 80, 10])
+
+            ai_headers = ["URL", "AI markers", "AI markers list", "Marker sample", "Severity"]
+            ai_rows = []
+            for page in pages:
+                sev = infer_page_severity(page)
+                ai_rows.append([
+                    page.get("url", ""),
+                    page.get("ai_markers_count", 0),
+                    ", ".join((page.get("ai_markers_list") or [])[:12]) or "none",
+                    page.get("ai_marker_sample", "") or "No text sample available",
+                    sev,
+                ])
+            fill_sheet("13_AI_Markers", ai_headers, ai_rows, severity_idx=4, widths=[56, 12, 58, 72, 10])
 
             raw_issue_headers = ["Severity", "URL", "Code", "Title", "Details"]
             raw_issue_rows = []
@@ -1330,393 +1412,7 @@ class XLSXGenerator:
                     issue.get("title", ""),
                     issue.get("details", ""),
                 ])
-            fill_sheet("11_IssuesRaw", raw_issue_headers, raw_issue_rows, severity_idx=0, widths=[12, 62, 18, 28, 80])
-
-            advanced_headers = [
-                "URL",
-                "Canonical status",
-                "X-Robots-Tag",
-                "Indexability reason",
-                "Last-Modified",
-                "Freshness days",
-                "Structured total",
-                "Breadcrumbs",
-                "HTML quality",
-                "Trust score",
-                "EEAT score",
-                "CTA quality",
-                "JS dependence",
-                "Has main tag",
-                "OG tags",
-                "Compression",
-            ]
-            advanced_rows = []
-            for page in pages:
-                advanced_rows.append([
-                    page.get("url", ""),
-                    page.get("canonical_status", ""),
-                    page.get("x_robots_tag", ""),
-                    page.get("indexability_reason", ""),
-                    page.get("last_modified", ""),
-                    page.get("content_freshness_days", ""),
-                    page.get("structured_data", 0),
-                    page.get("breadcrumbs", ""),
-                    page.get("html_quality_score", ""),
-                    page.get("trust_score", ""),
-                    page.get("eeat_score", ""),
-                    page.get("cta_text_quality", ""),
-                    page.get("js_dependence", ""),
-                    page.get("has_main_tag", ""),
-                    page.get("og_tags", ""),
-                    page.get("compression", ""),
-                ])
-            fill_sheet("12_AdvancedDeep", advanced_headers, advanced_rows, widths=[52, 16, 22, 20, 22, 14, 14, 12, 12, 10, 10, 10, 12, 12, 10, 10])
-
-            # Compatibility pack: legacy seopro workbook-equivalent views.
-            main_compat_headers = [
-                "URL", "Title", "Meta", "H1", "Токсичность", "Иерархия", "Health", "HTTP",
-                "Indexable", "Canonical", "Resp ms", "Проблемы", "Solution", "Severity",
-            ]
-            main_compat_rows = []
-            for page in pages:
-                sev = infer_page_severity(page)
-                page_issues = issues_by_url.get(page.get("url", ""), [])
-                problem_text = "; ".join((issue.get("title") or issue.get("code") or "") for issue in page_issues[:6])
-                if not problem_text:
-                    problem_text = hierarchy_problem(page)
-                main_compat_rows.append([
-                    page.get("url", ""),
-                    page.get("title", "") or "-",
-                    page.get("meta_description", "") or "-",
-                    page.get("h1_text", "") or "-",
-                    icon_score(100.0 - to_float(page.get("toxicity_score"), 0.0), low=30.0, high=70.0),
-                    page.get("h_hierarchy", "") or "-",
-                    icon_score(page.get("health_score"), low=60.0, high=80.0),
-                    page.get("status_code", ""),
-                    f"{bool_icon(page.get('indexable'))} {'Yes' if page.get('indexable') else 'No'}",
-                    page.get("canonical_status", "") or "-",
-                    f"{page.get('response_time_ms', '')}" if page.get("response_time_ms") is not None else "-",
-                    problem_text,
-                    page_solution("main", page, page_issues),
-                    sev,
-                ])
-            fill_sheet("13_MainReport_Compat", main_compat_headers, main_compat_rows, severity_idx=13, widths=[52, 24, 24, 20, 10, 16, 10, 8, 10, 12, 10, 52, 62, 10])
-
-            hierarchy_compat_headers = ["URL", "Статус", "Проблема", "Всего заголовков", "H1 Count", "Решение", "Severity"]
-            hierarchy_compat_rows = []
-            for page in pages:
-                sev = infer_page_severity(page)
-                total_headers = int((page.get("h_details") or {}).get("total_headers") or sum((page.get("heading_distribution") or {}).values()))
-                hierarchy_compat_rows.append([
-                    page.get("url", ""),
-                    page.get("h_hierarchy", "") or "unknown",
-                    hierarchy_problem(page),
-                    total_headers,
-                    int(page.get("h1_count") or 0),
-                    page_solution("hierarchy", page, issues_by_url.get(page.get("url", ""), [])),
-                    sev,
-                ])
-            fill_sheet("14_Hierarchy_Compat", hierarchy_compat_headers, hierarchy_compat_rows, severity_idx=6, widths=[52, 16, 48, 12, 10, 58, 10])
-
-            onpage_compat_headers = [
-                "URL", "Title Len", "Meta Len", "H1", "Canonical", "Canonical Status", "Mobile",
-                "Schema", "Breadcrumbs", "Title Dup", "Meta Dup", "Solution", "Severity",
-            ]
-            onpage_compat_rows = []
-            for page in pages:
-                sev = infer_page_severity(page)
-                onpage_compat_rows.append([
-                    page.get("url", ""),
-                    f"{int(page.get('title_len') or len(str(page.get('title') or '')))} ch",
-                    f"{int(page.get('description_len') or len(str(page.get('meta_description') or '')))} ch",
-                    int(page.get("h1_count") or 0),
-                    bool_icon(bool(page.get("canonical"))),
-                    page.get("canonical_status", "") or "-",
-                    bool_icon(page.get("mobile_friendly_hint")),
-                    int(page.get("schema_count") or 0),
-                    bool_icon(page.get("breadcrumbs")),
-                    int(page.get("duplicate_title_count") or 0),
-                    int(page.get("duplicate_description_count") or 0),
-                    page_solution("onpage", page),
-                    sev,
-                ])
-            fill_sheet("15_OnPage_Compat", onpage_compat_headers, onpage_compat_rows, severity_idx=12, widths=[52, 10, 10, 8, 10, 16, 8, 8, 10, 10, 10, 58, 10])
-
-            content_compat_headers = [
-                "URL", "Words", "Unique %", "Readability", "Toxicity", "AI Markers",
-                "AI Markers List", "Filler", "Solution", "Severity",
-            ]
-            content_compat_rows = []
-            for page in pages:
-                sev = infer_page_severity(page)
-                content_compat_rows.append([
-                    page.get("url", ""),
-                    int(page.get("word_count") or 0),
-                    as_percent(page.get("unique_percent")),
-                    icon_score(page.get("readability_score"), low=60.0, high=80.0),
-                    icon_score(100.0 - to_float(page.get("toxicity_score"), 0.0), low=30.0, high=70.0),
-                    icon_count(int(page.get("ai_markers_count") or 0), low=20.0, high=50.0),
-                    ai_found_list(page),
-                    int(len(page.get("filler_phrases") or [])),
-                    page_solution("content", page),
-                    sev,
-                ])
-            fill_sheet("16_Content_Compat", content_compat_headers, content_compat_rows, severity_idx=9, widths=[52, 10, 10, 12, 10, 10, 36, 10, 58, 10])
-
-            technical_compat_headers = [
-                "URL", "Status", "Indexable", "Resp ms", "Size KB", "DOM", "HTML Score", "HTTPS",
-                "Compression", "Cache", "Canonical", "Robots", "Deprecated", "Solution", "Severity",
-            ]
-            technical_compat_rows = []
-            for page in pages:
-                sev = infer_page_severity(page)
-                technical_compat_rows.append([
-                    page.get("url", ""),
-                    page.get("status_code", ""),
-                    f"{bool_icon(page.get('indexable'))} {'Yes' if page.get('indexable') else 'No'}",
-                    f"{page.get('response_time_ms', '')}" if page.get("response_time_ms") is not None else "-",
-                    round((to_float(page.get("html_size_bytes"), 0.0) / 1024.0), 1),
-                    int(page.get("dom_nodes_count") or 0),
-                    icon_score(page.get("html_quality_score"), low=60.0, high=80.0),
-                    bool_icon(page.get("is_https")),
-                    "Yes" if page.get("compression_enabled") else "No",
-                    "Set" if page.get("cache_enabled") else "No",
-                    page.get("canonical_status", ""),
-                    page.get("meta_robots", "") or page.get("x_robots_tag", ""),
-                    len(page.get("deprecated_tags") or []),
-                    page_solution("technical", page),
-                    sev,
-                ])
-            fill_sheet("17_Technical_Compat", technical_compat_headers, technical_compat_rows, severity_idx=14, widths=[52, 8, 10, 10, 10, 10, 10, 8, 10, 8, 12, 22, 10, 58, 10])
-
-            eeat_headers = ["URL", "Score", "Expertise", "Authority", "Trust", "Experience", "Solution", "Severity"]
-            eeat_rows = []
-            for page in pages:
-                sev = infer_page_severity(page)
-                comp = page.get("eeat_components") or {}
-                eeat_rows.append([
-                    page.get("url", ""),
-                    icon_score(page.get("eeat_score"), low=60.0, high=80.0),
-                    to_float(comp.get("expertise"), 0.0),
-                    to_float(comp.get("authoritativeness"), 0.0),
-                    to_float(comp.get("trustworthiness"), 0.0),
-                    to_float(comp.get("experience"), 0.0),
-                    page_solution("eeat", page),
-                    sev,
-                ])
-            fill_sheet("18_EEAT_Compat", eeat_headers, eeat_rows, severity_idx=7, widths=[52, 10, 10, 10, 10, 10, 58, 10])
-
-            trust_headers = ["URL", "Trust Score", "Contact", "Legal", "Reviews", "Badges", "Solution", "Severity"]
-            trust_rows = []
-            for page in pages:
-                sev = infer_page_severity(page)
-                trust_rows.append([
-                    page.get("url", ""),
-                    icon_score(page.get("trust_score"), low=60.0, high=80.0),
-                    bool_icon(page.get("has_contact_info")),
-                    bool_icon(page.get("has_legal_docs")),
-                    bool_icon(page.get("has_reviews")),
-                    bool_icon(page.get("trust_badges")),
-                    page_solution("trust", page),
-                    sev,
-                ])
-            fill_sheet("19_Trust_Compat", trust_headers, trust_rows, severity_idx=7, widths=[52, 10, 8, 8, 8, 8, 58, 10])
-
-            health_headers = [
-                "URL", "Health Score", "Indexable", "Words", "Unique %", "Readability",
-                "Title Dup", "Meta Dup", "Resp ms", "Solution", "Severity",
-            ]
-            health_rows = []
-            for page in pages:
-                sev = infer_page_severity(page)
-                health_rows.append([
-                    page.get("url", ""),
-                    icon_score(page.get("health_score"), low=60.0, high=80.0),
-                    f"{bool_icon(page.get('indexable'))} {'Yes' if page.get('indexable') else 'No'}",
-                    int(page.get("word_count") or 0),
-                    as_percent(page.get("unique_percent")),
-                    f"{to_float(page.get('readability_score'), 0.0):.0f}",
-                    int(page.get("duplicate_title_count") or 0),
-                    int(page.get("duplicate_description_count") or 0),
-                    f"{page.get('response_time_ms', '')}" if page.get("response_time_ms") is not None else "-",
-                    page_solution("health", page),
-                    sev,
-                ])
-            fill_sheet("20_Health_Compat", health_headers, health_rows, severity_idx=10, widths=[52, 12, 10, 10, 10, 12, 10, 10, 10, 58, 10])
-
-            links_headers = ["URL", "Authority", "Incoming", "Outgoing", "Is Orphan", "Solution", "Severity"]
-            links_rows = []
-            for page in pages:
-                sev = infer_page_severity(page)
-                links_rows.append([
-                    page.get("url", ""),
-                    to_float(page.get("pagerank"), 0.0),
-                    int(page.get("incoming_internal_links") or 0),
-                    int(page.get("outgoing_internal_links") or 0),
-                    "❌ ORPHAN" if page.get("orphan_page") else "✅",
-                    page_solution("links", page),
-                    sev,
-                ])
-            fill_sheet("21_InternalLinks_Compat", links_headers, links_rows, severity_idx=6, widths=[52, 10, 10, 10, 10, 58, 10])
-
-            images_headers = ["URL", "Total", "No Alt", "No Width", "No Lazy", "Issues", "Solution", "Severity"]
-            images_rows = []
-            for page in pages:
-                sev = infer_page_severity(page)
-                img_opt = page.get("images_optimization") or {}
-                no_alt = int(page.get("images_without_alt") or img_opt.get("no_alt") or 0)
-                no_width = int(img_opt.get("no_width_height") or 0)
-                no_lazy = int(img_opt.get("no_lazy_load") or 0)
-                images_rows.append([
-                    page.get("url", ""),
-                    int(page.get("images_count") or img_opt.get("total") or 0),
-                    f"❌ {no_alt}" if no_alt > 0 else "✅",
-                    f"⚠️ {no_width}" if no_width > 0 else "✅",
-                    f"⚠️ {no_lazy}" if no_lazy > 0 else "✅",
-                    (no_alt + no_width + no_lazy),
-                    page_solution("images", page),
-                    sev,
-                ])
-            fill_sheet("22_Images_Compat", images_headers, images_rows, severity_idx=7, widths=[52, 10, 10, 10, 10, 10, 58, 10])
-
-            external_headers = ["URL", "Total External", "Follow", "NoFollow", "Follow %", "Solution", "Severity"]
-            external_rows = []
-            for page in pages:
-                sev = infer_page_severity(page)
-                follow = int(page.get("external_follow_links") or 0)
-                nofollow = int(page.get("external_nofollow_links") or 0)
-                total = int(page.get("outgoing_external_links") or (follow + nofollow))
-                follow_pct = (follow / total * 100.0) if total > 0 else 0.0
-                external_rows.append([
-                    page.get("url", ""),
-                    total,
-                    follow,
-                    nofollow,
-                    f"{follow_pct:.0f}%",
-                    page_solution("external", page),
-                    sev,
-                ])
-            fill_sheet("23_ExternalLinks_Compat", external_headers, external_rows, severity_idx=6, widths=[52, 14, 10, 10, 10, 58, 10])
-
-            structured_headers = ["URL", "Total", "JSON-LD", "Microdata", "RDFa", "Hreflang", "Meta Robots", "Solution", "Severity"]
-            structured_rows = []
-            for page in pages:
-                sev = infer_page_severity(page)
-                detail = page.get("structured_data_detail") or {}
-                structured_rows.append([
-                    page.get("url", ""),
-                    int(page.get("structured_data") or 0),
-                    int(detail.get("json_ld") or 0),
-                    int(detail.get("microdata") or 0),
-                    int(detail.get("rdfa") or 0),
-                    int(page.get("hreflang_count") or 0),
-                    page.get("meta_robots", "") or page.get("x_robots_tag", ""),
-                    page_solution("structured", page),
-                    sev,
-                ])
-            fill_sheet("24_Structured_Compat", structured_headers, structured_rows, severity_idx=8, widths=[52, 8, 8, 10, 8, 10, 24, 58, 10])
-
-            kw_headers = ["URL", "Top Keywords", "TF-IDF 1", "TF-IDF 2", "TF-IDF 3", "Solution", "Severity"]
-            kw_rows = []
-            for page in pages:
-                sev = infer_page_severity(page)
-                tfidf_terms = list((page.get("tf_idf_keywords") or {}).keys())
-                if not tfidf_terms:
-                    tfidf_terms = tfidf_by_url.get(page.get("url", ""), []) or page.get("top_terms", [])
-                top_keywords = page.get("top_keywords") or tfidf_terms
-                kw_rows.append([
-                    page.get("url", ""),
-                    ", ".join(top_keywords[:5]),
-                    tfidf_terms[0] if len(tfidf_terms) > 0 else "",
-                    tfidf_terms[1] if len(tfidf_terms) > 1 else "",
-                    tfidf_terms[2] if len(tfidf_terms) > 2 else "",
-                    page_solution("keywords", page),
-                    sev,
-                ])
-            fill_sheet("25_KeywordsTFIDF_Compat", kw_headers, kw_rows, severity_idx=6, widths=[52, 36, 16, 16, 16, 58, 10])
-
-            topics_headers = ["URL", "Is Hub", "Cluster", "Incoming Links", "Semantic Links", "Solution", "Severity"]
-            topics_rows = []
-            for page in pages:
-                sev = infer_page_severity(page)
-                semantic_links = page.get("semantic_links") or []
-                summary_links = []
-                for item in semantic_links[:3]:
-                    target = item.get("target_url") or item.get("target") or ""
-                    anchor = item.get("suggested_anchor") or item.get("topic") or ""
-                    summary_links.append(f"[{anchor}] -> {target}")
-                topics_rows.append([
-                    page.get("url", ""),
-                    "⭐ HUB" if page.get("topic_hub") else "-",
-                    page.get("topic_label", ""),
-                    int(page.get("incoming_internal_links") or 0),
-                    "\n".join(summary_links),
-                    page_solution("topics", page),
-                    sev,
-                ])
-            fill_sheet("26_Topics_Compat", topics_headers, topics_rows, severity_idx=6, widths=[52, 10, 16, 12, 62, 58, 10])
-
-            advanced_compat_headers = [
-                "URL", "Freshness Days", "Last Modified", "Status", "Indexable", "Resp ms", "Size KB",
-                "Redirects", "Final URL", "Hidden Content", "Cloaking", "CTA Count", "List/Tables", "Solution", "Severity",
-            ]
-            advanced_compat_rows = []
-            for page in pages:
-                sev = infer_page_severity(page)
-                advanced_compat_rows.append([
-                    page.get("url", ""),
-                    page.get("content_freshness_days", "Unknown") if page.get("content_freshness_days") is not None else "Unknown",
-                    page.get("last_modified", "not set"),
-                    page.get("status_code", ""),
-                    f"{bool_icon(page.get('indexable'))} {'Yes' if page.get('indexable') else 'No'}",
-                    f"{page.get('response_time_ms', '')}" if page.get("response_time_ms") is not None else "-",
-                    round((to_float(page.get("html_size_bytes"), 0.0) / 1024.0), 1),
-                    int(page.get("redirect_count") or 0),
-                    page.get("final_url", ""),
-                    f"❌ {int(page.get('hidden_content') or 0)}" if page.get("hidden_content") else "✅",
-                    "❌" if page.get("cloaking_detected") else "✅",
-                    int(page.get("cta_count") or 0),
-                    f"{int(page.get('lists_count') or 0)}/{int(page.get('tables_count') or 0)}",
-                    page_solution("advanced", page),
-                    sev,
-                ])
-            fill_sheet("27_Advanced_Compat", advanced_compat_headers, advanced_compat_rows, severity_idx=14, widths=[52, 12, 22, 8, 10, 10, 10, 10, 52, 12, 10, 10, 12, 58, 10])
-
-            link_quality_headers = [
-                "URL", "Linking Score", "Page Authority", "Anchor Score", "Incoming Links",
-                "Outgoing Internal", "Orphan", "Topic Hub", "Solution", "Severity",
-            ]
-            link_quality_rows = []
-            for page in pages:
-                sev = infer_page_severity(page)
-                link_quality_rows.append([
-                    page.get("url", ""),
-                    icon_score(page.get("link_quality_score"), low=60.0, high=80.0),
-                    to_float(page.get("pagerank"), 0.0),
-                    to_float(page.get("anchor_text_quality_score"), 0.0),
-                    int(page.get("incoming_internal_links") or 0),
-                    int(page.get("outgoing_internal_links") or 0),
-                    "✅" if not page.get("orphan_page") else "❌",
-                    "✅" if page.get("topic_hub") else "-",
-                    page_solution("link_quality", page),
-                    sev,
-                ])
-            fill_sheet("28_LinkQuality_Compat", link_quality_headers, link_quality_rows, severity_idx=9, widths=[52, 12, 12, 12, 12, 14, 10, 10, 58, 10])
-
-            ai_headers = ["URL", "AI Markers Count", "AI Markers Found", "Text Sample with Markers", "Recommendation", "Severity"]
-            ai_rows = []
-            for page in pages:
-                sev = infer_page_severity(page)
-                ai_count = int(page.get("ai_markers_count") or 0)
-                ai_rows.append([
-                    page.get("url", ""),
-                    icon_count(ai_count, low=20.0, high=50.0),
-                    ai_found_list(page),
-                    page.get("ai_marker_sample", "") or ("Marker snippet not available in compact payload" if ai_count > 0 else "No text sample available"),
-                    page_solution("content", page) if ai_count > 0 else "No AI markers detected",
-                    sev,
-                ])
-            fill_sheet("29_AIMarkers_Compat", ai_headers, ai_rows, severity_idx=5, widths=[52, 14, 40, 44, 58, 10])
+            fill_sheet("14_Issues_Raw", raw_issue_headers, raw_issue_rows, severity_idx=0, widths=[12, 62, 20, 30, 80])
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         wb.save(filepath)
