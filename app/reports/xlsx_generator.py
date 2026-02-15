@@ -4,6 +4,7 @@ Excel Р С–Р ВµР Р…Р ВµРЎР‚Р В°РЎвЂљРѕСЂ Р 
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from collections import Counter, defaultdict
 from typing import Dict, Any, List
 from datetime import datetime
 import os
@@ -1222,7 +1223,34 @@ class XLSXGenerator:
             if int(page.get("decorative_non_empty_alt_count") or 0) > 0:
                 media_score = max(0, media_score - 6)
             hierarchy_score = 100 if not (page.get("h_errors") or []) else max(0, 100 - len(page.get("h_errors") or []) * 25)
-            keyword_score = max(0, 100 - min(60, int(round(to_float(page.get("keyword_stuffing_score"), 0.0)))))
+            keyword_stuffing = to_float(page.get("keyword_stuffing_score"), 0.0)
+            lexical_div = to_float(page.get("lexical_diversity"), 0.0)
+            tfidf_map = page.get("tf_idf_keywords") or {}
+            tfidf_terms_count = len(tfidf_map)
+            density_map = page.get("keyword_density_profile") or {}
+            density_values = [to_float(v, 0.0) for v in density_map.values()]
+            density_sum = max(0.0001, sum(density_values))
+            keyword_entropy = 0.0
+            for v in density_values:
+                p = v / density_sum if density_sum > 0 else 0.0
+                if p > 0:
+                    keyword_entropy -= p * math.log(p, 2)
+            keyword_entropy = round(keyword_entropy, 3)
+            keyword_score = 100.0
+            keyword_score -= min(55.0, keyword_stuffing)
+            if lexical_div < 0.35:
+                keyword_score -= 15.0
+            elif lexical_div < 0.45:
+                keyword_score -= 8.0
+            if tfidf_terms_count < 5:
+                keyword_score -= 10.0
+            if len(page.get("top_keywords") or []) < 3:
+                keyword_score -= 5.0
+            if int(page.get("word_count") or 0) < 200:
+                keyword_score -= 8.0
+            if toxicity > 40:
+                keyword_score -= 8.0
+            keyword_score = max(0, int(round(keyword_score)))
 
             return {
                 "title": title,
@@ -1252,6 +1280,8 @@ class XLSXGenerator:
                 "media_score": media_score,
                 "hierarchy_score": hierarchy_score,
                 "keyword_score": keyword_score,
+                "tfidf_terms_count": tfidf_terms_count,
+                "keyword_entropy": keyword_entropy,
             }
 
         derived_by_url = {str(page.get("url", "")): derive_page_metrics(page) for page in pages}
@@ -1811,7 +1841,8 @@ class XLSXGenerator:
         # Sheet 8: Keywords
         keyword_headers = [
             "URL", "Topic", "Top terms (TF-IDF)", "Top keywords", "TF-IDF #1", "TF-IDF #2", "TF-IDF #3",
-            "Keyword density profile", "Keyword score", "Keyword delta to target", "Keyword solution", "Severity",
+            "Keyword density profile", "TF-IDF terms", "Keyword entropy", "Top keyword share %",
+            "SPAM alert", "Water words %", "Keyword score", "Keyword delta to target", "Keyword solution", "Severity",
         ]
         keyword_rows = []
         total_pages = max(1, int(summary.get("total_pages", len(pages)) or len(pages) or 1))
@@ -1822,6 +1853,14 @@ class XLSXGenerator:
             top_terms = tfidf_by_url.get(url, page.get("top_terms", [])) or list((page.get("tf_idf_keywords") or {}).keys())
             kw_profile = page.get("keyword_density_profile") or {}
             kw_profile_text = ", ".join(f"{k}:{v}%" for k, v in list(kw_profile.items())[:6])
+            density_vals = [to_float(v, 0.0) for v in kw_profile.values()]
+            top_keyword_share = round(max(density_vals), 2) if density_vals else 0.0
+            water_words_pct = round(to_float(page.get("filler_ratio"), 0.0) * 100.0, 2)
+            spam_alert = "✅" if (
+                to_float(page.get("keyword_stuffing_score"), 0.0) >= 35.0
+                or top_keyword_share >= 12.0
+                or to_float(page.get("toxicity_score"), 0.0) >= 40.0
+            ) else "❌"
             keyword_rows.append([
                 url,
                 page.get("topic_label", ""),
@@ -1831,13 +1870,127 @@ class XLSXGenerator:
                 top_terms[1] if len(top_terms) > 1 else "",
                 top_terms[2] if len(top_terms) > 2 else "",
                 kw_profile_text,
+                d.get("tfidf_terms_count", len(page.get("tf_idf_keywords") or {})),
+                d.get("keyword_entropy", 0.0),
+                top_keyword_share,
+                spam_alert,
+                water_words_pct,
                 d.get("keyword_score", ""),
                 delta_to_target(d.get("keyword_score", ""), 80.0),
                 page_solution("keywords", page),
                 sev,
             ])
-        sort_rows(keyword_rows, 8, reverse=False)
-        fill_sheet("8_Keywords", keyword_headers, keyword_rows, severity_idx=11, widths=[48, 16, 42, 36, 14, 14, 14, 42, 12, 12, 46, 10], score_idx=8)
+        sort_rows(keyword_rows, 13, reverse=False)
+        fill_sheet(
+            "8_Keywords",
+            keyword_headers,
+            keyword_rows,
+            severity_idx=16,
+            widths=[48, 16, 42, 36, 14, 14, 14, 42, 10, 12, 12, 10, 12, 12, 12, 46, 10],
+            score_idx=13,
+        )
+
+        token_re = re.compile(r"[a-zA-Z\u0400-\u04FF0-9]{3,}")
+        stop_words = {
+            "the", "and", "for", "with", "that", "this", "from", "your", "you", "are",
+            "http", "https", "www", "com", "page", "site", "about",
+            "это", "как", "для", "что", "или", "при", "также", "если", "чтобы", "когда",
+        }
+        unigram_counter: Counter = Counter()
+        bigram_counter: Counter = Counter()
+        trigram_counter: Counter = Counter()
+        term_page_presence: Dict[str, Set[str]] = defaultdict(set)
+        tfidf_sum: Dict[str, float] = defaultdict(float)
+        tfidf_count: Dict[str, int] = defaultdict(int)
+        top_density_by_term: Dict[str, float] = defaultdict(float)
+        total_unigram_tokens = 0
+
+        for page in pages:
+            url = str(page.get("url") or "")
+            src_parts = [
+                str(page.get("title") or ""),
+                str(page.get("meta_description") or ""),
+                " ".join(page.get("top_terms") or []),
+                " ".join(page.get("top_keywords") or []),
+                " ".join(list((page.get("tf_idf_keywords") or {}).keys())[:20]),
+            ]
+            source = " ".join(src_parts).lower()
+            tokens = [t for t in token_re.findall(source) if t not in stop_words]
+            if not tokens:
+                continue
+            total_unigram_tokens += len(tokens)
+            uniq_tokens = set(tokens)
+            for t in tokens:
+                unigram_counter[t] += 1
+            for term in uniq_tokens:
+                term_page_presence[term].add(url)
+            for a, b in zip(tokens, tokens[1:]):
+                bigram_counter[f"{a} {b}"] += 1
+            for a, b, c in zip(tokens, tokens[1:], tokens[2:]):
+                trigram_counter[f"{a} {b} {c}"] += 1
+            for term, val in (page.get("tf_idf_keywords") or {}).items():
+                term_l = str(term).lower().strip()
+                if not term_l:
+                    continue
+                tfidf_sum[term_l] += to_float(val, 0.0)
+                tfidf_count[term_l] += 1
+            for term, dens in (page.get("keyword_density_profile") or {}).items():
+                term_l = str(term).lower().strip()
+                if not term_l:
+                    continue
+                top_density_by_term[term_l] = max(top_density_by_term.get(term_l, 0.0), to_float(dens, 0.0))
+
+        summary_headers = [
+            "N-gram", "Keyword", "Total freq", "Pages with term", "Pages %",
+            "Token share %", "Avg TF-IDF", "Top density %", "SPAM alert", "Water/noise", "Cross-page repeat", "Summary note",
+        ]
+        summary_rows: List[List[Any]] = []
+
+        def append_ngram_rows(counter: Counter, ngram_size: int, limit: int) -> None:
+            for term, freq in counter.most_common(limit):
+                if freq <= 0:
+                    continue
+                pages_with_term = len(term_page_presence.get(term, set())) if ngram_size == 1 else 0
+                pages_pct = round((pages_with_term / float(total_pages)) * 100.0, 1) if total_pages else 0.0
+                token_share = round((freq / max(1, total_unigram_tokens)) * 100.0, 2) if ngram_size == 1 else ""
+                avg_tfidf = round(tfidf_sum.get(term, 0.0) / max(1, tfidf_count.get(term, 0)), 4) if ngram_size == 1 else ""
+                top_density = round(top_density_by_term.get(term, 0.0), 2) if ngram_size == 1 else ""
+                spam_alert = "✅" if (ngram_size == 1 and (top_density_by_term.get(term, 0.0) >= 12.0 or pages_pct >= 80.0)) else "❌"
+                water_noise = "✅" if term in stop_words else "❌"
+                cross_page_repeat = "✅" if (ngram_size == 1 and pages_with_term >= max(3, int(total_pages * 0.4))) else "❌"
+                note = ""
+                if spam_alert == "✅":
+                    note = "Potential over-optimization across pages"
+                elif cross_page_repeat == "✅":
+                    note = "Repeated across many pages; validate intent relevance"
+                elif ngram_size == 1 and tfidf_count.get(term, 0) <= 1 and freq >= 3:
+                    note = "Frequent term with weak TF-IDF support"
+                summary_rows.append(
+                    [
+                        f"{ngram_size}-gram",
+                        term,
+                        freq,
+                        pages_with_term if ngram_size == 1 else "",
+                        pages_pct if ngram_size == 1 else "",
+                        token_share,
+                        avg_tfidf,
+                        top_density,
+                        spam_alert,
+                        water_noise,
+                        cross_page_repeat,
+                        note,
+                    ]
+                )
+
+        append_ngram_rows(unigram_counter, 1, 120)
+        append_ngram_rows(bigram_counter, 2, 80)
+        append_ngram_rows(trigram_counter, 3, 60)
+        fill_sheet(
+            "8b_Keywords_Summary",
+            summary_headers,
+            summary_rows,
+            widths=[10, 30, 10, 14, 10, 12, 12, 12, 10, 10, 12, 56],
+        )
 
         # Optional full-mode optimized deep sheets (no compatibility duplication).
         if str(mode).lower() == "full":
