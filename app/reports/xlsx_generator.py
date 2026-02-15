@@ -1746,6 +1746,7 @@ class XLSXGenerator:
             "Keyword density profile", "Keyword score", "Keyword solution", "Severity",
         ]
         keyword_rows = []
+        total_pages = max(1, int(summary.get("total_pages", len(pages)) or len(pages) or 1))
         for page in pages:
             sev = infer_page_severity(page)
             d = derived_by_url.get(str(page.get("url", "")), {})
@@ -2063,8 +2064,94 @@ class XLSXGenerator:
                 widths=[10, 56, 24, 16, 28, 50, 24, 46],
             )
 
+            action_plan_headers = [
+                "Priority", "Issue code", "Top severity", "Affected pages", "Share %", "Critical", "Warning", "Info",
+                "Impact score", "Effort", "Expected lift", "Representative URLs", "Recommendation",
+            ]
+            grouped: Dict[str, Dict[str, Any]] = {}
+            for issue in issues:
+                code = str(issue.get("code") or "unknown_issue")
+                sev = str(issue.get("severity") or "info").lower()
+                url = str(issue.get("url") or "").strip()
+                node = grouped.setdefault(
+                    code,
+                    {
+                        "critical": 0,
+                        "warning": 0,
+                        "info": 0,
+                        "urls": set(),
+                        "sample": issue,
+                    },
+                )
+                if sev in ("critical", "warning", "info"):
+                    node[sev] += 1
+                else:
+                    node["info"] += 1
+                if url:
+                    node["urls"].add(url)
+
+            effort_map = {
+                "critical": "M",
+                "warning": "S",
+                "info": "S",
+            }
+            action_rows = []
+            for code, node in grouped.items():
+                critical = int(node.get("critical", 0))
+                warning = int(node.get("warning", 0))
+                info = int(node.get("info", 0))
+                if critical > 0:
+                    top_severity = "critical"
+                elif warning > 0:
+                    top_severity = "warning"
+                else:
+                    top_severity = "info"
+                affected_pages = len(node.get("urls", set()))
+                share_pct = round((affected_pages / float(total_pages)) * 100.0, 1) if total_pages else 0.0
+                impact_score = round((critical * 3.0) + (warning * 2.0) + info + (share_pct / 10.0), 1)
+                if impact_score >= 40:
+                    expected_lift = "High"
+                elif impact_score >= 15:
+                    expected_lift = "Medium"
+                else:
+                    expected_lift = "Low"
+                rec = issue_recommendation(node.get("sample") or {"code": code, "severity": top_severity})
+                if rec.startswith("Critical: "):
+                    rec = rec[len("Critical: "):]
+                elif rec.startswith("Warning: "):
+                    rec = rec[len("Warning: "):]
+                elif rec.startswith("Info: "):
+                    rec = rec[len("Info: "):]
+                action_rows.append(
+                    [
+                        "",  # filled after sorting
+                        code,
+                        top_severity,
+                        affected_pages,
+                        share_pct,
+                        critical,
+                        warning,
+                        info,
+                        impact_score,
+                        effort_map.get(top_severity, "S"),
+                        expected_lift,
+                        ", ".join(list(node.get("urls", set()))[:5]),
+                        rec,
+                    ]
+                )
+            action_rows.sort(key=lambda row: to_float(row[8], 0.0), reverse=True)
+            for idx, row in enumerate(action_rows, start=1):
+                row[0] = idx
+            fill_sheet(
+                "15_ActionPlan",
+                action_plan_headers,
+                action_rows,
+                severity_idx=2,
+                widths=[10, 26, 12, 14, 10, 10, 10, 10, 12, 10, 12, 52, 58],
+                score_idx=8,
+            )
+
         matrix_start = 25
-        total_pages = max(1, int(summary.get("total_pages", len(pages)) or len(pages) or 1))
         health_values: List[float] = []
         for idx, stat in enumerate(sheet_stats, start=matrix_start):
             critical = int(stat.get("critical", 0))
