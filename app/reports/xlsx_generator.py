@@ -99,6 +99,7 @@ class XLSXGenerator:
     def _create_cell_style(self):
         """Р В Р’В Р вЂ™Р’В Р В Р’В Р В РІР‚в„–Р В Р’В Р вЂ™Р’В Р В Р Р‹Р Р†Р вЂљРЎС›Р В Р’В Р вЂ™Р’В Р В РІР‚в„ўР вЂ™Р’В·Р В Р’В Р вЂ™Р’В Р В РЎС›Р Р†Р вЂљР’ВР В Р’В Р вЂ™Р’В Р В РІР‚в„ўР вЂ™Р’В°Р В Р’В Р вЂ™Р’В Р В РІР‚в„ўР вЂ™Р’ВµР В Р’В Р В Р вЂ№Р В Р вЂ Р В РІР‚С™Р РЋРІвЂћСћ Р В Р’В Р В Р вЂ№Р В Р’В Р РЋРІР‚СљР В Р’В Р В Р вЂ№Р В Р вЂ Р В РІР‚С™Р РЋРІвЂћСћР В Р’В Р вЂ™Р’В Р В Р Р‹Р Р†Р вЂљР’ВР В Р’В Р вЂ™Р’В Р В РІР‚в„ўР вЂ™Р’В»Р В Р’В Р В Р вЂ№Р В Р’В Р В РІР‚В° Р В Р’В Р вЂ™Р’В Р В РЎС›Р Р†Р вЂљР’ВР В Р’В Р вЂ™Р’В Р В РІР‚в„ўР вЂ™Р’В»Р В Р’В Р В Р вЂ№Р В Р’В Р В Р РЏ Р В Р’В Р В Р вЂ№Р В Р’В Р В Р РЏР В Р’В Р В Р вЂ№Р В Р вЂ Р В РІР‚С™Р В Р вЂ№Р В Р’В Р вЂ™Р’В Р В РІР‚в„ўР вЂ™Р’ВµР В Р’В Р вЂ™Р’В Р В РІР‚в„ўР вЂ™Р’ВµР В Р’В Р вЂ™Р’В Р В Р Р‹Р Р†Р вЂљРЎСљ"""
         return {
+            'alignment': Alignment(horizontal='left', vertical='top', wrap_text=True),
             'border': Border(
                 left=Side(style='thin'),
                 right=Side(style='thin'),
@@ -148,7 +149,9 @@ class XLSXGenerator:
         cell.alignment = Alignment(horizontal='center', vertical='center')
 
     def _apply_row_severity_fill(self, ws, row_idx: int, start_col: int, end_col: int, severity: str):
-        """Apply severity background to all row cells, preserving existing font/border/alignment."""
+        """Apply severity background to row cells only for critical severity."""
+        if (severity or "").lower() != "critical":
+            return
         sev_fill = self._severity_style(severity)["fill"]
         for col in range(start_col, end_col + 1):
             ws.cell(row=row_idx, column=col).fill = sev_fill
@@ -219,6 +222,7 @@ class XLSXGenerator:
         # Save
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         wb.save(filepath)
+        wb.close()
         return filepath
     
     def generate_robots_report(self, task_id: str, data: Dict[str, Any]) -> str:
@@ -1240,6 +1244,100 @@ class XLSXGenerator:
             }
 
         derived_by_url = {str(page.get("url", "")): derive_page_metrics(page) for page in pages}
+        sheet_stats: List[Dict[str, Any]] = []
+
+        def issue_recommendation(issue: Dict[str, Any]) -> str:
+            code = str(issue.get("code") or "").lower()
+            title = str(issue.get("title") or "").lower()
+            details = str(issue.get("details") or "")
+            severity = str(issue.get("severity") or "info").lower()
+            critical_codes = {
+                "http_status_error",
+                "non_https_url",
+                "canonical_target_error_status",
+                "canonical_target_redirect",
+                "noindex_canonical_conflict",
+                "security_mixed_content_homepage",
+                "ai_risk_high",
+            }
+            warning_codes = {
+                "missing_title",
+                "missing_meta_description",
+                "missing_canonical",
+                "compression_disabled",
+                "cache_disabled",
+                "h1_hierarchy_issue",
+                "structured_data_common_errors",
+                "multiple_title_tags",
+                "multiple_meta_descriptions",
+                "multiple_meta_robots",
+                "missing_charset_meta",
+                "missing_viewport_meta",
+                "generic_alt_texts",
+                "decorative_images_with_alt",
+                "duplicate_image_sources",
+                "low_modern_image_formats",
+                "crawl_budget_risk_high",
+                "crawl_budget_risk_medium",
+                "hreflang_extended_check",
+            }
+            mapping = [
+                ("duplicate_title", "Set unique title for each duplicate page."),
+                ("duplicate_meta_description", "Set unique meta description for each duplicate page."),
+                ("missing_title", "Add descriptive title (30-60 chars)."),
+                ("missing_meta_description", "Add meta description (100-160 chars)."),
+                ("missing_canonical", "Add canonical URL and point to the final 200 page."),
+                ("canonical_target_noindex", "Point canonical to indexable URL."),
+                ("canonical_target_redirect", "Point canonical directly to final 200 URL."),
+                ("canonical_target_error_status", "Fix canonical target HTTP status."),
+                ("noindex_canonical_conflict", "Align indexability: canonical and robots noindex."),
+                ("http_status_error", "Fix page HTTP status and internal links to this URL."),
+                ("non_https_url", "Enable HTTPS and redirect HTTP to HTTPS."),
+                ("compression_disabled", "Enable gzip/brotli compression."),
+                ("cache_disabled", "Add Cache-Control/ETag headers."),
+                ("light_perf_low_score", "Reduce render-blocking JS and heavy DOM."),
+                ("thin_content", "Expand page content and remove boilerplate."),
+                ("near_duplicate_content", "Rewrite near-duplicate text blocks."),
+                ("deep_click_depth", "Add internal links from higher-level pages."),
+                ("h1_hierarchy_issue", "Fix H1 structure and heading hierarchy."),
+                ("structured_data_common_errors", "Fix required fields in structured data (price, availability, rating, etc.)."),
+                ("ai_risk_high", "Humanize text and remove repetitive AI-style phrases."),
+                ("security_missing_csp", "Add Content-Security-Policy header."),
+                ("security_missing_hsts", "Add Strict-Transport-Security header."),
+                ("security_missing_xfo", "Add X-Frame-Options header."),
+                ("security_missing_referrer_policy", "Add Referrer-Policy header."),
+                ("security_missing_permissions_policy", "Add Permissions-Policy header."),
+                ("security_mixed_content_homepage", "Replace all http:// resources with https://."),
+                ("crawl_budget_risk_high", "Reduce URL parameters and flatten URL depth."),
+                ("crawl_budget_risk_medium", "Normalize URL parameters for crawl control."),
+                ("multiple_title_tags", "Keep one title tag per page."),
+                ("multiple_meta_descriptions", "Keep one meta description tag."),
+                ("multiple_meta_robots", "Keep one meta robots tag."),
+                ("missing_charset_meta", "Add charset declaration in <head>."),
+                ("missing_viewport_meta", "Add viewport meta tag."),
+                ("generic_alt_texts", "Replace generic ALT texts with specific descriptions."),
+                ("decorative_images_with_alt", "Use empty ALT for decorative images."),
+                ("duplicate_image_sources", "Remove duplicate image sources."),
+                ("low_modern_image_formats", "Convert key images to WebP/AVIF."),
+                ("hreflang_extended_check", "Fix hreflang reciprocity/x-default/lang codes."),
+            ]
+            prefix = "Info:"
+            if severity == "critical" or code in critical_codes:
+                prefix = "Critical:"
+            elif severity == "warning" or code in warning_codes:
+                prefix = "Warning:"
+            for key, rec in mapping:
+                if key in code:
+                    return f"{prefix} {rec}"
+            if "canonical" in title:
+                return f"{prefix} Validate canonical URL and consistency."
+            if "index" in title:
+                return f"{prefix} Fix indexability and robots directives."
+            if "schema" in title or "structured" in title:
+                return f"{prefix} Fix structured data required fields."
+            if details:
+                return f"{prefix} Investigate and fix: {details[:120]}"
+            return f"{prefix} Fix issue according to page context and SEO best practices."
 
         def fill_sheet(
             sheet_name: str,
@@ -1247,22 +1345,48 @@ class XLSXGenerator:
             rows: List[List[Any]],
             severity_idx: int = -1,
             widths: List[int] = None,
+            score_idx: int = -1,
         ):
             wsx = wb.create_sheet(sheet_name)
             for col, header in enumerate(headers, 1):
                 self._apply_style(wsx.cell(row=1, column=col, value=self._sanitize_cell_value(header)), header_style)
+            sev_counts = {"critical": 0, "warning": 0, "info": 0}
+            score_values: List[float] = []
             for row_idx, row_data in enumerate(rows, start=2):
                 for col, value in enumerate(row_data, 1):
                     self._apply_style(wsx.cell(row=row_idx, column=col, value=self._sanitize_cell_value(value)), cell_style)
                 if severity_idx >= 0:
                     sev_value = str(row_data[severity_idx]).lower()
+                    if sev_value in sev_counts:
+                        sev_counts[sev_value] += 1
                     self._apply_row_severity_fill(wsx, row_idx, 1, len(headers), sev_value)
-                    self._apply_severity_cell_style(wsx.cell(row=row_idx, column=severity_idx + 1), sev_value)
+                    sev_cell = wsx.cell(row=row_idx, column=severity_idx + 1)
+                    if sev_value == "critical":
+                        self._apply_severity_cell_style(sev_cell, sev_value)
+                    else:
+                        sev_cell.alignment = Alignment(horizontal='center', vertical='center')
+                if score_idx >= 0 and score_idx < len(row_data):
+                    try:
+                        score_values.append(float(row_data[score_idx]))
+                    except Exception:
+                        pass
             wsx.freeze_panes = "A2"
             wsx.auto_filter.ref = f"A1:{get_column_letter(len(headers))}1"
             if widths:
                 for col, width in enumerate(widths, 1):
                     wsx.column_dimensions[get_column_letter(col)].width = width
+            sheet_stats.append(
+                {
+                    "sheet": sheet_name,
+                    "critical": sev_counts["critical"],
+                    "warning": sev_counts["warning"],
+                    "info": sev_counts["info"],
+                    "avg_score": round(sum(score_values) / len(score_values), 1) if score_values else "",
+                }
+            )
+
+        def sort_rows(rows: List[List[Any]], idx: int, reverse: bool = False):
+            rows.sort(key=lambda row: to_float(row[idx], 0.0) if idx < len(row) else 0.0, reverse=reverse)
 
         # Sheet 1: Executive summary + formula-based issue rates
         ws = wb.active
@@ -1319,34 +1443,6 @@ class XLSXGenerator:
         ws["G24"] = "Health index"
         for col in ["A", "B", "C", "D", "E", "F", "G"]:
             ws[f"{col}24"].font = Font(bold=True)
-
-        tab_matrix = [
-            ("2_OnPage+Structured", "X", "V"),
-            ("3_Technical", "U", "S"),
-            ("4_Content+AI", "U", "S"),
-            ("5_LinkGraph", "P", "N"),
-            ("6_Images+External", "M", "K"),
-            ("7_HierarchyErrors", "L", "J"),
-            ("8_Keywords", "K", "I"),
-        ]
-        matrix_row = 25
-        for sheet_name, sev_col, score_col in tab_matrix:
-            ws[f"A{matrix_row}"] = sheet_name
-            ws[f"B{matrix_row}"] = f"=COUNTIF('{sheet_name}'!${sev_col}:${sev_col},\"critical\")"
-            ws[f"C{matrix_row}"] = f"=COUNTIF('{sheet_name}'!${sev_col}:${sev_col},\"warning\")"
-            ws[f"D{matrix_row}"] = f"=COUNTIF('{sheet_name}'!${sev_col}:${sev_col},\"info\")"
-            ws[f"E{matrix_row}"] = f"=IF($B$5=0,0,((B{matrix_row}*3)+(C{matrix_row}*2)+D{matrix_row})/$B$5)"
-            ws[f"F{matrix_row}"] = f"=IF($B$5=0,0,AVERAGE('{sheet_name}'!${score_col}:${score_col}))"
-            ws[f"G{matrix_row}"] = f"=MAX(0,100-(E{matrix_row}*10)+((F{matrix_row}-50)/2))"
-            ws[f"E{matrix_row}"].number_format = "0.00"
-            ws[f"F{matrix_row}"].number_format = "0.0"
-            ws[f"G{matrix_row}"].number_format = "0.0"
-            matrix_row += 1
-
-        ws["A33"] = "Platform health index"
-        ws["A33"].font = Font(bold=True)
-        ws["B33"] = "=IFERROR(AVERAGE(G25:G31),0)"
-        ws["B33"].number_format = "0.0"
 
         ws.column_dimensions["A"].width = 26
         ws.column_dimensions["B"].width = 80
@@ -1405,7 +1501,8 @@ class XLSXGenerator:
             onpage_headers,
             onpage_rows,
             severity_idx=28,
-            widths=[56, 28, 10, 32, 10, 10, 22, 32, 16, 20, 20, 12, 8, 10, 8, 36, 10, 10, 10, 10, 12, 10, 12, 10, 10, 12, 48, 10],
+            widths=[56, 28, 10, 32, 10, 10, 22, 32, 16, 20, 20, 12, 8, 10, 8, 36, 10, 10, 10, 10, 12, 10, 12, 10, 10, 12, 48, 10, 10],
+            score_idx=26,
         )
 
         # Sheet 3: Technical
@@ -1466,6 +1563,7 @@ class XLSXGenerator:
             tech_rows,
             severity_idx=36,
             widths=[50, 50, 10, 22, 12, 10, 12, 10, 10, 8, 10, 14, 10, 22, 24, 14, 10, 10, 14, 10, 12, 10, 10, 14, 14, 8, 8, 12, 12, 14, 14, 10, 12, 12, 46, 10],
+            score_idx=34,
         )
 
         # Sheet 4: Content + AI
@@ -1510,12 +1608,14 @@ class XLSXGenerator:
                 page_solution("content", page),
                 sev,
             ])
+        sort_rows(content_rows, 15, reverse=True)
         fill_sheet(
             "4_Content+AI",
             content_headers,
             content_rows,
             severity_idx=26,
             widths=[52, 10, 12, 10, 12, 12, 12, 10, 12, 12, 12, 12, 10, 10, 12, 12, 50, 62, 12, 10, 12, 12, 12, 12, 36, 12, 46, 10],
+            score_idx=24,
         )
 
         # Sheet 5: Link Graph
@@ -1547,12 +1647,14 @@ class XLSXGenerator:
                 page_solution("link_quality", page),
                 sev,
             ])
+        sort_rows(link_rows, 14, reverse=False)
         fill_sheet(
             "5_LinkGraph",
             link_headers,
             link_rows,
             severity_idx=16,
             widths=[50, 12, 12, 12, 10, 10, 10, 10, 14, 12, 12, 14, 16, 14, 10, 46, 10],
+            score_idx=14,
         )
 
         # Sheet 6: Images + External
@@ -1587,12 +1689,14 @@ class XLSXGenerator:
                 f"{page_solution('images', page)}; {page_solution('external', page)}",
                 sev,
             ])
+        sort_rows(img_rows, 5, reverse=True)
         fill_sheet(
             "6_Images+External",
             img_headers,
             img_rows,
             severity_idx=17,
             widths=[52, 10, 10, 12, 12, 12, 12, 10, 10, 10, 12, 12, 12, 14, 12, 10, 58, 10],
+            score_idx=15,
         )
 
         # Sheet 7: Hierarchy + Errors
@@ -1626,12 +1730,14 @@ class XLSXGenerator:
                 page_solution("hierarchy", page, page_issues),
                 sev,
             ])
+        sort_rows(issue_rows, 9, reverse=False)
         fill_sheet(
             "7_HierarchyErrors",
             issue_headers,
             issue_rows,
             severity_idx=11,
             widths=[50, 18, 32, 12, 10, 72, 20, 28, 40, 12, 48, 10],
+            score_idx=9,
         )
 
         # Sheet 8: Keywords
@@ -1660,7 +1766,8 @@ class XLSXGenerator:
                 page_solution("keywords", page),
                 sev,
             ])
-        fill_sheet("8_Keywords", keyword_headers, keyword_rows, severity_idx=10, widths=[48, 16, 42, 36, 14, 14, 14, 42, 12, 46, 10])
+        sort_rows(keyword_rows, 8, reverse=False)
+        fill_sheet("8_Keywords", keyword_headers, keyword_rows, severity_idx=10, widths=[48, 16, 42, 36, 14, 14, 14, 42, 12, 46, 10], score_idx=8)
 
         # Optional full-mode optimized deep sheets (no compatibility duplication).
         if str(mode).lower() == "full":
@@ -1704,12 +1811,14 @@ class XLSXGenerator:
                     page_solution("technical", page),
                     sev,
                 ])
+            sort_rows(indexability_rows, 10, reverse=False)
             fill_sheet(
                 "9_Indexability",
                 indexability_headers,
                 indexability_rows,
                 severity_idx=12,
                 widths=[52, 10, 10, 10, 14, 20, 30, 16, 20, 20, 14, 46, 10],
+                score_idx=10,
             )
 
             structured_headers = [
@@ -1750,12 +1859,14 @@ class XLSXGenerator:
                     page_solution("structured", page),
                     sev,
                 ])
+            sort_rows(structured_rows, 1, reverse=True)
             fill_sheet(
                 "10_StructuredData",
                 structured_headers,
                 structured_rows,
                 severity_idx=15,
                 widths=[50, 12, 10, 10, 8, 40, 10, 12, 10, 12, 12, 12, 36, 18, 48, 10],
+                score_idx=13,
             )
 
             trust_eeat_headers = [
@@ -1787,12 +1898,14 @@ class XLSXGenerator:
                     f"{page_solution('eeat', page)}; {page_solution('trust', page)}",
                     sev,
                 ])
+            sort_rows(trust_eeat_rows, 1, reverse=False)
             fill_sheet(
                 "11_Trust_EEAT",
                 trust_eeat_headers,
                 trust_eeat_rows,
                 severity_idx=14,
                 widths=[46, 10, 10, 10, 10, 12, 10, 10, 10, 10, 10, 10, 12, 54, 10],
+                score_idx=1,
             )
 
             topics_headers = [
@@ -1810,12 +1923,12 @@ class XLSXGenerator:
                 semantic_rows = semantic_by_source.get(src, [])
                 if not semantic_rows:
                     semantic_rows = page.get("semantic_links") or []
-                summary = []
+                semantic_summary = []
                 for item in semantic_rows[:4]:
                     target = item.get("target_url", "")
                     topic = item.get("topic") or item.get("suggested_anchor") or ""
                     reason = item.get("reason", "")
-                    summary.append(f"[{topic}] {target} {reason}".strip())
+                    semantic_summary.append(f"[{topic}] {target} {reason}".strip())
                 semantic_count = len(semantic_rows)
                 outgoing_internal = int(page.get("outgoing_internal_links", 0) or 0)
                 topical_depth = min(100.0, semantic_count * 20.0 + outgoing_internal * 3.0 + (15.0 if page.get("topic_hub") else 0.0))
@@ -1828,19 +1941,21 @@ class XLSXGenerator:
                     outgoing_internal,
                     semantic_count,
                     "; ".join([item.get("target_url", "") for item in semantic_rows[:5]]),
-                    "\n".join(summary),
+                    "\n".join(semantic_summary),
                     ", ".join(tfidf_terms[:8]),
                     ", ".join((page.get("top_keywords") or [])[:8]),
                     round(topical_depth, 1),
                     page_solution("topics", page),
                     sev,
                 ])
+            sort_rows(topics_rows, 10, reverse=False)
             fill_sheet(
                 "12_Topics_Semantics",
                 topics_headers,
                 topics_rows,
                 severity_idx=12,
                 widths=[42, 16, 10, 12, 14, 14, 42, 58, 36, 36, 14, 42, 10],
+                score_idx=10,
             )
 
             ai_headers = [
@@ -1872,12 +1987,14 @@ class XLSXGenerator:
                     page_solution("content", page),
                     sev,
                 ])
+            sort_rows(ai_rows, 1, reverse=True)
             fill_sheet(
                 "13_AI_Markers",
                 ai_headers,
                 ai_rows,
                 severity_idx=12,
                 widths=[48, 10, 48, 56, 12, 12, 12, 12, 12, 12, 10, 52, 10],
+                score_idx=5,
             )
 
             crawl_budget_headers = [
@@ -1903,12 +2020,14 @@ class XLSXGenerator:
                         sev,
                     ]
                 )
+            sort_rows(crawl_budget_rows, 9, reverse=True)
             fill_sheet(
                 "CrawlBudget",
                 crawl_budget_headers,
                 crawl_budget_rows,
                 severity_idx=11,
                 widths=[52, 10, 10, 16, 10, 10, 10, 12, 12, 12, 52, 10],
+                score_idx=9,
             )
 
             raw_issue_headers = ["Severity", "URL", "Code", "Category", "Title", "Details", "Affected", "Recommendation"]
@@ -1933,8 +2052,9 @@ class XLSXGenerator:
                     issue.get("title", ""),
                     details,
                     issue.get("selector") or issue.get("path") or issue.get("field") or "",
-                    issue.get("recommendation") or issue.get("fix") or "",
+                    issue.get("recommendation") or issue.get("fix") or issue_recommendation(issue),
                 ])
+            raw_issue_rows.sort(key=lambda r: (0 if str(r[0]).lower() == "critical" else 1 if str(r[0]).lower() == "warning" else 2, str(r[1]), str(r[2])))
             fill_sheet(
                 "14_Issues_Raw",
                 raw_issue_headers,
@@ -1942,6 +2062,36 @@ class XLSXGenerator:
                 severity_idx=0,
                 widths=[10, 56, 24, 16, 28, 50, 24, 46],
             )
+
+        matrix_start = 25
+        total_pages = max(1, int(summary.get("total_pages", len(pages)) or len(pages) or 1))
+        health_values: List[float] = []
+        for idx, stat in enumerate(sheet_stats, start=matrix_start):
+            critical = int(stat.get("critical", 0))
+            warning = int(stat.get("warning", 0))
+            info = int(stat.get("info", 0))
+            avg_score = stat.get("avg_score", "")
+            issue_load = round(((critical * 3.0) + (warning * 2.0) + info) / float(total_pages), 2)
+            if avg_score == "":
+                health = round(max(0.0, 100.0 - (issue_load * 10.0)), 1)
+            else:
+                health = round(max(0.0, min(100.0, 100.0 - (issue_load * 10.0) + ((float(avg_score) - 50.0) / 2.0))), 1)
+            health_values.append(health)
+            ws.cell(row=idx, column=1, value=self._sanitize_cell_value(stat.get("sheet", "")))
+            ws.cell(row=idx, column=2, value=critical)
+            ws.cell(row=idx, column=3, value=warning)
+            ws.cell(row=idx, column=4, value=info)
+            ws.cell(row=idx, column=5, value=issue_load)
+            ws.cell(row=idx, column=6, value=avg_score)
+            ws.cell(row=idx, column=7, value=health)
+            for col in range(1, 8):
+                self._apply_style(ws.cell(row=idx, column=col), cell_style)
+            if critical > 0:
+                self._apply_row_severity_fill(ws, idx, 1, 7, "critical")
+        ws["A22"] = "Platform Health Index"
+        ws["B22"] = round(sum(health_values) / len(health_values), 1) if health_values else ""
+        ws["A22"].font = Font(bold=True)
+        ws["B22"].font = Font(bold=True)
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         wb.save(filepath)

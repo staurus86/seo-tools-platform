@@ -532,27 +532,61 @@ class SiteAuditProAdapter:
 
     def _detect_contact_info(self, text: str) -> bool:
         raw = (text or "").lower()
-        return bool(re.search(r"(\+?\d[\d\s\-\(\)]{7,}\d)|(@)|(\bcontact\b)|(\bphone\b)", raw))
+        if re.search(r"(\+?\d[\d\s\-\(\)]{7,}\d)|([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})", raw):
+            return True
+        contact_tokens = (
+            "contact", "contacts", "phone", "call us", "support", "help center",
+            "контакт", "контакты", "телефон", "связаться", "обратная связь", "поддержка",
+            "горячая линия", "адрес", "email", "e-mail",
+        )
+        return any(token in raw for token in contact_tokens)
 
     def _detect_legal_docs(self, text: str) -> bool:
         raw = (text or "").lower()
-        return any(token in raw for token in ("privacy", "terms", "policy", "cookies", "gdpr"))
+        legal_tokens = (
+            "privacy", "privacy policy", "terms", "terms of use", "terms and conditions", "policy", "cookies", "gdpr",
+            "ccpa", "refund policy", "shipping policy", "returns policy", "disclaimer", "public offer",
+            "политика конфиденциальности", "политика обработки персональных данных", "условия использования",
+            "пользовательское соглашение", "оферта", "публичная оферта", "согласие на обработку",
+            "cookie", "куки", "возврат", "доставка", "отказ от ответственности",
+        )
+        return any(token in raw for token in legal_tokens)
 
     def _detect_author_info(self, soup: BeautifulSoup, text: str) -> bool:
         raw = (text or "").lower()
         if soup.find(attrs={"rel": re.compile("author", re.I)}):
             return True
-        return any(token in raw for token in ("author", "written by", "editor"))
+        if soup.find(attrs={"itemprop": re.compile("author", re.I)}):
+            return True
+        if soup.find(attrs={"class": re.compile(r"author|byline|editor|reviewed|эксперт|автор", re.I)}):
+            return True
+        author_tokens = (
+            "author", "written by", "editor", "reviewed by", "fact checked",
+            "автор", "редактор", "проверено", "эксперт", "материал подготовил",
+        )
+        return any(token in raw for token in author_tokens)
 
     def _detect_reviews(self, soup: BeautifulSoup, text: str) -> bool:
         raw = (text or "").lower()
         if soup.find(attrs={"itemprop": re.compile("review|rating", re.I)}):
             return True
-        return any(token in raw for token in ("review", "rating", "testimonial"))
+        if soup.find(attrs={"class": re.compile(r"review|rating|testimonial|otzyv|отзыв", re.I)}):
+            return True
+        review_tokens = (
+            "review", "rating", "testimonial", "stars", "score", "customer stories",
+            "отзыв", "отзывы", "рейтинг", "оценка", "нам доверяют", "кейсы клиентов",
+        )
+        return any(token in raw for token in review_tokens)
 
     def _detect_trust_badges(self, text: str) -> bool:
         raw = (text or "").lower()
-        return any(token in raw for token in ("secure", "verified", "ssl", "guarantee", "trusted"))
+        badge_tokens = (
+            "secure", "verified", "ssl", "tls", "https", "guarantee", "trusted",
+            "certified", "official partner", "money-back", "warranty", "iso", "pci dss",
+            "безопасно", "защищено", "проверено", "гарантия", "официальный партнер",
+            "сертифицировано", "сертификат", "лицензия",
+        )
+        return any(token in raw for token in badge_tokens)
 
     def _cta_text_quality(self, soup: BeautifulSoup) -> float:
         buttons = soup.find_all(["a", "button"])

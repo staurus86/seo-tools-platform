@@ -56,7 +56,7 @@ class DOCXGenerator:
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
         doc.add_paragraph(f"URL: {data.get('url', 'н/д')}")
         doc.add_paragraph(f"РџСЂРѕРІРµСЂРµРЅРѕ СЃС‚СЂР°РЅРёС†: {data.get('pages_analyzed', 0)}")
-        doc.add_paragraph(f"Р”Р°С‚Р° Р·Р°РІРµСЂС€РµРЅРёСЏ: {data.get('completed_at', 'н/д')}")
+        doc.add_paragraph(f"Completed at: {data.get('completed_at', 'n/a')}")
         doc.add_paragraph(
             "РћРїРёСЃР°РЅРёРµ: РґР°РЅРЅС‹Р№ РѕС‚С‡РµС‚ С„РёРєСЃРёСЂСѓРµС‚ РѕР±С‰РµРµ С‚РµС…РЅРёС‡РµСЃРєРѕРµ СЃРѕСЃС‚РѕСЏРЅРёРµ СЃР°Р№С‚Р° СЃ С‚РѕС‡РєРё Р·СЂРµРЅРёСЏ SEO, "
             "С‡С‚РѕР±С‹ РѕРїСЂРµРґРµР»РёС‚СЊ РїСЂРёРѕСЂРёС‚РµС‚С‹ РґРѕСЂР°Р±РѕС‚ок Рё СЃРЅРёР·РёС‚СЊ СЂРёСЃРєРё РїРѕС‚РµСЂРё РѕСЂРіР°РЅРёС‡Рµского С‚СЂР°С„РёРєР°."
@@ -100,7 +100,7 @@ class DOCXGenerator:
         doc.add_paragraph(f"Р¤Р°Р№Р» robots.txt РЅР°Р№РґРµРЅ: {'Р”Р°' if results.get('robots_txt_found') else 'РќРµС‚'}")
         doc.add_paragraph(
             "РћРїРёСЃР°РЅРёРµ: robots.txt СѓРїСЂР°РІР»СЏРµС‚ РґРѕСЃС‚упом РїРѕРёСЃРєРѕРІС‹С… Рё СЃРµСЂРІРёСЃРЅС‹С… Р±РѕС‚ов Рє СЂР°Р·РґРµР»Р°Рј СЃР°Р№С‚Р°. "
-            "РћС€РёР±РєРё РІ СЌС‚ом С„Р°Р№Р»Рµ РјРѕРіСѓС‚ РѕРіСЂР°РЅРёС‡РёС‚СЊ РёРЅРґРµРєСЃР°С†РёСЋ РІР°Р¶РЅС‹С… СЃС‚СЂР°РЅРёС†."
+            "Errors in this file may limit indexation of important pages."
         )
         recs = results.get("recommendations", [])
         if recs:
@@ -483,7 +483,7 @@ class DOCXGenerator:
         url = data.get("url", "н/д")
         generated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         doc.add_paragraph(f"РЎР°Р№С‚: {url}")
-        doc.add_paragraph(f"Р”Р°С‚Р° Рё РІСЂРµмя РѕС‚С‡РµС‚Р°: {generated_at}")
+        doc.add_paragraph(f"Report generated at: {generated_at}")
         doc.add_paragraph(
             "Р¦РµР»СЊ РѕС‚С‡РµС‚Р°: РѕС†РµРЅРёС‚СЊ СѓРґРѕР±СЃС‚во РёСЃРїРѕР»СЊР·РѕРІР°РЅРёСЏ СЃР°Р№С‚Р° РЅР° РїРѕРїСѓР»СЏСЂРЅС‹С… РјРѕР±РёР»СЊРЅС‹С… СѓСЃС‚СЂРѕР№СЃС‚РІР°С…, "
             "РІС‹СЏРІРёС‚СЊ С‚РµС…РЅРёС‡РµСЃРєРёРµ РѕС€РёР±РєРё Р°РґР°РїС‚РёРІРЅРѕСЃС‚Рё Рё РїСЂРµРґРѕСЃС‚Р°РІРёС‚СЊ РїРѕРЅСЏС‚РЅС‹Р№ РїР»Р°РЅ РёСЃРїСЂР°РІР»РµРЅРёР№ РґР»СЏ РєРѕРјР°РЅРґС‹ СЂР°Р·СЂР°Р±РѕС‚РєРё."
@@ -754,5 +754,4 @@ class DOCXGenerator:
 
 # Singleton
 docx_generator = DOCXGenerator()
-
 

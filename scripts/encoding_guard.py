@@ -1,4 +1,4 @@
-"""Detect and optionally fix common Cyrillic mojibake (UTF-8 read as cp1251)."""
+﻿"""Detect and optionally fix common Cyrillic mojibake (UTF-8 read as cp1251)."""
 from __future__ import annotations
 
 import argparse
@@ -7,10 +7,12 @@ from pathlib import Path
 from typing import Iterable, Tuple
 
 
-MOJIBAKE_LEAD_CHARS = "РСЁЃЄЇІЉЊЋЌЎЏ"
-MOJIBAKE_RARE_CHARS = "ЃЄЇІЉЊЋЌЎЏђѓєіїјљњќћџё"
-TOKEN_RE = re.compile(rf"[{MOJIBAKE_LEAD_CHARS}][\u0400-\u04FFA-Za-z0-9_/\-]{{2,}}")
-CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
+# Most common leading characters in cp1251->utf8 mojibake sequences.
+MOJIBAKE_LEAD_CHARS = "\u0420\u0421\u0401\u0403\u0404\u0407\u0406\u0409\u040a\u040b\u040c\u040e\u040f"
+MOJIBAKE_RARE_CHARS = "\u0403\u0404\u0407\u0406\u0409\u040a\u040b\u040c\u040e\u040f\u0452\u0453\u0454\u0456\u0457\u0458\u0459\u045a\u045b\u045c\u045e\u045f\u0451"
+# Capture broad non-whitespace mojibake segments (including punctuation) to avoid misses.
+TOKEN_RE = re.compile(rf"[{MOJIBAKE_LEAD_CHARS}][^\s]{{1,}}")
+CYRILLIC_RE = re.compile(r"[\u0400-\u04FF]")
 
 
 def iter_files(root: Path, exts: Tuple[str, ...]) -> Iterable[Path]:
