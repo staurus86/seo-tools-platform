@@ -796,6 +796,108 @@ class XLSXGenerator:
         wb.save(filepath)
         return filepath
 
+    def generate_site_audit_pro_report(self, task_id: str, data: Dict[str, Any]) -> str:
+        """Generate compact quick XLSX for site_audit_pro."""
+        wb = Workbook()
+        header_style = self._create_header_style()
+        cell_style = self._create_cell_style()
+
+        results = data.get("results", {}) or {}
+        summary = results.get("summary", {}) or {}
+        pages = results.get("pages", []) or []
+        issues = results.get("issues", []) or []
+        report_url = data.get("url", "n/a")
+        mode = results.get("mode", "quick")
+
+        ws = wb.active
+        ws.title = "1_Executive"
+        ws["A1"] = "Site Audit Pro Report"
+        ws["A1"].font = Font(bold=True, size=16)
+        ws.merge_cells("A1:D1")
+
+        summary_rows = [
+            ("URL", report_url),
+            ("Mode", mode),
+            ("Total pages", summary.get("total_pages", len(pages))),
+            ("Internal pages", summary.get("internal_pages", "")),
+            ("Issues total", summary.get("issues_total", len(issues))),
+            ("Critical", summary.get("critical_issues", 0)),
+            ("Warning", summary.get("warning_issues", 0)),
+            ("Info", summary.get("info_issues", 0)),
+            ("Score", summary.get("score", "")),
+        ]
+        row = 3
+        for key, value in summary_rows:
+            ws.cell(row=row, column=1, value=key).font = Font(bold=True)
+            ws.cell(row=row, column=2, value=value)
+            row += 1
+        ws.column_dimensions["A"].width = 26
+        ws.column_dimensions["B"].width = 80
+
+        pws = wb.create_sheet("2_Pages")
+        page_headers = ["URL", "Status", "Indexable", "Health", "Issues", "Severity"]
+        for col, header in enumerate(page_headers, 1):
+            self._apply_style(pws.cell(row=1, column=col, value=header), header_style)
+
+        for row_idx, page in enumerate(pages, start=2):
+            page_issues = page.get("issues", []) or []
+            severity = "ok"
+            for issue in page_issues:
+                sev = (issue.get("severity") or "info").lower()
+                if sev == "critical":
+                    severity = "critical"
+                    break
+                if sev == "warning":
+                    severity = "warning"
+                elif sev == "info" and severity == "ok":
+                    severity = "info"
+
+            values = [
+                page.get("url", ""),
+                page.get("status_code", ""),
+                page.get("indexable", ""),
+                page.get("health_score", ""),
+                len(page_issues),
+                severity.capitalize(),
+            ]
+            for col, value in enumerate(values, 1):
+                self._apply_style(pws.cell(row=row_idx, column=col, value=value), cell_style)
+            self._apply_row_severity_fill(pws, row_idx, 1, len(page_headers), severity)
+            self._apply_severity_cell_style(pws.cell(row=row_idx, column=len(page_headers)), severity)
+
+        pws.freeze_panes = "A2"
+        pws.auto_filter.ref = "A1:F1"
+        for col, width in enumerate([80, 10, 12, 10, 10, 12], 1):
+            pws.column_dimensions[get_column_letter(col)].width = width
+
+        iws = wb.create_sheet("3_Issues")
+        issue_headers = ["Severity", "URL", "Code", "Title", "Details"]
+        for col, header in enumerate(issue_headers, 1):
+            self._apply_style(iws.cell(row=1, column=col, value=header), header_style)
+
+        for row_idx, issue in enumerate(issues, start=2):
+            severity = (issue.get("severity") or "info").lower()
+            values = [
+                severity.capitalize(),
+                issue.get("url", ""),
+                issue.get("code", ""),
+                issue.get("title", ""),
+                issue.get("details", ""),
+            ]
+            for col, value in enumerate(values, 1):
+                self._apply_style(iws.cell(row=row_idx, column=col, value=value), cell_style)
+            self._apply_row_severity_fill(iws, row_idx, 1, len(issue_headers), severity)
+            self._apply_severity_cell_style(iws.cell(row=row_idx, column=1), severity)
+
+        iws.freeze_panes = "A2"
+        iws.auto_filter.ref = "A1:E1"
+        for col, width in enumerate([12, 70, 18, 32, 90], 1):
+            iws.column_dimensions[get_column_letter(col)].width = width
+
+        filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
+        wb.save(filepath)
+        return filepath
+
     def generate_report(self, task_id: str, task_type: str, data: Dict[str, Any]) -> str:
         """Р В Р’В Р Р†Р вЂљРЎС™Р В Р’В Р вЂ™Р’ВµР В Р’В Р В РІР‚В¦Р В Р’В Р вЂ™Р’ВµР В Р Р‹Р В РІР‚С™Р В Р’В Р РЋРІР‚ВР В Р Р‹Р В РІР‚С™Р В Р Р‹Р РЋРІР‚СљР В Р’В Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В Р’В Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р Р‹Р Р†Р вЂљР Р‹Р В Р’В Р вЂ™Р’ВµР В Р Р‹Р Р†Р вЂљРЎв„ў Р В Р’В Р В РІР‚В  Р В Р’В Р вЂ™Р’В·Р В Р’В Р вЂ™Р’В°Р В Р’В Р В РІР‚В Р В Р’В Р РЋРІР‚ВР В Р Р‹Р В РЎвЂњР В Р’В Р РЋРІР‚ВР В Р’В Р РЋР’ВР В Р’В Р РЋРІР‚СћР В Р Р‹Р В РЎвЂњР В Р Р‹Р Р†Р вЂљРЎв„ўР В Р’В Р РЋРІР‚В Р В Р’В Р РЋРІР‚СћР В Р Р‹Р Р†Р вЂљРЎв„ў Р В Р Р‹Р Р†Р вЂљРЎв„ўР В Р’В Р РЋРІР‚ВР В Р’В Р РЋРІР‚вЂќР В Р’В Р вЂ™Р’В° Р В Р’В Р вЂ™Р’В·Р В Р’В Р вЂ™Р’В°Р В Р’В Р СћРІР‚ВР В Р’В Р вЂ™Р’В°Р В Р Р‹Р Р†Р вЂљР Р‹Р В Р’В Р РЋРІР‚В"""
         generators = {
@@ -804,7 +906,8 @@ class XLSXGenerator:
             'sitemap_validate': self.generate_sitemap_report,
             'render_audit': self.generate_render_report,
             'mobile_check': self.generate_mobile_report,
-            'bot_check': self.generate_bot_report
+            'bot_check': self.generate_bot_report,
+            'site_audit_pro': self.generate_site_audit_pro_report,
         }
         
         generator = generators.get(task_type, self.generate_site_analyze_report)

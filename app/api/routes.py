@@ -1725,6 +1725,49 @@ async def export_mobile_xlsx(data: ExportRequest):
         return {"error": str(e)}
 
 
+@router.post("/export/site-audit-pro-xlsx")
+async def export_site_audit_pro_xlsx(data: ExportRequest):
+    """Export Site Audit Pro report to XLSX."""
+    import os
+    import re
+    from fastapi.responses import Response
+    from app.reports.xlsx_generator import xlsx_generator
+
+    try:
+        task_id = data.task_id
+        task = get_task_result(task_id)
+        if not task:
+            return {"error": "Задача не найдена", "task_id": task_id}
+
+        task_type = task.get("task_type")
+        if task_type != "site_audit_pro":
+            return {"error": f"Неподдерживаемый тип задачи для экспорта site_audit_pro XLSX: {task_type}"}
+
+        task_result = task.get("result", {})
+        url = task.get("url", "") or task_result.get("url", "")
+        results = task_result.get("results", task_result) or {}
+        report_payload = {"url": url, "results": results}
+
+        filepath = xlsx_generator.generate_site_audit_pro_report(task_id, report_payload)
+        if not filepath or not os.path.exists(filepath):
+            return {"error": "Не удалось сформировать отчет"}
+        append_task_artifact(task_id, filepath, kind="export")
+
+        with open(filepath, "rb") as f:
+            content = f.read()
+
+        domain = re.sub(r"[^a-zA-Z0-9._-]+", "_", (urlparse(url).netloc or "site"))
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+        filename = f"site_audit_pro_{domain}_{timestamp}.xlsx"
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.get("/mobile-artifacts/{task_id}/{filename}")
 async def get_mobile_artifact(task_id: str, filename: str):
     """Serve mobile screenshot artifact for UI gallery."""
