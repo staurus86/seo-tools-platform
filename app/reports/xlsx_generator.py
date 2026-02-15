@@ -5,11 +5,12 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from collections import Counter, defaultdict
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Set
 from datetime import datetime
 import os
 import re
 import math
+import hashlib
 
 from app.config import settings
 
@@ -378,6 +379,7 @@ class XLSXGenerator:
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         wb.save(filepath)
+        wb.close()
         return filepath
 
     def generate_render_report(self, task_id: str, data: Dict[str, Any]) -> str:
@@ -1450,6 +1452,52 @@ class XLSXGenerator:
             value = to_float(score, 0.0)
             return round(max(0.0, float(target) - value), 1)
 
+        def approximate_pixel_width(text: Any) -> int:
+            s = str(text or "")
+            width = 0
+            for ch in s:
+                if ch.isspace():
+                    width += 3
+                elif re.match(r"[A-Za-z0-9]", ch):
+                    width += 7
+                elif re.match(r"[А-Яа-яЁё]", ch):
+                    width += 8
+                else:
+                    width += 6
+            return width
+
+        def normalize_url_value(url: Any) -> str:
+            value = str(url or "").strip().rstrip("/")
+            return value.lower()
+
+        def detect_issue_tab(code: str) -> str:
+            code_l = str(code or "").lower()
+            if any(x in code_l for x in ("title", "meta", "h1", "canonical", "robots", "viewport", "charset", "schema", "structured")):
+                return "2_OnPage+Structured"
+            if any(x in code_l for x in ("http_status", "https", "cache", "compression", "security", "mixed_content", "crawl_budget", "redirect")):
+                return "3_Technical"
+            if any(x in code_l for x in ("thin_content", "duplicate_content", "ai_", "hidden_content", "cloaking", "cta", "list", "table")):
+                return "4_Content+AI"
+            if any(x in code_l for x in ("anchor", "link", "orphan", "pagerank")):
+                return "5_LinkGraph"
+            if any(x in code_l for x in ("image", "alt", "webp", "avif", "external")):
+                return "6_Images+External"
+            if any(x in code_l for x in ("hierarchy", "heading", "h1_hierarchy")):
+                return "7_HierarchyErrors"
+            if any(x in code_l for x in ("keyword", "tf_idf", "intent", "cannibal")):
+                return "8_Keywords"
+            return "14_Issues_Raw"
+
+        def owner_hint_by_code(code: str) -> str:
+            code_l = str(code).lower()
+            if any(x in code_l for x in ("title", "meta", "h1", "keyword", "content", "ai_", "duplicate_")):
+                return "Content+SEO"
+            if any(x in code_l for x in ("schema", "structured", "hreflang", "canonical", "index", "http_status")):
+                return "SEO+Dev"
+            if any(x in code_l for x in ("security", "cache", "compression", "https", "crawl_budget")):
+                return "Dev+Infra"
+            return "SEO"
+
         # Sheet 1: Executive summary + formula-based issue rates
         ws = wb.active
         ws.title = "1_Executive"
@@ -1493,6 +1541,15 @@ class XLSXGenerator:
         ws["B20"] = pipeline_metrics.get("orphan_pages", "")
         ws["A21"] = "Topic Hubs"
         ws["B21"] = pipeline_metrics.get("topic_hubs", "")
+        critical_pages = sum(
+            1
+            for page in pages
+            if any(str(i.get("severity", "")).lower() == "critical" for i in issues_by_url.get(str(page.get("url", "")), []))
+        )
+        ws["D17"] = "Critical Pages"
+        ws["E17"] = critical_pages
+        ws["D18"] = "Critical Pages %"
+        ws["E18"] = round((critical_pages / float(max(1, len(pages)))) * 100.0, 1)
 
         ws["A23"] = "Tab Quality Matrix"
         ws["A23"].font = Font(bold=True)
@@ -1516,6 +1573,10 @@ class XLSXGenerator:
         ws.column_dimensions["I"].width = 56
         ws.column_dimensions["J"].width = 14
         ws.column_dimensions["K"].width = 14
+        ws.column_dimensions["M"].width = 28
+        ws.column_dimensions["N"].width = 14
+        ws.column_dimensions["O"].width = 14
+        ws.column_dimensions["P"].width = 52
 
         ws["I3"] = "Top Critical Pages"
         ws["I3"].font = Font(bold=True)
@@ -1540,25 +1601,49 @@ class XLSXGenerator:
             for col in range(9, 12):
                 self._apply_style(ws.cell(row=offset, column=col), cell_style)
 
+        ws["M3"] = "Top Issue Codes"
+        ws["M3"].font = Font(bold=True)
+        ws["M4"] = "Code"
+        ws["N4"] = "Count"
+        ws["O4"] = "Share %"
+        ws["P4"] = "Owner"
+        for col in ["M", "N", "O", "P"]:
+            ws[f"{col}4"].font = Font(bold=True)
+        issue_code_stats = Counter(str(i.get("code") or "unknown") for i in issues)
+        for offset, (code, count) in enumerate(issue_code_stats.most_common(10), start=5):
+            ws.cell(row=offset, column=13, value=self._sanitize_cell_value(code))
+            ws.cell(row=offset, column=14, value=count)
+            ws.cell(row=offset, column=15, value=round((count / float(max(1, len(issues)))) * 100.0, 1))
+            ws.cell(row=offset, column=16, value=self._sanitize_cell_value(owner_hint_by_code(code)))
+            for col in range(13, 17):
+                self._apply_style(ws.cell(row=offset, column=col), cell_style)
+
         # Sheet 2: OnPage + Structured
         onpage_headers = [
-            "URL", "Title", "Title len", "Meta description", "Meta len", "H1 count", "H1 text",
+            "URL", "Title", "Title len", "Title px", "Meta description", "Meta len", "Desc px", "SERP truncation risk", "H1 count", "H1 text",
             "Canonical URL", "Canonical status", "Meta robots", "X-Robots", "Schema count",
             "JSON-LD", "Microdata", "RDFa", "Structured types", "Hreflang count",
             "Breadcrumbs", "Mobile hint", "Charset", "Viewport", "Meta robots multi",
-            "Title tags", "Description tags", "Title dup", "Desc dup", "OnPage score", "OnPage delta to target", "OnPage solution", "Severity",
+            "Title tags", "Description tags", "Title dup", "Desc dup", "Canonical self match", "OnPage score", "OnPage delta to target", "OnPage solution", "Severity",
         ]
         onpage_rows = []
         for page in pages:
             sev = infer_page_severity(page)
             d = derived_by_url.get(str(page.get("url", "")), {})
             sdetail = d.get("structured_detail", {})
+            title_px = approximate_pixel_width(d.get("title", page.get("title", "")))
+            desc_px = approximate_pixel_width(d.get("meta_description", page.get("meta_description", "")))
+            serp_risk = "✅" if (title_px > 580 or desc_px > 920) else "❌"
+            canonical_self_match = "✅" if normalize_url_value(page.get("canonical", "")) == normalize_url_value(page.get("final_url", page.get("url", ""))) else "❌"
             onpage_rows.append([
                 page.get("url", ""),
                 d.get("title", page.get("title", "")),
                 d.get("title_len", 0),
+                title_px,
                 d.get("meta_description", page.get("meta_description", "")),
                 d.get("description_len", 0),
+                desc_px,
+                serp_risk,
                 page.get("h1_count", ""),
                 page.get("h1_text", ""),
                 page.get("canonical", ""),
@@ -1580,6 +1665,7 @@ class XLSXGenerator:
                 page.get("meta_description_tags_count", 0),
                 page.get("duplicate_title_count", 0),
                 page.get("duplicate_description_count", 0),
+                canonical_self_match,
                 d.get("onpage_score", ""),
                 delta_to_target(d.get("onpage_score", ""), 85.0),
                 page_solution("onpage", page),
@@ -1589,9 +1675,9 @@ class XLSXGenerator:
             "2_OnPage+Structured",
             onpage_headers,
             onpage_rows,
-            severity_idx=29,
-            widths=[56, 28, 10, 32, 10, 10, 22, 32, 16, 20, 20, 12, 8, 10, 8, 36, 10, 10, 10, 10, 12, 10, 12, 10, 10, 12, 12, 48, 10, 10],
-            score_idx=26,
+            severity_idx=33,
+            widths=[56, 28, 10, 10, 32, 10, 10, 14, 10, 22, 32, 16, 20, 20, 12, 8, 10, 8, 36, 10, 10, 10, 10, 12, 10, 12, 10, 10, 10, 10, 12, 12, 48, 10],
+            score_idx=30,
         )
 
         # Sheet 3: Technical
@@ -1601,12 +1687,26 @@ class XLSXGenerator:
             "Last-Modified", "Freshness days", "JS assets", "CSS assets", "Render-blocking JS", "Preload hints",
             "Perf light score", "Path depth", "URL params", "Crawl budget risk",
             "Security headers score", "CSP", "HSTS", "X-Frame-Options", "Referrer-Policy", "Permissions-Policy", "Mixed content refs",
-            "HTML quality score", "Deprecated tags count", "Indexability reason", "Technical score", "Technical delta to target", "Technical solution", "Severity",
+            "HTML quality score", "Deprecated tags count", "Indexability reason", "TTFB ms", "HTML/JS ratio", "Redirect chain risk", "Transport risk", "Technical score", "Technical delta to target", "Technical solution", "Severity",
         ]
         tech_rows = []
         for page in pages:
             sev = infer_page_severity(page)
             d = derived_by_url.get(str(page.get("url", "")), {})
+            ttfb_ms = int(page.get("ttfb_ms") or d.get("response_ms", 0) or 0)
+            js_assets_count = int(page.get("js_assets_count", 0) or 0)
+            html_js_ratio = round((to_float(d.get("content_kb", 0.0), 0.0) / max(1.0, float(js_assets_count))), 2)
+            redirect_chain_risk = "✅" if int(page.get("redirect_count", 0) or 0) > 1 else "❌"
+            transport_risk = 100
+            if not bool(page.get("is_https")):
+                transport_risk -= 40
+            if not bool(page.get("hsts_present")):
+                transport_risk -= 25
+            if int(page.get("mixed_content_count", 0) or 0) > 0:
+                transport_risk -= 25
+            if not bool(page.get("csp_present")):
+                transport_risk -= 10
+            transport_risk = max(0, transport_risk)
             tech_rows.append([
                 page.get("url", ""),
                 page.get("final_url", ""),
@@ -1642,6 +1742,10 @@ class XLSXGenerator:
                 page.get("html_quality_score", ""),
                 len(page.get("deprecated_tags") or []),
                 page.get("indexability_reason", ""),
+                ttfb_ms,
+                html_js_ratio,
+                redirect_chain_risk,
+                transport_risk,
                 d.get("technical_score", ""),
                 delta_to_target(d.get("technical_score", ""), 85.0),
                 page_solution("technical", page),
@@ -1651,9 +1755,9 @@ class XLSXGenerator:
             "3_Technical",
             tech_headers,
             tech_rows,
-            severity_idx=37,
-            widths=[50, 50, 10, 22, 12, 10, 12, 10, 10, 8, 10, 14, 10, 22, 24, 14, 10, 10, 14, 10, 12, 10, 10, 14, 14, 8, 8, 12, 12, 14, 14, 10, 12, 12, 12, 46, 10],
-            score_idx=34,
+            severity_idx=41,
+            widths=[50, 50, 10, 22, 12, 10, 12, 10, 10, 8, 10, 14, 10, 22, 24, 14, 10, 10, 14, 10, 12, 10, 10, 14, 14, 8, 8, 12, 12, 14, 14, 10, 12, 12, 10, 10, 12, 12, 12, 46, 10],
+            score_idx=38,
         )
 
         # Sheet 4: Content + AI
@@ -1664,7 +1768,8 @@ class XLSXGenerator:
             "Filler phrases", "AI markers count", "AI markers list", "AI marker sample",
             "AI density /1k", "AI risk", "AI risk level", "Page type",
             "Hidden content", "Hidden nodes", "Hidden text chars", "Cloaking",
-            "CTA count", "CTA quality", "Lists count", "Tables count",
+            "Content/template ratio", "Paragraph count", "Avg paragraph len", "Hidden severity",
+            "CTA count", "CTA quality", "CTA type mix", "Lists count", "Tables count",
             "Near duplicates", "Near duplicate URLs",
             "Content score", "Content delta to target", "Content solution", "Severity",
         ]
@@ -1672,6 +1777,29 @@ class XLSXGenerator:
         for page in pages:
             sev = infer_page_severity(page)
             d = derived_by_url.get(str(page.get("url", "")), {})
+            content_density = to_float(page.get("content_density", 0), 0.0)
+            boilerplate_percent = to_float(page.get("boilerplate_percent", 0), 0.0)
+            content_template_ratio = round(content_density / max(1.0, boilerplate_percent), 2)
+            paragraph_count = int(page.get("paragraph_count", 0) or max(1, int(page.get("word_count", 0) or 0) // 80))
+            avg_paragraph_len = round((to_float(page.get("word_count", 0), 0.0) / max(1, paragraph_count)), 1)
+            hidden_nodes = int(page.get("hidden_nodes_count", 0) or 0)
+            hidden_chars = int(page.get("hidden_text_chars", 0) or 0)
+            if not bool(page.get("hidden_content", False)):
+                hidden_severity = "none"
+            elif hidden_nodes >= 20 or hidden_chars >= 1200:
+                hidden_severity = "high"
+            elif hidden_nodes >= 8 or hidden_chars >= 400:
+                hidden_severity = "medium"
+            else:
+                hidden_severity = "low"
+            cta_type_mix = page.get("cta_type_mix", "")
+            if not cta_type_mix:
+                cta_parts = []
+                for key, label in (("cta_form_count", "form"), ("cta_button_count", "button"), ("cta_link_count", "link")):
+                    val = int(page.get(key, 0) or 0)
+                    if val > 0:
+                        cta_parts.append(f"{label}:{val}")
+                cta_type_mix = ", ".join(cta_parts) if cta_parts else "n/a"
             content_rows.append([
                 page.get("url", ""),
                 page.get("word_count", 0),
@@ -1699,8 +1827,13 @@ class XLSXGenerator:
                 page.get("hidden_nodes_count", 0),
                 page.get("hidden_text_chars", 0),
                 page.get("cloaking_detected", False),
+                content_template_ratio,
+                paragraph_count,
+                avg_paragraph_len,
+                hidden_severity,
                 page.get("cta_count", 0),
                 page.get("cta_text_quality", 0),
+                cta_type_mix,
                 page.get("lists_count", 0),
                 page.get("tables_count", 0),
                 page.get("near_duplicate_count", 0),
@@ -1715,25 +1848,32 @@ class XLSXGenerator:
             "4_Content+AI",
             content_headers,
             content_rows,
-            severity_idx=35,
-            widths=[52, 10, 12, 10, 12, 12, 12, 10, 12, 12, 12, 12, 10, 10, 12, 12, 50, 62, 12, 10, 12, 12, 10, 10, 12, 10, 10, 10, 10, 10, 10, 12, 12, 36, 12, 12, 46, 10],
-            score_idx=32,
+            severity_idx=40,
+            widths=[52, 10, 12, 10, 12, 12, 12, 10, 12, 12, 12, 12, 10, 10, 12, 12, 50, 62, 12, 10, 12, 12, 10, 10, 12, 10, 12, 12, 12, 12, 10, 10, 18, 10, 10, 12, 12, 36, 12, 12, 46, 10],
+            score_idx=37,
         )
 
         # Sheet 5: Link Graph
         link_headers = [
             "URL", "Incoming int", "Outgoing int", "Outgoing ext", "Orphan",
             "Topic hub", "Click depth", "PageRank", "Weak anchor ratio", "Anchor quality", "Link quality",
-            "Follow links total", "Nofollow links total", "Semantic links count", "Link score", "Link delta to target", "Linking solution", "Severity",
+            "Follow links total", "Nofollow links total", "Semantic links count", "Internal link opportunities", "Broken internal targets", "Anchor overuse alert",
+            "Link score", "Link delta to target", "Linking solution", "Severity",
         ]
         link_rows = []
         for page in pages:
             sev = infer_page_severity(page)
             d = derived_by_url.get(str(page.get("url", "")), {})
+            incoming_internal = int(page.get("incoming_internal_links", 0) or 0)
+            outgoing_internal = int(page.get("outgoing_internal_links", 0) or 0)
+            semantic_links_count = len(page.get("semantic_links") or [])
+            internal_link_opportunities = int(page.get("internal_link_opportunities", 0) or max(0, 8 - incoming_internal))
+            broken_internal_targets = int(page.get("broken_internal_links_count", page.get("broken_internal_targets", 0)) or 0)
+            anchor_overuse_alert = "✅" if (to_float(page.get("weak_anchor_ratio"), 0.0) >= 0.35 or to_float(page.get("anchor_text_quality_score"), 100.0) < 40.0) else "❌"
             link_rows.append([
                 page.get("url", ""),
-                page.get("incoming_internal_links", 0),
-                page.get("outgoing_internal_links", 0),
+                incoming_internal,
+                outgoing_internal,
                 page.get("outgoing_external_links", 0),
                 page.get("orphan_page", ""),
                 page.get("topic_hub", ""),
@@ -1744,20 +1884,23 @@ class XLSXGenerator:
                 page.get("link_quality_score", 0),
                 page.get("follow_links_total", 0),
                 page.get("nofollow_links_total", 0),
-                len(page.get("semantic_links") or []),
+                semantic_links_count,
+                internal_link_opportunities,
+                broken_internal_targets,
+                anchor_overuse_alert,
                 d.get("link_score", ""),
                 delta_to_target(d.get("link_score", ""), 80.0),
                 page_solution("link_quality", page),
                 sev,
             ])
-        sort_rows(link_rows, 14, reverse=False)
+        sort_rows(link_rows, 17, reverse=False)
         fill_sheet(
             "5_LinkGraph",
             link_headers,
             link_rows,
-            severity_idx=17,
-            widths=[50, 12, 12, 12, 10, 10, 10, 10, 14, 12, 12, 14, 16, 14, 10, 12, 46, 10],
-            score_idx=14,
+            severity_idx=20,
+            widths=[50, 12, 12, 12, 10, 10, 10, 10, 14, 12, 12, 14, 16, 14, 12, 12, 12, 10, 12, 46, 10],
+            score_idx=17,
         )
 
         # Sheet 6: Images + External
@@ -1765,6 +1908,7 @@ class XLSXGenerator:
             "URL", "Images total", "Without alt", "No width/height", "No lazy-load", "Image issues total",
             "Modern formats", "Duplicate src", "External images", "Generic ALT", "Decorative with ALT",
             "External total", "External follow", "External nofollow", "Follow ratio %",
+            "Largest image KB", "No srcset", "External img domains", "ALT relevance",
             "Media score", "Media delta to target", "Images+External solution", "Severity",
         ]
         img_rows = []
@@ -1772,6 +1916,16 @@ class XLSXGenerator:
             sev = infer_page_severity(page)
             d = derived_by_url.get(str(page.get("url", "")), {})
             img_opt = page.get("images_optimization") or {}
+            largest_image_kb = round(to_float(page.get("largest_image_kb", img_opt.get("largest_kb", 0)), 0.0), 1)
+            no_srcset_count = int(page.get("images_without_srcset", img_opt.get("no_srcset", 0)) or 0)
+            external_domains_count = int(page.get("external_image_domains_count", 0) or len(set(page.get("external_image_domains") or [])))
+            generic_alt = int(page.get("generic_alt_count", 0) or 0)
+            missing_alt = int(d.get("no_alt", 0) or 0)
+            alt_relevance = "good"
+            if generic_alt > 0 and missing_alt > 0:
+                alt_relevance = "weak"
+            elif generic_alt > 0 or missing_alt > 0:
+                alt_relevance = "medium"
             img_rows.append([
                 page.get("url", ""),
                 page.get("images_count", img_opt.get("total", 0)),
@@ -1788,6 +1942,10 @@ class XLSXGenerator:
                 d.get("ext_follow", 0),
                 d.get("ext_nofollow", 0),
                 d.get("follow_ratio", 0.0),
+                largest_image_kb,
+                no_srcset_count,
+                external_domains_count,
+                alt_relevance,
                 d.get("media_score", ""),
                 delta_to_target(d.get("media_score", ""), 85.0),
                 f"{page_solution('images', page)}; {page_solution('external', page)}",
@@ -1798,15 +1956,16 @@ class XLSXGenerator:
             "6_Images+External",
             img_headers,
             img_rows,
-            severity_idx=18,
-            widths=[52, 10, 10, 12, 12, 12, 12, 10, 10, 10, 12, 12, 12, 14, 12, 10, 12, 58, 10],
-            score_idx=15,
+            severity_idx=22,
+            widths=[52, 10, 10, 12, 12, 12, 12, 10, 10, 10, 12, 12, 12, 14, 12, 12, 10, 12, 12, 10, 12, 58, 10],
+            score_idx=19,
         )
 
         # Sheet 7: Hierarchy + Errors
         issue_headers = [
             "URL", "Hierarchy status", "Hierarchy problems", "Total headers", "Hierarchy H1 count",
-            "Heading outline", "Code", "Issue title", "Issue details", "Hierarchy score", "Hierarchy delta to target", "Hierarchy solution", "Severity",
+            "Heading outline", "Code", "Issue title", "Issue details", "H2 before H1", "Outline depth score", "Heading dup texts", "TOC-ready",
+            "Hierarchy score", "Hierarchy delta to target", "Hierarchy solution", "Severity",
         ]
         issue_rows = []
         for page in pages:
@@ -1815,6 +1974,15 @@ class XLSXGenerator:
             h_details = page.get("h_details") or {}
             h_outline = h_details.get("heading_outline") or []
             outline_text = " | ".join(f"H{item.get('level')}:{item.get('text')}" for item in h_outline[:8])
+            first_level = int((h_outline[0] or {}).get("level", 0) or 0) if h_outline else 0
+            h2_before_h1 = "✅" if (first_level > 1 or (page.get("h1_count", 0) or 0) == 0) else "❌"
+            levels = [int(item.get("level", 0) or 0) for item in h_outline if int(item.get("level", 0) or 0) > 0]
+            max_level = max(levels) if levels else 1
+            level_skips = sum(1 for prev, cur in zip(levels, levels[1:]) if cur - prev > 1)
+            outline_depth_score = max(0, 100 - ((max_level - 3) * 10) - (level_skips * 20))
+            header_texts = [str(item.get("text", "")).strip().lower() for item in h_outline if str(item.get("text", "")).strip()]
+            heading_dup_count = max(0, len(header_texts) - len(set(header_texts)))
+            toc_ready = "✅" if (page.get("h1_count", 0) == 1 and level_skips == 0 and len(h_outline) >= 3) else "❌"
             page_issues = issues_by_url.get(page.get("url", ""), [])
             hierarchy_issue = next(
                 (i for i in page_issues if "h1" in str(i.get("code", "")).lower() or "hierarchy" in str(i.get("code", "")).lower()),
@@ -1830,26 +1998,31 @@ class XLSXGenerator:
                 hierarchy_issue.get("code", ""),
                 hierarchy_issue.get("title", ""),
                 hierarchy_issue.get("details", ""),
+                h2_before_h1,
+                outline_depth_score,
+                heading_dup_count,
+                toc_ready,
                 d.get("hierarchy_score", ""),
                 delta_to_target(d.get("hierarchy_score", ""), 90.0),
                 page_solution("hierarchy", page, page_issues),
                 sev,
             ])
-        sort_rows(issue_rows, 9, reverse=False)
+        sort_rows(issue_rows, 13, reverse=False)
         fill_sheet(
             "7_HierarchyErrors",
             issue_headers,
             issue_rows,
-            severity_idx=12,
-            widths=[50, 18, 32, 12, 10, 72, 20, 28, 40, 12, 12, 48, 10],
-            score_idx=9,
+            severity_idx=16,
+            widths=[50, 18, 32, 12, 10, 72, 20, 28, 40, 12, 12, 12, 10, 12, 12, 48, 10],
+            score_idx=13,
         )
 
         # Sheet 8: Keywords
         keyword_headers = [
             "URL", "Topic", "Top terms (TF-IDF)", "Top keywords", "TF-IDF #1", "TF-IDF #2", "TF-IDF #3",
             "Keyword density profile", "TF-IDF terms", "Keyword entropy", "Top keyword share %",
-            "SPAM alert", "Water words %", "Keyword score", "Keyword delta to target", "Keyword solution", "Severity",
+            "SPAM alert", "Water words %", "BM25-like relevance", "Exact in Title", "Exact in H1", "Exact in URL", "Intent confidence",
+            "Keyword score", "Keyword delta to target", "Keyword solution", "Severity",
         ]
         keyword_rows = []
         total_pages = max(1, int(summary.get("total_pages", len(pages)) or len(pages) or 1))
@@ -1863,6 +2036,15 @@ class XLSXGenerator:
             density_vals = [to_float(v, 0.0) for v in kw_profile.values()]
             top_keyword_share = round(max(density_vals), 2) if density_vals else 0.0
             water_words_pct = round(to_float(page.get("filler_ratio"), 0.0) * 100.0, 2)
+            primary_term = str(top_terms[0] if len(top_terms) > 0 else "").lower().strip()
+            title_l = str(page.get("title", "")).lower()
+            h1_l = str(page.get("h1_text", page.get("h1", ""))).lower()
+            url_l = str(url).lower()
+            exact_title = "✅" if primary_term and primary_term in title_l else "❌"
+            exact_h1 = "✅" if primary_term and primary_term in h1_l else "❌"
+            exact_url = "✅" if primary_term and primary_term in url_l else "❌"
+            bm25_like = round((to_float(d.get("tfidf_terms_count", 0), 0.0) * 4.0) + max(0.0, 6.0 - top_keyword_share) + (to_float(d.get("keyword_entropy", 0), 0.0) * 5.0), 2)
+            intent_confidence = min(100, int(30 + (20 if exact_title == "✅" else 0) + (25 if exact_h1 == "✅" else 0) + (25 if exact_url == "✅" else 0)))
             spam_alert = "✅" if (
                 to_float(page.get("keyword_stuffing_score"), 0.0) >= 35.0
                 or top_keyword_share >= 12.0
@@ -1882,19 +2064,24 @@ class XLSXGenerator:
                 top_keyword_share,
                 spam_alert,
                 water_words_pct,
+                bm25_like,
+                exact_title,
+                exact_h1,
+                exact_url,
+                intent_confidence,
                 d.get("keyword_score", ""),
                 delta_to_target(d.get("keyword_score", ""), 80.0),
                 page_solution("keywords", page),
                 sev,
             ])
-        sort_rows(keyword_rows, 13, reverse=False)
+        sort_rows(keyword_rows, 18, reverse=False)
         fill_sheet(
             "8_Keywords",
             keyword_headers,
             keyword_rows,
-            severity_idx=16,
-            widths=[48, 16, 42, 36, 14, 14, 14, 42, 10, 12, 12, 10, 12, 12, 12, 46, 10],
-            score_idx=13,
+            severity_idx=21,
+            widths=[48, 16, 42, 36, 14, 14, 14, 42, 10, 12, 12, 10, 12, 12, 10, 10, 10, 12, 12, 46, 10],
+            score_idx=18,
         )
 
         token_re = re.compile(r"[a-zA-Z\u0400-\u04FF0-9]{3,}")
@@ -1953,9 +2140,11 @@ class XLSXGenerator:
 
         summary_headers = [
             "N-gram", "Keyword", "Total freq", "Pages with term", "Pages %",
-            "Token share %", "Avg TF-IDF", "Top density %", "SPAM alert", "Water/noise", "Cross-page repeat", "Risk score", "Summary note",
+            "Token share %", "Avg TF-IDF", "Top density %", "SPAM alert", "Water/noise", "Cross-page repeat", "Risk score", "Brand term", "Term intent", "Summary note",
         ]
         summary_rows: List[List[Any]] = []
+        brand_host = re.sub(r"^https?://", "", str(report_url or "").lower()).split("/")[0]
+        brand_tokens = {t for t in re.split(r"[^a-z0-9а-яё]+", brand_host) if len(t) >= 3 and t not in {"www", "com", "net", "org", "ru"}}
 
         def append_ngram_rows(counter: Counter, ngram_size: int, limit: int) -> None:
             for term, freq in counter.most_common(limit):
@@ -1978,6 +2167,12 @@ class XLSXGenerator:
                     risk_score += 15
                 if ngram_size == 1:
                     risk_score += min(15, int(round(to_float(top_density_by_term.get(term, 0.0), 0.0))))
+                brand_term = "✅" if any(bt and bt in term for bt in brand_tokens) else "❌"
+                term_intent = "informational"
+                if any(x in term for x in ("buy", "price", "order", "куп", "цен", "заказ")):
+                    term_intent = "transactional"
+                elif any(x in term for x in ("service", "catalog", "product", "обзор", "каталог", "услуг")):
+                    term_intent = "commercial"
                 note = ""
                 if spam_alert == "✅":
                     note = "Potential over-optimization across pages"
@@ -1999,6 +2194,8 @@ class XLSXGenerator:
                         water_noise,
                         cross_page_repeat,
                         risk_score,
+                        brand_term,
+                        term_intent,
                         note,
                     ]
                 )
@@ -2011,7 +2208,7 @@ class XLSXGenerator:
             "8b_Keywords_Summary",
             summary_headers,
             summary_rows,
-            widths=[10, 30, 10, 14, 10, 12, 12, 12, 10, 10, 12, 10, 56],
+            widths=[10, 30, 10, 14, 10, 12, 12, 12, 10, 10, 12, 10, 10, 14, 56],
         )
 
         # Sheet 8c: Keywords insights (intent, cannibalization, gaps, section anomalies)
@@ -2078,7 +2275,7 @@ class XLSXGenerator:
             return best_intent, confidence
 
         insights_headers = [
-            "Method", "Scope", "Intent", "Term/Pattern", "Metric", "Severity", "Action", "Examples",
+            "Method", "Scope", "Intent", "Term/Pattern", "Metric", "Severity", "Action", "Examples", "Priority",
         ]
         insights_rows: List[List[Any]] = []
         intent_counter: Counter = Counter()
@@ -2268,13 +2465,24 @@ class XLSXGenerator:
                 "",
             ])
 
+        for row in insights_rows:
+            if len(row) >= 9:
+                continue
+            sev_val = str(row[5]).lower() if len(row) > 5 else "info"
+            priority = "P3"
+            if sev_val == "critical":
+                priority = "P1"
+            elif sev_val == "warning":
+                priority = "P2"
+            row.append(priority)
+
         severity_order = {"critical": 0, "warning": 1, "info": 2, "ok": 3}
         insights_rows.sort(key=lambda row: (severity_order.get(str(row[5]).lower(), 9), str(row[0]), str(row[1])))
         fill_sheet(
             "8c_Keywords_Insights",
             insights_headers,
             insights_rows,
-            widths=[18, 46, 16, 28, 34, 10, 48, 56],
+            widths=[18, 46, 16, 28, 34, 10, 48, 56, 10],
         )
 
         # Optional full-mode optimized deep sheets (no compatibility duplication).
@@ -2282,7 +2490,8 @@ class XLSXGenerator:
             indexability_headers = [
                 "URL", "Status", "Indexable", "Noindex", "Blocked by robots",
                 "Indexability reason", "Canonical URL", "Canonical status",
-                "Meta robots", "X-Robots-Tag", "Indexability score", "Indexability delta to target", "Indexability solution", "Severity",
+                "Meta robots", "X-Robots-Tag", "Conflict type", "In sitemap", "Discovery risk",
+                "Indexability score", "Indexability delta to target", "Indexability solution", "Severity",
             ]
             indexability_rows = []
             for page in pages:
@@ -2292,6 +2501,15 @@ class XLSXGenerator:
                 noindex_flag = bool(page.get("noindex"))
                 blocked_robots = bool(page.get("blocked_by_robots"))
                 canonical_status = str(page.get("canonical_status") or "").lower()
+                conflict_type = "none"
+                if noindex_flag and canonical_status in ("ok", "self"):
+                    conflict_type = "noindex_vs_canonical"
+                elif blocked_robots and is_indexable:
+                    conflict_type = "robots_vs_indexable"
+                elif status_code >= 400 and is_indexable:
+                    conflict_type = "status_vs_indexable"
+                in_sitemap = bool(page.get("in_sitemap", False))
+                discovery_risk = "✅" if (is_indexable and int(page.get("incoming_internal_links", 0) or 0) < 2) else "❌"
                 score = 100
                 if status_code >= 400:
                     score -= 40
@@ -2315,26 +2533,30 @@ class XLSXGenerator:
                     page.get("canonical_status", ""),
                     page.get("meta_robots", ""),
                     page.get("x_robots_tag", ""),
+                    conflict_type,
+                    in_sitemap,
+                    discovery_risk,
                     score,
                     delta_to_target(score, 95.0),
                     page_solution("technical", page),
                     sev,
                 ])
-            sort_rows(indexability_rows, 10, reverse=False)
+            sort_rows(indexability_rows, 13, reverse=False)
             fill_sheet(
                 "9_Indexability",
                 indexability_headers,
                 indexability_rows,
-                severity_idx=13,
-                widths=[52, 10, 10, 10, 14, 20, 30, 16, 20, 20, 14, 14, 46, 10],
-                score_idx=10,
+                severity_idx=16,
+                widths=[52, 10, 10, 10, 14, 20, 30, 16, 20, 20, 20, 10, 12, 14, 14, 46, 10],
+                score_idx=13,
             )
 
             structured_headers = [
                 "URL", "Structured total", "JSON-LD", "Microdata", "RDFa",
                 "Structured types", "Hreflang", "Breadcrumbs",
                 "FAQ schema", "Product schema", "Article schema",
-                "Common errors count", "Common error codes", "Structured coverage %", "Structured delta to target", "Structured solution", "Severity",
+                "Schema mismatch", "Rich result eligible", "Critical schema errors", "Common errors count", "Common error codes",
+                "Structured coverage %", "Structured delta to target", "Structured solution", "Severity",
             ]
             structured_rows = []
             for page in pages:
@@ -2344,6 +2566,17 @@ class XLSXGenerator:
                 has_faq = any("faq" in t for t in types)
                 has_product = any("product" in t for t in types)
                 has_article = any("article" in t for t in types)
+                page_type_l = str(page.get("page_type", "")).lower()
+                schema_mismatch = "❌"
+                if "product" in page_type_l and not has_product:
+                    schema_mismatch = "✅"
+                if "article" in page_type_l and not has_article:
+                    schema_mismatch = "✅"
+                if "faq" in page_type_l and not has_faq:
+                    schema_mismatch = "✅"
+                error_codes = [str(c).lower() for c in (page.get("structured_error_codes") or [])]
+                critical_schema_errors = [c for c in error_codes if any(k in c for k in ("missing_price", "missing_availability", "missing_name", "missing_offers", "invalid_type"))]
+                rich_result_eligible = "✅" if (len(types) > 0 and len(critical_schema_errors) == 0 and int(page.get("structured_errors_count", 0) or 0) <= 2) else "❌"
                 coverage = 0.0
                 coverage += min(70.0, float(page.get("structured_data", 0) or 0) * 20.0)
                 if int(page.get("hreflang_count", 0) or 0) > 0:
@@ -2362,6 +2595,9 @@ class XLSXGenerator:
                     has_faq,
                     has_product,
                     has_article,
+                    schema_mismatch,
+                    rich_result_eligible,
+                    ", ".join(critical_schema_errors[:5]),
                     page.get("structured_errors_count", 0),
                     ", ".join((page.get("structured_error_codes") or [])[:8]),
                     round(min(100.0, coverage), 1),
@@ -2374,15 +2610,15 @@ class XLSXGenerator:
                 "10_StructuredData",
                 structured_headers,
                 structured_rows,
-                severity_idx=16,
-                widths=[50, 12, 10, 10, 8, 40, 10, 12, 10, 12, 12, 12, 36, 18, 14, 48, 10],
-                score_idx=13,
+                severity_idx=18,
+                widths=[50, 12, 10, 10, 8, 40, 10, 12, 10, 12, 12, 12, 12, 36, 12, 12, 36, 18, 14, 48, 10],
+                score_idx=15,
             )
 
             trust_eeat_headers = [
                 "URL", "Trust score", "EEAT score", "Expertise", "Authority",
                 "Trustworthiness", "Experience", "Author info", "Contact", "Legal", "Reviews", "Badges",
-                "Trust gap", "Trust evidence count", "Trust delta to target", "Trust+EEAT solution", "Severity",
+                "Editorial policy", "Sources cited", "EEAT matrix", "Trust gap", "Trust evidence count", "Trust delta to target", "Trust+EEAT solution", "Severity",
             ]
             trust_eeat_rows = []
             for page in pages:
@@ -2401,6 +2637,9 @@ class XLSXGenerator:
                     )
                     if bool(flag)
                 )
+                editorial_policy = bool(page.get("editorial_policy_present", False))
+                sources_cited = bool(page.get("sources_cited", page.get("citations_present", False)))
+                eeat_matrix = f"E:{comp.get('expertise', 0)}|A:{comp.get('authoritativeness', 0)}|T:{comp.get('trustworthiness', 0)}|Ex:{comp.get('experience', 0)}"
                 trust_eeat_rows.append([
                     page.get("url", ""),
                     trust_score,
@@ -2414,6 +2653,9 @@ class XLSXGenerator:
                     page.get("has_legal_docs", ""),
                     page.get("has_reviews", ""),
                     page.get("trust_badges", ""),
+                    editorial_policy,
+                    sources_cited,
+                    eeat_matrix,
                     trust_gap,
                     trust_evidence_count,
                     delta_to_target(trust_score, 75.0),
@@ -2425,14 +2667,15 @@ class XLSXGenerator:
                 "11_Trust_EEAT",
                 trust_eeat_headers,
                 trust_eeat_rows,
-                severity_idx=16,
-                widths=[46, 10, 10, 10, 10, 12, 10, 10, 10, 10, 10, 10, 12, 12, 14, 54, 10],
+                severity_idx=19,
+                widths=[46, 10, 10, 10, 10, 12, 10, 10, 10, 10, 10, 10, 12, 10, 22, 12, 12, 14, 54, 10],
                 score_idx=1,
             )
 
             topics_headers = [
                 "URL", "Topic", "Is hub", "Incoming links", "Outgoing int links", "Semantic links count",
                 "Suggested links", "Semantic links detail", "Top terms", "Top keywords", "Topical depth score", "Topical delta to target",
+                "Cluster completeness", "Orphan topic node", "Hub overload", "Entity consistency",
                 "Topics solution", "Severity",
             ]
             topics_rows = []
@@ -2453,8 +2696,15 @@ class XLSXGenerator:
                     semantic_summary.append(f"[{topic}] {target} {reason}".strip())
                 semantic_count = len(semantic_rows)
                 outgoing_internal = int(page.get("outgoing_internal_links", 0) or 0)
+                incoming_internal = int(page.get("incoming_internal_links", 0) or 0)
                 topical_depth = min(100.0, semantic_count * 20.0 + outgoing_internal * 3.0 + (15.0 if page.get("topic_hub") else 0.0))
                 tfidf_terms = tfidf_by_url.get(src, page.get("top_terms", [])) or []
+                cluster_completeness = min(100, int((semantic_count * 25) + (incoming_internal * 5)))
+                orphan_topic_node = "✅" if (incoming_internal == 0 and not bool(page.get("topic_hub", False))) else "❌"
+                hub_overload = "✅" if (bool(page.get("topic_hub", False)) and outgoing_internal > 150) else "❌"
+                entity_consistency = round(to_float(page.get("entity_consistency_score"), 0.0), 1)
+                if entity_consistency <= 0.0:
+                    entity_consistency = round(min(100.0, max(0.0, to_float(page.get("lexical_diversity", 0.0), 0.0) * 120.0)), 1)
                 topics_rows.append([
                     src,
                     page.get("topic_label", ""),
@@ -2468,6 +2718,10 @@ class XLSXGenerator:
                     ", ".join((page.get("top_keywords") or [])[:8]),
                     round(topical_depth, 1),
                     delta_to_target(round(topical_depth, 1), 70.0),
+                    cluster_completeness,
+                    orphan_topic_node,
+                    hub_overload,
+                    entity_consistency,
                     page_solution("topics", page),
                     sev,
                 ])
@@ -2476,15 +2730,16 @@ class XLSXGenerator:
                 "12_Topics_Semantics",
                 topics_headers,
                 topics_rows,
-                severity_idx=13,
-                widths=[42, 16, 10, 12, 14, 14, 42, 58, 36, 36, 14, 14, 42, 10],
+                severity_idx=17,
+                widths=[42, 16, 10, 12, 14, 14, 42, 58, 36, 36, 14, 14, 12, 10, 10, 12, 42, 10],
                 score_idx=10,
             )
 
             ai_headers = [
                 "URL", "AI markers", "AI markers list", "Marker sample",
                 "AI density /1k", "AI risk score", "AI risk level", "False-positive guard",
-                "Page type", "Toxicity score", "Filler ratio", "AI risk over threshold", "Humanization hint", "Severity",
+                "Page type", "Toxicity score", "Filler ratio", "Style markers", "Disclaimer markers", "Transition markers", "Hedging markers",
+                "False-positive confidence", "AI risk over threshold", "Humanization hint", "Severity",
             ]
             ai_rows = []
             for page in pages:
@@ -2495,6 +2750,13 @@ class XLSXGenerator:
                 ai_density = to_float(page.get("ai_markers_density_1k"), 0.0)
                 ai_risk = to_float(page.get("ai_risk_score"), min(100.0, markers_count * 6.0 + toxicity * 0.7 + filler_ratio * 0.5))
                 risk_level = str(page.get("ai_risk_level") or ("high" if ai_risk >= 70 else "medium" if ai_risk >= 40 else "low"))
+                marker_list = [str(m).lower() for m in (page.get("ai_markers_list") or [])]
+                style_markers = sum(1 for m in marker_list if any(k in m for k in ("tone", "style", "formatted", "structured", "generic")))
+                disclaimer_markers = sum(1 for m in marker_list if any(k in m for k in ("as an ai", "не могу", "cannot", "i'm unable", "модель")))
+                transition_markers = sum(1 for m in marker_list if any(k in m for k in ("however", "moreover", "furthermore", "в заключение", "таким образом")))
+                hedging_markers = sum(1 for m in marker_list if any(k in m for k in ("may", "might", "could", "возможно", "вероятно")))
+                fp_guard = bool(page.get("ai_false_positive_guard", False))
+                fp_confidence = max(0, min(100, int(70 + (15 if fp_guard else 0) - (ai_risk * 0.4))))
                 ai_rows.append([
                     page.get("url", ""),
                     markers_count,
@@ -2507,6 +2769,11 @@ class XLSXGenerator:
                     page.get("page_type", ""),
                     toxicity,
                     filler_ratio,
+                    style_markers,
+                    disclaimer_markers,
+                    transition_markers,
+                    hedging_markers,
+                    fp_confidence,
                     round(max(0.0, ai_risk - 40.0), 1),
                     page_solution("content", page),
                     sev,
@@ -2516,21 +2783,41 @@ class XLSXGenerator:
                 "13_AI_Markers",
                 ai_headers,
                 ai_rows,
-                severity_idx=13,
-                widths=[48, 10, 48, 56, 12, 12, 12, 12, 12, 12, 10, 14, 52, 10],
+                severity_idx=18,
+                widths=[48, 10, 48, 56, 12, 12, 12, 12, 12, 12, 10, 10, 10, 10, 10, 12, 14, 52, 10],
                 score_idx=5,
             )
 
             crawl_budget_headers = [
                 "URL", "Path depth", "URL params", "Crawl budget risk", "Redirects", "Status", "Indexable",
-                "Incoming links", "Outgoing internal", "Near duplicates", "Crawl duplicates over target", "Crawl budget solution", "Severity",
+                "Incoming links", "Outgoing internal", "Near duplicates", "Crawl duplicates over target", "Param pattern group", "Crawl waste score", "Deep indexable risk",
+                "Crawl budget solution", "Severity",
             ]
             crawl_budget_rows = []
             for page in pages:
                 sev = infer_page_severity(page)
+                url_value = str(page.get("url", "") or "")
+                query = ""
+                if "?" in url_value:
+                    query = url_value.split("?", 1)[1]
+                params = [p.split("=", 1)[0].lower() for p in query.split("&") if p]
+                param_group = "none"
+                if any(p.startswith("utm_") for p in params):
+                    param_group = "utm"
+                elif any(p in ("sort", "order", "filter", "page", "p") for p in params):
+                    param_group = "filter/sort"
+                crawl_waste_score = min(
+                    100,
+                    int(
+                        (int(page.get("url_params_count", 0) or 0) * 15)
+                        + (int(page.get("redirect_count", 0) or 0) * 10)
+                        + (int(page.get("near_duplicate_count", 0) or 0) * 8)
+                    ),
+                )
+                deep_indexable_risk = "✅" if (bool(page.get("indexable", False)) and int(page.get("path_depth", 0) or 0) >= 4) else "❌"
                 crawl_budget_rows.append(
                     [
-                        page.get("url", ""),
+                        url_value,
                         page.get("path_depth", 0),
                         page.get("url_params_count", 0),
                         page.get("crawl_budget_risk", ""),
@@ -2541,6 +2828,9 @@ class XLSXGenerator:
                         page.get("outgoing_internal_links", 0),
                         page.get("near_duplicate_count", 0),
                         max(0, int(page.get("near_duplicate_count", 0) or 0) - 0),
+                        param_group,
+                        crawl_waste_score,
+                        deep_indexable_risk,
                         page_solution("technical", page),
                         sev,
                     ]
@@ -2550,12 +2840,12 @@ class XLSXGenerator:
                 "CrawlBudget",
                 crawl_budget_headers,
                 crawl_budget_rows,
-                severity_idx=12,
-                widths=[52, 10, 10, 16, 10, 10, 10, 12, 12, 12, 14, 52, 10],
+                severity_idx=15,
+                widths=[52, 10, 10, 16, 10, 10, 10, 12, 12, 12, 14, 16, 12, 12, 52, 10],
                 score_idx=9,
             )
 
-            raw_issue_headers = ["Severity", "URL", "Code", "Category", "Title", "Details", "Affected", "Recommendation"]
+            raw_issue_headers = ["Severity", "URL", "Code", "Category", "First seen tab", "Dedupe hash", "Fix owner", "Title", "Details", "Affected", "Recommendation"]
             raw_issue_rows = []
             seen_raw = set()
             for issue in issues:
@@ -2569,11 +2859,15 @@ class XLSXGenerator:
                 seen_raw.add(fingerprint)
                 code_text = str(code)
                 category = code_text.split("_", 1)[0] if "_" in code_text else code_text
+                dedupe_hash = hashlib.md5(f"{severity}|{url}|{code}|{details[:240]}".encode("utf-8", errors="ignore")).hexdigest()[:10]
                 raw_issue_rows.append([
                     severity,
                     url,
                     code,
                     category,
+                    detect_issue_tab(code),
+                    dedupe_hash,
+                    owner_hint_by_code(code),
                     issue.get("title", ""),
                     details,
                     issue.get("selector") or issue.get("path") or issue.get("field") or "",
@@ -2585,12 +2879,12 @@ class XLSXGenerator:
                 raw_issue_headers,
                 raw_issue_rows,
                 severity_idx=0,
-                widths=[10, 56, 24, 16, 28, 50, 24, 46],
+                widths=[10, 56, 24, 16, 22, 14, 14, 28, 50, 24, 46],
             )
 
             action_plan_headers = [
                 "Priority", "Issue code", "Top severity", "Affected pages", "Share %", "Critical", "Warning", "Info",
-                "Impact score", "Effort", "ETA", "Owner hint", "Expected lift", "Representative URLs", "Recommendation",
+                "Impact score", "Effort", "ETA", "Owner hint", "Expected lift", "Dependency", "Batch fix potential", "ROI score", "Sprint bucket", "Representative URLs", "Recommendation",
             ]
             grouped: Dict[str, Dict[str, Any]] = {}
             for issue in issues:
@@ -2619,15 +2913,6 @@ class XLSXGenerator:
                 "warning": "S",
                 "info": "S",
             }
-            def action_owner_hint(code: str) -> str:
-                code_l = str(code).lower()
-                if any(x in code_l for x in ("title", "meta", "h1", "keyword", "content", "ai_", "duplicate_")):
-                    return "Content+SEO"
-                if any(x in code_l for x in ("schema", "structured", "hreflang", "canonical", "index", "http_status")):
-                    return "SEO+Dev"
-                if any(x in code_l for x in ("security", "cache", "compression", "https", "crawl_budget")):
-                    return "Dev+Infra"
-                return "SEO"
             action_rows = []
             for code, node in grouped.items():
                 critical = int(node.get("critical", 0))
@@ -2649,6 +2934,12 @@ class XLSXGenerator:
                 else:
                     expected_lift = "Low"
                 eta = "1-3d" if impact_score >= 40 else ("3-7d" if impact_score >= 15 else "backlog")
+                owner_hint = owner_hint_by_code(code)
+                dependency = "Dev deploy" if owner_hint in ("SEO+Dev", "Dev+Infra") else "Content approval"
+                batch_fix_potential = "✅" if any(x in str(code).lower() for x in ("template", "title", "meta", "schema", "canonical", "robots")) else "❌"
+                effort_weight = 1.3 if effort_map.get(top_severity, "S") == "M" else 1.0
+                roi_score = round(impact_score / effort_weight, 1)
+                sprint_bucket = "Now" if roi_score >= 25 else ("Next" if roi_score >= 10 else "Later")
                 rec = issue_recommendation(node.get("sample") or {"code": code, "severity": top_severity})
                 if rec.startswith("Critical: "):
                     rec = rec[len("Critical: "):]
@@ -2669,8 +2960,12 @@ class XLSXGenerator:
                         impact_score,
                         effort_map.get(top_severity, "S"),
                         eta,
-                        action_owner_hint(code),
+                        owner_hint,
                         expected_lift,
+                        dependency,
+                        batch_fix_potential,
+                        roi_score,
+                        sprint_bucket,
                         ", ".join(list(node.get("urls", set()))[:5]),
                         rec,
                     ]
@@ -2683,7 +2978,7 @@ class XLSXGenerator:
                 action_plan_headers,
                 action_rows,
                 severity_idx=2,
-                widths=[10, 26, 12, 14, 10, 10, 10, 10, 12, 10, 10, 14, 12, 52, 58],
+                widths=[10, 26, 12, 14, 10, 10, 10, 10, 12, 10, 10, 14, 12, 16, 14, 10, 12, 52, 58],
                 score_idx=8,
             )
 
