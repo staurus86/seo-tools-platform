@@ -7,6 +7,7 @@ from openpyxl.utils import get_column_letter
 from typing import Dict, Any, List
 from datetime import datetime
 import os
+import re
 
 from app.config import settings
 
@@ -17,6 +18,49 @@ class XLSXGenerator:
     def __init__(self):
         self.reports_dir = settings.REPORTS_DIR
         os.makedirs(self.reports_dir, exist_ok=True)
+
+    def _repair_mojibake_text(self, value: Any) -> Any:
+        """Best-effort mojibake repair for text values before writing to XLSX."""
+        if not isinstance(value, str):
+            return value
+        text = value.replace("\x00", "")
+        if not text:
+            return text
+
+        bad_pattern = re.compile(r"(?:[РС][^\s]|Ð.|Ñ.|â.|Ã.|�)")
+
+        def bad_score(s: str) -> int:
+            return len(bad_pattern.findall(s))
+
+        def cyr_score(s: str) -> int:
+            return len(re.findall(r"[А-Яа-яЁё]", s))
+
+        original_bad = bad_score(text)
+        if original_bad == 0:
+            return text
+
+        candidates = [text]
+        for src_enc, dst_enc in (("latin1", "utf-8"), ("cp1251", "utf-8"), ("latin1", "cp1251")):
+            try:
+                fixed = text.encode(src_enc, errors="ignore").decode(dst_enc, errors="ignore")
+                if fixed:
+                    candidates.append(fixed)
+            except Exception:
+                continue
+
+        best = text
+        for cand in candidates[1:]:
+            if bad_score(cand) < bad_score(best):
+                best = cand
+            elif bad_score(cand) == bad_score(best) and cyr_score(cand) > cyr_score(best):
+                best = cand
+
+        return best if bad_score(best) <= max(0, original_bad - 1) else text
+
+    def _sanitize_cell_value(self, value: Any) -> Any:
+        if isinstance(value, str):
+            return self._repair_mojibake_text(value).strip()
+        return value
     
     def _create_header_style(self):
         """Р В Р’В Р вЂ™Р’В Р В Р’В Р В РІР‚в„–Р В Р’В Р вЂ™Р’В Р В Р Р‹Р Р†Р вЂљРЎС›Р В Р’В Р вЂ™Р’В Р В РІР‚в„ўР вЂ™Р’В·Р В Р’В Р вЂ™Р’В Р В РЎС›Р Р†Р вЂљР’ВР В Р’В Р вЂ™Р’В Р В РІР‚в„ўР вЂ™Р’В°Р В Р’В Р вЂ™Р’В Р В РІР‚в„ўР вЂ™Р’ВµР В Р’В Р В Р вЂ№Р В Р вЂ Р В РІР‚С™Р РЋРІвЂћСћ Р В Р’В Р В Р вЂ№Р В Р’В Р РЋРІР‚СљР В Р’В Р В Р вЂ№Р В Р вЂ Р В РІР‚С™Р РЋРІвЂћСћР В Р’В Р вЂ™Р’В Р В Р Р‹Р Р†Р вЂљР’ВР В Р’В Р вЂ™Р’В Р В РІР‚в„ўР вЂ™Р’В»Р В Р’В Р В Р вЂ№Р В Р’В Р В РІР‚В° Р В Р’В Р вЂ™Р’В Р В РЎС›Р Р†Р вЂљР’ВР В Р’В Р вЂ™Р’В Р В РІР‚в„ўР вЂ™Р’В»Р В Р’В Р В Р вЂ№Р В Р’В Р В Р РЏ Р В Р’В Р вЂ™Р’В Р В РІР‚в„ўР вЂ™Р’В·Р В Р’В Р вЂ™Р’В Р В РІР‚в„ўР вЂ™Р’В°Р В Р’В Р вЂ™Р’В Р В Р Р‹Р Р†Р вЂљРІР‚СљР В Р’В Р вЂ™Р’В Р В Р Р‹Р Р†Р вЂљРЎС›Р В Р’В Р вЂ™Р’В Р В РІР‚в„ўР вЂ™Р’В»Р В Р’В Р вЂ™Р’В Р В Р Р‹Р Р†Р вЂљРЎС›Р В Р’В Р вЂ™Р’В Р В Р’В Р Р†Р вЂљР’В Р В Р’В Р вЂ™Р’В Р В Р Р‹Р Р†Р вЂљРЎСљР В Р’В Р вЂ™Р’В Р В Р Р‹Р Р†Р вЂљРЎС›Р В Р’В Р вЂ™Р’В Р В Р’В Р Р†Р вЂљР’В """
@@ -1051,6 +1095,111 @@ class XLSXGenerator:
                     severity = "info"
             return severity
 
+        def derive_page_metrics(page: Dict[str, Any]) -> Dict[str, Any]:
+            title = str(page.get("title") or "")
+            meta_description = str(page.get("meta_description") or "")
+            title_len = int(page.get("title_len") or len(title))
+            description_len = int(page.get("description_len") or len(meta_description))
+
+            status_code = int(page.get("status_code") or 0)
+            response_ms = int(page.get("response_time_ms") or 0)
+            html_bytes = int(page.get("html_size_bytes") or 0)
+            content_kb = round(to_float(page.get("content_kb"), html_bytes / 1024.0), 1)
+
+            sdetail = page.get("structured_data_detail") or {}
+            img_opt = page.get("images_optimization") or {}
+            ext_follow = int(page.get("external_follow_links", 0) or 0)
+            ext_nofollow = int(page.get("external_nofollow_links", 0) or 0)
+            ext_total = int(page.get("outgoing_external_links", ext_follow + ext_nofollow) or 0)
+            follow_ratio = round((ext_follow / ext_total * 100.0), 1) if ext_total > 0 else 0.0
+
+            no_alt = int(page.get("images_without_alt", img_opt.get("no_alt", 0)) or 0)
+            no_wh = int(img_opt.get("no_width_height", 0) or 0)
+            no_lazy = int(img_opt.get("no_lazy_load", 0) or 0)
+            image_issues_total = no_alt + no_wh + no_lazy
+
+            ai_markers_count = int(page.get("ai_markers_count", 0) or 0)
+            toxicity = to_float(page.get("toxicity_score"), 0.0)
+            filler_ratio = to_float(page.get("filler_ratio"), 0.0)
+            ai_risk = round(min(100.0, ai_markers_count * 6.0 + toxicity * 0.7 + filler_ratio * 0.5), 1)
+            if ai_risk >= 70:
+                ai_risk_level = "high"
+            elif ai_risk >= 40:
+                ai_risk_level = "medium"
+            else:
+                ai_risk_level = "low"
+
+            onpage_score = 100
+            if title_len < 30 or title_len > 60:
+                onpage_score -= 15
+            if description_len < 50 or description_len > 160:
+                onpage_score -= 10
+            if int(page.get("h1_count") or 0) != 1:
+                onpage_score -= 20
+            if (page.get("canonical_status") or "") in ("missing", "external", "invalid"):
+                onpage_score -= 20
+            onpage_score = max(0, onpage_score)
+
+            technical_score = 100
+            if status_code >= 400:
+                technical_score -= 30
+            if response_ms > 2000:
+                technical_score -= 15
+            if not bool(page.get("is_https")):
+                technical_score -= 15
+            if not bool(page.get("compression_enabled")):
+                technical_score -= 10
+            if not bool(page.get("cache_enabled")):
+                technical_score -= 10
+            technical_score = max(0, technical_score)
+
+            content_score = 100
+            if int(page.get("word_count") or 0) < 300:
+                content_score -= 25
+            if to_float(page.get("unique_percent"), 0.0) < 50:
+                content_score -= 20
+            if toxicity > 40:
+                content_score -= 20
+            if ai_risk >= 70:
+                content_score -= 20
+            content_score = max(0, content_score)
+
+            link_score = int(round(max(0.0, min(100.0, to_float(page.get("link_quality_score"), 0.0)))))
+            media_score = max(0, 100 - min(80, image_issues_total * 10))
+            hierarchy_score = 100 if not (page.get("h_errors") or []) else max(0, 100 - len(page.get("h_errors") or []) * 25)
+            keyword_score = max(0, 100 - min(60, int(round(to_float(page.get("keyword_stuffing_score"), 0.0)))))
+
+            return {
+                "title": title,
+                "meta_description": meta_description,
+                "title_len": title_len,
+                "description_len": description_len,
+                "status_code": status_code,
+                "response_ms": response_ms,
+                "html_bytes": html_bytes,
+                "content_kb": content_kb,
+                "structured_detail": sdetail,
+                "ext_follow": ext_follow,
+                "ext_nofollow": ext_nofollow,
+                "ext_total": ext_total,
+                "follow_ratio": follow_ratio,
+                "no_alt": no_alt,
+                "no_wh": no_wh,
+                "no_lazy": no_lazy,
+                "image_issues_total": image_issues_total,
+                "ai_risk": ai_risk,
+                "ai_risk_level": ai_risk_level,
+                "onpage_score": onpage_score,
+                "technical_score": technical_score,
+                "content_score": content_score,
+                "link_score": link_score,
+                "media_score": media_score,
+                "hierarchy_score": hierarchy_score,
+                "keyword_score": keyword_score,
+            }
+
+        derived_by_url = {str(page.get("url", "")): derive_page_metrics(page) for page in pages}
+
         def fill_sheet(
             sheet_name: str,
             headers: List[str],
@@ -1060,10 +1209,10 @@ class XLSXGenerator:
         ):
             wsx = wb.create_sheet(sheet_name)
             for col, header in enumerate(headers, 1):
-                self._apply_style(wsx.cell(row=1, column=col, value=header), header_style)
+                self._apply_style(wsx.cell(row=1, column=col, value=self._sanitize_cell_value(header)), header_style)
             for row_idx, row_data in enumerate(rows, start=2):
                 for col, value in enumerate(row_data, 1):
-                    self._apply_style(wsx.cell(row=row_idx, column=col, value=value), cell_style)
+                    self._apply_style(wsx.cell(row=row_idx, column=col, value=self._sanitize_cell_value(value)), cell_style)
                 if severity_idx >= 0:
                     sev_value = str(row_data[severity_idx]).lower()
                     self._apply_row_severity_fill(wsx, row_idx, 1, len(headers), sev_value)
@@ -1094,8 +1243,8 @@ class XLSXGenerator:
         ]
         row = 3
         for key, value in summary_rows:
-            ws.cell(row=row, column=1, value=key).font = Font(bold=True)
-            ws.cell(row=row, column=2, value=value)
+            ws.cell(row=row, column=1, value=self._sanitize_cell_value(key)).font = Font(bold=True)
+            ws.cell(row=row, column=2, value=self._sanitize_cell_value(value))
             row += 1
         ws["A13"] = "Critical Rate"
         ws["B13"] = "=IF(B5=0,0,B8/B5)"
@@ -1118,26 +1267,72 @@ class XLSXGenerator:
         ws["A21"] = "Topic Hubs"
         ws["B21"] = pipeline_metrics.get("topic_hubs", "")
 
+        ws["A23"] = "Tab Quality Matrix"
+        ws["A23"].font = Font(bold=True)
+        ws["A24"] = "Tab"
+        ws["B24"] = "Critical"
+        ws["C24"] = "Warning"
+        ws["D24"] = "Info"
+        ws["E24"] = "Issue load"
+        ws["F24"] = "Avg score"
+        ws["G24"] = "Health index"
+        for col in ["A", "B", "C", "D", "E", "F", "G"]:
+            ws[f"{col}24"].font = Font(bold=True)
+
+        tab_matrix = [
+            ("2_OnPage+Structured", "X", "V"),
+            ("3_Technical", "U", "S"),
+            ("4_Content+AI", "U", "S"),
+            ("5_LinkGraph", "P", "N"),
+            ("6_Images+External", "M", "K"),
+            ("7_HierarchyErrors", "L", "J"),
+            ("8_Keywords", "K", "I"),
+        ]
+        matrix_row = 25
+        for sheet_name, sev_col, score_col in tab_matrix:
+            ws[f"A{matrix_row}"] = sheet_name
+            ws[f"B{matrix_row}"] = f"=COUNTIF('{sheet_name}'!${sev_col}:${sev_col},\"critical\")"
+            ws[f"C{matrix_row}"] = f"=COUNTIF('{sheet_name}'!${sev_col}:${sev_col},\"warning\")"
+            ws[f"D{matrix_row}"] = f"=COUNTIF('{sheet_name}'!${sev_col}:${sev_col},\"info\")"
+            ws[f"E{matrix_row}"] = f"=IF($B$5=0,0,((B{matrix_row}*3)+(C{matrix_row}*2)+D{matrix_row})/$B$5)"
+            ws[f"F{matrix_row}"] = f"=IF($B$5=0,0,AVERAGE('{sheet_name}'!${score_col}:${score_col}))"
+            ws[f"G{matrix_row}"] = f"=MAX(0,100-(E{matrix_row}*10)+((F{matrix_row}-50)/2))"
+            ws[f"E{matrix_row}"].number_format = "0.00"
+            ws[f"F{matrix_row}"].number_format = "0.0"
+            ws[f"G{matrix_row}"].number_format = "0.0"
+            matrix_row += 1
+
+        ws["A33"] = "Platform health index"
+        ws["A33"].font = Font(bold=True)
+        ws["B33"] = "=IFERROR(AVERAGE(G25:G31),0)"
+        ws["B33"].number_format = "0.0"
+
         ws.column_dimensions["A"].width = 26
         ws.column_dimensions["B"].width = 80
+        ws.column_dimensions["C"].width = 12
+        ws.column_dimensions["D"].width = 12
+        ws.column_dimensions["E"].width = 12
+        ws.column_dimensions["F"].width = 12
+        ws.column_dimensions["G"].width = 14
 
         # Sheet 2: OnPage + Structured
         onpage_headers = [
             "URL", "Title", "Title len", "Meta description", "Meta len", "H1 count", "H1 text",
             "Canonical URL", "Canonical status", "Meta robots", "X-Robots", "Schema count",
             "JSON-LD", "Microdata", "RDFa", "Structured types", "Hreflang count",
-            "Breadcrumbs", "Mobile hint", "Title dup", "Desc dup", "OnPage solution", "Severity",
+            "Breadcrumbs", "Mobile hint", "Title dup", "Desc dup", "OnPage score", "OnPage solution", "Severity",
         ]
         onpage_rows = []
         for page in pages:
             sev = infer_page_severity(page)
-            sdetail = page.get("structured_data_detail") or {}
+            d = derived_by_url.get(str(page.get("url", "")), {})
+            sdetail = d.get("structured_detail", {})
             onpage_rows.append([
                 page.get("url", ""),
-                page.get("title", ""),
-                int(page.get("title_len") or len(str(page.get("title") or ""))),
-                page.get("meta_description", ""),
-                int(page.get("description_len") or len(str(page.get("meta_description") or ""))),
+                d.get("title", page.get("title", "")),
+                d.get("title_len", 0),
+                d.get("meta_description", page.get("meta_description", "")),
+                d.get("description_len", 0),
                 page.get("h1_count", ""),
                 page.get("h1_text", ""),
                 page.get("canonical", ""),
@@ -1154,6 +1349,7 @@ class XLSXGenerator:
                 page.get("mobile_friendly_hint", ""),
                 page.get("duplicate_title_count", 0),
                 page.get("duplicate_description_count", 0),
+                d.get("onpage_score", ""),
                 page_solution("onpage", page),
                 sev,
             ])
@@ -1161,8 +1357,8 @@ class XLSXGenerator:
             "2_OnPage+Structured",
             onpage_headers,
             onpage_rows,
-            severity_idx=22,
-            widths=[56, 28, 10, 32, 10, 10, 22, 32, 16, 20, 20, 12, 8, 10, 8, 36, 10, 10, 10, 10, 10, 48, 10],
+            severity_idx=23,
+            widths=[56, 28, 10, 32, 10, 10, 22, 32, 16, 20, 20, 12, 8, 10, 8, 36, 10, 10, 10, 10, 10, 12, 48, 10],
         )
 
         # Sheet 3: Technical
@@ -1170,18 +1366,19 @@ class XLSXGenerator:
             "URL", "Final URL", "Status", "Response ms", "Size KB", "HTML bytes", "DOM nodes", "Redirects",
             "HTTPS", "Compression", "Compression algo", "Cache enabled", "Cache-Control",
             "Last-Modified", "Freshness days", "HTML quality score", "Deprecated tags count",
-            "Indexability reason", "Technical solution", "Severity",
+            "Indexability reason", "Technical score", "Technical solution", "Severity",
         ]
         tech_rows = []
         for page in pages:
             sev = infer_page_severity(page)
+            d = derived_by_url.get(str(page.get("url", "")), {})
             tech_rows.append([
                 page.get("url", ""),
                 page.get("final_url", ""),
-                page.get("status_code", ""),
-                page.get("response_time_ms", ""),
-                page.get("content_kb", round(to_float(page.get("html_size_bytes"), 0.0) / 1024.0, 1)),
-                page.get("html_size_bytes", ""),
+                d.get("status_code", ""),
+                d.get("response_ms", ""),
+                d.get("content_kb", ""),
+                d.get("html_bytes", ""),
                 page.get("dom_nodes_count", ""),
                 page.get("redirect_count", 0),
                 page.get("is_https", ""),
@@ -1194,6 +1391,7 @@ class XLSXGenerator:
                 page.get("html_quality_score", ""),
                 len(page.get("deprecated_tags") or []),
                 page.get("indexability_reason", ""),
+                d.get("technical_score", ""),
                 page_solution("technical", page),
                 sev,
             ])
@@ -1201,8 +1399,8 @@ class XLSXGenerator:
             "3_Technical",
             tech_headers,
             tech_rows,
-            severity_idx=19,
-            widths=[50, 50, 10, 12, 10, 12, 10, 10, 8, 10, 14, 10, 22, 24, 14, 14, 12, 18, 46, 10],
+            severity_idx=20,
+            widths=[50, 50, 10, 12, 10, 12, 10, 10, 8, 10, 14, 10, 22, 24, 14, 14, 12, 18, 12, 46, 10],
         )
 
         # Sheet 4: Content + AI
@@ -1211,11 +1409,12 @@ class XLSXGenerator:
             "Avg sentence len", "Avg word len", "Complex words %", "Keyword stuffing score",
             "Content density %", "Boilerplate %", "Toxicity score", "Filler ratio",
             "Filler phrases", "AI markers count", "AI markers list", "AI marker sample",
-            "Content solution", "Severity",
+            "Content score", "Content solution", "Severity",
         ]
         content_rows = []
         for page in pages:
             sev = infer_page_severity(page)
+            d = derived_by_url.get(str(page.get("url", "")), {})
             content_rows.append([
                 page.get("url", ""),
                 page.get("word_count", 0),
@@ -1235,6 +1434,7 @@ class XLSXGenerator:
                 page.get("ai_markers_count", 0),
                 ", ".join((page.get("ai_markers_list") or [])[:10]),
                 page.get("ai_marker_sample", "") or "No sample",
+                d.get("content_score", ""),
                 page_solution("content", page),
                 sev,
             ])
@@ -1242,19 +1442,20 @@ class XLSXGenerator:
             "4_Content+AI",
             content_headers,
             content_rows,
-            severity_idx=19,
-            widths=[52, 10, 12, 10, 12, 12, 12, 10, 12, 12, 12, 12, 10, 10, 12, 12, 50, 62, 46, 10],
+            severity_idx=20,
+            widths=[52, 10, 12, 10, 12, 12, 12, 10, 12, 12, 12, 12, 10, 10, 12, 12, 50, 62, 12, 46, 10],
         )
 
         # Sheet 5: Link Graph
         link_headers = [
             "URL", "Incoming int", "Outgoing int", "Outgoing ext", "Orphan",
             "Topic hub", "PageRank", "Weak anchor ratio", "Anchor quality", "Link quality",
-            "Follow links total", "Nofollow links total", "Semantic links count", "Linking solution", "Severity",
+            "Follow links total", "Nofollow links total", "Semantic links count", "Link score", "Linking solution", "Severity",
         ]
         link_rows = []
         for page in pages:
             sev = infer_page_severity(page)
+            d = derived_by_url.get(str(page.get("url", "")), {})
             link_rows.append([
                 page.get("url", ""),
                 page.get("incoming_internal_links", 0),
@@ -1269,6 +1470,7 @@ class XLSXGenerator:
                 page.get("follow_links_total", 0),
                 page.get("nofollow_links_total", 0),
                 len(page.get("semantic_links") or []),
+                d.get("link_score", ""),
                 page_solution("link_quality", page),
                 sev,
             ])
@@ -1276,38 +1478,33 @@ class XLSXGenerator:
             "5_LinkGraph",
             link_headers,
             link_rows,
-            severity_idx=14,
-            widths=[50, 12, 12, 12, 10, 10, 10, 14, 12, 12, 14, 16, 14, 46, 10],
+            severity_idx=15,
+            widths=[50, 12, 12, 12, 10, 10, 10, 14, 12, 12, 14, 16, 14, 10, 46, 10],
         )
 
         # Sheet 6: Images + External
         img_headers = [
             "URL", "Images total", "Without alt", "No width/height", "No lazy-load", "Image issues total",
             "External total", "External follow", "External nofollow", "Follow ratio %",
-            "Images+External solution", "Severity",
+            "Media score", "Images+External solution", "Severity",
         ]
         img_rows = []
         for page in pages:
             sev = infer_page_severity(page)
+            d = derived_by_url.get(str(page.get("url", "")), {})
             img_opt = page.get("images_optimization") or {}
-            ext_follow = int(page.get("external_follow_links", 0) or 0)
-            ext_nofollow = int(page.get("external_nofollow_links", 0) or 0)
-            ext_total = int(page.get("outgoing_external_links", ext_follow + ext_nofollow) or 0)
-            follow_ratio = (ext_follow / ext_total * 100.0) if ext_total > 0 else 0.0
-            no_alt = int(page.get("images_without_alt", img_opt.get("no_alt", 0)) or 0)
-            no_wh = int(img_opt.get("no_width_height", 0) or 0)
-            no_lazy = int(img_opt.get("no_lazy_load", 0) or 0)
             img_rows.append([
                 page.get("url", ""),
                 page.get("images_count", img_opt.get("total", 0)),
-                no_alt,
-                no_wh,
-                no_lazy,
-                (no_alt + no_wh + no_lazy),
-                ext_total,
-                ext_follow,
-                ext_nofollow,
-                round(follow_ratio, 1),
+                d.get("no_alt", 0),
+                d.get("no_wh", 0),
+                d.get("no_lazy", 0),
+                d.get("image_issues_total", 0),
+                d.get("ext_total", 0),
+                d.get("ext_follow", 0),
+                d.get("ext_nofollow", 0),
+                d.get("follow_ratio", 0.0),
+                d.get("media_score", ""),
                 f"{page_solution('images', page)}; {page_solution('external', page)}",
                 sev,
             ])
@@ -1315,18 +1512,19 @@ class XLSXGenerator:
             "6_Images+External",
             img_headers,
             img_rows,
-            severity_idx=11,
-            widths=[52, 10, 10, 12, 12, 12, 12, 12, 14, 12, 58, 10],
+            severity_idx=12,
+            widths=[52, 10, 10, 12, 12, 12, 12, 12, 14, 12, 10, 58, 10],
         )
 
         # Sheet 7: Hierarchy + Errors
         issue_headers = [
             "URL", "Hierarchy status", "Hierarchy problems", "Total headers", "Hierarchy H1 count",
-            "Heading outline", "Code", "Issue title", "Issue details", "Hierarchy solution", "Severity",
+            "Heading outline", "Code", "Issue title", "Issue details", "Hierarchy score", "Hierarchy solution", "Severity",
         ]
         issue_rows = []
         for page in pages:
             sev = infer_page_severity(page)
+            d = derived_by_url.get(str(page.get("url", "")), {})
             h_details = page.get("h_details") or {}
             h_outline = h_details.get("heading_outline") or []
             outline_text = " | ".join(f"H{item.get('level')}:{item.get('text')}" for item in h_outline[:8])
@@ -1345,6 +1543,7 @@ class XLSXGenerator:
                 hierarchy_issue.get("code", ""),
                 hierarchy_issue.get("title", ""),
                 hierarchy_issue.get("details", ""),
+                d.get("hierarchy_score", ""),
                 page_solution("hierarchy", page, page_issues),
                 sev,
             ])
@@ -1352,18 +1551,19 @@ class XLSXGenerator:
             "7_HierarchyErrors",
             issue_headers,
             issue_rows,
-            severity_idx=10,
-            widths=[50, 18, 32, 12, 10, 72, 20, 28, 40, 48, 10],
+            severity_idx=11,
+            widths=[50, 18, 32, 12, 10, 72, 20, 28, 40, 12, 48, 10],
         )
 
         # Sheet 8: Keywords
         keyword_headers = [
             "URL", "Topic", "Top terms (TF-IDF)", "Top keywords", "TF-IDF #1", "TF-IDF #2", "TF-IDF #3",
-            "Keyword density profile", "Keyword solution", "Severity",
+            "Keyword density profile", "Keyword score", "Keyword solution", "Severity",
         ]
         keyword_rows = []
         for page in pages:
             sev = infer_page_severity(page)
+            d = derived_by_url.get(str(page.get("url", "")), {})
             url = page.get("url", "")
             top_terms = tfidf_by_url.get(url, page.get("top_terms", [])) or list((page.get("tf_idf_keywords") or {}).keys())
             kw_profile = page.get("keyword_density_profile") or {}
@@ -1377,10 +1577,11 @@ class XLSXGenerator:
                 top_terms[1] if len(top_terms) > 1 else "",
                 top_terms[2] if len(top_terms) > 2 else "",
                 kw_profile_text,
+                d.get("keyword_score", ""),
                 page_solution("keywords", page),
                 sev,
             ])
-        fill_sheet("8_Keywords", keyword_headers, keyword_rows, severity_idx=9, widths=[48, 16, 42, 36, 14, 14, 14, 42, 46, 10])
+        fill_sheet("8_Keywords", keyword_headers, keyword_rows, severity_idx=10, widths=[48, 16, 42, 36, 14, 14, 14, 42, 12, 46, 10])
 
         # Optional full-mode optimized deep sheets (no compatibility duplication).
         if str(mode).lower() == "full":
