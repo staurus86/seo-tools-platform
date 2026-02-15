@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import os
 import time
 from typing import Any, Callable, Dict, Optional
 
@@ -126,3 +127,54 @@ class SiteAuditProService:
 
         results_artifacts = public_results.setdefault("artifacts", {})
         results_artifacts["chunk_manifest"] = manifest
+        self._compact_inline_payload(public_results)
+
+    @staticmethod
+    def _int_setting(name: str, default: int) -> int:
+        raw = os.getenv(name)
+        if raw is None:
+            try:
+                from app.config import settings
+
+                raw = getattr(settings, name, None)
+            except Exception:
+                raw = None
+        try:
+            value = int(raw if raw is not None else default)
+        except Exception:
+            value = int(default)
+        return max(1, value)
+
+    def _compact_inline_payload(self, public_results: Dict[str, Any]) -> None:
+        """
+        Keep task payload small when chunk artifacts are available.
+        Full records stay downloadable via manifest links.
+        """
+        issues_limit = self._int_setting("SITE_AUDIT_PRO_INLINE_ISSUES_LIMIT", 200)
+        semantic_limit = self._int_setting("SITE_AUDIT_PRO_INLINE_SEMANTIC_LIMIT", 200)
+        pages_limit = self._int_setting("SITE_AUDIT_PRO_INLINE_PAGES_LIMIT", 500)
+
+        issues = list(public_results.get("issues", []) or [])
+        pages = list(public_results.get("pages", []) or [])
+        pipeline = public_results.get("pipeline", {}) or {}
+        semantic = list(pipeline.get("semantic_linking_map", []) or [])
+
+        omitted = {
+            "issues": max(0, len(issues) - issues_limit),
+            "semantic_linking_map": max(0, len(semantic) - semantic_limit),
+            "pages": max(0, len(pages) - pages_limit),
+        }
+
+        public_results["issues"] = issues[:issues_limit]
+        public_results["pages"] = pages[:pages_limit]
+        pipeline["semantic_linking_map"] = semantic[:semantic_limit]
+        public_results["pipeline"] = pipeline
+
+        artifacts = public_results.setdefault("artifacts", {})
+        artifacts["payload_compacted"] = any(v > 0 for v in omitted.values())
+        artifacts["inline_limits"] = {
+            "issues": issues_limit,
+            "semantic_linking_map": semantic_limit,
+            "pages": pages_limit,
+        }
+        artifacts["omitted_counts"] = omitted

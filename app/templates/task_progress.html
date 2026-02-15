@@ -1749,6 +1749,7 @@ function generateSiteAuditProHTML(result) {
     const pipeline = r.pipeline || {};
     const metrics = pipeline.metrics || {};
     const chunkManifest = (r.artifacts || {}).chunk_manifest || {};
+    const artifactsMeta = r.artifacts || {};
     const mode = r.mode || result.mode || 'quick';
     const topPagerank = (pipeline.pagerank || []).slice(0, 5);
     const clusters = pipeline.topic_clusters || [];
@@ -1844,6 +1845,11 @@ function generateSiteAuditProHTML(result) {
 
             <div class="bg-white rounded-xl shadow-md p-6">
                 <h4 class="font-semibold mb-2">Downloads</h4>
+                ${artifactsMeta.payload_compacted ? `
+                    <div class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-3">
+                        Payload compact mode is enabled. Full deep data is available via chunk downloads below.
+                    </div>
+                ` : ''}
                 ${downloadsHtml || '<div class="text-sm text-gray-500">Chunk artifacts are not available for this run.</div>'}
             </div>
         </div>
@@ -1854,4 +1860,3 @@ function generateSiteAuditProHTML(result) {
 window.copyToClipboard = copyToClipboard;
 </script>
 {% endblock %}
-

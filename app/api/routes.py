@@ -1872,6 +1872,7 @@ async def get_site_pro_artifact(task_id: str, filename: str):
     """Serve Site Audit Pro chunk artifact files."""
     from pathlib import Path
     from fastapi.responses import FileResponse
+    from app.config import settings
 
     try:
         task = get_task_result(task_id)
@@ -1890,8 +1891,13 @@ async def get_site_pro_artifact(task_id: str, filename: str):
                 if not file_path:
                     continue
                 p = Path(file_path)
-                if p.exists():
-                    return FileResponse(str(p), media_type="application/x-ndjson", filename=filename)
+                if not p.exists():
+                    continue
+                reports_root = Path(settings.REPORTS_DIR).resolve()
+                resolved = p.resolve()
+                if reports_root not in resolved.parents and resolved != reports_root:
+                    continue
+                return FileResponse(str(resolved), media_type="application/x-ndjson", filename=filename)
         return {"error": "Артефакт не найден"}
     except Exception as e:
         return {"error": str(e)}
