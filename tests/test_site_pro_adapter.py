@@ -83,6 +83,26 @@ class SiteProAdapterTests(unittest.TestCase):
         self.assertTrue(len(pipeline["duplicates"]["title_groups"]) >= 1)
         self.assertTrue(len(pipeline["duplicates"]["description_groups"]) >= 1)
 
+    def test_respects_max_pages_limit(self):
+        adapter = SiteAuditProAdapter()
+        by_url = {
+            "https://site.test": _MockResponse("https://site.test", 200, HTML_HOME),
+            "https://site.test/about": _MockResponse("https://site.test/about", 200, HTML_ABOUT),
+            "https://site.test/blog": _MockResponse("https://site.test/blog", 200, HTML_BLOG),
+        }
+
+        def fake_get(url, timeout=0, allow_redirects=True):
+            key = url.rstrip("/")
+            if key == "https://site.test":
+                return by_url["https://site.test"]
+            return by_url[key]
+
+        with patch("requests.Session.get", side_effect=fake_get):
+            normalized = adapter.run("https://site.test", mode="quick", max_pages=2)
+            public = adapter.to_public_results(normalized)
+
+        self.assertLessEqual(public["summary"]["total_pages"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

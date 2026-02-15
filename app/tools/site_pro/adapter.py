@@ -241,7 +241,7 @@ class SiteAuditProAdapter:
             per_page[url] = [term for term, _ in scores[:top_n]]
         return per_page
 
-    def run(self, url: str, mode: str = "quick", max_pages: int = 100) -> NormalizedSiteAuditPayload:
+    def run(self, url: str, mode: str = "quick", max_pages: int = 5) -> NormalizedSiteAuditPayload:
         selected_mode = "full" if mode == "full" else "quick"
         page_limit = max(1, min(int(max_pages or 100), 5000))
         timeout = 12

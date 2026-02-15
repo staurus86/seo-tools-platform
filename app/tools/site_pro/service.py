@@ -19,7 +19,7 @@ class SiteAuditProService:
         url: str,
         task_id: str,
         mode: str = "quick",
-        max_pages: int = 100,
+        max_pages: int = 5,
         progress_callback: ProgressCallback = None,
     ) -> Dict[str, Any]:
         def notify(progress: int, message: str) -> None:

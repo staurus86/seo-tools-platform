@@ -3125,7 +3125,7 @@ def check_site_audit_pro(
     url: str,
     task_id: str,
     mode: str = "quick",
-    max_pages: int = 100,
+    max_pages: int = 5,
     progress_callback=None,
 ) -> Dict[str, Any]:
     """Feature-flagged Site Audit Pro entrypoint."""
@@ -3157,7 +3157,7 @@ class MobileCheckRequest(BaseModel):
 class SiteAuditProRequest(BaseModel):
     url: str
     mode: Optional[str] = "quick"
-    max_pages: int = 100
+    max_pages: int = 5
 
 
 @router.post("/tasks/site-analyze")
@@ -3328,8 +3328,8 @@ async def create_site_audit_pro(data: SiteAuditProRequest, background_tasks: Bac
     mode = (data.mode or default_mode).lower()
     if mode not in ("quick", "full"):
         mode = "quick"
-    max_pages_limit = int(getattr(settings, "SITE_AUDIT_PRO_MAX_PAGES_LIMIT", 5000) or 5000)
-    max_pages = max(1, min(int(data.max_pages or 100), max_pages_limit))
+    max_pages_limit = int(getattr(settings, "SITE_AUDIT_PRO_MAX_PAGES_LIMIT", 5) or 5)
+    max_pages = max(1, min(int(data.max_pages or 5), max_pages_limit))
 
     print(f"[API] Site Audit Pro queued for: {url} (mode={mode}, max_pages={max_pages})")
     task_id = f"sitepro-{datetime.now().timestamp()}"
