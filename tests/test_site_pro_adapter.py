@@ -70,6 +70,19 @@ def build_mock_public_result():
 
 
 class SiteProAdapterTests(unittest.TestCase):
+    def test_detect_ai_markers_seopro_phrases(self):
+        adapter = SiteAuditProAdapter()
+        text = (
+            "\u0412 \u0441\u043e\u0432\u0440\u0435\u043c\u0435\u043d\u043d\u043e\u043c \u043c\u0438\u0440\u0435 "
+            "\u0432\u0430\u0436\u043d\u043e \u043f\u043e\u0434\u0447\u0435\u0440\u043a\u043d\u0443\u0442\u044c, "
+            "\u0447\u0442\u043e \u0432 \u0446\u0435\u043b\u043e\u043c \u043c\u043e\u0436\u043d\u043e \u0441\u043a\u0430\u0437\u0430\u0442\u044c: "
+            "\u0441\u043b\u0435\u0434\u0443\u0435\u0442 \u043e\u0442\u043c\u0435\u0442\u0438\u0442\u044c, "
+            "\u0447\u0442\u043e \u043a\u0430\u043a \u0438\u0437\u0432\u0435\u0441\u0442\u043d\u043e, \u0440\u0435\u0448\u0435\u043d\u0438\u0435 \u043f\u0440\u0430\u0432\u0438\u043b\u044c\u043d\u043e\u0435."
+        )
+        count, markers = adapter._detect_ai_markers(text)
+        self.assertGreaterEqual(count, 4)
+        self.assertTrue(any(m == "\u043a\u0430\u043a \u0438\u0437\u0432\u0435\u0441\u0442\u043d\u043e" for m in markers))
+
     def test_pipeline_and_duplicates(self):
         public = build_mock_public_result()
 
