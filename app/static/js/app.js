@@ -83,7 +83,7 @@ async function startTask(event, endpoint) {
             .map((x) => x.trim())
             .filter((x) => x.length > 0);
         if (batchMode && parsedBatchUrls.length > 500) {
-            showToast('Лимит пакетной проверки: максимум 500 URL', 'warning');
+            showToast('Batch scan limit: maximum 500 URLs', 'warning');
             return;
         }
         const batchUrls = parsedBatchUrls.slice(0, 500);
@@ -91,11 +91,15 @@ async function startTask(event, endpoint) {
         data.batch_mode = batchMode;
         if (batchMode) {
             if (batchUrls.length === 0) {
-                showToast('Добавьте хотя бы 1 URL для пакетной проверки', 'warning');
+                showToast('Add at least one URL for batch scan', 'warning');
                 return;
             }
             data.batch_urls = batchUrls;
             data.max_pages = Math.min(500, Math.max(1, batchUrls.length));
+            data.mode = 'full';
+            if (!data.url || String(data.url).trim() === '') {
+                data.url = batchUrls[0];
+            }
         } else {
             delete data.batch_urls;
         }
@@ -107,7 +111,7 @@ async function startTask(event, endpoint) {
     const button = form.querySelector('button[type="submit"]');
     const originalText = button.innerHTML;
     button.disabled = true;
-    button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Запуск...';
+    button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Starting...';
     
     try {
         const response = await fetch(`${API_BASE}/tasks/${endpoint}`, {
@@ -140,7 +144,7 @@ async function startTask(event, endpoint) {
             timestamp: new Date().toISOString()
         });
         
-        showToast('Задача успешно создана! Перенаправление...', 'success');
+        showToast('Task created successfully! Redirecting...', 'success');
         
         // Redirect to results page
         setTimeout(() => {
@@ -149,7 +153,7 @@ async function startTask(event, endpoint) {
         
     } catch (error) {
         console.error('Error starting task:', error);
-        showToast('Ошибка при создании задачи. Попробуйте позже.', 'error');
+        showToast('Failed to create task. Try again later.', 'error');
     } finally {
         button.disabled = false;
         button.innerHTML = originalText;
@@ -164,7 +168,9 @@ function initSiteAuditProBatchUI() {
     const batchBox = form.querySelector('.js-sitepro-batch-box');
     const batchFlag = form.querySelector('.js-sitepro-batch-flag');
     const maxPagesInput = form.querySelector('input[name="max_pages"]');
-    if (!modeSelect || !batchBox || !batchFlag || !maxPagesInput) return;
+    const rootUrlInput = form.querySelector('.js-sitepro-root-url');
+    const reportModeSelect = form.querySelector('select[name="mode"]');
+    if (!modeSelect || !batchBox || !batchFlag || !maxPagesInput || !rootUrlInput || !reportModeSelect) return;
 
     const sync = () => {
         const isBatch = modeSelect.value === 'batch';
@@ -174,11 +180,18 @@ function initSiteAuditProBatchUI() {
         if (isBatch) {
             maxPagesInput.value = '500';
             maxPagesInput.title = 'Max URLs in batch mode';
+            rootUrlInput.required = false;
+            rootUrlInput.disabled = true;
+            reportModeSelect.value = 'full';
+            reportModeSelect.disabled = true;
         } else {
             if (parseInt(maxPagesInput.value || '5', 10) > 5) {
                 maxPagesInput.value = '5';
             }
             maxPagesInput.title = 'Max pages in crawl mode';
+            rootUrlInput.disabled = false;
+            rootUrlInput.required = true;
+            reportModeSelect.disabled = false;
         }
     };
 

@@ -61,8 +61,8 @@
             Dedicated engine for SEOPRO migration with quick/full modes and XLSX/DOCX outputs.
         </p>
         <form class="space-y-3" onsubmit="startTask(event, 'site-audit-pro')" data-tool="site-audit-pro">
-            <input type="url" name="url" placeholder="https://example.com" required
-                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+            <input type="url" name="url" placeholder="https://example.com (optional in batch mode)"
+                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent js-sitepro-root-url">
             <div class="grid grid-cols-2 gap-2">
                 <select name="mode" class="px-3 py-2 border rounded-lg text-sm">
                     <option value="quick" selected>quick</option>

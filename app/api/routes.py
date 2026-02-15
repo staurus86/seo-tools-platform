@@ -3229,7 +3229,7 @@ class MobileCheckRequest(BaseModel):
 
 
 class SiteAuditProRequest(BaseModel):
-    url: str
+    url: Optional[str] = None
     mode: Optional[str] = "quick"
     max_pages: int = 5
     batch_mode: bool = False
@@ -3410,12 +3410,14 @@ async def create_site_audit_pro(data: SiteAuditProRequest, background_tasks: Bac
     if not getattr(settings, "SITE_AUDIT_PRO_ENABLED", True):
         return {"error": "Site Audit Pro is disabled by feature flag"}
 
-    url = data.url
+    raw_url = (data.url or "").strip()
     default_mode = (getattr(settings, "SITE_AUDIT_PRO_DEFAULT_MODE", "quick") or "quick").lower()
     mode = (data.mode or default_mode).lower()
     if mode not in ("quick", "full"):
         mode = "quick"
     batch_mode = bool(getattr(data, "batch_mode", False))
+    if batch_mode:
+        mode = "full"
     max_pages_limit = int(getattr(settings, "SITE_AUDIT_PRO_MAX_PAGES_LIMIT", 5) or 5)
     effective_max_pages_limit = 500 if batch_mode else max_pages_limit
     max_pages = max(1, min(int(data.max_pages or 5), effective_max_pages_limit))
@@ -3441,6 +3443,16 @@ async def create_site_audit_pro(data: SiteAuditProRequest, background_tasks: Bac
 
     if batch_mode and not normalized_batch_urls:
         raise HTTPException(status_code=422, detail="Batch mode requires at least one valid URL")
+
+    if batch_mode:
+        url = normalized_batch_urls[0]
+    else:
+        url = raw_url
+        if url and not url.startswith(("http://", "https://")):
+            url = f"https://{url}"
+        parsed_url = urlparse(url)
+        if not parsed_url.scheme or not parsed_url.netloc:
+            raise HTTPException(status_code=422, detail="A valid site URL is required in crawl mode")
 
     print(
         f"[API] Site Audit Pro queued for: {url} "
