@@ -161,6 +161,86 @@ class XLSXGenerator:
         for col in range(start_col, end_col + 1):
             ws.cell(row=row_idx, column=col).fill = sev_fill
 
+    def _status_palette(self, status: str) -> Dict[str, Any]:
+        state = (status or "").lower()
+        palette = {
+            "good": {"fill": "D1E7DD", "font": "0F5132", "icon": "✅"},
+            "warn": {"fill": "FFF3CD", "font": "664D03", "icon": "⚠️"},
+            "bad": {"fill": "F8D7DA", "font": "842029", "icon": "❌"},
+            "neutral": {"fill": "E2E3E5", "font": "41464B", "icon": "•"},
+        }
+        return palette.get(state, palette["neutral"])
+
+    def _kpi_status_from_value(self, header: str, value: Any) -> str:
+        header_l = str(header or "").lower()
+        value_s = str(value or "").strip().lower()
+
+        def as_float(v: Any) -> float | None:
+            try:
+                return float(v)
+            except Exception:
+                return None
+
+        # Explicit string levels and states.
+        if value_s in {"high", "medium", "low"}:
+            if "risk level" in header_l:
+                return "bad" if value_s == "high" else "warn" if value_s == "medium" else "good"
+            return "good" if value_s == "high" else "warn" if value_s == "medium" else "bad"
+        if value_s in {"critical", "error", "bad", "fail", "failed"}:
+            return "bad"
+        if value_s in {"warning", "warn", "medium"}:
+            return "warn"
+        if value_s in {"ok", "good", "passed", "pass", "none"}:
+            return "good"
+
+        # Boolean-ish values.
+        if value_s in {"true", "✅", "yes"}:
+            if any(k in header_l for k in ("risk", "alert", "overuse", "truncation", "conflict", "mismatch", "duplicate", "error")):
+                return "bad"
+            return "good"
+        if value_s in {"false", "❌", "no"}:
+            if any(k in header_l for k in ("risk", "alert", "overuse", "truncation", "conflict", "mismatch", "duplicate", "error")):
+                return "good"
+            return "bad"
+
+        # HTTP/status code.
+        num = as_float(value)
+        if num is not None and "status" in header_l:
+            code = int(num)
+            if 200 <= code < 300:
+                return "good"
+            if 300 <= code < 400:
+                return "warn"
+            if code >= 400 or code == 0:
+                return "bad"
+
+        # Numeric KPI by semantic group.
+        if num is not None:
+            if any(k in header_l for k in ("delta",)):
+                return "good" if num <= 2 else "warn" if num <= 10 else "bad"
+            if any(k in header_l for k in ("toxicity", "risk", "over threshold", "waste")):
+                return "good" if num <= 20 else "warn" if num <= 50 else "bad"
+            if any(k in header_l for k in ("score", "health", "quality", "coverage", "confidence", "roi")):
+                return "good" if num >= 80 else "warn" if num >= 60 else "bad"
+        return "neutral"
+
+    def _is_kpi_header(self, header: str) -> bool:
+        h = str(header or "").lower()
+        keywords = (
+            "score", "risk", "status", "toxicity", "health", "quality", "coverage", "delta",
+            "confidence", "alert", "severity", "level", "indexable", "indexability", "spam",
+            "canonical", "orphan", "duplicate", "mismatch", "conflict", "over threshold",
+        )
+        return any(k in h for k in keywords)
+
+    def _apply_kpi_cell_style(self, cell, header: str, value: Any):
+        status = self._kpi_status_from_value(header, value)
+        palette = self._status_palette(status)
+        cell.fill = PatternFill(start_color=palette["fill"], end_color=palette["fill"], fill_type='solid')
+        cell.font = Font(color=palette["font"], bold=True)
+        if self._is_kpi_header(header):
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+
     def _sitemap_issue_severity(self, item: Dict[str, Any]) -> str:
         """Infer severity for sitemap file-level row."""
         if not item.get("ok", False):
@@ -1415,7 +1495,11 @@ class XLSXGenerator:
             score_values: List[float] = []
             for row_idx, row_data in enumerate(ordered_rows, start=2):
                 for col, value in enumerate(row_data, 1):
-                    self._apply_style(wsx.cell(row=row_idx, column=col, value=self._sanitize_cell_value(value)), cell_style)
+                    cell = wsx.cell(row=row_idx, column=col, value=self._sanitize_cell_value(value))
+                    self._apply_style(cell, cell_style)
+                    header = headers[col - 1] if (col - 1) < len(headers) else ""
+                    if self._is_kpi_header(header):
+                        self._apply_kpi_cell_style(cell, header, value)
                 if severity_idx >= 0:
                     sev_value = str(row_data[severity_idx]).lower()
                     if sev_value in sev_counts:
