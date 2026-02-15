@@ -831,30 +831,180 @@ class XLSXGenerator:
             except Exception:
                 return default
 
-        def page_solution(page: Dict[str, Any]) -> str:
-            actions: List[str] = []
-            if int(page.get("h1_count") or 0) == 0:
-                actions.append("Add H1 in main content")
-            if int(page.get("title_len") or len(str(page.get("title") or ""))) < 30:
-                actions.append("Improve title length")
-            if int(page.get("description_len") or len(str(page.get("meta_description") or ""))) < 90:
-                actions.append("Add richer meta description")
-            if int(page.get("images_without_alt") or 0) > 0:
-                actions.append("Add image ALT text")
-            img_opt = page.get("images_optimization") or {}
-            if int(img_opt.get("no_width_height") or 0) > 0:
-                actions.append("Add image width/height")
-            if int(page.get("schema_count") or 0) == 0:
-                actions.append("Add schema.org markup")
-            if not page.get("cache_enabled"):
-                actions.append("Configure cache headers")
-            if bool(page.get("hidden_content")):
-                actions.append("Remove hidden content")
-            if to_float(page.get("trust_score"), 0.0) < 60:
-                actions.append("Strengthen trust signals")
-            if to_float(page.get("eeat_score"), 0.0) < 60:
-                actions.append("Strengthen EEAT signals")
-            return "; ".join(actions) if actions else "OK"
+        def ok_if_empty(recs: List[str]) -> str:
+            return "OK" if not recs else "; ".join(recs[:2])
+
+        def page_solution(tab: str, page: Dict[str, Any], page_issues: List[Dict[str, Any]] | None = None) -> str:
+            recs: List[str] = []
+            page_issues = page_issues or []
+            if tab == "main":
+                if not page.get("indexable"):
+                    recs.append("Fix indexability (noindex/status/robots)")
+                if to_float(page.get("health_score"), 100.0) < 60:
+                    recs.append("Improve technical and content quality to 60+")
+                if not page_issues and not recs:
+                    return "OK"
+                if recs:
+                    return ok_if_empty(recs)
+                issue_titles = [str(i.get("title") or i.get("code") or "") for i in page_issues if (i.get("title") or i.get("code"))]
+                return ok_if_empty(issue_titles)
+
+            if tab == "hierarchy":
+                status = str(page.get("h_hierarchy") or "").lower()
+                if "wrong start" in status:
+                    return "Add <h1> at the beginning of main content"
+                if "level skip" in status:
+                    return "Fix heading level sequence (H1->H2->H3)"
+                if "multiple h1" in status:
+                    return "Keep only one H1, move others to H2"
+                if "missing h1" in status:
+                    return "Add one descriptive H1 heading"
+                return "OK"
+
+            if tab == "onpage":
+                title_len = int(page.get("title_len") or len(str(page.get("title") or "")))
+                desc_len = int(page.get("description_len") or len(str(page.get("meta_description") or "")))
+                if title_len < 30 or title_len > 60:
+                    recs.append("Title 30-60 chars and unique")
+                if desc_len < 50 or desc_len > 160:
+                    recs.append("Meta 100-160 chars with CTA")
+                if int(page.get("h1_count") or 0) != 1:
+                    recs.append("Keep exactly one H1")
+                if (page.get("canonical_status") or "") in ("missing", "external", "invalid"):
+                    recs.append("Set valid canonical")
+                if int(page.get("duplicate_title_count") or 0) > 1:
+                    recs.append("Uniquify title")
+                if int(page.get("duplicate_description_count") or 0) > 1:
+                    recs.append("Uniquify meta")
+                return ok_if_empty(recs)
+
+            if tab == "content":
+                unique_percent = to_float(page.get("unique_percent"), 0.0)
+                words = int(page.get("word_count") or 0)
+                if unique_percent < 30:
+                    recs.append("Add unique content blocks (uniqueness <30%)")
+                elif unique_percent < 50:
+                    recs.append("Increase uniqueness above 50%")
+                if words < 300:
+                    recs.append("Increase content length to 300+ words")
+                if to_float(page.get("toxicity_score"), 0.0) > 40:
+                    recs.append("Reduce keyword stuffing/spam")
+                return ok_if_empty(recs)
+
+            if tab == "technical":
+                if not page.get("indexable"):
+                    recs.append("Make page indexable")
+                if not page.get("is_https"):
+                    recs.append("Enable HTTPS")
+                if not page.get("compression_enabled"):
+                    recs.append("Enable gzip/br compression")
+                if not page.get("cache_enabled"):
+                    recs.append("Configure Cache-Control")
+                if (page.get("canonical_status") or "") in ("missing", "external", "invalid"):
+                    recs.append("Verify canonical")
+                if len(page.get("deprecated_tags") or []) > 0:
+                    recs.append("Remove deprecated tags")
+                rt = page.get("response_time_ms")
+                if rt is not None and int(rt) > 2000:
+                    recs.append("Improve server response time")
+                return ok_if_empty(recs)
+
+            if tab == "eeat":
+                eeat = to_float(page.get("eeat_score"), 0.0)
+                if eeat < 50:
+                    recs.append("Add author, bio, references, case studies")
+                elif eeat < 70:
+                    recs.append("Strengthen authority and trust")
+                if not page.get("has_author_info"):
+                    recs.append("Add author block and contact/social links")
+                if not page.get("has_reviews"):
+                    recs.append("Add reviews/case studies")
+                return ok_if_empty(recs)
+
+            if tab == "trust":
+                if not page.get("has_contact_info"):
+                    recs.append("Add contacts/address/phone")
+                if not page.get("has_legal_docs"):
+                    recs.append("Add legal documents")
+                if not page.get("has_reviews"):
+                    recs.append("Add reviews")
+                if not page.get("trust_badges"):
+                    recs.append("Add trust badges/certificates")
+                return ok_if_empty(recs)
+
+            if tab == "health":
+                if to_float(page.get("health_score"), 100.0) < 60:
+                    recs.append("Raise overall Health to 60+")
+                if not page.get("indexable"):
+                    recs.append("Fix indexability")
+                if int(page.get("duplicate_title_count") or 0) > 1:
+                    recs.append("Uniquify title")
+                if int(page.get("duplicate_description_count") or 0) > 1:
+                    recs.append("Uniquify meta")
+                return ok_if_empty(recs)
+
+            if tab == "links":
+                if page.get("orphan_page"):
+                    recs.append("Add internal links to this page")
+                if int(page.get("outgoing_internal_links") or 0) == 0:
+                    recs.append("Add links to relevant internal pages")
+                return ok_if_empty(recs)
+
+            if tab == "images":
+                img_opt = page.get("images_optimization") or {}
+                if int(img_opt.get("no_alt") or page.get("images_without_alt") or 0) > 0:
+                    recs.append("Add ALT text to images")
+                if int(img_opt.get("no_width_height") or 0) > 0:
+                    recs.append("Add width/height")
+                if int(img_opt.get("no_lazy_load") or 0) > 0:
+                    recs.append("Enable lazy loading")
+                return ok_if_empty(recs)
+
+            if tab == "external":
+                total = int(page.get("outgoing_external_links") or 0)
+                if total == 0:
+                    recs.append("Add relevant external sources")
+                return ok_if_empty(recs)
+
+            if tab == "structured":
+                if int(page.get("structured_data") or 0) == 0:
+                    recs.append("Implement schema.org (JSON-LD)")
+                if int(page.get("hreflang_count") or 0) == 0:
+                    recs.append("Add hreflang for language versions")
+                return ok_if_empty(recs)
+
+            if tab == "keywords":
+                if not (page.get("top_keywords") or page.get("top_terms") or page.get("tf_idf_keywords")):
+                    recs.append("Refine semantics and keyword set")
+                if to_float(page.get("toxicity_score"), 0.0) > 40:
+                    recs.append("Reduce keyword spam")
+                return ok_if_empty(recs)
+
+            if tab == "topics":
+                if not page.get("topic_hub"):
+                    recs.append("Connect to a relevant topic hub")
+                if not page.get("topic_label"):
+                    recs.append("Define topic cluster")
+                return ok_if_empty(recs)
+
+            if tab == "advanced":
+                freshness = page.get("content_freshness_days")
+                if freshness is not None and int(freshness) > 365:
+                    recs.append("Update content freshness")
+                if bool(page.get("hidden_content")):
+                    recs.append("Remove hidden content")
+                if bool(page.get("cloaking_detected")):
+                    recs.append("Eliminate cloaking behavior")
+                return ok_if_empty(recs)
+
+            if tab == "link_quality":
+                if to_float(page.get("link_quality_score"), 0.0) < 60:
+                    recs.append("Improve internal linking quality")
+                if page.get("orphan_page"):
+                    recs.append("Add incoming internal links")
+                return ok_if_empty(recs)
+
+            return "OK"
 
         def hierarchy_problem(page: Dict[str, Any]) -> str:
             errors = page.get("h_errors") or []
@@ -1230,7 +1380,7 @@ class XLSXGenerator:
                     page.get("canonical_status", "") or "-",
                     page.get("response_time_ms", ""),
                     problem_text,
-                    page_solution(page),
+                    page_solution("main", page, page_issues),
                     sev,
                 ])
             fill_sheet("13_MainReport_Compat", main_compat_headers, main_compat_rows, severity_idx=13, widths=[52, 24, 24, 20, 10, 16, 10, 8, 10, 12, 10, 52, 62, 10])
@@ -1246,7 +1396,7 @@ class XLSXGenerator:
                     hierarchy_problem(page),
                     total_headers,
                     int(page.get("h1_count") or 0),
-                    page_solution(page),
+                    page_solution("hierarchy", page, issues_by_url.get(page.get("url", ""), [])),
                     sev,
                 ])
             fill_sheet("14_Hierarchy_Compat", hierarchy_compat_headers, hierarchy_compat_rows, severity_idx=6, widths=[52, 16, 48, 12, 10, 58, 10])
@@ -1270,7 +1420,7 @@ class XLSXGenerator:
                     bool_icon(page.get("breadcrumbs")),
                     int(page.get("duplicate_title_count") or 0),
                     int(page.get("duplicate_description_count") or 0),
-                    page_solution(page),
+                    page_solution("onpage", page),
                     sev,
                 ])
             fill_sheet("15_OnPage_Compat", onpage_compat_headers, onpage_compat_rows, severity_idx=12, widths=[52, 10, 10, 8, 10, 16, 8, 8, 10, 10, 10, 58, 10])
@@ -1291,7 +1441,7 @@ class XLSXGenerator:
                     int(page.get("ai_markers_count") or 0),
                     ai_found_list(page),
                     int(len(page.get("filler_phrases") or [])),
-                    page_solution(page),
+                    page_solution("content", page),
                     sev,
                 ])
             fill_sheet("16_Content_Compat", content_compat_headers, content_compat_rows, severity_idx=9, widths=[52, 10, 10, 12, 10, 10, 36, 10, 58, 10])
@@ -1317,7 +1467,7 @@ class XLSXGenerator:
                     page.get("canonical_status", ""),
                     page.get("meta_robots", "") or page.get("x_robots_tag", ""),
                     len(page.get("deprecated_tags") or []),
-                    page_solution(page),
+                    page_solution("technical", page),
                     sev,
                 ])
             fill_sheet("17_Technical_Compat", technical_compat_headers, technical_compat_rows, severity_idx=14, widths=[52, 8, 10, 10, 10, 10, 10, 8, 10, 8, 12, 22, 10, 58, 10])
@@ -1334,7 +1484,7 @@ class XLSXGenerator:
                     to_float(comp.get("authoritativeness"), 0.0),
                     to_float(comp.get("trustworthiness"), 0.0),
                     to_float(comp.get("experience"), 0.0),
-                    page_solution(page),
+                    page_solution("eeat", page),
                     sev,
                 ])
             fill_sheet("18_EEAT_Compat", eeat_headers, eeat_rows, severity_idx=7, widths=[52, 10, 10, 10, 10, 10, 58, 10])
@@ -1350,7 +1500,7 @@ class XLSXGenerator:
                     bool_icon(page.get("has_legal_docs")),
                     bool_icon(page.get("has_reviews")),
                     bool_icon(page.get("trust_badges")),
-                    page_solution(page),
+                    page_solution("trust", page),
                     sev,
                 ])
             fill_sheet("19_Trust_Compat", trust_headers, trust_rows, severity_idx=7, widths=[52, 10, 8, 8, 8, 8, 58, 10])
@@ -1372,7 +1522,7 @@ class XLSXGenerator:
                     int(page.get("duplicate_title_count") or 0),
                     int(page.get("duplicate_description_count") or 0),
                     page.get("response_time_ms", ""),
-                    page_solution(page),
+                    page_solution("health", page),
                     sev,
                 ])
             fill_sheet("20_Health_Compat", health_headers, health_rows, severity_idx=10, widths=[52, 12, 10, 10, 10, 12, 10, 10, 10, 58, 10])
@@ -1387,7 +1537,7 @@ class XLSXGenerator:
                     int(page.get("incoming_internal_links") or 0),
                     int(page.get("outgoing_internal_links") or 0),
                     bool_icon(not page.get("orphan_page")),
-                    page_solution(page),
+                    page_solution("links", page),
                     sev,
                 ])
             fill_sheet("21_InternalLinks_Compat", links_headers, links_rows, severity_idx=6, widths=[52, 10, 10, 10, 10, 58, 10])
@@ -1407,7 +1557,7 @@ class XLSXGenerator:
                     no_width,
                     no_lazy,
                     (no_alt + no_width + no_lazy),
-                    page_solution(page),
+                    page_solution("images", page),
                     sev,
                 ])
             fill_sheet("22_Images_Compat", images_headers, images_rows, severity_idx=7, widths=[52, 10, 10, 10, 10, 10, 58, 10])
@@ -1426,7 +1576,7 @@ class XLSXGenerator:
                     follow,
                     nofollow,
                     f"{follow_pct:.0f}%",
-                    page_solution(page),
+                    page_solution("external", page),
                     sev,
                 ])
             fill_sheet("23_ExternalLinks_Compat", external_headers, external_rows, severity_idx=6, widths=[52, 14, 10, 10, 10, 58, 10])
@@ -1444,7 +1594,7 @@ class XLSXGenerator:
                     int(detail.get("rdfa") or 0),
                     int(page.get("hreflang_count") or 0),
                     page.get("meta_robots", "") or page.get("x_robots_tag", ""),
-                    page_solution(page),
+                    page_solution("structured", page),
                     sev,
                 ])
             fill_sheet("24_Structured_Compat", structured_headers, structured_rows, severity_idx=8, widths=[52, 8, 8, 10, 8, 10, 24, 58, 10])
@@ -1463,7 +1613,7 @@ class XLSXGenerator:
                     tfidf_terms[0] if len(tfidf_terms) > 0 else "",
                     tfidf_terms[1] if len(tfidf_terms) > 1 else "",
                     tfidf_terms[2] if len(tfidf_terms) > 2 else "",
-                    page_solution(page),
+                    page_solution("keywords", page),
                     sev,
                 ])
             fill_sheet("25_KeywordsTFIDF_Compat", kw_headers, kw_rows, severity_idx=6, widths=[52, 36, 16, 16, 16, 58, 10])
@@ -1484,7 +1634,7 @@ class XLSXGenerator:
                     page.get("topic_label", ""),
                     int(page.get("incoming_internal_links") or 0),
                     "\n".join(summary_links),
-                    page_solution(page),
+                    page_solution("topics", page),
                     sev,
                 ])
             fill_sheet("26_Topics_Compat", topics_headers, topics_rows, severity_idx=6, widths=[52, 10, 16, 12, 62, 58, 10])
@@ -1510,7 +1660,7 @@ class XLSXGenerator:
                     bool_icon(not page.get("cloaking_detected")),
                     int(page.get("cta_count") or 0),
                     f"{int(page.get('lists_count') or 0)}/{int(page.get('tables_count') or 0)}",
-                    page_solution(page),
+                    page_solution("advanced", page),
                     sev,
                 ])
             fill_sheet("27_Advanced_Compat", advanced_compat_headers, advanced_compat_rows, severity_idx=14, widths=[52, 12, 22, 8, 10, 10, 10, 10, 52, 12, 10, 10, 12, 58, 10])
@@ -1531,7 +1681,7 @@ class XLSXGenerator:
                     int(page.get("outgoing_internal_links") or 0),
                     bool_icon(not page.get("orphan_page")),
                     bool_icon(page.get("topic_hub")),
-                    page_solution(page),
+                    page_solution("link_quality", page),
                     sev,
                 ])
             fill_sheet("28_LinkQuality_Compat", link_quality_headers, link_quality_rows, severity_idx=9, widths=[52, 12, 12, 12, 12, 14, 10, 10, 58, 10])
@@ -1546,7 +1696,7 @@ class XLSXGenerator:
                     ai_count,
                     ai_found_list(page),
                     page.get("ai_marker_sample", "") or ("Marker snippet not available in compact payload" if ai_count > 0 else "No text sample available"),
-                    page_solution(page) if ai_count > 0 else "No AI markers detected",
+                    page_solution("content", page) if ai_count > 0 else "No AI markers detected",
                     sev,
                 ])
             fill_sheet("29_AIMarkers_Compat", ai_headers, ai_rows, severity_idx=5, widths=[52, 14, 40, 44, 58, 10])
