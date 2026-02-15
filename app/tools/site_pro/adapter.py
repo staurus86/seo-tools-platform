@@ -382,6 +382,28 @@ class SiteAuditProAdapter:
             return "other"
         return "invalid"
 
+    def _extract_hreflang_data(self, soup: BeautifulSoup, page_url: str) -> Tuple[List[str], Dict[str, str], bool]:
+        langs: List[str] = []
+        targets: Dict[str, str] = {}
+        has_x_default = False
+        for tag in soup.find_all("link", href=True):
+            rel = [str(x).lower() for x in (tag.get("rel") or [])]
+            if "alternate" not in rel:
+                continue
+            lang = str(tag.get("hreflang") or "").strip()
+            if not lang:
+                continue
+            href = str(tag.get("href") or "").strip()
+            if not href:
+                continue
+            lang_lower = lang.lower()
+            normalized_target = self._normalize_url(urljoin(page_url, href))
+            langs.append(lang_lower)
+            targets[lang_lower] = normalized_target
+            if lang_lower == "x-default":
+                has_x_default = True
+        return langs, targets, has_x_default
+
     def _content_freshness_days(self, last_modified: str) -> int | None:
         value = (last_modified or "").strip()
         if not value:
@@ -513,6 +535,115 @@ class SiteAuditProAdapter:
 
         return len(found_markers), found_markers[:10]
 
+    def _apply_canonical_and_hreflang_checks(
+        self,
+        rows: List[NormalizedSiteAuditRow],
+        *,
+        start_url: str,
+        extended_hreflang_checks: bool,
+    ) -> None:
+        row_by_url: Dict[str, NormalizedSiteAuditRow] = {}
+        for r in rows:
+            row_by_url[self._normalize_url(r.url)] = r
+            if r.final_url:
+                row_by_url[self._normalize_url(r.final_url)] = r
+        start_norm = self._normalize_url(start_url)
+
+        for row in rows:
+            canonical_raw = (row.canonical or "").strip()
+            if canonical_raw:
+                canonical_target = self._normalize_url(urljoin(row.url, canonical_raw))
+                target = row_by_url.get(canonical_target)
+                if target:
+                    row.canonical_target_status = target.status_code
+                    row.canonical_target_indexable = target.indexable
+                    target_status = int(target.status_code or 0)
+                    target_robots = (target.meta_robots or "").lower()
+                    if target_status >= 400:
+                        row.canonical_conflict = "canonical_target_4xx_5xx"
+                        row.issues.append(
+                            SiteAuditProIssue(
+                                severity="critical",
+                                code="canonical_target_error_status",
+                                title="Canonical points to an error page",
+                                details=f"Canonical target status: {target_status}",
+                            )
+                        )
+                    elif 300 <= target_status < 400:
+                        row.canonical_conflict = "canonical_target_redirect"
+                        row.issues.append(
+                            SiteAuditProIssue(
+                                severity="warning",
+                                code="canonical_target_redirect",
+                                title="Canonical points to a redirect URL",
+                                details=f"Canonical target status: {target_status}",
+                            )
+                        )
+                    elif "noindex" in target_robots:
+                        row.canonical_conflict = "canonical_target_noindex"
+                        row.issues.append(
+                            SiteAuditProIssue(
+                                severity="warning",
+                                code="canonical_target_noindex",
+                                title="Canonical points to a noindex page",
+                            )
+                        )
+
+            robots = (row.meta_robots or "").lower()
+            if "noindex" in robots and (row.canonical_status or "").lower() in ("self", "other"):
+                row.canonical_conflict = row.canonical_conflict or "noindex_with_canonical"
+                row.issues.append(
+                    SiteAuditProIssue(
+                        severity="warning",
+                        code="noindex_canonical_conflict",
+                        title="Page has both canonical and noindex",
+                    )
+                )
+
+        if not extended_hreflang_checks:
+            return
+
+        homepage = row_by_url.get(start_norm)
+        if not homepage:
+            return
+
+        langs = list(homepage.hreflang_langs or [])
+        targets = dict(homepage.hreflang_targets or {})
+        if not langs:
+            return
+
+        lang_re = re.compile(r"^[a-z]{2}(?:-[a-z]{2})?$|^x-default$", re.I)
+        seen_langs: Set[str] = set()
+        for lang in langs:
+            if lang in seen_langs:
+                homepage.hreflang_issues.append(f"duplicate_lang:{lang}")
+                continue
+            seen_langs.add(lang)
+            if not lang_re.match(lang):
+                homepage.hreflang_issues.append(f"invalid_lang_code:{lang}")
+
+        if len(langs) > 1 and not homepage.hreflang_has_x_default:
+            homepage.hreflang_issues.append("missing_x_default")
+
+        for lang, target_url in targets.items():
+            target_row = row_by_url.get(self._normalize_url(target_url))
+            if not target_row:
+                homepage.hreflang_issues.append(f"target_not_scanned:{lang}")
+                continue
+            back_targets = set((target_row.hreflang_targets or {}).values())
+            if start_norm not in {self._normalize_url(x) for x in back_targets}:
+                homepage.hreflang_issues.append(f"missing_reciprocal:{lang}")
+
+        for item in homepage.hreflang_issues[:15]:
+            homepage.issues.append(
+                SiteAuditProIssue(
+                    severity="warning",
+                    code="hreflang_extended_check",
+                    title="Extended hreflang check warning",
+                    details=item,
+                )
+            )
+
     def _detect_cloaking(self, body_text: str, hidden_content: bool, hidden_nodes_count: int) -> bool:
         if not hidden_content:
             return False
@@ -560,6 +691,7 @@ class SiteAuditProAdapter:
         source_url: str,
         final_url: str,
         status_code: int,
+        status_line: str,
         html: str,
         base_host: str,
         headers: Dict[str, Any],
@@ -588,14 +720,8 @@ class SiteAuditProAdapter:
             ]
         )
         structured_data_total, structured_data_detail, structured_types = self._detect_structured_data(soup)
-        hreflang_count = len(
-            [
-                tag
-                for tag in soup.find_all("link", href=True)
-                if (tag.get("rel") and "alternate" in [str(x).lower() for x in tag.get("rel")])
-                and bool((tag.get("hreflang") or "").strip())
-            ]
-        )
+        hreflang_langs, hreflang_targets, hreflang_has_x_default = self._extract_hreflang_data(soup=soup, page_url=final_url)
+        hreflang_count = len(hreflang_langs)
         dom_nodes_count = len(soup.find_all(True))
         h1_count = len(soup.find_all("h1"))
         h1_text = (soup.find("h1").get_text(" ", strip=True)[:120] if soup.find("h1") else "")
@@ -828,6 +954,7 @@ class SiteAuditProAdapter:
             url=source_url,
             final_url=final_url,
             status_code=status_code,
+            status_line=(status_line or "").strip() or None,
             response_time_ms=response_time_ms,
             html_size_bytes=html_size_bytes,
             content_kb=round((html_size_bytes or 0) / 1024.0, 1),
@@ -857,6 +984,9 @@ class SiteAuditProAdapter:
             structured_types=structured_types,
             schema_count=schema_count,
             hreflang_count=hreflang_count,
+            hreflang_langs=hreflang_langs[:25],
+            hreflang_has_x_default=hreflang_has_x_default,
+            hreflang_targets=hreflang_targets,
             mobile_friendly_hint=("width=device-width" in viewport) if viewport else None,
             word_count=len(words),
             unique_word_count=unique_word_count,
@@ -1141,6 +1271,7 @@ class SiteAuditProAdapter:
         max_pages: int = 5,
         batch_urls: List[str] | None = None,
         batch_mode: bool = False,
+        extended_hreflang_checks: bool = False,
     ) -> NormalizedSiteAuditPayload:
         selected_mode = "full" if mode == "full" else "quick"
         page_limit = max(1, min(int(max_pages or 5), 5000))
@@ -1187,6 +1318,8 @@ class SiteAuditProAdapter:
             try:
                 response = session.get(current, timeout=timeout, allow_redirects=True)
                 final_url = self._normalize_url(response.url or current)
+                reason = str(getattr(response, "reason", "") or "").strip()
+                status_line = f"{response.status_code} {reason}".strip()
                 response_time_ms = int(
                     max(
                         0.0,
@@ -1198,6 +1331,7 @@ class SiteAuditProAdapter:
                     source_url=current,
                     final_url=final_url,
                     status_code=response.status_code,
+                    status_line=status_line,
                     html=response.text or "",
                     base_host=base_host,
                     headers=dict(getattr(response, "headers", {}) or {}),
@@ -1227,6 +1361,7 @@ class SiteAuditProAdapter:
                     NormalizedSiteAuditRow(
                         url=current,
                         status_code=None,
+                        status_line=None,
                         indexable=False,
                         health_score=0.0,
                         issues=[
@@ -1266,6 +1401,12 @@ class SiteAuditProAdapter:
                         title="Duplicate meta description detected",
                     )
                 )
+
+        self._apply_canonical_and_hreflang_checks(
+            rows=rows,
+            start_url=start_url,
+            extended_hreflang_checks=extended_hreflang_checks,
+        )
 
         all_urls = [r.url for r in rows]
         allowed = set(all_urls)

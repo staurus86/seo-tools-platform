@@ -3198,6 +3198,7 @@ def check_site_audit_pro(
     max_pages: int = 5,
     batch_mode: bool = False,
     batch_urls: Optional[List[str]] = None,
+    extended_hreflang_checks: bool = False,
     progress_callback=None,
 ) -> Dict[str, Any]:
     """Feature-flagged Site Audit Pro entrypoint."""
@@ -3211,6 +3212,7 @@ def check_site_audit_pro(
         max_pages=max_pages,
         batch_mode=batch_mode,
         batch_urls=batch_urls or [],
+        extended_hreflang_checks=extended_hreflang_checks,
         progress_callback=progress_callback,
     )
 
@@ -3234,6 +3236,7 @@ class SiteAuditProRequest(BaseModel):
     max_pages: int = 5
     batch_mode: bool = False
     batch_urls: Optional[List[str]] = None
+    extended_hreflang_checks: bool = False
 
     @field_validator("batch_urls", mode="before")
     @classmethod
@@ -3416,6 +3419,7 @@ async def create_site_audit_pro(data: SiteAuditProRequest, background_tasks: Bac
     if mode not in ("quick", "full"):
         mode = "quick"
     batch_mode = bool(getattr(data, "batch_mode", False))
+    extended_hreflang_checks = bool(getattr(data, "extended_hreflang_checks", False))
     if batch_mode:
         mode = "full"
     max_pages_limit = int(getattr(settings, "SITE_AUDIT_PRO_MAX_PAGES_LIMIT", 5) or 5)
@@ -3456,7 +3460,8 @@ async def create_site_audit_pro(data: SiteAuditProRequest, background_tasks: Bac
 
     print(
         f"[API] Site Audit Pro queued for: {url} "
-        f"(mode={mode}, max_pages={max_pages}, batch_mode={batch_mode}, batch_urls={len(normalized_batch_urls)})"
+        f"(mode={mode}, max_pages={max_pages}, batch_mode={batch_mode}, batch_urls={len(normalized_batch_urls)}, "
+        f"extended_hreflang_checks={extended_hreflang_checks})"
     )
     task_id = f"sitepro-{datetime.now().timestamp()}"
     create_task_pending(task_id, "site_audit_pro", url, status_message="Site Audit Pro queued")
@@ -3475,6 +3480,7 @@ async def create_site_audit_pro(data: SiteAuditProRequest, background_tasks: Bac
                     "max_pages": max_pages,
                     "batch_mode": batch_mode,
                     "batch_urls_count": len(normalized_batch_urls),
+                    "extended_hreflang_checks": extended_hreflang_checks,
                 },
                 ensure_ascii=False,
             )
@@ -3492,6 +3498,7 @@ async def create_site_audit_pro(data: SiteAuditProRequest, background_tasks: Bac
                 max_pages=max_pages,
                 batch_mode=batch_mode,
                 batch_urls=normalized_batch_urls,
+                extended_hreflang_checks=extended_hreflang_checks,
                 progress_callback=_progress,
             )
             chunk_manifest = (((result or {}).get("results") or {}).get("artifacts") or {}).get("chunk_manifest", {})

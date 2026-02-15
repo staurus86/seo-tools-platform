@@ -39,6 +39,7 @@ class NormalizedSiteAuditRow(BaseModel):
     url: str
     final_url: Optional[str] = None
     status_code: Optional[int] = None
+    status_line: Optional[str] = None
     response_time_ms: Optional[int] = None
     html_size_bytes: Optional[int] = None
     content_kb: Optional[float] = None
@@ -60,6 +61,9 @@ class NormalizedSiteAuditRow(BaseModel):
     description_len: Optional[int] = None
     canonical: Optional[str] = None
     canonical_status: Optional[str] = None
+    canonical_target_status: Optional[int] = None
+    canonical_target_indexable: Optional[bool] = None
+    canonical_conflict: Optional[str] = None
     meta_robots: Optional[str] = None
     x_robots_tag: Optional[str] = None
     breadcrumbs: Optional[bool] = None
@@ -68,6 +72,10 @@ class NormalizedSiteAuditRow(BaseModel):
     structured_types: List[str] = Field(default_factory=list)
     schema_count: int = 0
     hreflang_count: int = 0
+    hreflang_langs: List[str] = Field(default_factory=list)
+    hreflang_has_x_default: Optional[bool] = None
+    hreflang_targets: Dict[str, str] = Field(default_factory=dict)
+    hreflang_issues: List[str] = Field(default_factory=list)
     mobile_friendly_hint: Optional[bool] = None
     word_count: Optional[int] = None
     unique_word_count: Optional[int] = None

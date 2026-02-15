@@ -25,6 +25,7 @@ class SiteAuditProService:
         max_pages: int = 5,
         batch_mode: bool = False,
         batch_urls: Optional[List[str]] = None,
+        extended_hreflang_checks: bool = False,
         progress_callback: ProgressCallback = None,
     ) -> Dict[str, Any]:
         def notify(progress: int, message: str) -> None:
@@ -47,6 +48,7 @@ class SiteAuditProService:
             max_pages=max_pages,
             batch_mode=batch_mode,
             batch_urls=batch_urls or [],
+            extended_hreflang_checks=extended_hreflang_checks,
         )
         notify(75, "Building normalized report payload")
         public_results = self.adapter.to_public_results(normalized)
@@ -67,6 +69,7 @@ class SiteAuditProService:
             "mode": selected_mode,
             "batch_mode": bool(batch_mode),
             "batch_urls_count": len(batch_urls or []),
+            "extended_hreflang_checks": bool(extended_hreflang_checks),
             "completed_at": datetime.now(timezone.utc).isoformat(),
             "results": public_results,
             "meta": {

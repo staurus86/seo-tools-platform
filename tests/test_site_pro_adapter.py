@@ -5,10 +5,11 @@ from app.tools.site_pro.adapter import SiteAuditProAdapter
 
 
 class _MockResponse:
-    def __init__(self, url: str, status_code: int, text: str):
+    def __init__(self, url: str, status_code: int, text: str, reason: str = "OK"):
         self.url = url
         self.status_code = status_code
         self.text = text
+        self.reason = reason
 
 
 HTML_HOME = """
@@ -113,6 +114,7 @@ class SiteProAdapterTests(unittest.TestCase):
         self.assertIn("orphan_pages", pipeline["metrics"])
 
         for page in public["pages"]:
+            self.assertIn("status_line", page)
             self.assertIn("recommendation", page)
             self.assertIn("orphan_page", page)
             self.assertIn("topic_hub", page)
@@ -121,6 +123,51 @@ class SiteProAdapterTests(unittest.TestCase):
             self.assertIn("structured_data", page)
             self.assertIn("images_optimization", page)
             self.assertIn("ai_marker_sample", page)
+
+    def test_canonical_conflict_and_extended_hreflang_toggle(self):
+        adapter = SiteAuditProAdapter()
+        home = """
+<html><head>
+<title>Home</title>
+<meta name="description" content="Home description">
+<link rel="canonical" href="https://site.test/en">
+<link rel="alternate" hreflang="en" href="https://site.test/en">
+<link rel="alternate" hreflang="x-default" href="https://site.test/">
+</head>
+<body><h1>Home</h1><a href="/en">EN</a></body></html>
+"""
+        en = """
+<html><head>
+<title>EN</title>
+<meta name="robots" content="noindex">
+</head>
+<body><h1>English</h1><a href="/">Home</a></body></html>
+"""
+        by_url = {
+            "https://site.test": _MockResponse("https://site.test", 200, home),
+            "https://site.test/en": _MockResponse("https://site.test/en", 200, en),
+        }
+
+        def fake_get(url, timeout=0, allow_redirects=True):
+            key = url.rstrip("/")
+            if key == "https://site.test":
+                return by_url["https://site.test"]
+            return by_url[key]
+
+        with patch("requests.Session.get", side_effect=fake_get):
+            normalized = adapter.run(
+                "https://site.test",
+                mode="quick",
+                max_pages=5,
+                extended_hreflang_checks=True,
+            )
+            public = adapter.to_public_results(normalized)
+
+        home_row = next(p for p in public["pages"] if p["url"] == "https://site.test")
+        issue_codes = {i["code"] for i in public["issues"] if i["url"] == "https://site.test"}
+        self.assertIn("canonical_target_noindex", issue_codes)
+        self.assertIn("hreflang_extended_check", issue_codes)
+        self.assertTrue(any(str(x).startswith("missing_reciprocal:") for x in (home_row.get("hreflang_issues") or [])))
 
     def test_respects_max_pages_limit(self):
         adapter = SiteAuditProAdapter()

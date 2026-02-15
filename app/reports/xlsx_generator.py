@@ -1383,7 +1383,7 @@ class XLSXGenerator:
 
         # Sheet 3: Technical
         tech_headers = [
-            "URL", "Final URL", "Status", "Response ms", "Size KB", "HTML bytes", "DOM nodes", "Redirects",
+            "URL", "Final URL", "Status", "Status line", "Response ms", "Size KB", "HTML bytes", "DOM nodes", "Redirects",
             "HTTPS", "Compression", "Compression algo", "Cache enabled", "Cache-Control",
             "Last-Modified", "Freshness days", "HTML quality score", "Deprecated tags count",
             "Indexability reason", "Technical score", "Technical solution", "Severity",
@@ -1396,6 +1396,7 @@ class XLSXGenerator:
                 page.get("url", ""),
                 page.get("final_url", ""),
                 d.get("status_code", ""),
+                page.get("status_line", "") or "",
                 d.get("response_ms", ""),
                 d.get("content_kb", ""),
                 d.get("html_bytes", ""),
@@ -1419,8 +1420,8 @@ class XLSXGenerator:
             "3_Technical",
             tech_headers,
             tech_rows,
-            severity_idx=20,
-            widths=[50, 50, 10, 12, 10, 12, 10, 10, 8, 10, 14, 10, 22, 24, 14, 14, 12, 18, 12, 46, 10],
+            severity_idx=21,
+            widths=[50, 50, 10, 22, 12, 10, 12, 10, 10, 8, 10, 14, 10, 22, 24, 14, 14, 12, 18, 12, 46, 10],
         )
 
         # Sheet 4: Content + AI
