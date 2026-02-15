@@ -96,6 +96,7 @@ class SiteProAdapterTests(unittest.TestCase):
             self.assertIn("x_robots_tag", page)
             self.assertIn("structured_data", page)
             self.assertIn("images_optimization", page)
+            self.assertIn("ai_marker_sample", page)
 
     def test_respects_max_pages_limit(self):
         adapter = SiteAuditProAdapter()

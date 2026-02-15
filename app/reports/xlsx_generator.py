@@ -1539,7 +1539,7 @@ class XLSXGenerator:
                     page.get("url", ""),
                     ai_count,
                     ai_found_list(page),
-                    "Marker snippet not available in compact payload" if ai_count > 0 else "No text sample available",
+                    page.get("ai_marker_sample", "") or ("Marker snippet not available in compact payload" if ai_count > 0 else "No text sample available"),
                     page_solution(page) if ai_count > 0 else "No AI markers detected",
                     sev,
                 ])

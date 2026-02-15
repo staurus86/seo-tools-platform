@@ -301,19 +301,52 @@ class SiteAuditProAdapter:
                 good += 1
         return round((good / len(buttons)) * 100.0, 1)
 
-    def _h_hierarchy_summary(self, heading_distribution: Dict[str, int]) -> Tuple[str, List[str], Dict[str, Any]]:
+    def _h_hierarchy_summary(self, soup: BeautifulSoup, heading_distribution: Dict[str, int]) -> Tuple[str, List[str], Dict[str, Any]]:
         h1_count = int(heading_distribution.get("h1", 0))
         errors: List[str] = []
+        heading_sequence = [int(tag.name[1]) for tag in soup.find_all(re.compile(r"^h[1-6]$", re.I))]
         if h1_count == 0:
             errors.append("missing_h1")
         elif h1_count > 1:
             errors.append("multiple_h1")
+        if heading_sequence and heading_sequence[0] != 1:
+            errors.append("wrong_start")
+        for prev, current in zip(heading_sequence, heading_sequence[1:]):
+            if (current - prev) > 1:
+                errors.append("heading_level_skip")
+                break
         status = "valid" if not errors else "issues"
         details = {
             "total_headers": int(sum(heading_distribution.values())),
             "h1_count": h1_count,
+            "heading_sequence_preview": heading_sequence[:20],
         }
         return status, errors, details
+
+    def _ai_marker_sample(self, text: str, markers: List[str]) -> str:
+        raw = text or ""
+        if not raw or not markers:
+            return ""
+        marker = str(markers[0]).strip()
+        if not marker:
+            return ""
+        m = re.search(rf"\b{re.escape(marker)}\b", raw, flags=re.I)
+        if not m:
+            return ""
+        start = max(0, m.start() - 80)
+        end = min(len(raw), m.end() + 80)
+        snippet = raw[start:end].strip()
+        return re.sub(r"\s+", " ", snippet)
+
+    def _detect_cloaking(self, body_text: str, hidden_content: bool, hidden_nodes_count: int) -> bool:
+        if not hidden_content:
+            return False
+        total_chars = len((body_text or "").strip())
+        if total_chars <= 0:
+            return False
+        if hidden_nodes_count >= 8:
+            return True
+        return hidden_nodes_count >= 4 and total_chars < 300
 
     def _extract_anchor_data(
         self, page_url: str, soup: BeautifulSoup, base_host: str
@@ -411,14 +444,17 @@ class SiteAuditProAdapter:
                 if any(word in (tag.get_text(" ", strip=True).lower()) for word in ("buy", "order", "contact", "sign", "register"))
             ]
         )
-        hidden_content = bool(soup.select('[hidden], [style*="display:none"], [style*="visibility:hidden"]'))
+        hidden_nodes = soup.select('[hidden], [style*="display:none"], [style*="visibility:hidden"]')
+        hidden_content = bool(hidden_nodes)
+        hidden_nodes_count = len(hidden_nodes)
         deprecated_tags = sorted({t.name for t in soup.find_all(["font", "center", "marquee", "blink"])})
         semantic_tags_count = self._semantic_tags_count(soup)
         heading_distribution = self._heading_distribution(soup)
-        h_hierarchy, h_errors, h_details = self._h_hierarchy_summary(heading_distribution)
+        h_hierarchy, h_errors, h_details = self._h_hierarchy_summary(soup=soup, heading_distribution=heading_distribution)
         words = self._tokenize(body_text)
         ai_markers_count = len(self.AI_MARKER_RE.findall(body_text))
         ai_markers_list = sorted(set(self.AI_MARKER_RE.findall(body_text)))[:20]
+        ai_marker_sample = self._ai_marker_sample(body_text, ai_markers_list)
         filler_phrases = [w for w in self.FILLER_WORDS if re.search(rf"\\b{re.escape(w)}\\b", body_text.lower())][:20]
         unique_word_count = len(set(words))
         top_keywords = self._extract_top_keywords(words, top_n=10)
@@ -459,7 +495,11 @@ class SiteAuditProAdapter:
         js_count = len(soup.find_all("script"))
         js_dependence = js_count >= 8
         has_main_tag = bool(soup.find("main"))
-        cloaking_detected = False
+        cloaking_detected = self._detect_cloaking(
+            body_text=body_text,
+            hidden_content=hidden_content,
+            hidden_nodes_count=hidden_nodes_count,
+        )
         has_contact_info = self._detect_contact_info(body_text)
         has_legal_docs = self._detect_legal_docs(body_text)
         has_author_info = self._detect_author_info(soup, body_text)
@@ -588,6 +628,28 @@ class SiteAuditProAdapter:
             indexability_reason = "indexable"
 
         health_score = max(0.0, round(100.0 - penalty, 1))
+        trust_score = round(
+            min(
+                100.0,
+                5.0
+                + (20.0 if has_contact_info else 0.0)
+                + (20.0 if has_legal_docs else 0.0)
+                + (25.0 if has_reviews else 0.0)
+                + (30.0 if trust_badges else 0.0),
+            ),
+            1,
+        )
+        eeat_components = {
+            "expertise": round(min(20.0, 6.0 + (12.0 if has_author_info else 0.0)), 1),
+            "authoritativeness": round(min(30.0, 22.0 + (8.0 if has_reviews else 0.0) + (5.0 if trust_badges else 0.0)), 1),
+            "trustworthiness": round(
+                30.0 if (has_contact_info and has_legal_docs) else (15.0 if (has_contact_info or has_legal_docs) else 0.0),
+                1,
+            ),
+            "experience": round(20.0 if (len(words) >= 300 and has_author_info) else 0.0, 1),
+        }
+        eeat_score = round(min(100.0, sum(float(v) for v in eeat_components.values())), 1)
+
         row = NormalizedSiteAuditRow(
             url=source_url,
             final_url=final_url,
@@ -675,6 +737,7 @@ class SiteAuditProAdapter:
             anchor_text_quality_score=round(max(0.0, 100.0 - (((weak_anchor_count / anchor_total) * 100.0) if anchor_total else 0.0)), 1),
             ai_markers_count=ai_markers_count,
             ai_markers_list=ai_markers_list,
+            ai_marker_sample=ai_marker_sample or None,
             filler_phrases=filler_phrases,
             og_tags=og_tags,
             js_dependence=js_dependence,
@@ -685,32 +748,9 @@ class SiteAuditProAdapter:
             has_author_info=has_author_info,
             has_reviews=has_reviews,
             trust_badges=trust_badges,
-            trust_score=round(
-                min(
-                    100.0,
-                    (20.0 if has_contact_info else 0.0)
-                    + (20.0 if has_legal_docs else 0.0)
-                    + (20.0 if has_author_info else 0.0)
-                    + (20.0 if has_reviews else 0.0)
-                    + (20.0 if trust_badges else 0.0),
-                ),
-                1,
-            ),
-            eeat_components={
-                "expertise": 1.0 if has_author_info else 0.0,
-                "authoritativeness": 1.0 if (has_reviews or trust_badges) else 0.0,
-                "trustworthiness": 1.0 if (has_contact_info and has_legal_docs) else 0.0,
-                "experience": 1.0 if len(words) >= 300 else 0.0,
-            },
-            eeat_score=round(
-                (
-                    (25.0 if has_author_info else 0.0)
-                    + (25.0 if (has_reviews or trust_badges) else 0.0)
-                    + (25.0 if (has_contact_info and has_legal_docs) else 0.0)
-                    + (25.0 if len(words) >= 300 else 0.0)
-                ),
-                1,
-            ),
+            trust_score=trust_score,
+            eeat_components=eeat_components,
+            eeat_score=eeat_score,
             compression=compression_enabled,
             all_issues=[i.code for i in issues],
             issues=issues,
