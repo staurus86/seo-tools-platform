@@ -1374,8 +1374,8 @@ class XLSXGenerator:
 
             # Compatibility pack: legacy seopro workbook-equivalent views.
             main_compat_headers = [
-                "URL", "Title", "Meta", "H1", "Toxicity", "Hierarchy", "Health", "HTTP",
-                "Indexable", "Canonical", "Resp ms", "Problems", "Solution", "Severity",
+                "URL", "Title", "Meta", "H1", "Токсичность", "Иерархия", "Health", "HTTP",
+                "Indexable", "Canonical", "Resp ms", "Проблемы", "Solution", "Severity",
             ]
             main_compat_rows = []
             for page in pages:
@@ -1402,7 +1402,7 @@ class XLSXGenerator:
                 ])
             fill_sheet("13_MainReport_Compat", main_compat_headers, main_compat_rows, severity_idx=13, widths=[52, 24, 24, 20, 10, 16, 10, 8, 10, 12, 10, 52, 62, 10])
 
-            hierarchy_compat_headers = ["URL", "Status", "Problem", "Total headers", "H1 Count", "Solution", "Severity"]
+            hierarchy_compat_headers = ["URL", "Статус", "Проблема", "Всего заголовков", "H1 Count", "Решение", "Severity"]
             hierarchy_compat_rows = []
             for page in pages:
                 sev = infer_page_severity(page)

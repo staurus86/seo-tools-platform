@@ -194,38 +194,28 @@ class SiteProXlsxLayoutTests(unittest.TestCase):
             for sheet_name in compat_sheets:
                 self.assertIn(sheet_name, wb.sheetnames)
 
-            main_headers = [cell.value for cell in wb["13_MainReport_Compat"][1] if cell.value]
-            self.assertEqual(
-                main_headers,
-                [
-                    "URL",
-                    "Title",
-                    "Meta",
-                    "H1",
-                    "Toxicity",
-                    "Hierarchy",
-                    "Health",
-                    "HTTP",
-                    "Indexable",
-                    "Canonical",
-                    "Resp ms",
-                    "Problems",
-                    "Solution",
-                    "Severity",
-                ],
-            )
-            ai_headers = [cell.value for cell in wb["29_AIMarkers_Compat"][1] if cell.value]
-            self.assertEqual(
-                ai_headers,
-                [
-                    "URL",
-                    "AI Markers Count",
-                    "AI Markers Found",
-                    "Text Sample with Markers",
-                    "Recommendation",
-                    "Severity",
-                ],
-            )
+            expected_headers = {
+                "13_MainReport_Compat": ["URL", "Title", "Meta", "H1", "Токсичность", "Иерархия", "Health", "HTTP", "Indexable", "Canonical", "Resp ms", "Проблемы", "Solution", "Severity"],
+                "14_Hierarchy_Compat": ["URL", "Статус", "Проблема", "Всего заголовков", "H1 Count", "Решение", "Severity"],
+                "15_OnPage_Compat": ["URL", "Title Len", "Meta Len", "H1", "Canonical", "Canonical Status", "Mobile", "Schema", "Breadcrumbs", "Title Dup", "Meta Dup", "Solution", "Severity"],
+                "16_Content_Compat": ["URL", "Words", "Unique %", "Readability", "Toxicity", "AI Markers", "AI Markers List", "Filler", "Solution", "Severity"],
+                "17_Technical_Compat": ["URL", "Status", "Indexable", "Resp ms", "Size KB", "DOM", "HTML Score", "HTTPS", "Compression", "Cache", "Canonical", "Robots", "Deprecated", "Solution", "Severity"],
+                "18_EEAT_Compat": ["URL", "Score", "Expertise", "Authority", "Trust", "Experience", "Solution", "Severity"],
+                "19_Trust_Compat": ["URL", "Trust Score", "Contact", "Legal", "Reviews", "Badges", "Solution", "Severity"],
+                "20_Health_Compat": ["URL", "Health Score", "Indexable", "Words", "Unique %", "Readability", "Title Dup", "Meta Dup", "Resp ms", "Solution", "Severity"],
+                "21_InternalLinks_Compat": ["URL", "Authority", "Incoming", "Outgoing", "Is Orphan", "Solution", "Severity"],
+                "22_Images_Compat": ["URL", "Total", "No Alt", "No Width", "No Lazy", "Issues", "Solution", "Severity"],
+                "23_ExternalLinks_Compat": ["URL", "Total External", "Follow", "NoFollow", "Follow %", "Solution", "Severity"],
+                "24_Structured_Compat": ["URL", "Total", "JSON-LD", "Microdata", "RDFa", "Hreflang", "Meta Robots", "Solution", "Severity"],
+                "25_KeywordsTFIDF_Compat": ["URL", "Top Keywords", "TF-IDF 1", "TF-IDF 2", "TF-IDF 3", "Solution", "Severity"],
+                "26_Topics_Compat": ["URL", "Is Hub", "Cluster", "Incoming Links", "Semantic Links", "Solution", "Severity"],
+                "27_Advanced_Compat": ["URL", "Freshness Days", "Last Modified", "Status", "Indexable", "Resp ms", "Size KB", "Redirects", "Final URL", "Hidden Content", "Cloaking", "CTA Count", "List/Tables", "Solution", "Severity"],
+                "28_LinkQuality_Compat": ["URL", "Linking Score", "Page Authority", "Anchor Score", "Incoming Links", "Outgoing Internal", "Orphan", "Topic Hub", "Solution", "Severity"],
+                "29_AIMarkers_Compat": ["URL", "AI Markers Count", "AI Markers Found", "Text Sample with Markers", "Recommendation", "Severity"],
+            }
+            for sheet_name, headers_expected in expected_headers.items():
+                actual = [cell.value for cell in wb[sheet_name][1] if cell.value]
+                self.assertEqual(actual, headers_expected)
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
