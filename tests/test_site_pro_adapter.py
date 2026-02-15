@@ -83,6 +83,17 @@ class SiteProAdapterTests(unittest.TestCase):
         self.assertGreaterEqual(count, 4)
         self.assertTrue(any(m == "\u043a\u0430\u043a \u0438\u0437\u0432\u0435\u0441\u0442\u043d\u043e" for m in markers))
 
+    def test_detect_ai_markers_modern_llm_phrases(self):
+        adapter = SiteAuditProAdapter()
+        text = (
+            "In this comprehensive guide, it is important to note that "
+            "as an AI language model, I hope this helps. "
+            "Feel free to ask for a step-by-step guide."
+        )
+        count, markers = adapter._detect_ai_markers(text)
+        self.assertGreaterEqual(count, 4)
+        self.assertTrue(any(m == "as an ai language model" for m in markers))
+
     def test_pipeline_and_duplicates(self):
         public = build_mock_public_result()
 
