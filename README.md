@@ -163,20 +163,35 @@ MIT License
 
 ## Encoding Guard (required)
 
-Run this before commit to prevent mojibake in UI/results:
+Enable automatic pre-commit encoding checks (one-time setup):
 
 ```bash
-python scripts/encoding_guard.py check --root app --ext .py .html .js
+python scripts/install_git_hooks.py
+```
+
+For Windows, this enables `.githooks/pre-commit.cmd`.
+
+Manual full-platform check (same as hook):
+
+```bash
+python scripts/encoding_guard.py check --root app --ext .py .html .js .md .txt .json .yml .yaml
+python scripts/encoding_guard.py check --root scripts --ext .py .html .js .md .txt .json .yml .yaml
+python scripts/encoding_guard.py check --root tests --ext .py .html .js .md .txt .json .yml .yaml
+python scripts/encoding_guard.py check --root "Py scripts" --ext .py .html .js .md .txt .json .yml .yaml
 ```
 
 If issues are found:
 
 ```bash
-python scripts/encoding_guard.py fix --root app --ext .py .html .js
+python scripts/encoding_guard.py fix --root app --ext .py .html .js .md .txt .json .yml .yaml
+python scripts/encoding_guard.py fix --root scripts --ext .py .html .js .md .txt .json .yml .yaml
+python scripts/encoding_guard.py fix --root tests --ext .py .html .js .md .txt .json .yml .yaml
+python scripts/encoding_guard.py fix --root "Py scripts" --ext .py .html .js .md .txt .json .yml .yaml
 ```
 
 Validation tests:
 
 ```bash
 python -m unittest tests/test_encoding_guard.py tests/test_site_pro_adapter.py tests/test_site_pro_baseline_diff.py
+python scripts/site_pro_preflight.py
 ```
