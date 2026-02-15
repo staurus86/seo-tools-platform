@@ -1149,6 +1149,8 @@ class XLSXGenerator:
             return severity
 
         def derive_page_metrics(page: Dict[str, Any]) -> Dict[str, Any]:
+            # Local import keeps entropy math robust even if runtime loads stale globals.
+            import math as _math
             title = str(page.get("title") or "")
             meta_description = str(page.get("meta_description") or "")
             title_len = int(page.get("title_len") or len(title))
@@ -1235,7 +1237,11 @@ class XLSXGenerator:
             for v in density_values:
                 p = v / density_sum if density_sum > 0 else 0.0
                 if p > 0:
-                    keyword_entropy -= p * math.log(p, 2)
+                    try:
+                        keyword_entropy -= p * _math.log(p, 2)
+                    except Exception:
+                        # Safe fallback: skip malformed contribution instead of failing XLSX export.
+                        continue
             keyword_entropy = round(keyword_entropy, 3)
             keyword_score = 100.0
             keyword_score -= min(55.0, keyword_stuffing)
