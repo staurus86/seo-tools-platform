@@ -233,7 +233,7 @@ function generateTextReport() {
     report += 'SEO Оценка: ' + (r.quality_score ?? 'н/д') + ' (' + (r.quality_grade || 'н/д') + ')\n';
     report += 'Готовность к продакшену: ' + (r.production_ready ? 'Да' : 'Нет') + '\n';
     report += 'Размер файла: ' + (r.content_length || 0) + ' байт\n';
-    report += 'РЎС‚СЂРѕРє: ' + (r.lines_count || 0) + '\n\n';
+    report += 'РЎС‚рок: ' + (r.lines_count || 0) + '\n\n';
     
     const issues = r.issues || [];
     if (issues.length > 0) {
@@ -910,7 +910,7 @@ function generateRobotsHTML(data) {
                     </div>
                     <div class="text-center p-3 bg-gray-50 rounded-lg">
                         <div class="text-2xl font-bold text-gray-600">${r.lines_count || 0}</div>
-                        <div class="text-xs text-gray-500">РЎС‚СЂРѕРє</div>
+                        <div class="text-xs text-gray-500">РЎС‚рок</div>
                     </div>
                 </div>
                 
@@ -1189,7 +1189,7 @@ function generateBotHTML(result) {
         ? categoryStats.map(c => `
             <div class="flex justify-between items-center py-2 border-b text-sm">
                 <span class="font-medium">${c.category}</span>
-                <span class="text-gray-700">${c.accessible}/${c.total} РґРѕСЃС‚СѓРїРЅРѕ</span>
+                <span class="text-gray-700">${c.accessible}/${c.total} РґРѕСЃС‚упно</span>
             </div>
         `).join('')
         : '<div class="text-sm text-gray-500">Нет данных по категориям</div>';
@@ -1223,7 +1223,7 @@ function generateBotHTML(result) {
             <div class="grid grid-cols-2 gap-4 text-sm mb-4">
                 <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
                 <div><span class="text-gray-600">Проверено ботов:</span> <span class="font-medium">${(r.bots_checked || []).length}</span></div>
-                ${summary.total ? `<div><span class="text-gray-600">Р”РѕСЃС‚СѓРїРЅРѕ:</span> <span class="font-medium">${summary.accessible || 0}/${summary.total}</span></div>` : ''}
+                ${summary.total ? `<div><span class="text-gray-600">Р”РѕСЃС‚упно:</span> <span class="font-medium">${summary.accessible || 0}/${summary.total}</span></div>` : ''}
                 ${summary.avg_response_time_ms ? `<div><span class="text-gray-600">Средний ответ:</span> <span class="font-medium">${summary.avg_response_time_ms} мс</span></div>` : ''}
             </div>
             <div class="border-t pt-4">

@@ -1,5 +1,5 @@
 """
-Excel РіРµРЅРµСЂР°С‚РѕСЂ РѕС‚С‡РµС‚РѕРІ
+Excel РіРµРЅРµСЂР°С‚ор РѕС‚С‡РµС‚ов
 """
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -110,7 +110,7 @@ class XLSXGenerator:
         ws.title = "РђРЅР°Р»РёР· СЃР°Р№С‚Р°"
         
         # Header
-        ws['A1'] = 'РћС‚С‡РµС‚ РїРѕ SEO-Р°РЅР°Р»РёР·Сѓ СЃР°Р№С‚Р°'
+        ws['A1'] = 'РћС‚С‡РµС‚ по SEO-Р°РЅР°Р»РёР·Сѓ СЃР°Р№С‚Р°'
         ws['A1'].font = Font(bold=True, size=16)
         ws.merge_cells('A1:D1')
         
@@ -130,15 +130,15 @@ class XLSXGenerator:
         row = 8
         
         # Headers
-        headers = ['РџРѕРєР°Р·Р°С‚РµР»СЊ', 'Р—РЅР°С‡РµРЅРёРµ', 'РЎС‚Р°С‚СѓСЃ']
+        headers = ['РџРѕРєР°Р·Р°С‚РµР»СЊ', 'Р—РЅР°С‡РµРЅРёРµ', 'РЎС‚Р°С‚ус']
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=row, column=col, value=header)
             self._apply_style(cell, self._create_header_style())
         
         # Sample data (will be replaced with real data from tools)
         sample_data = [
-            ['Р’СЃРµРіРѕ СЃС‚СЂР°РЅРёС†', results.get('total_pages', 0), 'OK'],
-            ['РЎС‚Р°С‚СѓСЃ', results.get('status', 'н/д'), 'OK'],
+            ['Р’СЃРµго СЃС‚СЂР°РЅРёС†', results.get('total_pages', 0), 'OK'],
+            ['РЎС‚Р°С‚ус', results.get('status', 'н/д'), 'OK'],
             ['РЎРІРѕРґРєР°', results.get('summary', 'н/д'), 'OK']
         ]
         
@@ -163,7 +163,7 @@ class XLSXGenerator:
         ws = wb.active
         ws.title = "РџСЂРѕРІРµСЂРєР° Robots"
         
-        ws['A1'] = 'РћС‚С‡РµС‚ РїРѕ robots.txt'
+        ws['A1'] = 'РћС‚С‡РµС‚ по robots.txt'
         ws['A1'].font = Font(bold=True, size=16)
         ws.merge_cells('A1:D1')
         
@@ -188,17 +188,17 @@ class XLSXGenerator:
 
         ws = wb.active
         ws.title = "РЎРІРѕРґРєР°"
-        ws['A1'] = 'РћС‚С‡РµС‚ РїРѕ РІР°Р»РёРґР°С†РёРё sitemap'
+        ws['A1'] = 'РћС‚С‡РµС‚ по РІР°Р»РёРґР°С†РёРё sitemap'
         ws['A1'].font = Font(bold=True, size=16)
         ws.merge_cells('A1:E1')
 
         summary_rows = [
             ("URL", report_url),
             ("Р’Р°Р»РёРґРµРЅ", "Р”Р°" if results.get("valid") else "РќРµС‚"),
-            ("HTTP СЃС‚Р°С‚СѓСЃ", results.get("status_code", "н/д")),
+            ("HTTP СЃС‚Р°С‚ус", results.get("status_code", "н/д")),
             ("РџСЂРѕРІРµСЂРµРЅРѕ sitemap", results.get("sitemaps_scanned", 0)),
             ("Р’Р°Р»РёРґРЅС‹С… sitemap", results.get("sitemaps_valid", 0)),
-            ("Р’СЃРµРіРѕ URL", results.get("urls_count", 0)),
+            ("Р’СЃРµго URL", results.get("urls_count", 0)),
             ("РЈРЅРёРєР°Р»СЊРЅС‹С… URL", results.get("unique_urls_count", 0)),
             ("Р”СѓР±Р»Рё URL", results.get("duplicate_urls_count", 0)),
             ("РќРµРєРѕСЂСЂРµРєС‚РЅС‹Рµ URL", results.get("invalid_urls_count", 0)),
@@ -520,15 +520,15 @@ class XLSXGenerator:
 
         rows = [
             ("URL", data.get("url", "н/д")),
-            ("Р”РІРёР¶РѕРє", results.get("engine", "legacy")),
+            ("Р”РІРёР¶ок", results.get("engine", "legacy")),
             ("Р РµР¶РёРј", results.get("mode", "full")),
             ("РћС†РµРЅРєР°", results.get("score", 0)),
             ("Мобильная совместимость", "Р”Р°" if results.get("mobile_friendly") else "РќРµС‚"),
             ("РЈСЃС‚СЂРѕР№СЃС‚РІ", summary.get("total_devices", len(results.get("devices_tested", [])))),
             ("Р‘РµР· РєСЂРёС‚РёС‡РЅС‹С… РїСЂРѕР±Р»РµРј", summary.get("mobile_friendly_devices", 0)),
             ("РЎ РїСЂРѕР±Р»РµРјР°РјРё", summary.get("non_friendly_devices", 0)),
-            ("РЎСЂРµРґРЅСЏСЏ Р·Р°РіСЂСѓР·РєР° (РјСЃ)", summary.get("avg_load_time_ms", 0)),
-            ("РљРѕР»РёС‡РµСЃС‚РІРѕ РїСЂРѕР±Р»РµРј", results.get("issues_count", 0)),
+            ("РЎСЂРµРґРЅяя Р·Р°РіСЂСѓР·РєР° (мс)", summary.get("avg_load_time_ms", 0)),
+            ("РљРѕР»РёС‡РµСЃС‚во РїСЂРѕР±Р»РµРј", results.get("issues_count", 0)),
             ("РљСЂРёС‚РёС‡РЅС‹С…", summary.get("critical_issues", 0)),
             ("РџСЂРµРґСѓРїСЂРµР¶РґРµРЅРёР№", summary.get("warning_issues", 0)),
             ("РРЅС„Рѕ", summary.get("info_issues", 0)),
@@ -542,7 +542,7 @@ class XLSXGenerator:
         ws.column_dimensions["B"].width = 80
 
         dws = wb.create_sheet("РЈСЃС‚СЂРѕР№СЃС‚РІР°")
-        headers = ["РЈСЃС‚СЂРѕР№СЃС‚РІРѕ", "РўРёРї", "HTTP", "РњРѕР±РёР»СЊРЅРѕ-РґСЂСѓР¶РµР»СЋР±РЅРѕ", "РџСЂРѕР±Р»РµРј", "Р—Р°РіСЂСѓР·РєР° (РјСЃ)", "РЎРєСЂРёРЅС€РѕС‚", "РЎРµСЂСЊРµР·РЅРѕСЃС‚СЊ"]
+        headers = ["РЈСЃС‚СЂРѕР№СЃС‚во", "РўРёРї", "HTTP", "РњРѕР±РёР»СЊРЅРѕ-РґСЂСѓР¶РµР»СЋР±РЅРѕ", "РџСЂРѕР±Р»РµРј", "Р—Р°РіСЂСѓР·РєР° (мс)", "РЎРєСЂРёРЅС€РѕС‚", "РЎРµСЂСЊРµР·РЅРѕСЃС‚СЊ"]
         for col, header in enumerate(headers, 1):
             self._apply_style(dws.cell(row=1, column=col, value=header), header_style)
 
@@ -574,7 +574,7 @@ class XLSXGenerator:
             dws.column_dimensions[get_column_letter(col)].width = width
 
         iws = wb.create_sheet("РџСЂРѕР±Р»РµРјС‹")
-        issue_headers = ["РЎРµСЂСЊРµР·РЅРѕСЃС‚СЊ", "РЈСЃС‚СЂРѕР№СЃС‚РІРѕ", "РљРѕРґ", "РџСЂРѕР±Р»РµРјР°", "Р”РµС‚Р°Р»Рё"]
+        issue_headers = ["РЎРµСЂСЊРµР·РЅРѕСЃС‚СЊ", "РЈСЃС‚СЂРѕР№СЃС‚во", "Код", "РџСЂРѕР±Р»РµРјР°", "Р”РµС‚Р°Р»Рё"]
         for col, header in enumerate(issue_headers, 1):
             self._apply_style(iws.cell(row=1, column=col, value=header), header_style)
         for row_idx, issue in enumerate(issues, start=2):
@@ -603,7 +603,7 @@ class XLSXGenerator:
         rws.freeze_panes = "A2"
 
         sws = wb.create_sheet("РЎРєСЂРёРЅС€РѕС‚С‹")
-        shot_headers = ["РЈСЃС‚СЂРѕР№СЃС‚РІРѕ", "РРјСЏ СЃРєСЂРёРЅС€РѕС‚Р°", "РџСѓС‚СЊ", "URL"]
+        shot_headers = ["РЈСЃС‚СЂРѕР№СЃС‚во", "Рмя СЃРєСЂРёРЅС€РѕС‚Р°", "РџСѓС‚СЊ", "URL"]
         for col, header in enumerate(shot_headers, 1):
             self._apply_style(sws.cell(row=1, column=col, value=header), header_style)
         for row_idx, d in enumerate(devices, start=2):
@@ -635,23 +635,23 @@ class XLSXGenerator:
 
         ws = wb.active
         ws.title = "РЎРІРѕРґРєР°"
-        ws["A1"] = "РћС‚С‡РµС‚ РїРѕ РґРѕСЃС‚СѓРїРЅРѕСЃС‚Рё Р±РѕС‚РѕРІ"
+        ws["A1"] = "РћС‚С‡РµС‚ по РґРѕСЃС‚СѓРїРЅРѕСЃС‚Рё Р±РѕС‚ов"
         ws["A1"].font = Font(bold=True, size=16)
         ws.merge_cells("A1:E1")
 
         summary_rows = [
             ("URL", report_url),
-            ("Р”РІРёР¶РѕРє", results.get("engine", "legacy")),
+            ("Р”РІРёР¶ок", results.get("engine", "legacy")),
             ("Р”РѕРјРµРЅ", results.get("domain", "")),
-            ("РџСЂРѕРІРµСЂРµРЅРѕ Р±РѕС‚РѕРІ", len(results.get("bots_checked", []) or list(bot_results.keys()))),
-            ("Р”РѕСЃС‚СѓРїРЅРѕ", summary.get("accessible", 0)),
-            ("РќРµРґРѕСЃС‚СѓРїРЅРѕ", summary.get("unavailable", 0)),
-            ("РЎ РєРѕРЅС‚РµРЅС‚РѕРј", summary.get("with_content", 0)),
+            ("РџСЂРѕРІРµСЂРµРЅРѕ Р±РѕС‚ов", len(results.get("bots_checked", []) or list(bot_results.keys()))),
+            ("Р”РѕСЃС‚упно", summary.get("accessible", 0)),
+            ("РќРµРґРѕСЃС‚упно", summary.get("unavailable", 0)),
+            ("РЎ РєРѕРЅС‚РµРЅС‚ом", summary.get("with_content", 0)),
             ("Р‘РµР· РєРѕРЅС‚РµРЅС‚Р°", summary.get("without_content", 0)),
             ("Р—Р°РїСЂРµС‰РµРЅРѕ robots", summary.get("robots_disallowed", 0)),
             ("Р—Р°РїСЂРµС‚ X-Robots", summary.get("x_robots_forbidden", 0)),
             ("Р—Р°РїСЂРµС‚ Meta Robots", summary.get("meta_forbidden", 0)),
-            ("РЎСЂРµРґРЅРёР№ РѕС‚РІРµС‚ (РјСЃ)", summary.get("avg_response_time_ms", "")),
+            ("РЎСЂРµРґРЅРёР№ РѕС‚РІРµС‚ (мс)", summary.get("avg_response_time_ms", "")),
         ]
         row = 3
         for key, value in summary_rows:
@@ -661,7 +661,7 @@ class XLSXGenerator:
         ws.column_dimensions["A"].width = 30
         ws.column_dimensions["B"].width = 90
 
-        results_ws = wb.create_sheet("Р РµР·СѓР»СЊС‚Р°С‚С‹ Р±РѕС‚РѕРІ")
+        results_ws = wb.create_sheet("Р РµР·СѓР»СЊС‚Р°С‚С‹ Р±РѕС‚ов")
         result_headers = [
             "Р‘РѕС‚",
             "РљР°С‚РµРіРѕСЂРёСЏ",
@@ -673,7 +673,7 @@ class XLSXGenerator:
             "Р—Р°РїСЂРµС‚ X-Robots",
             "Meta Robots",
             "Р—Р°РїСЂРµС‚ Meta",
-            "РћС‚РІРµС‚ (РјСЃ)",
+            "РћС‚РІРµС‚ (мс)",
             "Р¤РёРЅР°Р»СЊРЅС‹Р№ URL",
             "РћС€РёР±РєР°",
             "РЎРµСЂСЊРµР·РЅРѕСЃС‚СЊ",
@@ -736,7 +736,7 @@ class XLSXGenerator:
             results_ws.column_dimensions[get_column_letter(col)].width = width
 
         categories_ws = wb.create_sheet("Categories")
-        category_headers = ["РљР°С‚РµРіРѕСЂРёСЏ", "Р’СЃРµРіРѕ", "Р”РѕСЃС‚СѓРїРЅРѕ", "РЎ РєРѕРЅС‚РµРЅС‚РѕРј", "РћРіСЂР°РЅРёС‡РёРІР°СЋС‰РёРµ РґРёСЂРµРєС‚РёРІС‹", "РЎРµСЂСЊРµР·РЅРѕСЃС‚СЊ"]
+        category_headers = ["РљР°С‚РµРіРѕСЂРёСЏ", "Р’СЃРµго", "Р”РѕСЃС‚упно", "РЎ РєРѕРЅС‚РµРЅС‚ом", "РћРіСЂР°РЅРёС‡РёРІР°СЋС‰РёРµ РґРёСЂРµРєС‚РёРІС‹", "РЎРµСЂСЊРµР·РЅРѕСЃС‚СЊ"]
         for col, header in enumerate(category_headers, 1):
             self._apply_style(categories_ws.cell(row=1, column=col, value=header), header_style)
         for row_idx, item in enumerate(category_stats, start=2):
@@ -762,7 +762,7 @@ class XLSXGenerator:
             categories_ws.column_dimensions[get_column_letter(col)].width = width
 
         issues_ws = wb.create_sheet("РџСЂРѕР±Р»РµРјС‹")
-        issue_headers = ["РЎРµСЂСЊРµР·РЅРѕСЃС‚СЊ", "Р‘РѕС‚", "РљР°С‚РµРіРѕСЂРёСЏ", "Р—Р°РіРѕР»РѕРІРѕРє", "Р”РµС‚Р°Р»Рё"]
+        issue_headers = ["РЎРµСЂСЊРµР·РЅРѕСЃС‚СЊ", "Р‘РѕС‚", "РљР°С‚РµРіРѕСЂРёСЏ", "Р—Р°РіРѕР»овок", "Р”РµС‚Р°Р»Рё"]
         for col, header in enumerate(issue_headers, 1):
             self._apply_style(issues_ws.cell(row=1, column=col, value=header), header_style)
         for row_idx, item in enumerate(issues, start=2):

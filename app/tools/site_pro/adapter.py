@@ -280,8 +280,8 @@ class SiteAuditProAdapter:
                     final_url, response.status_code, response.text or "", base_host
                 )
                 rows.append(row)
-                if title:
-                    normalized_title = title.strip().lower()
+                if row.title:
+                    normalized_title = row.title.strip().lower()
                     titles_by_url[row.url] = normalized_title
                     title_counter[normalized_title] += 1
                 if row.meta_description:
