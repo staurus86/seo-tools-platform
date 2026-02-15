@@ -1507,6 +1507,35 @@ class XLSXGenerator:
                 return "Dev+Infra"
             return "SEO"
 
+        def root_cause_cluster(code: str) -> str:
+            code_l = str(code).lower()
+            if any(x in code_l for x in ("title", "meta", "h1", "keyword", "content", "duplicate", "ai_")):
+                return "Content model"
+            if any(x in code_l for x in ("canonical", "index", "robots", "http_status", "redirect", "crawl_budget")):
+                return "Indexing flow"
+            if any(x in code_l for x in ("schema", "structured", "hreflang")):
+                return "Structured data"
+            if any(x in code_l for x in ("security", "https", "cache", "compression", "mixed_content")):
+                return "Platform infra"
+            if any(x in code_l for x in ("image", "alt", "webp", "avif")):
+                return "Media pipeline"
+            return "General SEO"
+
+        def dependency_codes_for(code: str) -> str:
+            code_l = str(code).lower()
+            deps: List[str] = []
+            if any(x in code_l for x in ("meta", "title", "h1", "canonical", "robots")):
+                deps.append("template_render")
+            if any(x in code_l for x in ("schema", "structured")):
+                deps.append("structured_template")
+            if any(x in code_l for x in ("http_status", "redirect", "https", "security", "cache", "compression")):
+                deps.append("server_config")
+            if any(x in code_l for x in ("image", "alt", "webp", "avif")):
+                deps.append("media_cdn")
+            if any(x in code_l for x in ("crawl_budget", "index", "canonical")):
+                deps.append("crawl_policy")
+            return ", ".join(deps[:4]) if deps else "none"
+
         # Sheet 1: Executive summary + formula-based issue rates
         ws = wb.active
         ws.title = "1_Executive"
@@ -1569,7 +1598,8 @@ class XLSXGenerator:
         ws["E24"] = "Issue load"
         ws["F24"] = "Avg score"
         ws["G24"] = "Health index"
-        for col in ["A", "B", "C", "D", "E", "F", "G"]:
+        ws["H24"] = "Impact weight"
+        for col in ["A", "B", "C", "D", "E", "F", "G", "H"]:
             ws[f"{col}24"].font = Font(bold=True)
 
         ws.column_dimensions["A"].width = 26
@@ -1579,6 +1609,7 @@ class XLSXGenerator:
         ws.column_dimensions["E"].width = 12
         ws.column_dimensions["F"].width = 12
         ws.column_dimensions["G"].width = 14
+        ws.column_dimensions["H"].width = 14
         ws.column_dimensions["I"].width = 56
         ws.column_dimensions["J"].width = 14
         ws.column_dimensions["K"].width = 14
@@ -2942,7 +2973,8 @@ class XLSXGenerator:
 
             action_plan_headers = [
                 "Priority", "Issue code", "Top severity", "Affected pages", "Share %", "Critical", "Warning", "Info",
-                "Impact score", "Effort", "ETA", "Owner hint", "Expected lift", "Dependency", "Batch fix potential", "ROI score", "Sprint bucket", "Representative URLs", "Recommendation",
+                "Impact score", "Effort", "ETA", "Owner hint", "Expected lift", "Root cause cluster", "Depends on codes",
+                "Dependency", "Batch fix potential", "ROI score", "Sprint bucket", "Representative URLs", "Recommendation",
             ]
             grouped: Dict[str, Dict[str, Any]] = {}
             for issue in issues:
@@ -2993,6 +3025,8 @@ class XLSXGenerator:
                     expected_lift = "Low"
                 eta = "1-3d" if impact_score >= 40 else ("3-7d" if impact_score >= 15 else "backlog")
                 owner_hint = owner_hint_by_code(code)
+                cause_cluster = root_cause_cluster(code)
+                depends_on_codes = dependency_codes_for(code)
                 dependency = "Dev deploy" if owner_hint in ("SEO+Dev", "Dev+Infra") else "Content approval"
                 batch_fix_potential = "✅" if any(x in str(code).lower() for x in ("template", "title", "meta", "schema", "canonical", "robots")) else "❌"
                 effort_weight = 1.3 if effort_map.get(top_severity, "S") == "M" else 1.0
@@ -3020,6 +3054,8 @@ class XLSXGenerator:
                         eta,
                         owner_hint,
                         expected_lift,
+                        cause_cluster,
+                        depends_on_codes,
                         dependency,
                         batch_fix_potential,
                         roi_score,
@@ -3036,23 +3072,48 @@ class XLSXGenerator:
                 action_plan_headers,
                 action_rows,
                 severity_idx=2,
-                widths=[10, 26, 12, 14, 10, 10, 10, 10, 12, 10, 10, 14, 12, 16, 14, 10, 12, 52, 58],
+                widths=[10, 26, 12, 14, 10, 10, 10, 10, 12, 10, 10, 14, 12, 16, 22, 16, 14, 10, 12, 52, 58],
                 score_idx=8,
             )
 
         matrix_start = 25
         health_values: List[float] = []
+        weighted_health_sum = 0.0
+        total_weight = 0.0
+        sheet_impact_weights = {
+            "2_OnPage+Structured": 1.10,
+            "3_Technical": 1.25,
+            "4_Content+AI": 1.15,
+            "5_LinkGraph": 1.00,
+            "6_Images+External": 0.95,
+            "7_HierarchyErrors": 1.00,
+            "8_Keywords": 1.05,
+            "8b_Keywords_Summary": 0.85,
+            "8c_Keywords_Insights": 0.95,
+            "9_Indexability": 1.20,
+            "10_StructuredData": 1.05,
+            "11_Trust_EEAT": 0.90,
+            "12_Topics_Semantics": 0.95,
+            "13_AI_Markers": 0.90,
+            "CrawlBudget": 1.05,
+            "14_Issues_Raw": 1.00,
+            "15_ActionPlan": 1.00,
+        }
         for idx, stat in enumerate(sheet_stats, start=matrix_start):
             critical = int(stat.get("critical", 0))
             warning = int(stat.get("warning", 0))
             info = int(stat.get("info", 0))
             avg_score = stat.get("avg_score", "")
+            impact_weight = float(sheet_impact_weights.get(str(stat.get("sheet", "")), 1.0))
             issue_load = round(((critical * 3.0) + (warning * 2.0) + info) / float(total_pages), 2)
+            weighted_issue_load = issue_load * impact_weight
             if avg_score == "":
-                health = round(max(0.0, 100.0 - (issue_load * 10.0)), 1)
+                health = round(max(0.0, 100.0 - (weighted_issue_load * 10.0)), 1)
             else:
-                health = round(max(0.0, min(100.0, 100.0 - (issue_load * 10.0) + ((float(avg_score) - 50.0) / 2.0))), 1)
+                health = round(max(0.0, min(100.0, 100.0 - (weighted_issue_load * 10.0) + ((float(avg_score) - 50.0) / 2.2))), 1)
             health_values.append(health)
+            weighted_health_sum += health * impact_weight
+            total_weight += impact_weight
             ws.cell(row=idx, column=1, value=self._sanitize_cell_value(stat.get("sheet", "")))
             ws.cell(row=idx, column=2, value=critical)
             ws.cell(row=idx, column=3, value=warning)
@@ -3060,17 +3121,19 @@ class XLSXGenerator:
             ws.cell(row=idx, column=5, value=issue_load)
             ws.cell(row=idx, column=6, value=avg_score)
             ws.cell(row=idx, column=7, value=health)
-            for col in range(1, 8):
+            ws.cell(row=idx, column=8, value=impact_weight)
+            for col in range(1, 9):
                 self._apply_style(ws.cell(row=idx, column=col), cell_style)
             if critical > 0:
-                self._apply_row_severity_fill(ws, idx, 1, 7, "critical")
+                self._apply_row_severity_fill(ws, idx, 1, 8, "critical")
         ws["A22"] = "Platform Health Index"
-        ws["B22"] = round(sum(health_values) / len(health_values), 1) if health_values else ""
+        ws["B22"] = round(weighted_health_sum / max(1.0, total_weight), 1) if health_values else ""
         ws["A22"].font = Font(bold=True)
         ws["B22"].font = Font(bold=True)
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         wb.save(filepath)
+        wb.close()
         return filepath
 
     def generate_report(self, task_id: str, task_type: str, data: Dict[str, Any]) -> str:
