@@ -974,6 +974,45 @@ class XLSXGenerator:
             ])
         fill_sheet("8_Keywords", keyword_headers, keyword_rows, severity_idx=5, widths=[65, 18, 60, 10, 12, 10])
 
+        # Optional full-mode deep sheets.
+        if str(mode).lower() == "full":
+            # Sheet 9: Semantic suggestions
+            semantic_headers = ["Source URL", "Target URL", "Topic", "Reason"]
+            semantic_rows = []
+            for row in (pipeline.get("semantic_linking_map") or []):
+                semantic_rows.append([
+                    row.get("source_url", ""),
+                    row.get("target_url", ""),
+                    row.get("topic", ""),
+                    row.get("reason", ""),
+                ])
+            fill_sheet("9_SemanticMap", semantic_headers, semantic_rows, widths=[60, 60, 18, 40])
+
+            # Sheet 10: Duplicate groups
+            dup_headers = ["Type", "Value", "URLs count", "Sample URLs"]
+            dup_rows = []
+            duplicates = pipeline.get("duplicates") or {}
+            for row in duplicates.get("title_groups") or []:
+                urls = row.get("urls") or []
+                dup_rows.append(["title", row.get("value", ""), len(urls), ", ".join(urls[:5])])
+            for row in duplicates.get("description_groups") or []:
+                urls = row.get("urls") or []
+                dup_rows.append(["description", row.get("value", ""), len(urls), ", ".join(urls[:5])])
+            fill_sheet("10_DuplicatesDeep", dup_headers, dup_rows, widths=[14, 60, 12, 80])
+
+            # Sheet 11: Raw issues per page
+            issue_headers = ["Severity", "URL", "Code", "Title", "Details"]
+            issue_rows = []
+            for issue in issues:
+                issue_rows.append([
+                    (issue.get("severity") or "info").lower(),
+                    issue.get("url", ""),
+                    issue.get("code", ""),
+                    issue.get("title", ""),
+                    issue.get("details", ""),
+                ])
+            fill_sheet("11_IssuesRaw", issue_headers, issue_rows, severity_idx=0, widths=[12, 62, 18, 28, 80])
+
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         wb.save(filepath)
         return filepath
@@ -996,4 +1035,3 @@ class XLSXGenerator:
 
 # Singleton
 xlsx_generator = XLSXGenerator()
-
