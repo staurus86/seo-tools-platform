@@ -182,6 +182,15 @@ class XLSXGenerator:
                 return None
 
         # Explicit string levels and states.
+        if "hierarchy status" in header_l:
+            if any(k in value_s for k in ("good", "ok")):
+                return "good"
+            if "no headers" in value_s:
+                return "warn"
+            if any(k in value_s for k in ("bad", "broken", "missing", "wrong start", "skip")):
+                return "bad"
+            return "neutral"
+
         if value_s in {"high", "medium", "low"}:
             if "risk level" in header_l:
                 return "bad" if value_s == "high" else "warn" if value_s == "medium" else "good"
@@ -240,6 +249,29 @@ class XLSXGenerator:
         cell.font = Font(color=palette["font"], bold=True)
         if self._is_kpi_header(header):
             cell.alignment = Alignment(horizontal='center', vertical='center')
+        return status
+
+    def _kpi_anomaly_direction(self, header: str) -> str:
+        h = str(header or "").lower()
+        if any(k in h for k in ("risk", "toxicity", "delta", "waste", "duplicate", "error", "issues total", "over threshold", "ms", "ttfb")):
+            return "high_worse"
+        if any(k in h for k in ("score", "health", "quality", "coverage", "confidence", "roi")):
+            return "low_worse"
+        return "none"
+
+    def _quantile(self, values: List[float], q: float) -> float:
+        if not values:
+            return 0.0
+        if q <= 0:
+            return min(values)
+        if q >= 1:
+            return max(values)
+        vals = sorted(values)
+        pos = (len(vals) - 1) * q
+        lo = int(pos)
+        hi = min(lo + 1, len(vals) - 1)
+        frac = pos - lo
+        return vals[lo] * (1.0 - frac) + vals[hi] * frac
 
     def _sitemap_issue_severity(self, item: Dict[str, Any]) -> str:
         """Infer severity for sitemap file-level row."""
@@ -1493,15 +1525,25 @@ class XLSXGenerator:
                 )
             sev_counts = {"critical": 0, "warning": 0, "info": 0}
             score_values: List[float] = []
+            numeric_kpi_by_col: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
+            row_severity: Dict[int, str] = {}
             for row_idx, row_data in enumerate(ordered_rows, start=2):
                 for col, value in enumerate(row_data, 1):
                     cell = wsx.cell(row=row_idx, column=col, value=self._sanitize_cell_value(value))
                     self._apply_style(cell, cell_style)
                     header = headers[col - 1] if (col - 1) < len(headers) else ""
                     if self._is_kpi_header(header):
-                        self._apply_kpi_cell_style(cell, header, value)
+                        base_status = self._apply_kpi_cell_style(cell, header, value)
+                        direction = self._kpi_anomaly_direction(header)
+                        try:
+                            num_val = float(value)
+                            if direction != "none":
+                                numeric_kpi_by_col[col].append({"row": row_idx, "value": num_val, "status": base_status, "header": header})
+                        except Exception:
+                            pass
                 if severity_idx >= 0:
                     sev_value = str(row_data[severity_idx]).lower()
+                    row_severity[row_idx] = sev_value
                     if sev_value in sev_counts:
                         sev_counts[sev_value] += 1
                     self._apply_row_severity_fill(wsx, row_idx, 1, len(headers), sev_value)
@@ -1515,6 +1557,43 @@ class XLSXGenerator:
                         score_values.append(float(row_data[score_idx]))
                     except Exception:
                         pass
+
+            # Column-relative anomaly highlight for numeric KPI cells.
+            for col_idx, items in numeric_kpi_by_col.items():
+                if len(items) < 6:
+                    continue
+                direction = self._kpi_anomaly_direction(items[0]["header"])
+                values = [float(item["value"]) for item in items]
+                hi_warn = self._quantile(values, 0.90)
+                hi_bad = self._quantile(values, 0.97)
+                lo_warn = self._quantile(values, 0.10)
+                lo_bad = self._quantile(values, 0.03)
+                for item in items:
+                    row_idx = int(item["row"])
+                    if row_severity.get(row_idx, "") == "critical":
+                        continue
+                    if str(item.get("status", "")).lower() in {"bad", "warn"}:
+                        continue
+                    value = float(item["value"])
+                    anomaly_state = ""
+                    if direction == "high_worse":
+                        if value >= hi_bad:
+                            anomaly_state = "bad"
+                        elif value >= hi_warn:
+                            anomaly_state = "warn"
+                    elif direction == "low_worse":
+                        if value <= lo_bad:
+                            anomaly_state = "bad"
+                        elif value <= lo_warn:
+                            anomaly_state = "warn"
+                    if not anomaly_state:
+                        continue
+                    cell = wsx.cell(row=row_idx, column=col_idx)
+                    palette = self._status_palette(anomaly_state)
+                    cell.fill = PatternFill(start_color=palette["fill"], end_color=palette["fill"], fill_type='solid')
+                    cell.font = Font(color=palette["font"], bold=True)
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
+
             wsx.freeze_panes = "A2"
             wsx.auto_filter.ref = f"A1:{get_column_letter(len(headers))}1"
             if widths:
