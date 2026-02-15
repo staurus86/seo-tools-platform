@@ -1713,7 +1713,10 @@ function generateSiteAuditProHTML(result) {
     const summary = r.summary || {};
     const pages = r.pages || [];
     const issues = r.issues || [];
+    const pipeline = r.pipeline || {};
     const mode = r.mode || result.mode || 'quick';
+    const topPagerank = (pipeline.pagerank || []).slice(0, 5);
+    const clusters = pipeline.topic_clusters || [];
 
     const issuesHtml = issues.slice(0, 20).map(i => `
         <div class="text-sm border-l-4 ${i.severity === 'critical' ? 'border-red-500 bg-red-50' : i.severity === 'warning' ? 'border-yellow-500 bg-yellow-50' : 'border-blue-500 bg-blue-50'} p-3 rounded-r mb-2">
@@ -1721,6 +1724,17 @@ function generateSiteAuditProHTML(result) {
             <div>${i.title || ''}</div>
             <div class="text-gray-600">${i.url || ''}</div>
         </div>
+    `).join('');
+    const pagerankHtml = topPagerank.map(p => `
+        <div class="flex items-center justify-between text-sm py-1 border-b border-gray-100">
+            <span class="truncate max-w-[70%]">${p.url || ''}</span>
+            <span class="font-semibold">${p.score ?? 0}</span>
+        </div>
+    `).join('');
+    const clusterHtml = clusters.slice(0, 8).map(c => `
+        <span class="inline-flex items-center bg-indigo-100 text-indigo-700 rounded-full px-3 py-1 text-xs mr-2 mb-2">
+            ${c.topic || 'misc'} <span class="ml-1 bg-indigo-200 px-1.5 rounded-full">${c.count || 0}</span>
+        </span>
     `).join('');
 
     return `
@@ -1748,6 +1762,17 @@ function generateSiteAuditProHTML(result) {
             <div class="bg-white rounded-xl shadow-md p-6">
                 <h4 class="font-semibold mb-2">Топ проблем</h4>
                 ${issuesHtml || '<div class="text-sm text-gray-500">Проблем не обнаружено.</div>'}
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Top PageRank</h4>
+                    ${pagerankHtml || '<div class="text-sm text-gray-500">Нет данных.</div>'}
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Topic Clusters</h4>
+                    ${clusterHtml || '<div class="text-sm text-gray-500">Нет данных.</div>'}
+                </div>
             </div>
         </div>
     `;
