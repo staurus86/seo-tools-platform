@@ -797,7 +797,7 @@ class XLSXGenerator:
         return filepath
 
     def generate_site_audit_pro_report(self, task_id: str, data: Dict[str, Any]) -> str:
-        """Generate compact 8-sheet quick XLSX for site_audit_pro."""
+        """Generate 8-sheet Site Audit Pro XLSX with deduplicated metric ownership."""
         wb = Workbook()
         header_style = self._create_header_style()
         cell_style = self._create_cell_style()
@@ -810,6 +810,44 @@ class XLSXGenerator:
         report_url = data.get("url", "n/a")
         mode = results.get("mode", "quick")
 
+        tfidf_by_url = {row.get("url"): row.get("top_terms", []) for row in (pipeline.get("tf_idf") or [])}
+
+        def infer_page_severity(page: Dict[str, Any]) -> str:
+            severity = "ok"
+            for issue in (page.get("issues") or []):
+                sev = (issue.get("severity") or "info").lower()
+                if sev == "critical":
+                    return "critical"
+                if sev == "warning":
+                    severity = "warning"
+                elif sev == "info" and severity == "ok":
+                    severity = "info"
+            return severity
+
+        def fill_sheet(
+            sheet_name: str,
+            headers: List[str],
+            rows: List[List[Any]],
+            severity_idx: int = -1,
+            widths: List[int] = None,
+        ):
+            wsx = wb.create_sheet(sheet_name)
+            for col, header in enumerate(headers, 1):
+                self._apply_style(wsx.cell(row=1, column=col, value=header), header_style)
+            for row_idx, row_data in enumerate(rows, start=2):
+                for col, value in enumerate(row_data, 1):
+                    self._apply_style(wsx.cell(row=row_idx, column=col, value=value), cell_style)
+                if severity_idx >= 0:
+                    sev_value = str(row_data[severity_idx]).lower()
+                    self._apply_row_severity_fill(wsx, row_idx, 1, len(headers), sev_value)
+                    self._apply_severity_cell_style(wsx.cell(row=row_idx, column=severity_idx + 1), sev_value)
+            wsx.freeze_panes = "A2"
+            wsx.auto_filter.ref = f"A1:{get_column_letter(len(headers))}1"
+            if widths:
+                for col, width in enumerate(widths, 1):
+                    wsx.column_dimensions[get_column_letter(col)].width = width
+
+        # Sheet 1: Executive summary + formula-based issue rates
         ws = wb.active
         ws.title = "1_Executive"
         ws["A1"] = "Site Audit Pro Report"
@@ -832,108 +870,140 @@ class XLSXGenerator:
             ws.cell(row=row, column=1, value=key).font = Font(bold=True)
             ws.cell(row=row, column=2, value=value)
             row += 1
+        ws["A13"] = "Critical Rate"
+        ws["B13"] = "=IF(B5=0,0,B8/B5)"
+        ws["A14"] = "Warning Rate"
+        ws["B14"] = "=IF(B5=0,0,B9/B5)"
+        ws["A15"] = "Info Rate"
+        ws["B15"] = "=IF(B5=0,0,B10/B5)"
+        ws["B13"].number_format = "0.00%"
+        ws["B14"].number_format = "0.00%"
+        ws["B15"].number_format = "0.00%"
         ws.column_dimensions["A"].width = 26
         ws.column_dimensions["B"].width = 80
 
-        def infer_page_severity(page: Dict[str, Any]) -> str:
-            severity = "ok"
-            for issue in (page.get("issues") or []):
-                sev = (issue.get("severity") or "info").lower()
-                if sev == "critical":
-                    return "critical"
-                if sev == "warning":
-                    severity = "warning"
-                elif sev == "info" and severity == "ok":
-                    severity = "info"
-            return severity
-
-        def fill_sheet(sheet_name: str, headers: List[str], rows: List[List[Any]], severity_idx: int = -1, widths: List[int] = None):
-            wsx = wb.create_sheet(sheet_name)
-            for col, header in enumerate(headers, 1):
-                self._apply_style(wsx.cell(row=1, column=col, value=header), header_style)
-            for row_idx, row_data in enumerate(rows, start=2):
-                for col, value in enumerate(row_data, 1):
-                    self._apply_style(wsx.cell(row=row_idx, column=col, value=value), cell_style)
-                if severity_idx >= 0:
-                    sev_value = str(row_data[severity_idx]).lower()
-                    self._apply_row_severity_fill(wsx, row_idx, 1, len(headers), sev_value)
-                    self._apply_severity_cell_style(wsx.cell(row=row_idx, column=severity_idx + 1), sev_value)
-            wsx.freeze_panes = "A2"
-            wsx.auto_filter.ref = f"A1:{get_column_letter(len(headers))}1"
-            if widths:
-                for col, width in enumerate(widths, 1):
-                    wsx.column_dimensions[get_column_letter(col)].width = width
-
-        # Sheet 2: On-Page + Structured
-        onpage_headers = ["URL", "Title", "Title dup", "Meta description", "Desc dup", "H1", "Canonical", "Indexable", "Severity"]
+        # Sheet 2: OnPage + Structured
+        onpage_headers = [
+            "URL", "Title", "Meta description", "Canonical", "Meta robots", "H1",
+            "Schema count", "Hreflang count", "Mobile hint", "Indexable",
+            "Title dup", "Desc dup", "Severity",
+        ]
         onpage_rows = []
         for page in pages:
             sev = infer_page_severity(page)
             onpage_rows.append([
                 page.get("url", ""),
                 page.get("title", ""),
-                page.get("duplicate_title_count", 0),
                 page.get("meta_description", ""),
-                page.get("duplicate_description_count", 0),
-                page.get("h1_count", ""),
                 page.get("canonical", ""),
+                page.get("meta_robots", ""),
+                page.get("h1_count", ""),
+                page.get("schema_count", 0),
+                page.get("hreflang_count", 0),
+                page.get("mobile_friendly_hint", ""),
                 page.get("indexable", ""),
+                page.get("duplicate_title_count", 0),
+                page.get("duplicate_description_count", 0),
                 sev,
             ])
-        fill_sheet("2_OnPage+Structured", onpage_headers, onpage_rows, severity_idx=8, widths=[65, 34, 10, 40, 10, 8, 40, 12, 10])
+        fill_sheet(
+            "2_OnPage+Structured",
+            onpage_headers,
+            onpage_rows,
+            severity_idx=12,
+            widths=[60, 30, 36, 36, 20, 8, 12, 12, 12, 10, 10, 10, 10],
+        )
 
         # Sheet 3: Technical
-        tech_headers = ["URL", "Status", "Indexable", "Health", "Incoming", "Outgoing int", "Outgoing ext", "Issues", "Severity"]
+        tech_headers = [
+            "URL", "Final URL", "Status", "Response ms", "HTML bytes", "DOM nodes", "Redirects",
+            "HTTPS", "Compression", "Cache hints", "Health", "Severity",
+        ]
         tech_rows = []
         for page in pages:
             sev = infer_page_severity(page)
             tech_rows.append([
                 page.get("url", ""),
+                page.get("final_url", ""),
                 page.get("status_code", ""),
-                page.get("indexable", ""),
+                page.get("response_time_ms", ""),
+                page.get("html_size_bytes", ""),
+                page.get("dom_nodes_count", ""),
+                page.get("redirect_count", 0),
+                page.get("is_https", ""),
+                page.get("compression_enabled", ""),
+                page.get("cache_enabled", ""),
                 page.get("health_score", ""),
-                page.get("incoming_internal_links", 0),
-                page.get("outgoing_internal_links", 0),
-                page.get("outgoing_external_links", 0),
-                len(page.get("issues") or []),
                 sev,
             ])
-        fill_sheet("3_Technical", tech_headers, tech_rows, severity_idx=8, widths=[65, 10, 10, 10, 10, 12, 12, 8, 10])
+        fill_sheet(
+            "3_Technical",
+            tech_headers,
+            tech_rows,
+            severity_idx=11,
+            widths=[50, 50, 10, 12, 12, 12, 10, 8, 12, 12, 10, 10],
+        )
 
         # Sheet 4: Content + AI
-        content_headers = ["URL", "Words", "AI markers", "Top terms", "Health", "Severity"]
+        content_headers = [
+            "URL", "Word count", "Unique words", "Lexical diversity", "Readability",
+            "Toxicity", "Filler ratio", "AI markers", "Recommendation", "Severity",
+        ]
         content_rows = []
         for page in pages:
             sev = infer_page_severity(page)
             content_rows.append([
                 page.get("url", ""),
                 page.get("word_count", 0),
+                page.get("unique_word_count", 0),
+                page.get("lexical_diversity", 0),
+                page.get("readability_score", 0),
+                page.get("toxicity_score", 0),
+                page.get("filler_ratio", 0),
                 page.get("ai_markers_count", 0),
-                ", ".join(page.get("top_terms", [])[:6]),
-                page.get("health_score", ""),
+                page.get("recommendation", ""),
                 sev,
             ])
-        fill_sheet("4_Content+AI", content_headers, content_rows, severity_idx=5, widths=[65, 10, 10, 45, 10, 10])
+        fill_sheet(
+            "4_Content+AI",
+            content_headers,
+            content_rows,
+            severity_idx=9,
+            widths=[55, 10, 12, 14, 12, 10, 10, 10, 62, 10],
+        )
 
         # Sheet 5: Link Graph
-        link_headers = ["URL", "PageRank", "Incoming", "Outgoing int", "Weak anchor ratio", "Link quality", "Topic", "Severity"]
+        link_headers = [
+            "URL", "Incoming int", "Outgoing int", "Outgoing ext", "Orphan",
+            "Topic hub", "PageRank", "Weak anchor ratio", "Link quality", "Severity",
+        ]
         link_rows = []
         for page in pages:
             sev = infer_page_severity(page)
             link_rows.append([
                 page.get("url", ""),
-                page.get("pagerank", 0),
                 page.get("incoming_internal_links", 0),
                 page.get("outgoing_internal_links", 0),
+                page.get("outgoing_external_links", 0),
+                page.get("orphan_page", ""),
+                page.get("topic_hub", ""),
+                page.get("pagerank", 0),
                 page.get("weak_anchor_ratio", 0),
                 page.get("link_quality_score", 0),
-                page.get("topic_label", ""),
                 sev,
             ])
-        fill_sheet("5_LinkGraph", link_headers, link_rows, severity_idx=7, widths=[65, 10, 10, 12, 16, 12, 16, 10])
+        fill_sheet(
+            "5_LinkGraph",
+            link_headers,
+            link_rows,
+            severity_idx=9,
+            widths=[55, 12, 12, 12, 10, 10, 10, 16, 12, 10],
+        )
 
         # Sheet 6: Images + External
-        img_headers = ["URL", "Images", "Without alt", "Outgoing ext", "Severity"]
+        img_headers = [
+            "URL", "Images", "Without alt", "External follow", "External nofollow", "Severity",
+        ]
         img_rows = []
         for page in pages:
             sev = infer_page_severity(page)
@@ -941,42 +1011,54 @@ class XLSXGenerator:
                 page.get("url", ""),
                 page.get("images_count", 0),
                 page.get("images_without_alt", 0),
-                page.get("outgoing_external_links", 0),
+                page.get("external_follow_links", 0),
+                page.get("external_nofollow_links", 0),
                 sev,
             ])
-        fill_sheet("6_Images+External", img_headers, img_rows, severity_idx=4, widths=[70, 10, 12, 12, 10])
+        fill_sheet(
+            "6_Images+External",
+            img_headers,
+            img_rows,
+            severity_idx=5,
+            widths=[64, 10, 12, 14, 16, 10],
+        )
 
-        # Sheet 7: Hierarchy Errors
-        hierarchy_headers = ["URL", "H1 count", "Issue", "Severity"]
-        hierarchy_rows = []
-        for page in pages:
-            h1 = page.get("h1_count", 0)
-            if h1 == 1:
-                continue
-            hierarchy_rows.append([page.get("url", ""), h1, "H1 hierarchy issue", "warning"])
-        fill_sheet("7_HierarchyErrors", hierarchy_headers, hierarchy_rows, severity_idx=3, widths=[70, 10, 40, 10])
+        # Sheet 7: Hierarchy + Errors
+        issue_headers = ["URL", "Code", "Title", "Details", "Severity"]
+        issue_rows = []
+        for issue in issues:
+            issue_rows.append([
+                issue.get("url", ""),
+                issue.get("code", ""),
+                issue.get("title", ""),
+                issue.get("details", ""),
+                (issue.get("severity") or "info").lower(),
+            ])
+        fill_sheet(
+            "7_HierarchyErrors",
+            issue_headers,
+            issue_rows,
+            severity_idx=4,
+            widths=[56, 22, 32, 72, 10],
+        )
 
         # Sheet 8: Keywords
-        keyword_headers = ["URL", "Topic", "Top terms", "PageRank", "Link quality", "Severity"]
+        keyword_headers = ["URL", "Topic", "Top terms (TF-IDF)", "Severity"]
         keyword_rows = []
-        for item in (pipeline.get("tf_idf") or []):
-            page = next((p for p in pages if p.get("url") == item.get("url")), None)
-            if not page:
-                continue
+        for page in pages:
             sev = infer_page_severity(page)
+            url = page.get("url", "")
+            top_terms = tfidf_by_url.get(url, page.get("top_terms", []))
             keyword_rows.append([
-                item.get("url", ""),
+                url,
                 page.get("topic_label", ""),
-                ", ".join(item.get("top_terms", [])[:10]),
-                page.get("pagerank", 0),
-                page.get("link_quality_score", 0),
+                ", ".join(top_terms[:10]),
                 sev,
             ])
-        fill_sheet("8_Keywords", keyword_headers, keyword_rows, severity_idx=5, widths=[65, 18, 60, 10, 12, 10])
+        fill_sheet("8_Keywords", keyword_headers, keyword_rows, severity_idx=3, widths=[64, 18, 76, 10])
 
         # Optional full-mode deep sheets.
         if str(mode).lower() == "full":
-            # Sheet 9: Semantic suggestions
             semantic_headers = ["Source URL", "Target URL", "Topic", "Reason"]
             semantic_rows = []
             for row in (pipeline.get("semantic_linking_map") or []):
@@ -988,7 +1070,6 @@ class XLSXGenerator:
                 ])
             fill_sheet("9_SemanticMap", semantic_headers, semantic_rows, widths=[60, 60, 18, 40])
 
-            # Sheet 10: Duplicate groups
             dup_headers = ["Type", "Value", "URLs count", "Sample URLs"]
             dup_rows = []
             duplicates = pipeline.get("duplicates") or {}
@@ -1000,18 +1081,17 @@ class XLSXGenerator:
                 dup_rows.append(["description", row.get("value", ""), len(urls), ", ".join(urls[:5])])
             fill_sheet("10_DuplicatesDeep", dup_headers, dup_rows, widths=[14, 60, 12, 80])
 
-            # Sheet 11: Raw issues per page
-            issue_headers = ["Severity", "URL", "Code", "Title", "Details"]
-            issue_rows = []
+            raw_issue_headers = ["Severity", "URL", "Code", "Title", "Details"]
+            raw_issue_rows = []
             for issue in issues:
-                issue_rows.append([
+                raw_issue_rows.append([
                     (issue.get("severity") or "info").lower(),
                     issue.get("url", ""),
                     issue.get("code", ""),
                     issue.get("title", ""),
                     issue.get("details", ""),
                 ])
-            fill_sheet("11_IssuesRaw", issue_headers, issue_rows, severity_idx=0, widths=[12, 62, 18, 28, 80])
+            fill_sheet("11_IssuesRaw", raw_issue_headers, raw_issue_rows, severity_idx=0, widths=[12, 62, 18, 28, 80])
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         wb.save(filepath)

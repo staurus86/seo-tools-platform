@@ -31,6 +31,11 @@ class SiteAuditProAdapter:
         "site", "page", "seo",
     }
     WEAK_ANCHORS = {"click here", "here", "read more", "more", "подробнее", "тут", "link"}
+    FILLER_WORDS = {
+        "very", "really", "basically", "actually", "simply", "just", "literally", "maybe", "perhaps",
+        "просто", "очень", "как бы", "наверное", "возможно",
+    }
+    TOXIC_WORDS = {"hate", "stupid", "idiot", "trash", "scam", "ненавижу", "тупой", "мусор"}
     AI_MARKER_RE = re.compile(r"\b(ai|chatgpt|generated|llm|neural)\b", re.I)
 
     def _is_internal_url(self, candidate: str, base_host: str) -> bool:
@@ -60,11 +65,42 @@ class SiteAuditProAdapter:
         tokens = re.findall(r"[a-zA-Zа-яА-Я0-9]{3,}", (text or "").lower())
         return [t for t in tokens if t not in self.STOP_WORDS]
 
-    def _extract_anchor_data(self, page_url: str, soup: BeautifulSoup, base_host: str) -> Tuple[List[str], int, int, int]:
+    def _readability_score(self, text: str) -> float:
+        # Lightweight readability heuristic: shorter sentences and moderate word length score higher.
+        raw = (text or "").strip()
+        if not raw:
+            return 0.0
+        sentences = [s for s in re.split(r"[.!?]+", raw) if s.strip()]
+        words = re.findall(r"[a-zA-Zа-яА-Я0-9]+", raw)
+        if not words:
+            return 0.0
+        avg_sentence_len = len(words) / max(1, len(sentences))
+        avg_word_len = sum(len(w) for w in words) / max(1, len(words))
+        score = 100.0 - max(0.0, (avg_sentence_len - 14.0) * 2.2) - max(0.0, (avg_word_len - 5.5) * 8.0)
+        return round(max(0.0, min(100.0, score)), 1)
+
+    def _calc_toxicity(self, tokens: List[str]) -> float:
+        if not tokens:
+            return 0.0
+        toxic = sum(1 for t in tokens if t in self.TOXIC_WORDS)
+        return round((toxic / max(1, len(tokens))) * 100.0, 2)
+
+    def _calc_filler_ratio(self, text: str) -> float:
+        raw = re.findall(r"[a-zA-Zа-яА-Я0-9]+", (text or "").lower())
+        if not raw:
+            return 0.0
+        filler = sum(1 for t in raw if t in self.FILLER_WORDS)
+        return round(filler / len(raw), 4)
+
+    def _extract_anchor_data(
+        self, page_url: str, soup: BeautifulSoup, base_host: str
+    ) -> Tuple[List[str], int, int, int, int, int]:
         internal_links: List[str] = []
         weak_count = 0
         total = 0
         external = 0
+        external_nofollow = 0
+        external_follow = 0
         for tag in soup.find_all("a", href=True):
             href = (tag.get("href") or "").strip()
             if not href or href.startswith(("mailto:", "tel:", "javascript:")):
@@ -81,14 +117,24 @@ class SiteAuditProAdapter:
                 internal_links.append(candidate)
             else:
                 external += 1
-        return internal_links, weak_count, total, external
+                rel_values = [r.strip().lower() for r in (tag.get("rel") or []) if isinstance(r, str)]
+                if "nofollow" in rel_values:
+                    external_nofollow += 1
+                else:
+                    external_follow += 1
+        return internal_links, weak_count, total, external, external_nofollow, external_follow
 
     def _build_row(
         self,
-        page_url: str,
+        source_url: str,
+        final_url: str,
         status_code: int,
         html: str,
         base_host: str,
+        headers: Dict[str, Any],
+        response_time_ms: int,
+        redirect_count: int,
+        html_size_bytes: int,
     ) -> Tuple[NormalizedSiteAuditRow, List[str], List[str], int, int]:
         soup = BeautifulSoup(html or "", "html.parser")
         body_text = re.sub(r"\s+", " ", soup.get_text(" ", strip=True))
@@ -97,14 +143,55 @@ class SiteAuditProAdapter:
         description = (desc_tag.get("content") if desc_tag else "") or ""
         robots_tag = soup.find("meta", attrs={"name": "robots"})
         robots = ((robots_tag.get("content") if robots_tag else "") or "").lower()
+        viewport_tag = soup.find("meta", attrs={"name": "viewport"})
+        viewport = ((viewport_tag.get("content") if viewport_tag else "") or "").lower()
         canonical_tag = soup.find("link", attrs={"rel": lambda x: x and "canonical" in str(x).lower()})
         canonical = (canonical_tag.get("href") if canonical_tag else "") or ""
+        schema_count = len(
+            [
+                tag
+                for tag in soup.find_all("script")
+                if ((tag.get("type") or "").lower().strip() == "application/ld+json")
+            ]
+        )
+        hreflang_count = len(
+            [
+                tag
+                for tag in soup.find_all("link", href=True)
+                if (tag.get("rel") and "alternate" in [str(x).lower() for x in tag.get("rel")])
+                and bool((tag.get("hreflang") or "").strip())
+            ]
+        )
+        dom_nodes_count = len(soup.find_all(True))
         h1_count = len(soup.find_all("h1"))
         images = soup.find_all("img")
         images_without_alt = sum(1 for img in images if not (img.get("alt") or "").strip())
         words = self._tokenize(body_text)
         ai_markers_count = len(self.AI_MARKER_RE.findall(body_text))
-        internal_links, weak_anchor_count, anchor_total, external_links = self._extract_anchor_data(page_url, soup, base_host)
+        unique_word_count = len(set(words))
+        lexical_diversity = round(unique_word_count / max(1, len(words)), 3) if words else 0.0
+        readability_score = self._readability_score(body_text)
+        toxicity_score = self._calc_toxicity(words)
+        filler_ratio = self._calc_filler_ratio(body_text)
+        internal_links, weak_anchor_count, anchor_total, external_links, external_nofollow, external_follow = self._extract_anchor_data(
+            final_url, soup, base_host
+        )
+        has_headers = bool(headers)
+        content_encoding = (
+            str(headers.get("Content-Encoding") or headers.get("content-encoding") or "").strip().lower()
+            if has_headers
+            else ""
+        )
+        compression_enabled = bool(content_encoding) if has_headers else None
+        cache_control = (
+            str(headers.get("Cache-Control") or headers.get("cache-control") or "").strip().lower()
+            if has_headers
+            else ""
+        )
+        etag = str(headers.get("ETag") or headers.get("etag") or "").strip() if has_headers else ""
+        expires = str(headers.get("Expires") or headers.get("expires") or "").strip() if has_headers else ""
+        cache_enabled = (("max-age" in cache_control) or bool(etag) or bool(expires)) if has_headers else None
+        is_https = urlparse(final_url).scheme.lower() == "https"
 
         issues: List[SiteAuditProIssue] = []
         penalty = 0.0
@@ -177,22 +264,68 @@ class SiteAuditProAdapter:
                 )
             )
             penalty += 7
+        if compression_enabled is False:
+            issues.append(
+                SiteAuditProIssue(
+                    severity="info",
+                    code="compression_disabled",
+                    title="Response compression is not detected",
+                )
+            )
+            penalty += 4
+        if cache_enabled is False:
+            issues.append(
+                SiteAuditProIssue(
+                    severity="info",
+                    code="cache_disabled",
+                    title="Cache hints are missing in response headers",
+                )
+            )
+            penalty += 3
+        if not is_https:
+            issues.append(
+                SiteAuditProIssue(
+                    severity="warning",
+                    code="non_https_url",
+                    title="Page is not served over HTTPS",
+                )
+            )
+            penalty += 12
 
         health_score = max(0.0, round(100.0 - penalty, 1))
         row = NormalizedSiteAuditRow(
-            url=page_url,
+            url=source_url,
+            final_url=final_url,
             status_code=status_code,
+            response_time_ms=response_time_ms,
+            html_size_bytes=html_size_bytes,
+            dom_nodes_count=dom_nodes_count,
+            redirect_count=redirect_count,
+            is_https=is_https,
+            compression_enabled=compression_enabled,
+            cache_enabled=cache_enabled,
             indexable=("noindex" not in robots and status_code < 400),
             health_score=health_score,
             title=title,
             meta_description=description.strip(),
             canonical=canonical.strip(),
+            meta_robots=robots,
+            schema_count=schema_count,
+            hreflang_count=hreflang_count,
+            mobile_friendly_hint=("width=device-width" in viewport) if viewport else None,
             word_count=len(words),
+            unique_word_count=unique_word_count,
+            lexical_diversity=lexical_diversity,
+            readability_score=readability_score,
+            toxicity_score=toxicity_score,
+            filler_ratio=filler_ratio,
             h1_count=h1_count,
             images_count=len(images),
             images_without_alt=images_without_alt,
             outgoing_internal_links=len(internal_links),
             outgoing_external_links=external_links,
+            external_nofollow_links=external_nofollow,
+            external_follow_links=external_follow,
             weak_anchor_ratio=round((weak_anchor_count / anchor_total), 3) if anchor_total else 0.0,
             ai_markers_count=ai_markers_count,
             issues=issues,
@@ -243,7 +376,7 @@ class SiteAuditProAdapter:
 
     def run(self, url: str, mode: str = "quick", max_pages: int = 5) -> NormalizedSiteAuditPayload:
         selected_mode = "full" if mode == "full" else "quick"
-        page_limit = max(1, min(int(max_pages or 100), 5000))
+        page_limit = max(1, min(int(max_pages or 5), 5000))
         timeout = 12
 
         start_url = self._normalize_url(url)
@@ -276,8 +409,23 @@ class SiteAuditProAdapter:
             try:
                 response = session.get(current, timeout=timeout, allow_redirects=True)
                 final_url = self._normalize_url(response.url or current)
+                response_time_ms = int(
+                    max(
+                        0.0,
+                        float(getattr(getattr(response, "elapsed", None), "total_seconds", lambda: 0.0)()) * 1000.0,
+                    )
+                )
+                html_size_bytes = len((response.text or "").encode("utf-8", errors="ignore"))
                 row, links, tokens, weak_anchor_count, anchor_total = self._build_row(
-                    final_url, response.status_code, response.text or "", base_host
+                    source_url=current,
+                    final_url=final_url,
+                    status_code=response.status_code,
+                    html=response.text or "",
+                    base_host=base_host,
+                    headers=dict(getattr(response, "headers", {}) or {}),
+                    response_time_ms=response_time_ms,
+                    redirect_count=len(getattr(response, "history", []) or []),
+                    html_size_bytes=html_size_bytes,
                 )
                 rows.append(row)
                 if row.title:
@@ -319,30 +467,27 @@ class SiteAuditProAdapter:
 
         duplicate_titles = {t for t, count in title_counter.items() if t and count > 1}
         duplicate_desc = {t for t, count in desc_counter.items() if t and count > 1}
-        if duplicate_titles:
-            for row in rows:
-                row_title = titles_by_url.get(row.url, "")
-                if row_title in duplicate_titles:
-                    row.issues.append(
-                        SiteAuditProIssue(
-                            severity="warning",
-                            code="duplicate_title",
-                            title="Duplicate title detected",
-                        )
+        for row in rows:
+            row_title = titles_by_url.get(row.url, "")
+            row_desc = descriptions_by_url.get(row.url, "")
+            row.duplicate_title_count = title_counter.get(row_title, 0) if row_title else 0
+            row.duplicate_description_count = desc_counter.get(row_desc, 0) if row_desc else 0
+            if row_title in duplicate_titles:
+                row.issues.append(
+                    SiteAuditProIssue(
+                        severity="warning",
+                        code="duplicate_title",
+                        title="Duplicate title detected",
                     )
-                row.duplicate_title_count = title_counter.get(row_title, 0) if row_title else 0
-        if duplicate_desc:
-            for row in rows:
-                row_desc = descriptions_by_url.get(row.url, "")
-                if row_desc in duplicate_desc:
-                    row.issues.append(
-                        SiteAuditProIssue(
-                            severity="warning",
-                            code="duplicate_meta_description",
-                            title="Duplicate meta description detected",
-                        )
+                )
+            if row_desc in duplicate_desc:
+                row.issues.append(
+                    SiteAuditProIssue(
+                        severity="warning",
+                        code="duplicate_meta_description",
+                        title="Duplicate meta description detected",
                     )
-                row.duplicate_description_count = desc_counter.get(row_desc, 0) if row_desc else 0
+                )
 
         all_urls = [r.url for r in rows]
         allowed = set(all_urls)
@@ -364,8 +509,15 @@ class SiteAuditProAdapter:
             density_penalty = min(20.0, row.weak_anchor_ratio * 30.0) if row.weak_anchor_ratio is not None else 0.0
             link_score = 100.0
             link_score -= density_penalty
+            outgoing_total = (row.outgoing_internal_links or 0) + (row.outgoing_external_links or 0)
+            nofollow_ratio = (
+                (row.external_nofollow_links or 0) / max(1, row.outgoing_external_links or 0)
+                if (row.outgoing_external_links or 0) > 0
+                else 0.0
+            )
             if row.outgoing_internal_links == 0 and row.incoming_internal_links > 0:
                 link_score -= 10
+            row.orphan_page = row.incoming_internal_links == 0
             if row.incoming_internal_links == 0 and row.outgoing_internal_links == 0:
                 row.issues.append(
                     SiteAuditProIssue(
@@ -375,7 +527,32 @@ class SiteAuditProAdapter:
                     )
                 )
                 link_score -= 15
+            if (row.outgoing_external_links or 0) >= 5 and (row.outgoing_internal_links or 0) == 0:
+                link_score -= 8
+            if nofollow_ratio > 0.8 and (row.outgoing_external_links or 0) >= 3:
+                link_score -= 5
+            if row.response_time_ms and row.response_time_ms > 2500:
+                link_score -= min(8.0, ((row.response_time_ms - 2500) / 1000.0) * 2.0)
+            if (row.redirect_count or 0) > 1:
+                link_score -= min(6.0, (row.redirect_count - 1) * 2.0)
             row.link_quality_score = round(max(0.0, min(100.0, link_score)), 1)
+            row.topic_hub = bool(
+                (row.pagerank or 0.0) >= 60.0
+                and (row.outgoing_internal_links or 0) >= 3
+                and row.incoming_internal_links >= 1
+            )
+            if row.orphan_page:
+                row.recommendation = "Add internal links from relevant hub/category pages."
+            elif (row.images_without_alt or 0) > 0:
+                row.recommendation = "Add descriptive alt text for images."
+            elif row.weak_anchor_ratio and row.weak_anchor_ratio > 0.3:
+                row.recommendation = "Replace weak anchors with intent-rich descriptive anchors."
+            elif row.health_score is not None and row.health_score < 80:
+                row.recommendation = "Resolve technical and on-page issues to raise health score."
+            elif outgoing_total == 0:
+                row.recommendation = "Add contextual internal links to improve crawl paths."
+            else:
+                row.recommendation = "Maintain page quality and monitor regressions."
             topic_clusters[row.topic_label].append(row.url)
 
         semantic_suggestions: List[Dict[str, str]] = []
