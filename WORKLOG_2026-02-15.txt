@@ -1,0 +1,32 @@
+﻿Handoff Notes - 2026-02-15
+
+Purpose
+- Keep next-session context compact and actionable.
+
+What I changed today
+- GitHub repository meta setup:
+  - README.md refreshed
+  - CODE_OF_CONDUCT.md
+  - CONTRIBUTING.md
+  - LICENSE (MIT)
+  - SECURITY.md
+  - .github/ISSUE_TEMPLATE/bug_report.yml
+  - .github/ISSUE_TEMPLATE/feature_request.yml
+  - .github/ISSUE_TEMPLATE/config.yml
+  - .github/pull_request_template.md
+
+- Site Audit Pro XLSX reliability and UX:
+  - fixed null details crash in Issues Raw
+  - enforced status cell coloring
+  - added per-column KPI anomaly highlighting
+
+Where to continue
+- File: app/reports/xlsx_generator.py
+- Focus areas:
+  1) Thresholds in `_kpi_status_from_value`
+  2) Outlier logic in anomaly section inside `fill_sheet`
+  3) Column-specific tuning for hierarchy/toxicity/status/risk
+
+Validation commands
+- python -m unittest tests/test_site_pro_xlsx_layout.py tests/test_site_pro_adapter.py tests/test_site_pro_baseline_diff.py
+- python scripts/site_pro_preflight.py

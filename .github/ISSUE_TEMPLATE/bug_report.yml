@@ -1,0 +1,55 @@
+﻿name: Bug Report
+description: Report a reproducible bug
+labels: [bug]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Exact steps and input data
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+    validations:
+      required: true
+  - type: input
+    id: task_id
+    attributes:
+      label: Task ID (if applicable)
+      placeholder: sitepro-...
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Traceback
+      render: text
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - API
+        - XLSX report
+        - DOCX report
+        - UI
+        - Worker/Celery
+        - Other
