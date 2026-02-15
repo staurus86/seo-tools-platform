@@ -648,6 +648,25 @@ class SiteAuditProAdapter:
 
         return len(found_markers), found_markers[:10]
 
+    def _classify_page_type(self, url: str, structured_types: List[str], title: str, body_text: str) -> str:
+        parsed = urlparse(url or "")
+        path = (parsed.path or "").lower().strip("/")
+        stypes = {str(x).lower() for x in (structured_types or [])}
+        text = f"{(title or '').lower()} {(body_text or '').lower()}"
+        if path in ("",):
+            return "home"
+        if "product" in stypes or any(x in path for x in ("product", "shop", "catalog", "товар")):
+            return "product"
+        if "article" in stypes or any(x in path for x in ("blog", "news", "article", "post", "статья", "новост")):
+            return "article"
+        if any(x in path for x in ("category", "catalog", "collection", "категор")):
+            return "category"
+        if any(x in text for x in ("privacy policy", "terms", "cookie", "политика", "условия", "согласие")):
+            return "legal"
+        if any(x in path for x in ("contact", "about", "company", "контакт", "о-компании")):
+            return "service"
+        return "other"
+
     def _apply_canonical_and_hreflang_checks(
         self,
         rows: List[NormalizedSiteAuditRow],
@@ -901,6 +920,8 @@ class SiteAuditProAdapter:
         words = self._tokenize(body_text)
         ai_markers_count, ai_markers_list = self._detect_ai_markers(body_text)
         ai_marker_sample = self._ai_marker_sample(body_text, ai_markers_list)
+        word_count_est = len(words)
+        ai_markers_density_1k = round((ai_markers_count / max(1, word_count_est)) * 1000.0, 2) if word_count_est else 0.0
         filler_phrases = [w for w in self.FILLER_WORDS if re.search(rf"\\b{re.escape(w)}\\b", body_text.lower())][:20]
         unique_word_count = len(set(words))
         top_keywords = self._extract_top_keywords(words, top_n=10)
@@ -915,6 +936,26 @@ class SiteAuditProAdapter:
         boilerplate_percent = self._boilerplate_percent(text=body_text)
         toxicity_score = self._calc_toxicity(words)
         filler_ratio = self._calc_filler_ratio(body_text)
+        page_type = self._classify_page_type(final_url, structured_types, title, body_text)
+        # Guard against false positives on legal/policy pages with formal language patterns.
+        ai_false_positive_guard = page_type in {"legal"} or bool(re.search(r"\b(api|sdk|json|http|ssl|tls|csp)\b", body_text.lower()))
+        ai_risk_raw = (
+            ai_markers_count * 4.0
+            + ai_markers_density_1k * 2.0
+            + float(toxicity_score) * 0.6
+            + float(filler_ratio) * 35.0
+        )
+        if ai_false_positive_guard and ai_markers_count <= 6:
+            ai_risk_raw *= 0.75
+        if word_count_est < 120 and ai_markers_count <= 2:
+            ai_risk_raw *= 0.8
+        ai_risk_score = round(max(0.0, min(100.0, ai_risk_raw)), 1)
+        if ai_risk_score >= 70:
+            ai_risk_level = "high"
+        elif ai_risk_score >= 40:
+            ai_risk_level = "medium"
+        else:
+            ai_risk_level = "low"
         internal_links, weak_anchor_count, anchor_total, external_links, external_nofollow, external_follow = self._extract_anchor_data(
             final_url, soup, base_host
         )
@@ -1251,6 +1292,16 @@ class SiteAuditProAdapter:
                 )
             )
             penalty += min(12, len(structured_error_codes) * 2)
+        if detailed_checks and ai_risk_score >= 70:
+            issues.append(
+                SiteAuditProIssue(
+                    severity="warning",
+                    code="ai_risk_high",
+                    title="High AI-text risk signals detected",
+                    details=f"risk={ai_risk_score}, density={ai_markers_density_1k}/1k",
+                )
+            )
+            penalty += 4
 
         indexable = ("noindex" not in robots and status_code < 400 and canonical_status != "external")
         if status_code >= 400:
@@ -1397,6 +1448,11 @@ class SiteAuditProAdapter:
             ai_markers_count=ai_markers_count,
             ai_markers_list=ai_markers_list,
             ai_marker_sample=ai_marker_sample or None,
+            ai_markers_density_1k=ai_markers_density_1k,
+            ai_risk_score=ai_risk_score,
+            ai_risk_level=ai_risk_level,
+            ai_false_positive_guard=ai_false_positive_guard,
+            page_type=page_type,
             filler_phrases=filler_phrases,
             url_params_count=url_params_count,
             path_depth=path_depth,

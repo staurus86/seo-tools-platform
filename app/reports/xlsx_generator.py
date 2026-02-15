@@ -1157,13 +1157,9 @@ class XLSXGenerator:
             ai_markers_count = int(page.get("ai_markers_count", 0) or 0)
             toxicity = to_float(page.get("toxicity_score"), 0.0)
             filler_ratio = to_float(page.get("filler_ratio"), 0.0)
-            ai_risk = round(min(100.0, ai_markers_count * 6.0 + toxicity * 0.7 + filler_ratio * 0.5), 1)
-            if ai_risk >= 70:
-                ai_risk_level = "high"
-            elif ai_risk >= 40:
-                ai_risk_level = "medium"
-            else:
-                ai_risk_level = "low"
+            ai_density = to_float(page.get("ai_markers_density_1k"), 0.0)
+            ai_risk = to_float(page.get("ai_risk_score"), round(min(100.0, ai_markers_count * 6.0 + toxicity * 0.7 + filler_ratio * 0.5), 1))
+            ai_risk_level = str(page.get("ai_risk_level") or ("high" if ai_risk >= 70 else "medium" if ai_risk >= 40 else "low"))
 
             onpage_score = 100
             if title_len < 30 or title_len > 60:
@@ -1233,6 +1229,7 @@ class XLSXGenerator:
                 "image_issues_total": image_issues_total,
                 "ai_risk": ai_risk,
                 "ai_risk_level": ai_risk_level,
+                "ai_density": ai_density,
                 "onpage_score": onpage_score,
                 "technical_score": technical_score,
                 "content_score": content_score,
@@ -1477,7 +1474,8 @@ class XLSXGenerator:
             "Avg sentence len", "Avg word len", "Complex words %", "Keyword stuffing score",
             "Content density %", "Boilerplate %", "Toxicity score", "Filler ratio",
             "Filler phrases", "AI markers count", "AI markers list", "AI marker sample",
-            "Near duplicates", "Near duplicate URLs", "Content score", "Content solution", "Severity",
+            "AI density /1k", "AI risk", "AI risk level", "Page type", "Near duplicates", "Near duplicate URLs",
+            "Content score", "Content solution", "Severity",
         ]
         content_rows = []
         for page in pages:
@@ -1502,6 +1500,10 @@ class XLSXGenerator:
                 page.get("ai_markers_count", 0),
                 ", ".join((page.get("ai_markers_list") or [])[:10]),
                 page.get("ai_marker_sample", "") or "No sample",
+                d.get("ai_density", page.get("ai_markers_density_1k", 0)),
+                d.get("ai_risk", page.get("ai_risk_score", 0)),
+                d.get("ai_risk_level", page.get("ai_risk_level", "")),
+                page.get("page_type", ""),
                 page.get("near_duplicate_count", 0),
                 ", ".join((page.get("near_duplicate_urls") or [])[:5]),
                 d.get("content_score", ""),
@@ -1512,8 +1514,8 @@ class XLSXGenerator:
             "4_Content+AI",
             content_headers,
             content_rows,
-            severity_idx=22,
-            widths=[52, 10, 12, 10, 12, 12, 12, 10, 12, 12, 12, 12, 10, 10, 12, 12, 50, 62, 12, 36, 12, 46, 10],
+            severity_idx=26,
+            widths=[52, 10, 12, 10, 12, 12, 12, 10, 12, 12, 12, 12, 10, 10, 12, 12, 50, 62, 12, 10, 12, 12, 12, 12, 36, 12, 46, 10],
         )
 
         # Sheet 5: Link Graph
@@ -1843,7 +1845,8 @@ class XLSXGenerator:
 
             ai_headers = [
                 "URL", "AI markers", "AI markers list", "Marker sample",
-                "AI risk score", "AI risk level", "Toxicity score", "Filler ratio", "Humanization hint", "Severity",
+                "AI density /1k", "AI risk score", "AI risk level", "False-positive guard",
+                "Page type", "Toxicity score", "Filler ratio", "Humanization hint", "Severity",
             ]
             ai_rows = []
             for page in pages:
@@ -1851,20 +1854,19 @@ class XLSXGenerator:
                 markers_count = int(page.get("ai_markers_count", 0) or 0)
                 toxicity = to_float(page.get("toxicity_score"), 0.0)
                 filler_ratio = to_float(page.get("filler_ratio"), 0.0)
-                ai_risk = min(100.0, markers_count * 6.0 + toxicity * 0.7 + filler_ratio * 0.5)
-                if ai_risk >= 70:
-                    risk_level = "high"
-                elif ai_risk >= 40:
-                    risk_level = "medium"
-                else:
-                    risk_level = "low"
+                ai_density = to_float(page.get("ai_markers_density_1k"), 0.0)
+                ai_risk = to_float(page.get("ai_risk_score"), min(100.0, markers_count * 6.0 + toxicity * 0.7 + filler_ratio * 0.5))
+                risk_level = str(page.get("ai_risk_level") or ("high" if ai_risk >= 70 else "medium" if ai_risk >= 40 else "low"))
                 ai_rows.append([
                     page.get("url", ""),
                     markers_count,
                     ", ".join((page.get("ai_markers_list") or [])[:12]) or "none",
                     page.get("ai_marker_sample", "") or "No text sample available",
+                    round(ai_density, 2),
                     round(ai_risk, 1),
                     risk_level,
+                    page.get("ai_false_positive_guard", False),
+                    page.get("page_type", ""),
                     toxicity,
                     filler_ratio,
                     page_solution("content", page),
@@ -1874,8 +1876,8 @@ class XLSXGenerator:
                 "13_AI_Markers",
                 ai_headers,
                 ai_rows,
-                severity_idx=9,
-                widths=[48, 10, 48, 60, 12, 12, 12, 10, 52, 10],
+                severity_idx=12,
+                widths=[48, 10, 48, 56, 12, 12, 12, 12, 12, 12, 10, 52, 10],
             )
 
             crawl_budget_headers = [

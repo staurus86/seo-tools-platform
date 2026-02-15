@@ -174,6 +174,7 @@ class SiteProXlsxLayoutTests(unittest.TestCase):
             self.assertIn("11_Trust_EEAT", wb.sheetnames)
             self.assertIn("12_Topics_Semantics", wb.sheetnames)
             self.assertIn("13_AI_Markers", wb.sheetnames)
+            self.assertIn("CrawlBudget", wb.sheetnames)
             self.assertIn("14_Issues_Raw", wb.sheetnames)
 
             self.assertNotIn("13_MainReport_Compat", wb.sheetnames)

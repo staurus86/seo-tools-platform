@@ -151,6 +151,11 @@ class NormalizedSiteAuditRow(BaseModel):
     ai_markers_count: int = 0
     ai_markers_list: List[str] = Field(default_factory=list)
     ai_marker_sample: Optional[str] = None
+    ai_markers_density_1k: Optional[float] = None
+    ai_risk_score: Optional[float] = None
+    ai_risk_level: Optional[str] = None
+    ai_false_positive_guard: Optional[bool] = None
+    page_type: Optional[str] = None
     filler_phrases: List[str] = Field(default_factory=list)
     unique_percent: Optional[float] = None
     og_tags: Optional[int] = None
