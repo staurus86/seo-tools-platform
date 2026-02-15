@@ -1867,6 +1867,36 @@ async def get_render_artifact(task_id: str, filename: str):
         return {"error": str(e)}
 
 
+@router.get("/site-pro-artifacts/{task_id}/{filename}")
+async def get_site_pro_artifact(task_id: str, filename: str):
+    """Serve Site Audit Pro chunk artifact files."""
+    from pathlib import Path
+    from fastapi.responses import FileResponse
+
+    try:
+        task = get_task_result(task_id)
+        if not task:
+            return {"error": "Задача не найдена", "task_id": task_id}
+        task_result = task.get("result", {})
+        results = task_result.get("results", task_result) or {}
+        artifacts = results.get("artifacts", {}) or {}
+        chunk_manifest = artifacts.get("chunk_manifest", {}) or {}
+        chunks = chunk_manifest.get("chunks", []) or []
+        for chunk in chunks:
+            for file_meta in (chunk.get("files") or []):
+                if file_meta.get("filename") != filename:
+                    continue
+                file_path = file_meta.get("path")
+                if not file_path:
+                    continue
+                p = Path(file_path)
+                if p.exists():
+                    return FileResponse(str(p), media_type="application/x-ndjson", filename=filename)
+        return {"error": "Артефакт не найден"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.post("/tasks/sitemap-validate")
 async def create_sitemap_validate(data: SitemapValidateRequest):
     """Full sitemap validation"""
@@ -3365,6 +3395,12 @@ async def create_site_audit_pro(data: SiteAuditProRequest, background_tasks: Bac
                 max_pages=max_pages,
                 progress_callback=_progress,
             )
+            chunk_manifest = (((result or {}).get("results") or {}).get("artifacts") or {}).get("chunk_manifest", {})
+            for chunk in (chunk_manifest.get("chunks") or []):
+                for file_meta in (chunk.get("files") or []):
+                    file_path = file_meta.get("path")
+                    if file_path:
+                        append_task_artifact(task_id, file_path, kind="site_pro_chunk")
             update_task_state(
                 task_id,
                 status="SUCCESS",

@@ -21,7 +21,7 @@ def _collect_paths(value: Any, out: Set[Path]) -> None:
         lower = value.lower()
         if lower.startswith("http://") or lower.startswith("https://"):
             return
-        if any(ext in lower for ext in (".png", ".jpg", ".jpeg", ".webp", ".docx", ".xlsx", ".txt", ".csv")):
+        if any(ext in lower for ext in (".png", ".jpg", ".jpeg", ".webp", ".docx", ".xlsx", ".txt", ".csv", ".json", ".jsonl", ".ndjson")):
             out.add(Path(value))
             return
         reports_token = str(settings.REPORTS_DIR).replace("\\", "/").lower()

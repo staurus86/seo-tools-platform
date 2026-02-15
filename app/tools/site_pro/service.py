@@ -1,11 +1,12 @@
 """Site Audit Pro orchestration service."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 from typing import Any, Callable, Dict, Optional
 
 from .adapter import SiteAuditProAdapter
+from .artifacts import SiteProArtifactStore
 
 ProgressCallback = Optional[Callable[[int, str], None]]
 
@@ -28,7 +29,7 @@ class SiteAuditProService:
                 progress_callback(progress, message)
 
         selected_mode = "full" if mode == "full" else "quick"
-        started_at = datetime.utcnow().isoformat()
+        started_at = datetime.now(timezone.utc).isoformat()
         t0 = time.perf_counter()
 
         notify(5, "Preparing Site Audit Pro")
@@ -37,6 +38,12 @@ class SiteAuditProService:
         normalized = self.adapter.run(url=url, mode=selected_mode, max_pages=max_pages)
         notify(75, "Building normalized report payload")
         public_results = self.adapter.to_public_results(normalized)
+        notify(85, "Preparing deep artifacts")
+        self._attach_chunked_artifacts(
+            task_id=task_id,
+            mode=selected_mode,
+            public_results=public_results,
+        )
         notify(95, "Finalizing Site Audit Pro result")
         duration_ms = int((time.perf_counter() - t0) * 1000)
 
@@ -46,7 +53,7 @@ class SiteAuditProService:
             "task_type": "site_audit_pro",
             "url": url,
             "mode": selected_mode,
-            "completed_at": datetime.utcnow().isoformat(),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
             "results": public_results,
             "meta": {
                 "task_id": task_id,
@@ -57,3 +64,65 @@ class SiteAuditProService:
                 "issues_total": summary.get("issues_total", 0),
             },
         }
+
+    def _attach_chunked_artifacts(self, *, task_id: str, mode: str, public_results: Dict[str, Any]) -> None:
+        """
+        Persist heavy deep arrays as chunked JSONL and attach manifest to results.
+        This keeps task payload predictable while preserving full details for download.
+        """
+        if not isinstance(public_results, dict):
+            return
+
+        pipeline = public_results.get("pipeline", {}) or {}
+        issues = public_results.get("issues", []) or []
+        semantic = pipeline.get("semantic_linking_map", []) or []
+        pages = public_results.get("pages", []) or []
+
+        # In quick mode we still emit artifacts when payload arrays are non-trivial.
+        should_emit = (mode == "full") or (len(issues) > 100) or (len(semantic) > 100) or (len(pages) > 200)
+        if not should_emit:
+            return
+
+        store = SiteProArtifactStore(task_id=task_id)
+        manifest = {
+            "task_id": task_id,
+            "base_dir": str(store.root_dir),
+            "chunks": [],
+        }
+
+        issue_rows = [
+            {
+                "url": row.get("url"),
+                "severity": row.get("severity"),
+                "code": row.get("code"),
+                "title": row.get("title"),
+                "details": row.get("details"),
+            }
+            for row in issues
+        ]
+        semantic_rows = [
+            {
+                "source_url": row.get("source_url"),
+                "target_url": row.get("target_url"),
+                "topic": row.get("topic"),
+                "reason": row.get("reason"),
+            }
+            for row in semantic
+        ]
+        page_rows = [
+            {
+                "url": row.get("url"),
+                "status_code": row.get("status_code"),
+                "health_score": row.get("health_score"),
+                "topic_label": row.get("topic_label"),
+                "recommendation": row.get("recommendation"),
+            }
+            for row in pages
+        ]
+
+        manifest["chunks"].append(store.write_chunked_jsonl(name="issues", rows=issue_rows, chunk_size=500))
+        manifest["chunks"].append(store.write_chunked_jsonl(name="semantic_map", rows=semantic_rows, chunk_size=500))
+        manifest["chunks"].append(store.write_chunked_jsonl(name="pages", rows=page_rows, chunk_size=1000))
+
+        results_artifacts = public_results.setdefault("artifacts", {})
+        results_artifacts["chunk_manifest"] = manifest

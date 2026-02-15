@@ -1748,6 +1748,7 @@ function generateSiteAuditProHTML(result) {
     const issues = r.issues || [];
     const pipeline = r.pipeline || {};
     const metrics = pipeline.metrics || {};
+    const chunkManifest = (r.artifacts || {}).chunk_manifest || {};
     const mode = r.mode || result.mode || 'quick';
     const topPagerank = (pipeline.pagerank || []).slice(0, 5);
     const clusters = pipeline.topic_clusters || [];
@@ -1771,6 +1772,16 @@ function generateSiteAuditProHTML(result) {
             ${c.topic || 'misc'} <span class="ml-1 bg-indigo-200 px-1.5 rounded-full">${c.count || 0}</span>
         </span>
     `).join('');
+    const downloadsHtml = (chunkManifest.chunks || []).flatMap(chunk =>
+        (chunk.files || []).map(f => `
+            <a class="text-sm text-blue-700 hover:text-blue-900 underline"
+               href="${f.download_url || '#'}"
+               target="_blank"
+               rel="noopener">
+                ${f.filename || 'artifact.jsonl'} (${f.records || 0} rows)
+            </a>
+        `)
+    ).join('<br>');
 
     return `
         <div class="space-y-6">
@@ -1830,6 +1841,11 @@ function generateSiteAuditProHTML(result) {
                     ${(topRecommendations.map(x => `<li>${x}</li>`).join('')) || '<li>Рекомендаций нет.</li>'}
                 </ul>
             </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h4 class="font-semibold mb-2">Downloads</h4>
+                ${downloadsHtml || '<div class="text-sm text-gray-500">Chunk artifacts are not available for this run.</div>'}
+            </div>
         </div>
     `;
 }
@@ -1838,5 +1854,4 @@ function generateSiteAuditProHTML(result) {
 window.copyToClipboard = copyToClipboard;
 </script>
 {% endblock %}
-
 
