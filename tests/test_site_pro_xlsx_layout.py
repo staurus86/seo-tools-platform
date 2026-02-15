@@ -172,11 +172,27 @@ class SiteProXlsxLayoutTests(unittest.TestCase):
             self.assertIn("9_SemanticMap", wb.sheetnames)
             self.assertIn("10_DuplicatesDeep", wb.sheetnames)
             self.assertIn("11_IssuesRaw", wb.sheetnames)
-            self.assertIn("13_MainReport_Compat", wb.sheetnames)
-            self.assertIn("18_EEAT_Compat", wb.sheetnames)
-            self.assertIn("19_Trust_Compat", wb.sheetnames)
-            self.assertIn("20_Health_Compat", wb.sheetnames)
-            self.assertIn("29_AIMarkers_Compat", wb.sheetnames)
+            compat_sheets = [
+                "13_MainReport_Compat",
+                "14_Hierarchy_Compat",
+                "15_OnPage_Compat",
+                "16_Content_Compat",
+                "17_Technical_Compat",
+                "18_EEAT_Compat",
+                "19_Trust_Compat",
+                "20_Health_Compat",
+                "21_InternalLinks_Compat",
+                "22_Images_Compat",
+                "23_ExternalLinks_Compat",
+                "24_Structured_Compat",
+                "25_KeywordsTFIDF_Compat",
+                "26_Topics_Compat",
+                "27_Advanced_Compat",
+                "28_LinkQuality_Compat",
+                "29_AIMarkers_Compat",
+            ]
+            for sheet_name in compat_sheets:
+                self.assertIn(sheet_name, wb.sheetnames)
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
