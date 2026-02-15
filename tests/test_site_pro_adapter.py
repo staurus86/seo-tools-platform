@@ -50,6 +50,16 @@ HTML_BLOG = """
 </body></html>
 """
 
+HTML_PRODUCT = """
+<html><head>
+<title>Product</title>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Product","name":"Test Product","offers":{"@type":"Offer"}}
+</script>
+</head>
+<body><h1>Product</h1></body></html>
+"""
+
 
 def build_mock_public_result():
     adapter = SiteAuditProAdapter()
@@ -168,6 +178,23 @@ class SiteProAdapterTests(unittest.TestCase):
         self.assertIn("canonical_target_noindex", issue_codes)
         self.assertIn("hreflang_extended_check", issue_codes)
         self.assertTrue(any(str(x).startswith("missing_reciprocal:") for x in (home_row.get("hreflang_issues") or [])))
+
+    def test_structured_common_errors_detected(self):
+        adapter = SiteAuditProAdapter()
+        by_url = {
+            "https://site.test": _MockResponse("https://site.test", 200, HTML_PRODUCT),
+        }
+
+        def fake_get(url, timeout=0, allow_redirects=True):
+            return by_url["https://site.test"]
+
+        with patch("requests.Session.get", side_effect=fake_get):
+            normalized = adapter.run("https://site.test", mode="quick", max_pages=1)
+            public = adapter.to_public_results(normalized)
+
+        row = public["pages"][0]
+        self.assertGreaterEqual(int(row.get("structured_errors_count") or 0), 1)
+        self.assertIn("product_missing_price", row.get("structured_error_codes") or [])
 
     def test_respects_max_pages_limit(self):
         adapter = SiteAuditProAdapter()

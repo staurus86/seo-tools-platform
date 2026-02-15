@@ -1430,7 +1430,7 @@ class XLSXGenerator:
             "Avg sentence len", "Avg word len", "Complex words %", "Keyword stuffing score",
             "Content density %", "Boilerplate %", "Toxicity score", "Filler ratio",
             "Filler phrases", "AI markers count", "AI markers list", "AI marker sample",
-            "Content score", "Content solution", "Severity",
+            "Near duplicates", "Near duplicate URLs", "Content score", "Content solution", "Severity",
         ]
         content_rows = []
         for page in pages:
@@ -1455,6 +1455,8 @@ class XLSXGenerator:
                 page.get("ai_markers_count", 0),
                 ", ".join((page.get("ai_markers_list") or [])[:10]),
                 page.get("ai_marker_sample", "") or "No sample",
+                page.get("near_duplicate_count", 0),
+                ", ".join((page.get("near_duplicate_urls") or [])[:5]),
                 d.get("content_score", ""),
                 page_solution("content", page),
                 sev,
@@ -1463,14 +1465,14 @@ class XLSXGenerator:
             "4_Content+AI",
             content_headers,
             content_rows,
-            severity_idx=20,
-            widths=[52, 10, 12, 10, 12, 12, 12, 10, 12, 12, 12, 12, 10, 10, 12, 12, 50, 62, 12, 46, 10],
+            severity_idx=22,
+            widths=[52, 10, 12, 10, 12, 12, 12, 10, 12, 12, 12, 12, 10, 10, 12, 12, 50, 62, 12, 36, 12, 46, 10],
         )
 
         # Sheet 5: Link Graph
         link_headers = [
             "URL", "Incoming int", "Outgoing int", "Outgoing ext", "Orphan",
-            "Topic hub", "PageRank", "Weak anchor ratio", "Anchor quality", "Link quality",
+            "Topic hub", "Click depth", "PageRank", "Weak anchor ratio", "Anchor quality", "Link quality",
             "Follow links total", "Nofollow links total", "Semantic links count", "Link score", "Linking solution", "Severity",
         ]
         link_rows = []
@@ -1484,6 +1486,7 @@ class XLSXGenerator:
                 page.get("outgoing_external_links", 0),
                 page.get("orphan_page", ""),
                 page.get("topic_hub", ""),
+                page.get("click_depth", ""),
                 page.get("pagerank", 0),
                 page.get("weak_anchor_ratio", 0),
                 page.get("anchor_text_quality_score", 0),
@@ -1499,8 +1502,8 @@ class XLSXGenerator:
             "5_LinkGraph",
             link_headers,
             link_rows,
-            severity_idx=15,
-            widths=[50, 12, 12, 12, 10, 10, 10, 14, 12, 12, 14, 16, 14, 10, 46, 10],
+            severity_idx=16,
+            widths=[50, 12, 12, 12, 10, 10, 10, 10, 14, 12, 12, 14, 16, 14, 10, 46, 10],
         )
 
         # Sheet 6: Images + External
@@ -1658,7 +1661,7 @@ class XLSXGenerator:
                 "URL", "Structured total", "JSON-LD", "Microdata", "RDFa",
                 "Structured types", "Hreflang", "Breadcrumbs",
                 "FAQ schema", "Product schema", "Article schema",
-                "Structured coverage %", "Structured solution", "Severity",
+                "Common errors count", "Common error codes", "Structured coverage %", "Structured solution", "Severity",
             ]
             structured_rows = []
             for page in pages:
@@ -1686,6 +1689,8 @@ class XLSXGenerator:
                     has_faq,
                     has_product,
                     has_article,
+                    page.get("structured_errors_count", 0),
+                    ", ".join((page.get("structured_error_codes") or [])[:8]),
                     round(min(100.0, coverage), 1),
                     page_solution("structured", page),
                     sev,
@@ -1694,8 +1699,8 @@ class XLSXGenerator:
                 "10_StructuredData",
                 structured_headers,
                 structured_rows,
-                severity_idx=13,
-                widths=[50, 12, 10, 10, 8, 40, 10, 12, 10, 12, 12, 18, 48, 10],
+                severity_idx=15,
+                widths=[50, 12, 10, 10, 8, 40, 10, 12, 10, 12, 12, 12, 36, 18, 48, 10],
             )
 
             trust_eeat_headers = [

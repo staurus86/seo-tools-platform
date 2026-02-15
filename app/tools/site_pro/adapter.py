@@ -4,6 +4,8 @@ from __future__ import annotations
 from collections import Counter, defaultdict, deque
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+import hashlib
+import json
 import math
 import re
 from typing import Any, Deque, Dict, List, Set, Tuple
@@ -356,6 +358,117 @@ class SiteAuditProAdapter:
             if itemtype:
                 types.add(itemtype[:120])
         return detail["json_ld"] + detail["microdata"] + detail["rdfa"], detail, sorted(types)[:15]
+
+    def _extract_jsonld_objects(self, soup: BeautifulSoup) -> List[Dict[str, Any]]:
+        objects: List[Dict[str, Any]] = []
+        tags = soup.find_all("script", attrs={"type": lambda v: str(v).lower().strip() == "application/ld+json"})
+        for tag in tags:
+            raw = (tag.string or tag.get_text() or "").strip()
+            if not raw:
+                continue
+            try:
+                payload = json.loads(raw)
+            except Exception:
+                continue
+            stack: List[Any] = [payload]
+            while stack:
+                current = stack.pop()
+                if isinstance(current, list):
+                    stack.extend(current)
+                    continue
+                if not isinstance(current, dict):
+                    continue
+                objects.append(current)
+                graph = current.get("@graph")
+                if isinstance(graph, list):
+                    stack.extend(graph)
+        return objects
+
+    @staticmethod
+    def _jsonld_types(obj: Dict[str, Any]) -> Set[str]:
+        raw = obj.get("@type")
+        if isinstance(raw, list):
+            return {str(x).strip().lower() for x in raw if str(x).strip()}
+        if isinstance(raw, str):
+            val = raw.strip().lower()
+            return {val} if val else set()
+        return set()
+
+    def _validate_structured_common(self, soup: BeautifulSoup) -> List[str]:
+        codes: List[str] = []
+        objects = self._extract_jsonld_objects(soup)
+        for obj in objects:
+            types = self._jsonld_types(obj)
+            if not types:
+                continue
+
+            if "product" in types:
+                if not str(obj.get("name") or "").strip():
+                    codes.append("product_missing_name")
+                offers = obj.get("offers")
+                offer_items = offers if isinstance(offers, list) else ([offers] if isinstance(offers, dict) else [])
+                if not offer_items:
+                    codes.append("product_missing_offers")
+                else:
+                    has_price = any(str((item or {}).get("price") or "").strip() for item in offer_items if isinstance(item, dict))
+                    has_currency = any(
+                        str((item or {}).get("priceCurrency") or "").strip()
+                        for item in offer_items
+                        if isinstance(item, dict)
+                    )
+                    if not has_price:
+                        codes.append("product_missing_price")
+                    if not has_currency:
+                        codes.append("product_missing_price_currency")
+
+            if types.intersection({"article", "newsarticle", "blogposting"}):
+                if not str(obj.get("headline") or "").strip():
+                    codes.append("article_missing_headline")
+                if not str(obj.get("datePublished") or "").strip():
+                    codes.append("article_missing_date_published")
+                if not obj.get("author"):
+                    codes.append("article_missing_author")
+
+            if types.intersection({"organization", "localbusiness"}):
+                if not str(obj.get("name") or "").strip():
+                    codes.append("organization_missing_name")
+                if not str(obj.get("url") or "").strip():
+                    codes.append("organization_missing_url")
+
+            if "breadcrumblist" in types:
+                item_list = obj.get("itemListElement")
+                if not item_list or (isinstance(item_list, list) and len(item_list) == 0):
+                    codes.append("breadcrumb_missing_item_list")
+
+            if "faqpage" in types:
+                main_entity = obj.get("mainEntity")
+                if not main_entity or (isinstance(main_entity, list) and len(main_entity) == 0):
+                    codes.append("faq_missing_main_entity")
+
+        return sorted(set(codes))
+
+    def _simhash64(self, text: str) -> int:
+        tokens = [t for t in self._tokenize_long(text, min_len=3) if t not in self.STOP_WORDS]
+        if not tokens:
+            return 0
+        tf = Counter(tokens)
+        vector = [0] * 64
+        for token, weight in tf.items():
+            h = int(hashlib.md5(token.encode("utf-8", errors="ignore")).hexdigest()[:16], 16)
+            for i in range(64):
+                if (h >> i) & 1:
+                    vector[i] += weight
+                else:
+                    vector[i] -= weight
+        value = 0
+        for i, score in enumerate(vector):
+            if score >= 0:
+                value |= (1 << i)
+        return value
+
+    @staticmethod
+    def _hamming64(a: int, b: int) -> int:
+        return int((a ^ b).bit_count())
 
     def _detect_breadcrumbs(self, soup: BeautifulSoup) -> bool:
         if soup.find(attrs={"itemtype": re.compile("BreadcrumbList", re.I)}):
@@ -721,6 +834,7 @@ class SiteAuditProAdapter:
             ]
         )
         structured_data_total, structured_data_detail, structured_types = self._detect_structured_data(soup)
+        structured_error_codes = self._validate_structured_common(soup)
         hreflang_langs, hreflang_targets, hreflang_has_x_default = self._extract_hreflang_data(soup=soup, page_url=final_url)
         hreflang_count = len(hreflang_langs)
         dom_nodes_count = len(soup.find_all(True))
@@ -915,6 +1029,16 @@ class SiteAuditProAdapter:
                 )
             )
             penalty += 12
+        if structured_error_codes:
+            issues.append(
+                SiteAuditProIssue(
+                    severity="warning",
+                    code="structured_data_common_errors",
+                    title="Common structured data errors detected",
+                    details=", ".join(structured_error_codes[:8]),
+                )
+            )
+            penalty += min(12, len(structured_error_codes) * 2)
 
         indexable = ("noindex" not in robots and status_code < 400 and canonical_status != "external")
         if status_code >= 400:
@@ -983,6 +1107,8 @@ class SiteAuditProAdapter:
             structured_data=structured_data_total,
             structured_data_detail=structured_data_detail,
             structured_types=structured_types,
+            structured_errors_count=len(structured_error_codes),
+            structured_error_codes=structured_error_codes,
             schema_count=schema_count,
             hreflang_count=hreflang_count,
             hreflang_langs=hreflang_langs[:25],
@@ -1296,6 +1422,12 @@ class SiteAuditProAdapter:
         effective_batch_mode = bool(batch_mode and prepared_batch_urls)
         queue: Deque[str] = deque(prepared_batch_urls if effective_batch_mode else [start_url])
         visited: Set[str] = set()
+        depth_by_url: Dict[str, int] = {}
+        if effective_batch_mode:
+            for u in prepared_batch_urls:
+                depth_by_url[self._normalize_url(u)] = 0
+        else:
+            depth_by_url[self._normalize_url(start_url)] = 0
         rows: List[NormalizedSiteAuditRow] = []
         titles_by_url: Dict[str, str] = {}
         descriptions_by_url: Dict[str, str] = {}
@@ -1315,6 +1447,8 @@ class SiteAuditProAdapter:
             if current in visited:
                 continue
             visited.add(current)
+            current_norm = self._normalize_url(current)
+            current_depth = int(depth_by_url.get(current_norm, 0))
 
             try:
                 response = session.get(current, timeout=timeout, allow_redirects=True)
@@ -1341,6 +1475,8 @@ class SiteAuditProAdapter:
                     html_size_bytes=html_size_bytes,
                 )
                 rows.append(row)
+                depth_by_url[self._normalize_url(row.url)] = min(depth_by_url.get(self._normalize_url(row.url), current_depth), current_depth)
+                depth_by_url[self._normalize_url(final_url)] = min(depth_by_url.get(self._normalize_url(final_url), current_depth), current_depth)
                 if row.title:
                     normalized_title = row.title.strip().lower()
                     titles_by_url[row.url] = normalized_title
@@ -1354,6 +1490,9 @@ class SiteAuditProAdapter:
                 link_graph[row.url] = set(links)
                 for link in links:
                     incoming_counts[link] += 1
+                    link_norm = self._normalize_url(link)
+                    if link_norm not in depth_by_url:
+                        depth_by_url[link_norm] = current_depth + 1
                     if (not effective_batch_mode) and link not in visited and len(visited) + len(queue) < page_limit * 2:
                         queue.append(link)
             except Exception as exc:
@@ -1402,12 +1541,59 @@ class SiteAuditProAdapter:
                         title="Duplicate meta description detected",
                     )
                 )
+            row_norm = self._normalize_url(row.final_url or row.url)
+            row.click_depth = depth_by_url.get(row_norm, depth_by_url.get(self._normalize_url(row.url)))
+            if (not effective_batch_mode) and row.click_depth is not None and row.click_depth > 3:
+                row.issues.append(
+                    SiteAuditProIssue(
+                        severity="warning",
+                        code="deep_click_depth",
+                        title="Page is too deep in click depth",
+                        details=f"Click depth: {row.click_depth}",
+                    )
+                )
 
         self._apply_canonical_and_hreflang_checks(
             rows=rows,
             start_url=start_url,
             extended_hreflang_checks=extended_hreflang_checks,
         )
+
+        simhash_by_url: Dict[str, int] = {}
+        row_by_url: Dict[str, NormalizedSiteAuditRow] = {}
+        for row in rows:
+            row_by_url[row.url] = row
+            text = page_texts.get(row.url, "")
+            if int(row.word_count or 0) < 80:
+                continue
+            simhash_by_url[row.url] = self._simhash64(text)
+
+        near_dup_map: Dict[str, Set[str]] = defaultdict(set)
+        candidate_urls = list(simhash_by_url.keys())
+        for i in range(len(candidate_urls)):
+            u1 = candidate_urls[i]
+            h1 = simhash_by_url[u1]
+            for j in range(i + 1, len(candidate_urls)):
+                u2 = candidate_urls[j]
+                h2 = simhash_by_url[u2]
+                if self._hamming64(h1, h2) <= 6:
+                    near_dup_map[u1].add(u2)
+                    near_dup_map[u2].add(u1)
+
+        for url_key, near_set in near_dup_map.items():
+            row = row_by_url.get(url_key)
+            if not row:
+                continue
+            row.near_duplicate_count = len(near_set)
+            row.near_duplicate_urls = sorted(near_set)[:10]
+            row.issues.append(
+                SiteAuditProIssue(
+                    severity="warning",
+                    code="near_duplicate_content",
+                    title="Near-duplicate content detected",
+                    details=f"Similar pages: {len(near_set)}",
+                )
+            )
 
         all_urls = [r.url for r in rows]
         allowed = set(all_urls)

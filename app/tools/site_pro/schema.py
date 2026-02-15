@@ -70,6 +70,8 @@ class NormalizedSiteAuditRow(BaseModel):
     structured_data: Optional[int] = None
     structured_data_detail: Dict[str, int] = Field(default_factory=dict)
     structured_types: List[str] = Field(default_factory=list)
+    structured_errors_count: int = 0
+    structured_error_codes: List[str] = Field(default_factory=list)
     schema_count: int = 0
     hreflang_count: int = 0
     hreflang_langs: List[str] = Field(default_factory=list)
@@ -115,6 +117,7 @@ class NormalizedSiteAuditRow(BaseModel):
     nofollow_links_total: int = 0
     outgoing_internal_links: int = 0
     incoming_internal_links: int = 0
+    click_depth: Optional[int] = None
     outgoing_external_links: int = 0
     total_links: int = 0
     orphan_page: Optional[bool] = None
@@ -124,6 +127,8 @@ class NormalizedSiteAuditRow(BaseModel):
     top_terms: List[str] = Field(default_factory=list)
     duplicate_title_count: int = 0
     duplicate_description_count: int = 0
+    near_duplicate_count: int = 0
+    near_duplicate_urls: List[str] = Field(default_factory=list)
     weak_anchor_ratio: Optional[float] = None
     anchor_text_quality_score: Optional[float] = None
     link_quality_score: Optional[float] = None
