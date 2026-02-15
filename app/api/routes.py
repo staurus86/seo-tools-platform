@@ -7,6 +7,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 import re
 import json
+import time
 import requests
 from urllib.parse import urlparse
 
@@ -3336,6 +3337,21 @@ async def create_site_audit_pro(data: SiteAuditProRequest, background_tasks: Bac
     create_task_pending(task_id, "site_audit_pro", url, status_message="Site Audit Pro queued")
 
     def _run_site_audit_pro_task() -> None:
+        t0 = time.perf_counter()
+        print(
+            "[SITE_PRO] "
+            + json.dumps(
+                {
+                    "event": "task_started",
+                    "task_id": task_id,
+                    "tool": "site_audit_pro",
+                    "url": url,
+                    "mode": mode,
+                    "max_pages": max_pages,
+                },
+                ensure_ascii=False,
+            )
+        )
         try:
             update_task_state(task_id, status="RUNNING", progress=5, status_message="Preparing Site Audit Pro")
 
@@ -3357,6 +3373,23 @@ async def create_site_audit_pro(data: SiteAuditProRequest, background_tasks: Bac
                 result=result,
                 error=None,
             )
+            duration_ms = int((time.perf_counter() - t0) * 1000)
+            summary = ((result or {}).get("results") or {}).get("summary", {})
+            print(
+                "[SITE_PRO] "
+                + json.dumps(
+                    {
+                        "event": "task_completed",
+                        "task_id": task_id,
+                        "tool": "site_audit_pro",
+                        "status": "SUCCESS",
+                        "duration_ms": duration_ms,
+                        "pages": summary.get("total_pages", 0),
+                        "issues_total": summary.get("issues_total", 0),
+                    },
+                    ensure_ascii=False,
+                )
+            )
         except Exception as exc:
             update_task_state(
                 task_id,
@@ -3364,6 +3397,21 @@ async def create_site_audit_pro(data: SiteAuditProRequest, background_tasks: Bac
                 progress=100,
                 status_message="Site Audit Pro failed",
                 error=str(exc),
+            )
+            duration_ms = int((time.perf_counter() - t0) * 1000)
+            print(
+                "[SITE_PRO] "
+                + json.dumps(
+                    {
+                        "event": "task_completed",
+                        "task_id": task_id,
+                        "tool": "site_audit_pro",
+                        "status": "FAILURE",
+                        "duration_ms": duration_ms,
+                        "error": str(exc),
+                    },
+                    ensure_ascii=False,
+                )
             )
 
     background_tasks.add_task(_run_site_audit_pro_task)
