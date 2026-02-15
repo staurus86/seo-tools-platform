@@ -2938,17 +2938,20 @@ class XLSXGenerator:
             raw_issue_rows = []
             seen_raw = set()
             for issue in issues:
+                if not isinstance(issue, dict):
+                    continue
                 severity = (issue.get("severity") or "info").lower()
                 url = issue.get("url", "")
                 code = issue.get("code", "")
                 details = issue.get("details", "")
+                details_text = str(details or "")
                 fingerprint = (severity, url, code, details)
                 if fingerprint in seen_raw:
                     continue
                 seen_raw.add(fingerprint)
                 code_text = str(code)
                 category = code_text.split("_", 1)[0] if "_" in code_text else code_text
-                dedupe_hash = hashlib.md5(f"{severity}|{url}|{code}|{details[:240]}".encode("utf-8", errors="ignore")).hexdigest()[:10]
+                dedupe_hash = hashlib.md5(f"{severity}|{url}|{code}|{details_text[:240]}".encode("utf-8", errors="ignore")).hexdigest()[:10]
                 raw_issue_rows.append([
                     severity,
                     url,
@@ -2958,7 +2961,7 @@ class XLSXGenerator:
                     dedupe_hash,
                     owner_hint_by_code(code),
                     issue.get("title", ""),
-                    details,
+                    details_text,
                     issue.get("selector") or issue.get("path") or issue.get("field") or "",
                     issue.get("recommendation") or issue.get("fix") or issue_recommendation(issue),
                 ])
