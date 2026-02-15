@@ -957,6 +957,12 @@ class XLSXGenerator:
                     recs.append("Deduplicate title")
                 if int(page.get("duplicate_description_count") or 0) > 1:
                     recs.append("Deduplicate meta description")
+                if not bool(page.get("charset_declared")):
+                    recs.append("Add <meta charset=\"utf-8\">")
+                if not bool(page.get("viewport_declared")):
+                    recs.append("Add viewport meta for mobile devices")
+                if bool(page.get("multiple_meta_robots")):
+                    recs.append("Keep only one meta robots tag")
                 return ok_if_empty(recs)
 
             if tab == "content":
@@ -970,6 +976,8 @@ class XLSXGenerator:
                     recs.append("Increase content volume to 300+ words")
                 if to_float(page.get("toxicity_score"), 0.0) > 40:
                     recs.append("Reduce keyword stuffing and spam")
+                if int(page.get("near_duplicate_count") or 0) > 0:
+                    recs.append("Rewrite near-duplicate blocks and strengthen page intent")
                 return ok_if_empty(recs)
 
             if tab == "technical":
@@ -988,6 +996,8 @@ class XLSXGenerator:
                 rt = page.get("response_time_ms")
                 if rt is not None and int(rt) > 2000:
                     recs.append("Reduce server response time")
+                if to_float(page.get("perf_light_score"), 100.0) < 60:
+                    recs.append("Reduce render-blocking JS and DOM/HTML size")
                 return ok_if_empty(recs)
 
             if tab == "eeat":
@@ -1039,6 +1049,12 @@ class XLSXGenerator:
                     recs.append("Add width/height attributes")
                 if int(img_opt.get("no_lazy_load") or 0) > 0:
                     recs.append("Enable lazy loading")
+                if int(page.get("images_modern_format_count") or 0) <= 0 and int(page.get("images_count") or 0) > 0:
+                    recs.append("Use WebP/AVIF for key images")
+                if int(page.get("generic_alt_count") or 0) > 0:
+                    recs.append("Replace generic ALT texts with descriptive ones")
+                if int(page.get("decorative_non_empty_alt_count") or 0) > 0:
+                    recs.append("Use empty ALT for decorative images")
                 return ok_if_empty(recs)
 
             if tab == "external":
@@ -1171,6 +1187,8 @@ class XLSXGenerator:
                 technical_score -= 10
             if not bool(page.get("cache_enabled")):
                 technical_score -= 10
+            if to_float(page.get("perf_light_score"), 100.0) < 60:
+                technical_score -= 10
             technical_score = max(0, technical_score)
 
             content_score = 100
@@ -1186,6 +1204,12 @@ class XLSXGenerator:
 
             link_score = int(round(max(0.0, min(100.0, to_float(page.get("link_quality_score"), 0.0)))))
             media_score = max(0, 100 - min(80, image_issues_total * 10))
+            if int(page.get("images_count") or 0) > 0 and int(page.get("images_modern_format_count") or 0) == 0:
+                media_score = max(0, media_score - 10)
+            if int(page.get("generic_alt_count") or 0) > 0:
+                media_score = max(0, media_score - 8)
+            if int(page.get("decorative_non_empty_alt_count") or 0) > 0:
+                media_score = max(0, media_score - 6)
             hierarchy_score = 100 if not (page.get("h_errors") or []) else max(0, 100 - len(page.get("h_errors") or []) * 25)
             keyword_score = max(0, 100 - min(60, int(round(to_float(page.get("keyword_stuffing_score"), 0.0)))))
 
@@ -1340,7 +1364,8 @@ class XLSXGenerator:
             "URL", "Title", "Title len", "Meta description", "Meta len", "H1 count", "H1 text",
             "Canonical URL", "Canonical status", "Meta robots", "X-Robots", "Schema count",
             "JSON-LD", "Microdata", "RDFa", "Structured types", "Hreflang count",
-            "Breadcrumbs", "Mobile hint", "Title dup", "Desc dup", "OnPage score", "OnPage solution", "Severity",
+            "Breadcrumbs", "Mobile hint", "Charset", "Viewport", "Meta robots multi",
+            "Title tags", "Description tags", "Title dup", "Desc dup", "OnPage score", "OnPage solution", "Severity",
         ]
         onpage_rows = []
         for page in pages:
@@ -1367,6 +1392,11 @@ class XLSXGenerator:
                 page.get("hreflang_count", 0),
                 page.get("breadcrumbs", ""),
                 page.get("mobile_friendly_hint", ""),
+                page.get("charset_declared", ""),
+                page.get("viewport_declared", ""),
+                page.get("multiple_meta_robots", ""),
+                page.get("title_tags_count", 0),
+                page.get("meta_description_tags_count", 0),
                 page.get("duplicate_title_count", 0),
                 page.get("duplicate_description_count", 0),
                 d.get("onpage_score", ""),
@@ -1377,16 +1407,18 @@ class XLSXGenerator:
             "2_OnPage+Structured",
             onpage_headers,
             onpage_rows,
-            severity_idx=23,
-            widths=[56, 28, 10, 32, 10, 10, 22, 32, 16, 20, 20, 12, 8, 10, 8, 36, 10, 10, 10, 10, 10, 12, 48, 10],
+            severity_idx=28,
+            widths=[56, 28, 10, 32, 10, 10, 22, 32, 16, 20, 20, 12, 8, 10, 8, 36, 10, 10, 10, 10, 12, 10, 12, 10, 10, 12, 48, 10],
         )
 
         # Sheet 3: Technical
         tech_headers = [
             "URL", "Final URL", "Status", "Status line", "Response ms", "Size KB", "HTML bytes", "DOM nodes", "Redirects",
             "HTTPS", "Compression", "Compression algo", "Cache enabled", "Cache-Control",
-            "Last-Modified", "Freshness days", "HTML quality score", "Deprecated tags count",
-            "Indexability reason", "Technical score", "Technical solution", "Severity",
+            "Last-Modified", "Freshness days", "JS assets", "CSS assets", "Render-blocking JS", "Preload hints",
+            "Perf light score", "Path depth", "URL params", "Crawl budget risk",
+            "Security headers score", "CSP", "HSTS", "X-Frame-Options", "Referrer-Policy", "Permissions-Policy", "Mixed content refs",
+            "HTML quality score", "Deprecated tags count", "Indexability reason", "Technical score", "Technical solution", "Severity",
         ]
         tech_rows = []
         for page in pages:
@@ -1409,6 +1441,21 @@ class XLSXGenerator:
                 page.get("cache_control", ""),
                 page.get("last_modified", ""),
                 page.get("content_freshness_days", ""),
+                page.get("js_assets_count", 0),
+                page.get("css_assets_count", 0),
+                page.get("render_blocking_js_count", 0),
+                page.get("preload_hints_count", 0),
+                page.get("perf_light_score", ""),
+                page.get("path_depth", 0),
+                page.get("url_params_count", 0),
+                page.get("crawl_budget_risk", ""),
+                page.get("security_headers_score", ""),
+                page.get("csp_present", ""),
+                page.get("hsts_present", ""),
+                page.get("x_frame_options_present", ""),
+                page.get("referrer_policy_present", ""),
+                page.get("permissions_policy_present", ""),
+                page.get("mixed_content_count", 0),
                 page.get("html_quality_score", ""),
                 len(page.get("deprecated_tags") or []),
                 page.get("indexability_reason", ""),
@@ -1420,8 +1467,8 @@ class XLSXGenerator:
             "3_Technical",
             tech_headers,
             tech_rows,
-            severity_idx=21,
-            widths=[50, 50, 10, 22, 12, 10, 12, 10, 10, 8, 10, 14, 10, 22, 24, 14, 14, 12, 18, 12, 46, 10],
+            severity_idx=36,
+            widths=[50, 50, 10, 22, 12, 10, 12, 10, 10, 8, 10, 14, 10, 22, 24, 14, 10, 10, 14, 10, 12, 10, 10, 14, 14, 8, 8, 12, 12, 14, 14, 10, 12, 12, 46, 10],
         )
 
         # Sheet 4: Content + AI
@@ -1509,6 +1556,7 @@ class XLSXGenerator:
         # Sheet 6: Images + External
         img_headers = [
             "URL", "Images total", "Without alt", "No width/height", "No lazy-load", "Image issues total",
+            "Modern formats", "Duplicate src", "External images", "Generic ALT", "Decorative with ALT",
             "External total", "External follow", "External nofollow", "Follow ratio %",
             "Media score", "Images+External solution", "Severity",
         ]
@@ -1524,6 +1572,11 @@ class XLSXGenerator:
                 d.get("no_wh", 0),
                 d.get("no_lazy", 0),
                 d.get("image_issues_total", 0),
+                page.get("images_modern_format_count", 0),
+                page.get("image_duplicate_src_count", 0),
+                page.get("images_external_count", 0),
+                page.get("generic_alt_count", 0),
+                page.get("decorative_non_empty_alt_count", 0),
                 d.get("ext_total", 0),
                 d.get("ext_follow", 0),
                 d.get("ext_nofollow", 0),
@@ -1536,8 +1589,8 @@ class XLSXGenerator:
             "6_Images+External",
             img_headers,
             img_rows,
-            severity_idx=12,
-            widths=[52, 10, 10, 12, 12, 12, 12, 12, 14, 12, 10, 58, 10],
+            severity_idx=17,
+            widths=[52, 10, 10, 12, 12, 12, 12, 10, 10, 10, 12, 12, 12, 14, 12, 10, 58, 10],
         )
 
         # Sheet 7: Hierarchy + Errors
@@ -1823,6 +1876,37 @@ class XLSXGenerator:
                 ai_rows,
                 severity_idx=9,
                 widths=[48, 10, 48, 60, 12, 12, 12, 10, 52, 10],
+            )
+
+            crawl_budget_headers = [
+                "URL", "Path depth", "URL params", "Crawl budget risk", "Redirects", "Status", "Indexable",
+                "Incoming links", "Outgoing internal", "Near duplicates", "Crawl budget solution", "Severity",
+            ]
+            crawl_budget_rows = []
+            for page in pages:
+                sev = infer_page_severity(page)
+                crawl_budget_rows.append(
+                    [
+                        page.get("url", ""),
+                        page.get("path_depth", 0),
+                        page.get("url_params_count", 0),
+                        page.get("crawl_budget_risk", ""),
+                        page.get("redirect_count", 0),
+                        page.get("status_code", ""),
+                        page.get("indexable", ""),
+                        page.get("incoming_internal_links", 0),
+                        page.get("outgoing_internal_links", 0),
+                        page.get("near_duplicate_count", 0),
+                        page_solution("technical", page),
+                        sev,
+                    ]
+                )
+            fill_sheet(
+                "CrawlBudget",
+                crawl_budget_headers,
+                crawl_budget_rows,
+                severity_idx=11,
+                widths=[52, 10, 10, 16, 10, 10, 10, 12, 12, 12, 52, 10],
             )
 
             raw_issue_headers = ["Severity", "URL", "Code", "Category", "Title", "Details", "Affected", "Recommendation"]

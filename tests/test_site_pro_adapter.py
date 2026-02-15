@@ -125,6 +125,11 @@ class SiteProAdapterTests(unittest.TestCase):
 
         for page in public["pages"]:
             self.assertIn("status_line", page)
+            self.assertIn("perf_light_score", page)
+            self.assertIn("js_assets_count", page)
+            self.assertIn("images_modern_format_count", page)
+            self.assertIn("title_tags_count", page)
+            self.assertIn("crawl_budget_risk", page)
             self.assertIn("recommendation", page)
             self.assertIn("orphan_page", page)
             self.assertIn("topic_hub", page)

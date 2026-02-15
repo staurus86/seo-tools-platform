@@ -41,9 +41,15 @@ class NormalizedSiteAuditRow(BaseModel):
     status_code: Optional[int] = None
     status_line: Optional[str] = None
     response_time_ms: Optional[int] = None
+    response_headers_count: int = 0
     html_size_bytes: Optional[int] = None
     content_kb: Optional[float] = None
     dom_nodes_count: Optional[int] = None
+    js_assets_count: int = 0
+    css_assets_count: int = 0
+    render_blocking_js_count: int = 0
+    preload_hints_count: int = 0
+    perf_light_score: Optional[float] = None
     redirect_count: int = 0
     is_https: Optional[bool] = None
     compression_enabled: Optional[bool] = None
@@ -56,9 +62,14 @@ class NormalizedSiteAuditRow(BaseModel):
     indexability_reason: Optional[str] = None
     health_score: Optional[float] = None
     title: Optional[str] = None
+    title_tags_count: int = 0
     title_len: Optional[int] = None
     meta_description: Optional[str] = None
+    meta_description_tags_count: int = 0
     description_len: Optional[int] = None
+    charset_declared: Optional[bool] = None
+    viewport_declared: Optional[bool] = None
+    multiple_meta_robots: Optional[bool] = None
     canonical: Optional[str] = None
     canonical_status: Optional[str] = None
     canonical_target_status: Optional[int] = None
@@ -110,6 +121,11 @@ class NormalizedSiteAuditRow(BaseModel):
     images_count: Optional[int] = None
     images_without_alt: Optional[int] = None
     images_no_alt: Optional[int] = None
+    images_modern_format_count: int = 0
+    images_external_count: int = 0
+    image_duplicate_src_count: int = 0
+    generic_alt_count: int = 0
+    decorative_non_empty_alt_count: int = 0
     images_optimization: Dict[str, int] = Field(default_factory=dict)
     external_nofollow_links: int = 0
     external_follow_links: int = 0
@@ -155,6 +171,16 @@ class NormalizedSiteAuditRow(BaseModel):
     all_issues: List[str] = Field(default_factory=list)
     compression: Optional[bool] = None
     recommendation: Optional[str] = None
+    url_params_count: int = 0
+    path_depth: int = 0
+    crawl_budget_risk: Optional[str] = None
+    csp_present: Optional[bool] = None
+    hsts_present: Optional[bool] = None
+    x_frame_options_present: Optional[bool] = None
+    referrer_policy_present: Optional[bool] = None
+    permissions_policy_present: Optional[bool] = None
+    mixed_content_count: int = 0
+    security_headers_score: Optional[float] = None
     issues: List[SiteAuditProIssue] = Field(default_factory=list)
 
 

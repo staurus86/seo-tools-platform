@@ -9,7 +9,7 @@ import json
 import math
 import re
 from typing import Any, Deque, Dict, List, Set, Tuple
-from urllib.parse import urljoin, urldefrag, urlparse
+from urllib.parse import parse_qs, urljoin, urldefrag, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -812,16 +812,24 @@ class SiteAuditProAdapter:
         response_time_ms: int,
         redirect_count: int,
         html_size_bytes: int,
+        detailed_checks: bool,
     ) -> Tuple[NormalizedSiteAuditRow, List[str], str, int, int]:
         soup = BeautifulSoup(html or "", "html.parser")
         body_text = re.sub(r"\s+", " ", soup.get_text(" ", strip=True))
+        title_tags = soup.find_all("title")
         title = (soup.title.string if soup.title and soup.title.string else "").strip()
-        desc_tag = soup.find("meta", attrs={"name": "description"})
+        title_tags_count = len(title_tags)
+        desc_tags = soup.find_all("meta", attrs={"name": lambda v: str(v).lower().strip() == "description"})
+        desc_tag = desc_tags[0] if desc_tags else None
         description = (desc_tag.get("content") if desc_tag else "") or ""
+        meta_description_tags_count = len(desc_tags)
         robots_tag = soup.find("meta", attrs={"name": "robots"})
+        robots_tags = soup.find_all("meta", attrs={"name": lambda v: str(v).lower().strip() == "robots"})
         robots = ((robots_tag.get("content") if robots_tag else "") or "").lower()
         viewport_tag = soup.find("meta", attrs={"name": "viewport"})
         viewport = ((viewport_tag.get("content") if viewport_tag else "") or "").lower()
+        charset_declared = bool(soup.find("meta", attrs={"charset": True}))
+        multiple_meta_robots = len(robots_tags) > 1
         canonical_tag = soup.find("link", attrs={"rel": lambda x: x and "canonical" in str(x).lower()})
         canonical = (canonical_tag.get("href") if canonical_tag else "") or ""
         canonical_status = self._classify_canonical(canonical=canonical, page_url=final_url, base_host=base_host)
@@ -841,7 +849,30 @@ class SiteAuditProAdapter:
         h1_count = len(soup.find_all("h1"))
         h1_text = (soup.find("h1").get_text(" ", strip=True)[:120] if soup.find("h1") else "")
         images = soup.find_all("img")
+        image_srcs = [self._normalize_url(urljoin(final_url, str(img.get("src") or "").strip())) for img in images if str(img.get("src") or "").strip()]
+        image_src_counter = Counter(image_srcs)
+        image_duplicate_src_count = sum(1 for _, c in image_src_counter.items() if c > 1)
+        images_external_count = sum(1 for src in image_srcs if urlparse(src).netloc and urlparse(src).netloc != base_host)
+        images_modern_format_count = sum(
+            1
+            for src in image_srcs
+            if re.search(r"\.(webp|avif)(?:$|[?#])", src, flags=re.I)
+        )
         images_without_alt = sum(1 for img in images if not (img.get("alt") or "").strip())
+        generic_alt_count = sum(
+            1
+            for img in images
+            if str(img.get("alt") or "").strip().lower() in {"image", "photo", "picture", "img", "\u0444\u043e\u0442\u043e", "\u043a\u0430\u0440\u0442\u0438\u043d\u043a\u0430"}
+        )
+        decorative_non_empty_alt_count = sum(
+            1
+            for img in images
+            if (
+                str(img.get("role") or "").strip().lower() == "presentation"
+                or str(img.get("aria-hidden") or "").strip().lower() == "true"
+            )
+            and bool(str(img.get("alt") or "").strip())
+        )
         images_no_width_height = sum(
             1 for img in images if not (str(img.get("width") or "").strip() and str(img.get("height") or "").strip())
         )
@@ -908,6 +939,33 @@ class SiteAuditProAdapter:
         is_https = urlparse(final_url).scheme.lower() == "https"
         og_tags = len(soup.find_all("meta", attrs={"property": lambda v: str(v).lower().startswith("og:") if v else False}))
         js_count = len(soup.find_all("script"))
+        external_script_tags = [tag for tag in soup.find_all("script", src=True)]
+        js_assets_count = len(external_script_tags)
+        css_assets_count = len(
+            [
+                tag
+                for tag in soup.find_all("link", href=True)
+                if "stylesheet" in [str(x).lower() for x in (tag.get("rel") or [])]
+            ]
+        )
+        render_blocking_js_count = len(
+            [
+                tag
+                for tag in soup.find_all("script", src=True)
+                if (
+                    not tag.get("async")
+                    and not tag.get("defer")
+                    and bool(tag.find_parent("head"))
+                )
+            ]
+        )
+        preload_hints_count = len(
+            [
+                tag
+                for tag in soup.find_all("link", href=True)
+                if "preload" in [str(x).lower() for x in (tag.get("rel") or [])]
+            ]
+        )
         js_dependence = js_count >= 8
         has_main_tag = bool(soup.find("main"))
         cloaking_detected = self._detect_cloaking(
@@ -931,6 +989,41 @@ class SiteAuditProAdapter:
             else:
                 follow_links_total += 1
 
+        parsed_url = urlparse(final_url or source_url)
+        query_params = parse_qs(parsed_url.query, keep_blank_values=True)
+        url_params_count = len(query_params)
+        path_depth = len([seg for seg in (parsed_url.path or "").split("/") if seg])
+        crawl_budget_risk = "low"
+        if url_params_count >= 3 or path_depth >= 5:
+            crawl_budget_risk = "high"
+        elif url_params_count >= 1 or path_depth >= 3:
+            crawl_budget_risk = "medium"
+
+        perf_penalty = 0.0
+        perf_penalty += max(0.0, (response_time_ms - 800) / 120.0)
+        perf_penalty += max(0.0, ((html_size_bytes / 1024.0) - 180.0) / 12.0)
+        perf_penalty += max(0.0, (dom_nodes_count - 1800) / 220.0)
+        perf_penalty += render_blocking_js_count * 2.0
+        perf_light_score = round(max(0.0, min(100.0, 100.0 - perf_penalty)), 1)
+
+        csp_present = bool(str(headers.get("Content-Security-Policy") or headers.get("content-security-policy") or "").strip())
+        hsts_present = bool(str(headers.get("Strict-Transport-Security") or headers.get("strict-transport-security") or "").strip())
+        x_frame_options_present = bool(str(headers.get("X-Frame-Options") or headers.get("x-frame-options") or "").strip())
+        referrer_policy_present = bool(str(headers.get("Referrer-Policy") or headers.get("referrer-policy") or "").strip())
+        permissions_policy_present = bool(str(headers.get("Permissions-Policy") or headers.get("permissions-policy") or "").strip())
+        mixed_content_count = len(re.findall(r"""(?:src|href)\s*=\s*["']http://""", html or "", flags=re.I)) if is_https else 0
+        security_headers_score = round(
+            (
+                (20.0 if csp_present else 0.0)
+                + (20.0 if hsts_present else 0.0)
+                + (20.0 if x_frame_options_present else 0.0)
+                + (20.0 if referrer_policy_present else 0.0)
+                + (20.0 if permissions_policy_present else 0.0)
+                - min(20.0, mixed_content_count * 2.0)
+            ),
+            1,
+        )
+
         issues: List[SiteAuditProIssue] = []
         penalty = 0.0
         if status_code >= 400:
@@ -953,6 +1046,16 @@ class SiteAuditProAdapter:
                 )
             )
             penalty += 20
+        if detailed_checks and title_tags_count > 1:
+            issues.append(
+                SiteAuditProIssue(
+                    severity="warning",
+                    code="multiple_title_tags",
+                    title="Multiple <title> tags found",
+                    details=f"Count: {title_tags_count}",
+                )
+            )
+            penalty += 6
         if not description.strip():
             issues.append(
                 SiteAuditProIssue(
@@ -963,6 +1066,43 @@ class SiteAuditProAdapter:
                 )
             )
             penalty += 8
+        if detailed_checks and meta_description_tags_count > 1:
+            issues.append(
+                SiteAuditProIssue(
+                    severity="warning",
+                    code="multiple_meta_descriptions",
+                    title="Multiple meta description tags found",
+                    details=f"Count: {meta_description_tags_count}",
+                )
+            )
+            penalty += 4
+        if detailed_checks and not charset_declared:
+            issues.append(
+                SiteAuditProIssue(
+                    severity="info",
+                    code="missing_charset_meta",
+                    title="Charset meta declaration is missing",
+                )
+            )
+            penalty += 2
+        if detailed_checks and not viewport:
+            issues.append(
+                SiteAuditProIssue(
+                    severity="info",
+                    code="missing_viewport_meta",
+                    title="Viewport meta declaration is missing",
+                )
+            )
+            penalty += 2
+        if detailed_checks and multiple_meta_robots:
+            issues.append(
+                SiteAuditProIssue(
+                    severity="warning",
+                    code="multiple_meta_robots",
+                    title="Multiple meta robots tags found",
+                )
+            )
+            penalty += 3
         if "noindex" in robots:
             issues.append(
                 SiteAuditProIssue(
@@ -992,6 +1132,16 @@ class SiteAuditProAdapter:
                 )
             )
             penalty += 10
+        if detailed_checks and perf_light_score < 60:
+            issues.append(
+                SiteAuditProIssue(
+                    severity="warning",
+                    code="light_perf_low_score",
+                    title="Low lightweight performance score",
+                    details=f"Score: {perf_light_score}",
+                )
+            )
+            penalty += 6
         if h1_count != 1:
             issues.append(
                 SiteAuditProIssue(
@@ -1029,7 +1179,69 @@ class SiteAuditProAdapter:
                 )
             )
             penalty += 12
-        if structured_error_codes:
+        if detailed_checks and (images_count := len(images)):
+            modern_ratio = (images_modern_format_count / max(1, images_count)) * 100.0
+            if modern_ratio < 20.0:
+                issues.append(
+                    SiteAuditProIssue(
+                        severity="info",
+                        code="low_modern_image_formats",
+                        title="Low usage of WebP/AVIF image formats",
+                        details=f"Modern formats: {images_modern_format_count}/{images_count}",
+                    )
+                )
+                penalty += 2
+        if detailed_checks and image_duplicate_src_count > 0:
+            issues.append(
+                SiteAuditProIssue(
+                    severity="info",
+                    code="duplicate_image_sources",
+                    title="Duplicate image sources found on page",
+                    details=f"Duplicate sources: {image_duplicate_src_count}",
+                )
+            )
+            penalty += 2
+        if detailed_checks and generic_alt_count > 0:
+            issues.append(
+                SiteAuditProIssue(
+                    severity="info",
+                    code="generic_alt_texts",
+                    title="Generic image alt texts found",
+                    details=f"Generic alt count: {generic_alt_count}",
+                )
+            )
+            penalty += 2
+        if detailed_checks and decorative_non_empty_alt_count > 0:
+            issues.append(
+                SiteAuditProIssue(
+                    severity="info",
+                    code="decorative_images_with_alt",
+                    title="Decorative images should have empty alt",
+                    details=f"Decorative with non-empty alt: {decorative_non_empty_alt_count}",
+                )
+            )
+            penalty += 2
+        if detailed_checks and crawl_budget_risk == "high":
+            issues.append(
+                SiteAuditProIssue(
+                    severity="warning",
+                    code="crawl_budget_risk_high",
+                    title="High crawl budget risk for URL pattern",
+                    details=f"params={url_params_count}, depth={path_depth}",
+                )
+            )
+            penalty += 4
+        elif detailed_checks and crawl_budget_risk == "medium":
+            issues.append(
+                SiteAuditProIssue(
+                    severity="info",
+                    code="crawl_budget_risk_medium",
+                    title="Medium crawl budget risk for URL pattern",
+                    details=f"params={url_params_count}, depth={path_depth}",
+                )
+            )
+            penalty += 1
+        if detailed_checks and structured_error_codes:
             issues.append(
                 SiteAuditProIssue(
                     severity="warning",
@@ -1081,9 +1293,15 @@ class SiteAuditProAdapter:
             status_code=status_code,
             status_line=(status_line or "").strip() or None,
             response_time_ms=response_time_ms,
+            response_headers_count=len(headers or {}),
             html_size_bytes=html_size_bytes,
             content_kb=round((html_size_bytes or 0) / 1024.0, 1),
             dom_nodes_count=dom_nodes_count,
+            js_assets_count=js_assets_count,
+            css_assets_count=css_assets_count,
+            render_blocking_js_count=render_blocking_js_count,
+            preload_hints_count=preload_hints_count,
+            perf_light_score=perf_light_score,
             redirect_count=redirect_count,
             is_https=is_https,
             compression_enabled=compression_enabled,
@@ -1096,9 +1314,14 @@ class SiteAuditProAdapter:
             indexability_reason=indexability_reason,
             health_score=health_score,
             title=title,
+            title_tags_count=title_tags_count,
             title_len=len(title),
             meta_description=description.strip(),
+            meta_description_tags_count=meta_description_tags_count,
             description_len=len(description.strip()),
+            charset_declared=charset_declared,
+            viewport_declared=bool(viewport),
+            multiple_meta_robots=multiple_meta_robots,
             canonical=canonical.strip(),
             canonical_status=canonical_status,
             meta_robots=robots,
@@ -1151,6 +1374,11 @@ class SiteAuditProAdapter:
             images_count=len(images),
             images_without_alt=images_without_alt,
             images_no_alt=images_without_alt,
+            images_modern_format_count=images_modern_format_count,
+            images_external_count=images_external_count,
+            image_duplicate_src_count=image_duplicate_src_count,
+            generic_alt_count=generic_alt_count,
+            decorative_non_empty_alt_count=decorative_non_empty_alt_count,
             images_optimization={
                 "total": len(images),
                 "no_alt": images_without_alt,
@@ -1170,6 +1398,16 @@ class SiteAuditProAdapter:
             ai_markers_list=ai_markers_list,
             ai_marker_sample=ai_marker_sample or None,
             filler_phrases=filler_phrases,
+            url_params_count=url_params_count,
+            path_depth=path_depth,
+            crawl_budget_risk=crawl_budget_risk,
+            csp_present=csp_present,
+            hsts_present=hsts_present,
+            x_frame_options_present=x_frame_options_present,
+            referrer_policy_present=referrer_policy_present,
+            permissions_policy_present=permissions_policy_present,
+            mixed_content_count=mixed_content_count,
+            security_headers_score=security_headers_score,
             og_tags=og_tags,
             js_dependence=js_dependence,
             has_main_tag=has_main_tag,
@@ -1473,6 +1711,7 @@ class SiteAuditProAdapter:
                     response_time_ms=response_time_ms,
                     redirect_count=len(getattr(response, "history", []) or []),
                     html_size_bytes=html_size_bytes,
+                    detailed_checks=(selected_mode == "full"),
                 )
                 rows.append(row)
                 depth_by_url[self._normalize_url(row.url)] = min(depth_by_url.get(self._normalize_url(row.url), current_depth), current_depth)
@@ -1543,13 +1782,50 @@ class SiteAuditProAdapter:
                 )
             row_norm = self._normalize_url(row.final_url or row.url)
             row.click_depth = depth_by_url.get(row_norm, depth_by_url.get(self._normalize_url(row.url)))
-            if (not effective_batch_mode) and row.click_depth is not None and row.click_depth > 3:
+            if (selected_mode == "full") and (not effective_batch_mode) and row.click_depth is not None and row.click_depth > 3:
                 row.issues.append(
                     SiteAuditProIssue(
                         severity="warning",
                         code="deep_click_depth",
                         title="Page is too deep in click depth",
                         details=f"Click depth: {row.click_depth}",
+                    )
+                )
+
+        start_norm = self._normalize_url(start_url)
+        homepage_row = None
+        for row in rows:
+            if self._normalize_url(row.url) == start_norm or self._normalize_url(row.final_url or "") == start_norm:
+                homepage_row = row
+                break
+        if homepage_row and (selected_mode == "full"):
+            if not homepage_row.csp_present:
+                homepage_row.issues.append(
+                    SiteAuditProIssue(severity="warning", code="security_missing_csp", title="Homepage missing CSP header")
+                )
+            if homepage_row.is_https and not homepage_row.hsts_present:
+                homepage_row.issues.append(
+                    SiteAuditProIssue(severity="warning", code="security_missing_hsts", title="Homepage missing HSTS header")
+                )
+            if not homepage_row.x_frame_options_present:
+                homepage_row.issues.append(
+                    SiteAuditProIssue(severity="info", code="security_missing_xfo", title="Homepage missing X-Frame-Options header")
+                )
+            if not homepage_row.referrer_policy_present:
+                homepage_row.issues.append(
+                    SiteAuditProIssue(severity="info", code="security_missing_referrer_policy", title="Homepage missing Referrer-Policy header")
+                )
+            if not homepage_row.permissions_policy_present:
+                homepage_row.issues.append(
+                    SiteAuditProIssue(severity="info", code="security_missing_permissions_policy", title="Homepage missing Permissions-Policy header")
+                )
+            if int(homepage_row.mixed_content_count or 0) > 0:
+                homepage_row.issues.append(
+                    SiteAuditProIssue(
+                        severity="warning",
+                        code="security_mixed_content_homepage",
+                        title="Homepage contains mixed content links",
+                        details=f"Mixed content refs: {homepage_row.mixed_content_count}",
                     )
                 )
 
@@ -1686,6 +1962,25 @@ class SiteAuditProAdapter:
             mode=selected_mode,
         )
 
+        crawl_budget_summary = {
+            "high_risk_urls": sum(1 for r in rows if (r.crawl_budget_risk or "") == "high"),
+            "medium_risk_urls": sum(1 for r in rows if (r.crawl_budget_risk or "") == "medium"),
+            "parameterized_urls": sum(1 for r in rows if int(r.url_params_count or 0) > 0),
+            "deep_path_urls": sum(1 for r in rows if int(r.path_depth or 0) >= 4),
+        }
+        homepage_security = {}
+        if homepage_row:
+            homepage_security = {
+                "url": homepage_row.url,
+                "security_headers_score": homepage_row.security_headers_score,
+                "csp_present": homepage_row.csp_present,
+                "hsts_present": homepage_row.hsts_present,
+                "x_frame_options_present": homepage_row.x_frame_options_present,
+                "referrer_policy_present": homepage_row.referrer_policy_present,
+                "permissions_policy_present": homepage_row.permissions_policy_present,
+                "mixed_content_count": homepage_row.mixed_content_count,
+            }
+
         artifacts: Dict[str, Any] = {
             "migration_stage": "adapter_lightweight_crawl",
             "max_pages_requested": max_pages,
@@ -1693,6 +1988,8 @@ class SiteAuditProAdapter:
             "batch_mode": effective_batch_mode,
             "batch_urls_requested": len(prepared_batch_urls),
             "crawl_errors": crawl_errors[:50],
+            "crawl_budget_summary": crawl_budget_summary,
+            "homepage_security": homepage_security,
             "topic_clusters_count": len(topic_clusters),
             "semantic_suggestions": semantic_suggestions,
             "notes": [
@@ -1753,6 +2050,10 @@ class SiteAuditProAdapter:
             sum((row.link_quality_score or 0.0) for row in normalized.rows) / total_pages,
             1,
         )
+        avg_perf_light = round(
+            sum((row.perf_light_score or 0.0) for row in normalized.rows) / total_pages,
+            1,
+        )
 
         pipeline = {
             "pagerank": pagerank,
@@ -1780,10 +2081,13 @@ class SiteAuditProAdapter:
                 "avg_response_time_ms": avg_response_time,
                 "avg_readability_score": avg_readability,
                 "avg_link_quality_score": avg_link_quality,
+                "avg_perf_light_score": avg_perf_light,
                 "orphan_pages": orphan_pages,
                 "topic_hubs": topic_hubs,
                 "pages_without_alt": pages_without_alt,
                 "non_https_pages": non_https_pages,
+                "crawl_budget_high_risk": sum(1 for row in normalized.rows if (row.crawl_budget_risk or "") == "high"),
+                "crawl_budget_medium_risk": sum(1 for row in normalized.rows if (row.crawl_budget_risk or "") == "medium"),
             },
         }
         return {
