@@ -1106,6 +1106,46 @@ class XLSXGenerator:
                 ])
             fill_sheet("11_IssuesRaw", raw_issue_headers, raw_issue_rows, severity_idx=0, widths=[12, 62, 18, 28, 80])
 
+            advanced_headers = [
+                "URL",
+                "Canonical status",
+                "X-Robots-Tag",
+                "Indexability reason",
+                "Last-Modified",
+                "Freshness days",
+                "Structured total",
+                "Breadcrumbs",
+                "HTML quality",
+                "Trust score",
+                "EEAT score",
+                "CTA quality",
+                "JS dependence",
+                "Has main tag",
+                "OG tags",
+                "Compression",
+            ]
+            advanced_rows = []
+            for page in pages:
+                advanced_rows.append([
+                    page.get("url", ""),
+                    page.get("canonical_status", ""),
+                    page.get("x_robots_tag", ""),
+                    page.get("indexability_reason", ""),
+                    page.get("last_modified", ""),
+                    page.get("content_freshness_days", ""),
+                    page.get("structured_data", 0),
+                    page.get("breadcrumbs", ""),
+                    page.get("html_quality_score", ""),
+                    page.get("trust_score", ""),
+                    page.get("eeat_score", ""),
+                    page.get("cta_text_quality", ""),
+                    page.get("js_dependence", ""),
+                    page.get("has_main_tag", ""),
+                    page.get("og_tags", ""),
+                    page.get("compression", ""),
+                ])
+            fill_sheet("12_AdvancedDeep", advanced_headers, advanced_rows, widths=[52, 16, 22, 20, 22, 14, 14, 12, 12, 10, 10, 10, 12, 12, 10, 10])
+
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         wb.save(filepath)
         return filepath

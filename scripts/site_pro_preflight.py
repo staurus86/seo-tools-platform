@@ -55,6 +55,11 @@ def main() -> int:
             ".html",
             ".js",
         ],
+        [
+            sys.executable,
+            "scripts/site_pro_gap_report.py",
+            "--strict",
+        ],
     ]
 
     for cmd in commands:

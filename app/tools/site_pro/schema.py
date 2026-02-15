@@ -41,34 +41,74 @@ class NormalizedSiteAuditRow(BaseModel):
     status_code: Optional[int] = None
     response_time_ms: Optional[int] = None
     html_size_bytes: Optional[int] = None
+    content_kb: Optional[float] = None
     dom_nodes_count: Optional[int] = None
     redirect_count: int = 0
     is_https: Optional[bool] = None
     compression_enabled: Optional[bool] = None
+    compression_algorithm: Optional[str] = None
     cache_enabled: Optional[bool] = None
+    cache_control: Optional[str] = None
+    last_modified: Optional[str] = None
+    content_freshness_days: Optional[int] = None
     indexable: Optional[bool] = None
+    indexability_reason: Optional[str] = None
     health_score: Optional[float] = None
     title: Optional[str] = None
+    title_len: Optional[int] = None
     meta_description: Optional[str] = None
+    description_len: Optional[int] = None
     canonical: Optional[str] = None
+    canonical_status: Optional[str] = None
     meta_robots: Optional[str] = None
+    x_robots_tag: Optional[str] = None
+    breadcrumbs: Optional[bool] = None
+    structured_data: Optional[int] = None
+    structured_data_detail: Dict[str, int] = Field(default_factory=dict)
+    structured_types: List[str] = Field(default_factory=list)
     schema_count: int = 0
     hreflang_count: int = 0
     mobile_friendly_hint: Optional[bool] = None
     word_count: Optional[int] = None
     unique_word_count: Optional[int] = None
+    keyword_stuffing_score: Optional[float] = None
+    top_keywords: List[str] = Field(default_factory=list)
+    keyword_density_profile: Dict[str, float] = Field(default_factory=dict)
     lexical_diversity: Optional[float] = None
     readability_score: Optional[float] = None
+    avg_sentence_length: Optional[float] = None
+    avg_word_length: Optional[float] = None
+    complex_words_percent: Optional[float] = None
+    content_density: Optional[float] = None
+    boilerplate_percent: Optional[float] = None
     toxicity_score: Optional[float] = None
     filler_ratio: Optional[float] = None
+    heading_distribution: Dict[str, int] = Field(default_factory=dict)
+    semantic_tags_count: Optional[int] = None
+    html_quality_score: Optional[float] = None
+    deprecated_tags: List[str] = Field(default_factory=list)
+    hidden_content: Optional[bool] = None
+    cta_count: Optional[int] = None
+    lists_count: Optional[int] = None
+    tables_count: Optional[int] = None
+    faq_count: Optional[int] = None
     h1_count: Optional[int] = None
+    h1_text: Optional[str] = None
+    h_hierarchy: Optional[str] = None
+    h_errors: List[str] = Field(default_factory=list)
+    h_details: Dict[str, Any] = Field(default_factory=dict)
     images_count: Optional[int] = None
     images_without_alt: Optional[int] = None
+    images_no_alt: Optional[int] = None
+    images_optimization: Dict[str, int] = Field(default_factory=dict)
     external_nofollow_links: int = 0
     external_follow_links: int = 0
+    follow_links_total: int = 0
+    nofollow_links_total: int = 0
     outgoing_internal_links: int = 0
     incoming_internal_links: int = 0
     outgoing_external_links: int = 0
+    total_links: int = 0
     orphan_page: Optional[bool] = None
     topic_hub: Optional[bool] = None
     pagerank: Optional[float] = None
@@ -77,8 +117,29 @@ class NormalizedSiteAuditRow(BaseModel):
     duplicate_title_count: int = 0
     duplicate_description_count: int = 0
     weak_anchor_ratio: Optional[float] = None
+    anchor_text_quality_score: Optional[float] = None
     link_quality_score: Optional[float] = None
     ai_markers_count: int = 0
+    ai_markers_list: List[str] = Field(default_factory=list)
+    filler_phrases: List[str] = Field(default_factory=list)
+    unique_percent: Optional[float] = None
+    og_tags: Optional[int] = None
+    js_dependence: Optional[bool] = None
+    has_main_tag: Optional[bool] = None
+    cloaking_detected: Optional[bool] = None
+    has_contact_info: Optional[bool] = None
+    has_legal_docs: Optional[bool] = None
+    has_author_info: Optional[bool] = None
+    has_reviews: Optional[bool] = None
+    trust_badges: Optional[bool] = None
+    trust_score: Optional[float] = None
+    eeat_score: Optional[float] = None
+    eeat_components: Dict[str, float] = Field(default_factory=dict)
+    cta_text_quality: Optional[float] = None
+    tf_idf_keywords: Dict[str, float] = Field(default_factory=dict)
+    semantic_links: List[Dict[str, Any]] = Field(default_factory=list)
+    all_issues: List[str] = Field(default_factory=list)
+    compression: Optional[bool] = None
     recommendation: Optional[str] = None
     issues: List[SiteAuditProIssue] = Field(default_factory=list)
 

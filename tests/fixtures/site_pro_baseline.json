@@ -42,27 +42,27 @@
       "ai_markers_count": 0,
       "duplicate_description_count": 1,
       "duplicate_title_count": 1,
-      "health_score": 90.0,
-      "link_quality_score": 85.0,
-      "topic_label": "home",
+      "health_score": 64.5,
+      "link_quality_score": 76.0,
+      "topic_label": "optimization",
       "weak_anchor_ratio": 0.5
     },
     "https://site.test/about": {
       "ai_markers_count": 0,
       "duplicate_description_count": 2,
       "duplicate_title_count": 2,
-      "health_score": 85.0,
-      "link_quality_score": 100.0,
-      "topic_label": "team",
+      "health_score": 56.9,
+      "link_quality_score": 76.0,
+      "topic_label": "optimization",
       "weak_anchor_ratio": 0.0
     },
     "https://site.test/blog": {
       "ai_markers_count": 3,
       "duplicate_description_count": 2,
       "duplicate_title_count": 2,
-      "health_score": 85.0,
-      "link_quality_score": 100.0,
-      "topic_label": "blog",
+      "health_score": 57.2,
+      "link_quality_score": 74.0,
+      "topic_label": "team",
       "weak_anchor_ratio": 0.0
     }
   },
@@ -72,28 +72,22 @@
     "internal_pages": 3,
     "issues_total": 9,
     "mode": "quick",
-    "score": 86.7,
+    "score": 59.5,
     "total_pages": 3,
     "warning_issues": 7
   },
   "topic_clusters": [
     {
-      "count": 1,
-      "topic": "home",
+      "count": 2,
+      "topic": "optimization",
       "urls": [
-        "https://site.test"
-      ]
-    },
-    {
-      "count": 1,
-      "topic": "team",
-      "urls": [
+        "https://site.test",
         "https://site.test/about"
       ]
     },
     {
       "count": 1,
-      "topic": "blog",
+      "topic": "team",
       "urls": [
         "https://site.test/blog"
       ]
