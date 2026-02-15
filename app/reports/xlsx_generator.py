@@ -78,6 +78,8 @@ class XLSXGenerator:
         return text
 
     def _sanitize_cell_value(self, value: Any) -> Any:
+        if isinstance(value, bool):
+            return "✅" if value else "❌"
         if isinstance(value, str):
             return self._repair_mojibake_text(value).strip()
         return value
@@ -983,6 +985,14 @@ class XLSXGenerator:
                     recs.append("Reduce keyword stuffing and spam")
                 if int(page.get("near_duplicate_count") or 0) > 0:
                     recs.append("Rewrite near-duplicate blocks and strengthen page intent")
+                if bool(page.get("hidden_content")):
+                    recs.append("Remove hidden content blocks (display:none/offscreen/small font)")
+                if bool(page.get("cloaking_detected")):
+                    recs.append("Resolve cloaking-like hidden/visible content mismatch")
+                if int(page.get("cta_count") or 0) <= 0 and str(page.get("page_type") or "") in {"home", "service", "product", "category"}:
+                    recs.append("Add conversion CTA blocks (form/button/callback)")
+                if words >= 600 and int(page.get("lists_count") or 0) == 0 and int(page.get("tables_count") or 0) == 0:
+                    recs.append("Structure long content with lists/tables")
                 return ok_if_empty(recs)
 
             if tab == "technical":
@@ -1321,6 +1331,10 @@ class XLSXGenerator:
                 ("duplicate_image_sources", "Remove duplicate image sources."),
                 ("low_modern_image_formats", "Convert key images to WebP/AVIF."),
                 ("hreflang_extended_check", "Fix hreflang reciprocity/x-default/lang codes."),
+                ("hidden_content_css", "Remove hidden SEO text (display:none/offscreen/opacity/font-size<5px)."),
+                ("cloaking_detected", "Align visible and hidden content; remove cloaking patterns."),
+                ("cta_missing", "Add clear conversion CTA blocks (form/button/callback/checkout)."),
+                ("no_lists_tables_on_long_content", "Structure long text with bullet lists and data tables."),
             ]
             prefix = "Info:"
             if severity == "critical" or code in critical_codes:
@@ -1351,9 +1365,15 @@ class XLSXGenerator:
             wsx = wb.create_sheet(sheet_name)
             for col, header in enumerate(headers, 1):
                 self._apply_style(wsx.cell(row=1, column=col, value=self._sanitize_cell_value(header)), header_style)
+            ordered_rows = list(rows)
+            if severity_idx >= 0:
+                severity_rank = {"critical": 0, "warning": 1, "info": 2, "ok": 3}
+                ordered_rows.sort(
+                    key=lambda row: severity_rank.get(str(row[severity_idx]).lower(), 4) if severity_idx < len(row) else 4
+                )
             sev_counts = {"critical": 0, "warning": 0, "info": 0}
             score_values: List[float] = []
-            for row_idx, row_data in enumerate(rows, start=2):
+            for row_idx, row_data in enumerate(ordered_rows, start=2):
                 for col, value in enumerate(row_data, 1):
                     self._apply_style(wsx.cell(row=row_idx, column=col, value=self._sanitize_cell_value(value)), cell_style)
                 if severity_idx >= 0:
@@ -1605,7 +1625,10 @@ class XLSXGenerator:
             "Avg sentence len", "Avg word len", "Complex words %", "Keyword stuffing score",
             "Content density %", "Boilerplate %", "Toxicity score", "Filler ratio",
             "Filler phrases", "AI markers count", "AI markers list", "AI marker sample",
-            "AI density /1k", "AI risk", "AI risk level", "Page type", "Near duplicates", "Near duplicate URLs",
+            "AI density /1k", "AI risk", "AI risk level", "Page type",
+            "Hidden content", "Hidden nodes", "Hidden text chars", "Cloaking",
+            "CTA count", "CTA quality", "Lists count", "Tables count",
+            "Near duplicates", "Near duplicate URLs",
             "Content score", "Content delta to target", "Content solution", "Severity",
         ]
         content_rows = []
@@ -1635,6 +1658,14 @@ class XLSXGenerator:
                 d.get("ai_risk", page.get("ai_risk_score", 0)),
                 d.get("ai_risk_level", page.get("ai_risk_level", "")),
                 page.get("page_type", ""),
+                page.get("hidden_content", False),
+                page.get("hidden_nodes_count", 0),
+                page.get("hidden_text_chars", 0),
+                page.get("cloaking_detected", False),
+                page.get("cta_count", 0),
+                page.get("cta_text_quality", 0),
+                page.get("lists_count", 0),
+                page.get("tables_count", 0),
                 page.get("near_duplicate_count", 0),
                 ", ".join((page.get("near_duplicate_urls") or [])[:5]),
                 d.get("content_score", ""),
@@ -1647,9 +1678,9 @@ class XLSXGenerator:
             "4_Content+AI",
             content_headers,
             content_rows,
-            severity_idx=27,
-            widths=[52, 10, 12, 10, 12, 12, 12, 10, 12, 12, 12, 12, 10, 10, 12, 12, 50, 62, 12, 10, 12, 12, 12, 12, 12, 36, 46, 10],
-            score_idx=24,
+            severity_idx=35,
+            widths=[52, 10, 12, 10, 12, 12, 12, 10, 12, 12, 12, 12, 10, 10, 12, 12, 50, 62, 12, 10, 12, 12, 10, 10, 12, 10, 10, 10, 10, 10, 10, 12, 12, 36, 12, 12, 46, 10],
+            score_idx=32,
         )
 
         # Sheet 5: Link Graph

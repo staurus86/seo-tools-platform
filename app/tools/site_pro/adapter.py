@@ -811,13 +811,81 @@ class SiteAuditProAdapter:
                     )
                 )
 
-    def _detect_cloaking(self, body_text: str, hidden_content: bool, hidden_nodes_count: int) -> bool:
+    def _extract_hidden_content_signals(self, soup: BeautifulSoup) -> Tuple[bool, int, int]:
+        hidden_nodes: List[Any] = []
+        selectors = [
+            "[hidden]",
+            '[style*="display:none"]',
+            '[style*="display: none"]',
+            '[style*="visibility:hidden"]',
+            '[style*="visibility: hidden"]',
+            '[style*="opacity:0"]',
+            '[style*="opacity: 0"]',
+            '[style*="text-indent:-"]',
+            '[style*="left:-9999"]',
+            '[style*="left: -9999"]',
+            '[style*="clip:rect(0"]',
+            '[style*="height:0"]',
+            '[style*="height: 0"]',
+            '[style*="width:0"]',
+            '[style*="width: 0"]',
+        ]
+        seen_ids: Set[int] = set()
+        for sel in selectors:
+            for node in soup.select(sel):
+                node_id = id(node)
+                if node_id in seen_ids:
+                    continue
+                seen_ids.add(node_id)
+                hidden_nodes.append(node)
+        for node in soup.find_all(attrs={"aria-hidden": "true"}):
+            text_len = len(re.sub(r"\s+", " ", node.get_text(" ", strip=True)))
+            if text_len > 0:
+                node_id = id(node)
+                if node_id not in seen_ids:
+                    seen_ids.add(node_id)
+                    hidden_nodes.append(node)
+
+        small_font_nodes = []
+        for node in soup.find_all(style=True):
+            style = str(node.get("style") or "").lower()
+            m = re.search(r"font-size\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*px", style)
+            if m:
+                try:
+                    if float(m.group(1)) < 5.0:
+                        small_font_nodes.append(node)
+                except Exception:
+                    pass
+        for node in small_font_nodes:
+            node_id = id(node)
+            if node_id not in seen_ids:
+                seen_ids.add(node_id)
+                hidden_nodes.append(node)
+
+        hidden_nodes_count = len(hidden_nodes)
+        hidden_text_chars = 0
+        for node in hidden_nodes:
+            hidden_text_chars += len(re.sub(r"\s+", " ", node.get_text(" ", strip=True)))
+        return (hidden_nodes_count > 0), hidden_nodes_count, hidden_text_chars
+
+    def _detect_cloaking(
+        self,
+        body_text: str,
+        hidden_content: bool,
+        hidden_nodes_count: int,
+        hidden_text_chars: int,
+    ) -> bool:
         if not hidden_content:
             return False
         total_chars = len((body_text or "").strip())
         if total_chars <= 0:
             return False
-        if hidden_nodes_count >= 8:
+        hidden_ratio = float(hidden_text_chars) / float(max(1, total_chars))
+        if hidden_nodes_count >= 10:
+            return True
+        if hidden_ratio >= 0.20 and hidden_text_chars >= 120:
+            return True
+        if hidden_nodes_count >= 4 and hidden_text_chars >= 80:
             return True
         return hidden_nodes_count >= 4 and total_chars < 300
 
@@ -944,9 +1012,7 @@ class SiteAuditProAdapter:
                 if any(word in (tag.get_text(" ", strip=True).lower()) for word in ("buy", "order", "contact", "sign", "register"))
             ]
         )
-        hidden_nodes = soup.select('[hidden], [style*="display:none"], [style*="visibility:hidden"]')
-        hidden_content = bool(hidden_nodes)
-        hidden_nodes_count = len(hidden_nodes)
+        hidden_content, hidden_nodes_count, hidden_text_chars = self._extract_hidden_content_signals(soup)
         deprecated_tags = sorted({t.name for t in soup.find_all(["font", "center", "marquee", "blink"])})
         semantic_tags_count = self._semantic_tags_count(soup)
         heading_distribution = self._heading_distribution(soup)
@@ -1047,6 +1113,7 @@ class SiteAuditProAdapter:
             body_text=body_text,
             hidden_content=hidden_content,
             hidden_nodes_count=hidden_nodes_count,
+            hidden_text_chars=hidden_text_chars,
         )
         has_contact_info = self._detect_contact_info(body_text)
         has_legal_docs = self._detect_legal_docs(body_text)
@@ -1336,6 +1403,45 @@ class SiteAuditProAdapter:
                 )
             )
             penalty += 4
+        if detailed_checks and hidden_content:
+            issues.append(
+                SiteAuditProIssue(
+                    severity="warning",
+                    code="hidden_content_css",
+                    title="Hidden content detected (CSS/ARIA/small font)",
+                    details=f"nodes={hidden_nodes_count}, hidden_text_chars={hidden_text_chars}",
+                )
+            )
+            penalty += min(10, max(2, hidden_nodes_count // 2))
+        if detailed_checks and cloaking_detected:
+            issues.append(
+                SiteAuditProIssue(
+                    severity="critical",
+                    code="cloaking_detected",
+                    title="Potential cloaking risk detected",
+                    details=f"nodes={hidden_nodes_count}, hidden_text_chars={hidden_text_chars}",
+                )
+            )
+            penalty += 20
+        if detailed_checks and cta_count == 0 and page_type in {"home", "service", "product", "category"}:
+            issues.append(
+                SiteAuditProIssue(
+                    severity="info",
+                    code="cta_missing",
+                    title="No conversion CTA detected",
+                )
+            )
+            penalty += 2
+        if detailed_checks and len(words) >= 600 and lists_count == 0 and tables_count == 0:
+            issues.append(
+                SiteAuditProIssue(
+                    severity="info",
+                    code="no_lists_tables_on_long_content",
+                    title="Long content has no lists/tables",
+                    details=f"word_count={len(words)}",
+                )
+            )
+            penalty += 1
 
         indexable = ("noindex" not in robots and status_code < 400 and canonical_status != "external")
         if status_code >= 400:
@@ -1449,6 +1555,8 @@ class SiteAuditProAdapter:
             ),
             deprecated_tags=deprecated_tags,
             hidden_content=hidden_content,
+            hidden_nodes_count=hidden_nodes_count,
+            hidden_text_chars=hidden_text_chars,
             cta_count=cta_count,
             cta_text_quality=cta_text_quality,
             lists_count=lists_count,

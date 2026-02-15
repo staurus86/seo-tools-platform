@@ -109,6 +109,8 @@ class NormalizedSiteAuditRow(BaseModel):
     html_quality_score: Optional[float] = None
     deprecated_tags: List[str] = Field(default_factory=list)
     hidden_content: Optional[bool] = None
+    hidden_nodes_count: Optional[int] = None
+    hidden_text_chars: Optional[int] = None
     cta_count: Optional[int] = None
     lists_count: Optional[int] = None
     tables_count: Optional[int] = None
