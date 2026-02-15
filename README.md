@@ -160,3 +160,23 @@ MIT License
 ## 🤝 Поддержка
 
 Если у вас есть вопросы или предложения, создайте Issue в репозитории.
+
+## Encoding Guard (required)
+
+Run this before commit to prevent mojibake in UI/results:
+
+```bash
+python scripts/encoding_guard.py check --root app --ext .py .html .js
+```
+
+If issues are found:
+
+```bash
+python scripts/encoding_guard.py fix --root app --ext .py .html .js
+```
+
+Validation tests:
+
+```bash
+python -m unittest tests/test_encoding_guard.py tests/test_site_pro_adapter.py tests/test_site_pro_baseline_diff.py
+```

@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     RENDER_AUDIT_ENGINE: str = os.getenv("RENDER_AUDIT_ENGINE", "v2")
     RENDER_AUDIT_TIMEOUT: int = int(os.getenv("RENDER_AUDIT_TIMEOUT", "35"))
     RENDER_AUDIT_DEBUG: bool = os.getenv("RENDER_AUDIT_DEBUG", "false").lower() == "true"
+
+    # Site Audit Pro rollout
+    SITE_AUDIT_PRO_ENABLED: bool = os.getenv("SITE_AUDIT_PRO_ENABLED", "true").lower() == "true"
+    SITE_AUDIT_PRO_DEFAULT_MODE: str = os.getenv("SITE_AUDIT_PRO_DEFAULT_MODE", "quick")
+    SITE_AUDIT_PRO_MAX_PAGES_LIMIT: int = int(os.getenv("SITE_AUDIT_PRO_MAX_PAGES_LIMIT", "5000"))
     
     # History
     HISTORY_SIZE: int = 10

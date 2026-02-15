@@ -1636,8 +1636,12 @@ async def export_site_audit_pro_docx(data: ExportRequest):
     import re
     from fastapi.responses import Response
     from app.reports.docx_generator import docx_generator
+    from app.config import settings
 
     try:
+        if not getattr(settings, "SITE_AUDIT_PRO_ENABLED", True):
+            return {"error": "Site Audit Pro is disabled by feature flag"}
+
         task_id = data.task_id
         task = get_task_result(task_id)
         if not task:
@@ -1776,8 +1780,12 @@ async def export_site_audit_pro_xlsx(data: ExportRequest):
     import re
     from fastapi.responses import Response
     from app.reports.xlsx_generator import xlsx_generator
+    from app.config import settings
 
     try:
+        if not getattr(settings, "SITE_AUDIT_PRO_ENABLED", True):
+            return {"error": "Site Audit Pro is disabled by feature flag"}
+
         task_id = data.task_id
         task = get_task_result(task_id)
         if not task:
@@ -3311,11 +3319,17 @@ async def create_mobile_check(data: MobileCheckRequest, background_tasks: Backgr
 @router.post("/tasks/site-audit-pro")
 async def create_site_audit_pro(data: SiteAuditProRequest, background_tasks: BackgroundTasks):
     """Site Audit Pro queued as isolated background task."""
+    from app.config import settings
+    if not getattr(settings, "SITE_AUDIT_PRO_ENABLED", True):
+        return {"error": "Site Audit Pro is disabled by feature flag"}
+
     url = data.url
-    mode = (data.mode or "quick").lower()
+    default_mode = (getattr(settings, "SITE_AUDIT_PRO_DEFAULT_MODE", "quick") or "quick").lower()
+    mode = (data.mode or default_mode).lower()
     if mode not in ("quick", "full"):
         mode = "quick"
-    max_pages = max(1, min(int(data.max_pages or 100), 5000))
+    max_pages_limit = int(getattr(settings, "SITE_AUDIT_PRO_MAX_PAGES_LIMIT", 5000) or 5000)
+    max_pages = max(1, min(int(data.max_pages or 100), max_pages_limit))
 
     print(f"[API] Site Audit Pro queued for: {url} (mode={mode}, max_pages={max_pages})")
     task_id = f"sitepro-{datetime.now().timestamp()}"
