@@ -1629,6 +1629,50 @@ async def export_render_docx(data: ExportRequest):
         return {"error": str(e)}
 
 
+@router.post("/export/site-audit-pro-docx")
+async def export_site_audit_pro_docx(data: ExportRequest):
+    """Export Site Audit Pro report to DOCX."""
+    import os
+    import re
+    from fastapi.responses import Response
+    from app.reports.docx_generator import docx_generator
+
+    try:
+        task_id = data.task_id
+        task = get_task_result(task_id)
+        if not task:
+            return {"error": "Задача не найдена", "task_id": task_id}
+
+        task_type = task.get("task_type")
+        if task_type != "site_audit_pro":
+            return {"error": f"Неподдерживаемый тип задачи для экспорта site_audit_pro DOCX: {task_type}"}
+
+        task_result = task.get("result", {})
+        url = task.get("url", "") or task_result.get("url", "")
+        report_payload = {
+            "url": url,
+            "results": task_result.get("results", task_result),
+        }
+        filepath = docx_generator.generate_site_audit_pro_report(task_id, report_payload)
+        if not filepath or not os.path.exists(filepath):
+            return {"error": "Не удалось сформировать отчет"}
+        append_task_artifact(task_id, filepath, kind="export")
+
+        with open(filepath, "rb") as f:
+            content = f.read()
+
+        domain = re.sub(r"[^a-zA-Z0-9._-]+", "_", (urlparse(url).netloc or "site"))
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+        filename = f"site_audit_pro_{domain}_{timestamp}.docx"
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.post("/export/render-xlsx")
 async def export_render_xlsx(data: ExportRequest):
     """Export render issues to XLSX only if issues exist."""

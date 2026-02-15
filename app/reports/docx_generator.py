@@ -661,6 +661,67 @@ class DOCXGenerator:
         doc.save(filepath)
         return filepath
     
+    def generate_site_audit_pro_report(self, task_id: str, data: Dict[str, Any]) -> str:
+        """Generate compact DOCX report for site_audit_pro."""
+        doc = Document()
+        title = doc.add_heading("Site Audit Pro Report", 0)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        results = data.get("results", {}) or {}
+        summary = results.get("summary", {}) or {}
+        pipeline = results.get("pipeline", {}) or {}
+        issues = results.get("issues", []) or []
+        url = data.get("url", "n/a")
+
+        doc.add_paragraph(f"URL: {url}")
+        doc.add_paragraph(f"Mode: {results.get('mode', 'quick')}")
+        doc.add_paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+        self._add_heading(doc, "1. Executive Summary", level=1)
+        summary_rows = [
+            ["Total pages", summary.get("total_pages", 0)],
+            ["Issues total", summary.get("issues_total", 0)],
+            ["Critical", summary.get("critical_issues", 0)],
+            ["Warning", summary.get("warning_issues", 0)],
+            ["Info", summary.get("info_issues", 0)],
+            ["Score", summary.get("score", "n/a")],
+        ]
+        self._add_table(doc, ["Metric", "Value"], summary_rows)
+
+        self._add_heading(doc, "2. Top Issues", level=1)
+        top_issues = issues[:20]
+        if top_issues:
+            issue_rows = []
+            for issue in top_issues:
+                issue_rows.append([
+                    (issue.get("severity") or "info").upper(),
+                    issue.get("code", ""),
+                    issue.get("url", ""),
+                    issue.get("title", ""),
+                ])
+            self._add_table(doc, ["Severity", "Code", "URL", "Issue"], issue_rows)
+        else:
+            doc.add_paragraph("Issues not found.")
+
+        self._add_heading(doc, "3. Link Graph Highlights", level=1)
+        top_pr = (pipeline.get("pagerank") or [])[:10]
+        if top_pr:
+            pr_rows = [[row.get("url", ""), row.get("score", 0)] for row in top_pr]
+            self._add_table(doc, ["URL", "PageRank"], pr_rows)
+        else:
+            doc.add_paragraph("PageRank data is not available.")
+
+        self._add_heading(doc, "4. Topic Clusters", level=1)
+        clusters = (pipeline.get("topic_clusters") or [])[:20]
+        if clusters:
+            cluster_rows = [[c.get("topic", "misc"), c.get("count", 0), ", ".join((c.get("urls") or [])[:3])] for c in clusters]
+            self._add_table(doc, ["Topic", "Pages", "Sample URLs"], cluster_rows)
+        else:
+            doc.add_paragraph("Topic clusters are not available.")
+
+        filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
+        doc.save(filepath)
+        return filepath
     def generate_report(self, task_id: str, task_type: str, data: Dict[str, Any]) -> str:
         """Р“РµРЅРµСЂРёСЂСѓРµС‚ РѕС‚С‡РµС‚ РІ Р·Р°РІРёСЃРёРјРѕСЃС‚Рё РѕС‚ С‚РёРїР° Р·Р°РґР°С‡Рё"""
         generators = {
@@ -669,7 +730,8 @@ class DOCXGenerator:
             'sitemap_validate': self.generate_sitemap_report,
             'render_audit': self.generate_render_report,
             'mobile_check': self.generate_mobile_report,
-            'bot_check': self.generate_bot_report
+            'bot_check': self.generate_bot_report,
+            'site_audit_pro': self.generate_site_audit_pro_report
         }
         
         generator = generators.get(task_type, self.generate_site_analyze_report)
@@ -678,4 +740,6 @@ class DOCXGenerator:
 
 # Singleton
 docx_generator = DOCXGenerator()
+
+
 
