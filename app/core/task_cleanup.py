@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Set
 import shutil
+from datetime import datetime, timedelta, timezone
 
 from app.config import settings
 
@@ -81,4 +82,76 @@ def delete_task_artifacts(task_data: Dict[str, Any]) -> Dict[str, Any]:
         "deleted_files": deleted_files,
         "deleted_dirs": deleted_dirs,
         "skipped": skipped,
+    }
+
+
+def prune_stale_report_artifacts(max_age_days: int | None = None) -> Dict[str, Any]:
+    """
+    Delete stale files under REPORTS_DIR according to age policy and clean empty folders.
+    Intended for periodic maintenance (cron/manual trigger).
+    """
+    days = int(max_age_days if max_age_days is not None else settings.MAX_REPORT_AGE_DAYS)
+    days = max(1, days)
+    reports_root = Path(settings.REPORTS_DIR).resolve()
+    if not reports_root.exists():
+        return {
+            "reports_root": str(reports_root),
+            "max_age_days": days,
+            "deleted_files": 0,
+            "deleted_dirs": 0,
+            "skipped": 0,
+            "scanned_files": 0,
+            "scanned_dirs": 0,
+        }
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    allowed_ext = {".png", ".jpg", ".jpeg", ".webp", ".docx", ".xlsx", ".txt", ".csv", ".json", ".jsonl", ".ndjson"}
+    deleted_files = 0
+    deleted_dirs = 0
+    skipped = 0
+    scanned_files = 0
+    scanned_dirs = 0
+
+    for path in reports_root.rglob("*"):
+        try:
+            resolved = path.resolve()
+            if reports_root not in resolved.parents and resolved != reports_root:
+                skipped += 1
+                continue
+            if resolved.is_file():
+                scanned_files += 1
+                if resolved.suffix.lower() not in allowed_ext:
+                    continue
+                mtime = datetime.fromtimestamp(resolved.stat().st_mtime, tz=timezone.utc)
+                if mtime < cutoff:
+                    resolved.unlink(missing_ok=True)
+                    deleted_files += 1
+            elif resolved.is_dir():
+                scanned_dirs += 1
+        except Exception:
+            skipped += 1
+
+    # Remove empty directories bottom-up.
+    for path in sorted([p for p in reports_root.rglob("*") if p.is_dir()], key=lambda p: len(p.parts), reverse=True):
+        try:
+            resolved = path.resolve()
+            if resolved == reports_root:
+                continue
+            if reports_root not in resolved.parents:
+                skipped += 1
+                continue
+            if not any(resolved.iterdir()):
+                resolved.rmdir()
+                deleted_dirs += 1
+        except Exception:
+            skipped += 1
+
+    return {
+        "reports_root": str(reports_root),
+        "max_age_days": days,
+        "deleted_files": deleted_files,
+        "deleted_dirs": deleted_dirs,
+        "skipped": skipped,
+        "scanned_files": scanned_files,
+        "scanned_dirs": scanned_dirs,
     }

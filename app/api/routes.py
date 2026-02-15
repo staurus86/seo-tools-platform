@@ -2014,6 +2014,18 @@ async def delete_task(task_id: str):
     }
 
 
+@router.post("/tasks/cleanup-stale-artifacts")
+async def cleanup_stale_artifacts(days: Optional[int] = None):
+    """Trigger stale report artifacts cleanup under REPORTS_DIR."""
+    from app.core.task_cleanup import prune_stale_report_artifacts
+
+    summary = prune_stale_report_artifacts(max_age_days=days)
+    return {
+        "status": "SUCCESS",
+        "cleanup": summary,
+    }
+
+
 @router.get("/rate-limit")
 async def get_rate_limit():
     """Rate limit info"""

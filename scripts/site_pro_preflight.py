@@ -30,6 +30,7 @@ def main() -> int:
             "tests/test_site_pro_baseline_diff.py",
             "tests/test_site_pro_xlsx_layout.py",
             "tests/test_site_pro_artifacts.py",
+            "tests/test_task_cleanup_ttl.py",
             "tests/test_encoding_guard.py",
         ],
         [
@@ -40,6 +41,7 @@ def main() -> int:
             "tests/test_site_pro_baseline_diff.py",
             "tests/test_site_pro_xlsx_layout.py",
             "tests/test_site_pro_artifacts.py",
+            "tests/test_task_cleanup_ttl.py",
             "tests/test_encoding_guard.py",
         ],
         [
