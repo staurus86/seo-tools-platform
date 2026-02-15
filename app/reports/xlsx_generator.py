@@ -1024,7 +1024,7 @@ class XLSXGenerator:
         )
 
         # Sheet 7: Hierarchy + Errors
-        issue_headers = ["URL", "Code", "Title", "Details", "Severity"]
+        issue_headers = ["URL", "Code", "Issue title", "Issue details", "Severity"]
         issue_rows = []
         for issue in issues:
             issue_rows.append([
