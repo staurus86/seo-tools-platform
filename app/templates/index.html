@@ -47,6 +47,38 @@
         </form>
     </div>
 
+    <!-- Tool 1b: Site Audit Pro -->
+    <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-indigo-500">
+        <div class="flex items-center mb-4">
+            <div class="bg-indigo-100 p-3 rounded-lg mr-4">
+                <i class="fas fa-layer-group text-indigo-600 text-xl"></i>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold text-gray-800">Site Audit Pro</h3>
+                <p class="text-sm text-gray-500">Новый изолированный аудит</p>
+            </div>
+        </div>
+        <p class="text-gray-600 mb-4 text-sm">
+            Новый инструмент для миграции расширенного аудита (SEOPRO) в платформу.
+            Работает отдельно от стабильного site_analyze и формирует compact quick-отчет.
+        </p>
+        <form class="space-y-3" onsubmit="startTask(event, 'site-audit-pro')">
+            <input type="url" name="url" placeholder="https://example.com" required
+                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+            <div class="grid grid-cols-2 gap-2">
+                <select name="mode" class="px-3 py-2 border rounded-lg text-sm">
+                    <option value="quick" selected>quick</option>
+                    <option value="full">full</option>
+                </select>
+                <input type="number" name="max_pages" value="100" min="1" max="5000"
+                       class="px-3 py-2 border rounded-lg text-sm" title="Макс. страниц">
+            </div>
+            <button type="submit" class="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition">
+                <i class="fas fa-play mr-2"></i>Запустить Site Audit Pro
+            </button>
+        </form>
+    </div>
+
     <!-- Tool 2: Robots.txt Checker -->
     <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-green-500">
         <div class="flex items-center mb-4">
