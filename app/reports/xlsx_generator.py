@@ -9,6 +9,7 @@ from typing import Dict, Any, List
 from datetime import datetime
 import os
 import re
+import math
 
 from app.config import settings
 
@@ -1896,6 +1897,10 @@ class XLSXGenerator:
             "http", "https", "www", "com", "page", "site", "about",
             "это", "как", "для", "что", "или", "при", "также", "если", "чтобы", "когда",
         }
+        water_words = {
+            "очень", "просто", "лучший", "максимально", "идеально", "качественно", "эффективно",
+            "really", "very", "super", "best", "amazing", "quality", "effective", "efficient",
+        }
         unigram_counter: Counter = Counter()
         bigram_counter: Counter = Counter()
         trigram_counter: Counter = Counter()
@@ -1942,7 +1947,7 @@ class XLSXGenerator:
 
         summary_headers = [
             "N-gram", "Keyword", "Total freq", "Pages with term", "Pages %",
-            "Token share %", "Avg TF-IDF", "Top density %", "SPAM alert", "Water/noise", "Cross-page repeat", "Summary note",
+            "Token share %", "Avg TF-IDF", "Top density %", "SPAM alert", "Water/noise", "Cross-page repeat", "Risk score", "Summary note",
         ]
         summary_rows: List[List[Any]] = []
 
@@ -1956,8 +1961,17 @@ class XLSXGenerator:
                 avg_tfidf = round(tfidf_sum.get(term, 0.0) / max(1, tfidf_count.get(term, 0)), 4) if ngram_size == 1 else ""
                 top_density = round(top_density_by_term.get(term, 0.0), 2) if ngram_size == 1 else ""
                 spam_alert = "✅" if (ngram_size == 1 and (top_density_by_term.get(term, 0.0) >= 12.0 or pages_pct >= 80.0)) else "❌"
-                water_noise = "✅" if term in stop_words else "❌"
+                water_noise = "✅" if term in stop_words or term in water_words else "❌"
                 cross_page_repeat = "✅" if (ngram_size == 1 and pages_with_term >= max(3, int(total_pages * 0.4))) else "❌"
+                risk_score = 0
+                if spam_alert == "✅":
+                    risk_score += 45
+                if cross_page_repeat == "✅":
+                    risk_score += 25
+                if water_noise == "✅":
+                    risk_score += 15
+                if ngram_size == 1:
+                    risk_score += min(15, int(round(to_float(top_density_by_term.get(term, 0.0), 0.0))))
                 note = ""
                 if spam_alert == "✅":
                     note = "Potential over-optimization across pages"
@@ -1978,6 +1992,7 @@ class XLSXGenerator:
                         spam_alert,
                         water_noise,
                         cross_page_repeat,
+                        risk_score,
                         note,
                     ]
                 )
@@ -1985,11 +2000,275 @@ class XLSXGenerator:
         append_ngram_rows(unigram_counter, 1, 120)
         append_ngram_rows(bigram_counter, 2, 80)
         append_ngram_rows(trigram_counter, 3, 60)
+        summary_rows.sort(key=lambda row: (to_float(row[11], 0.0), to_float(row[2], 0.0)), reverse=True)
         fill_sheet(
             "8b_Keywords_Summary",
             summary_headers,
             summary_rows,
-            widths=[10, 30, 10, 14, 10, 12, 12, 12, 10, 10, 12, 56],
+            widths=[10, 30, 10, 14, 10, 12, 12, 12, 10, 10, 12, 10, 56],
+        )
+
+        # Sheet 8c: Keywords insights (intent, cannibalization, gaps, section anomalies)
+        def normalize_terms(values: List[Any]) -> List[str]:
+            terms: List[str] = []
+            for val in values:
+                txt = str(val or "").strip().lower()
+                if txt:
+                    terms.append(txt)
+            return terms
+
+        def extract_path(url: str) -> str:
+            m = re.match(r"^https?://[^/]+(?P<path>/[^?#]*)?", str(url or "").strip().lower())
+            path = (m.group("path") if m else "") or "/"
+            return path if path else "/"
+
+        def extract_section(url: str) -> str:
+            path = extract_path(url).strip("/")
+            if not path:
+                return "homepage"
+            return path.split("/", 1)[0]
+
+        def detect_intent(url: str, text: str) -> tuple:
+            url_l = str(url or "").lower()
+            text_l = str(text or "").lower()
+            tokens = set(token_re.findall(text_l))
+
+            intent_lex = {
+                "transactional": {
+                    "buy", "order", "checkout", "cart", "price", "pricing", "quote", "purchase",
+                    "купить", "заказать", "цена", "стоимость", "оформить", "заказ",
+                },
+                "commercial": {
+                    "best", "compare", "review", "service", "solutions", "product", "catalog",
+                    "лучший", "сравнение", "обзор", "услуга", "товар", "каталог", "решения",
+                },
+                "informational": {
+                    "how", "what", "why", "guide", "faq", "blog", "news", "article",
+                    "как", "что", "почему", "инструкция", "faq", "блог", "новости", "статья",
+                },
+                "navigational": {
+                    "about", "contact", "company", "login", "signin", "profile",
+                    "о", "контакты", "компания", "вход", "профиль",
+                },
+            }
+            url_boost = {
+                "transactional": ("buy", "order", "checkout", "cart", "price", "pricing", "shop", "купить", "заказ", "цена"),
+                "commercial": ("product", "catalog", "service", "solutions", "товар", "каталог", "услуги"),
+                "informational": ("blog", "news", "guide", "faq", "help", "блог", "новости", "статья"),
+                "navigational": ("about", "company", "contact", "login", "about-us", "contacts", "о-компании"),
+            }
+
+            scores = {}
+            for intent, lex in intent_lex.items():
+                token_hits = sum(1 for t in tokens if t in lex)
+                url_hits = sum(1 for cue in url_boost[intent] if cue in url_l)
+                scores[intent] = token_hits + (url_hits * 2)
+
+            best_intent = max(scores, key=scores.get) if scores else "informational"
+            ordered = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+            top_score = ordered[0][1] if ordered else 0
+            second_score = ordered[1][1] if len(ordered) > 1 else 0
+            confidence = min(100, max(15, 55 + (top_score - second_score) * 12 + top_score * 4))
+            return best_intent, confidence
+
+        insights_headers = [
+            "Method", "Scope", "Intent", "Term/Pattern", "Metric", "Severity", "Action", "Examples",
+        ]
+        insights_rows: List[List[Any]] = []
+        intent_counter: Counter = Counter()
+
+        density_term_urls: Dict[str, set] = defaultdict(set)
+        density_term_sum: Dict[str, float] = defaultdict(float)
+        density_term_count: Dict[str, int] = defaultdict(int)
+        density_term_max: Dict[str, float] = defaultdict(float)
+        section_term_counts: Dict[str, Counter] = defaultdict(Counter)
+        section_term_pages: Dict[str, Dict[str, set]] = defaultdict(lambda: defaultdict(set))
+        section_token_total: Dict[str, int] = defaultdict(int)
+
+        for page in pages:
+            url = str(page.get("url") or "")
+            title = str(page.get("title") or "")
+            meta = str(page.get("meta_description") or "")
+            h1 = page.get("h1") or page.get("h1_text") or ""
+            if isinstance(h1, list):
+                h1 = " ".join(str(x or "") for x in h1[:3])
+            top_terms_page = normalize_terms(page.get("top_terms") or [])
+            top_keywords_page = normalize_terms(page.get("top_keywords") or [])
+            tfidf_pairs = sorted((page.get("tf_idf_keywords") or {}).items(), key=lambda kv: to_float(kv[1], 0.0), reverse=True)
+            tfidf_terms_page = normalize_terms([k for k, _ in tfidf_pairs[:8]])
+            merged_text = " ".join([title, meta, str(h1), " ".join(top_terms_page), " ".join(top_keywords_page), " ".join(tfidf_terms_page)]).strip()
+
+            # 1) Intent clustering (per page)
+            intent, confidence = detect_intent(url, merged_text)
+            intent_counter[intent] += 1
+            intent_sev = "info"
+            if confidence < 45:
+                intent_sev = "warning"
+            if confidence < 30:
+                intent_sev = "critical"
+            url_intent_hint = "unknown"
+            path_l = extract_path(url)
+            if any(k in path_l for k in ("buy", "order", "shop", "checkout", "купить", "заказ")):
+                url_intent_hint = "transactional"
+            elif any(k in path_l for k in ("catalog", "product", "service", "каталог", "товар", "услуг")):
+                url_intent_hint = "commercial"
+            elif any(k in path_l for k in ("blog", "news", "guide", "faq", "блог", "новост")):
+                url_intent_hint = "informational"
+            elif any(k in path_l for k in ("about", "contact", "company", "о-компании", "контакт")):
+                url_intent_hint = "navigational"
+            if url_intent_hint != "unknown" and url_intent_hint != intent:
+                insights_rows.append([
+                    "Intent conflict",
+                    url,
+                    intent,
+                    f"url_hint={url_intent_hint}",
+                    f"confidence={confidence}%",
+                    "warning" if confidence >= 45 else "critical",
+                    "Align page copy and metadata with URL intent or update slug.",
+                    extract_section(url),
+                ])
+            insights_rows.append([
+                "Intent cluster",
+                url,
+                intent,
+                ", ".join((top_terms_page or top_keywords_page or tfidf_terms_page)[:4]),
+                f"confidence={confidence}%",
+                intent_sev,
+                "Align title/H1/meta with one dominant intent.",
+                extract_section(url),
+            ])
+
+            # 2) Gap analysis (per page, target terms vs title/h1/meta)
+            title_terms = set(token_re.findall(title.lower()))
+            h1_terms = set(token_re.findall(str(h1).lower()))
+            meta_terms = set(token_re.findall(meta.lower()))
+            targets = []
+            seen = set()
+            for t in top_terms_page + top_keywords_page + tfidf_terms_page:
+                if t in seen:
+                    continue
+                seen.add(t)
+                targets.append(t)
+                if len(targets) >= 10:
+                    break
+            missing_title = [t for t in targets if t not in title_terms]
+            missing_h1 = [t for t in targets if t not in h1_terms]
+            missing_meta = [t for t in targets if t not in meta_terms]
+            gap_risk = len(missing_title) + len(missing_h1) + len(missing_meta)
+            gap_sev = "info"
+            if gap_risk >= 10:
+                gap_sev = "critical"
+            elif gap_risk >= 6:
+                gap_sev = "warning"
+            insights_rows.append([
+                "Gap analysis",
+                url,
+                intent,
+                ", ".join(targets[:5]),
+                f"missing title/h1/meta = {len(missing_title)}/{len(missing_h1)}/{len(missing_meta)}",
+                gap_sev,
+                "Add core terms to title/H1/meta naturally without stuffing.",
+                "; ".join([
+                    f"title:{', '.join(missing_title[:3])}" if missing_title else "",
+                    f"h1:{', '.join(missing_h1[:3])}" if missing_h1 else "",
+                    f"meta:{', '.join(missing_meta[:3])}" if missing_meta else "",
+                ]).strip("; ").strip(),
+            ])
+
+            # 3) Data for cannibalization
+            for term, dens in (page.get("keyword_density_profile") or {}).items():
+                term_l = str(term or "").strip().lower()
+                dens_v = to_float(dens, 0.0)
+                if not term_l or dens_v <= 0:
+                    continue
+                density_term_urls[term_l].add(url)
+                density_term_sum[term_l] += dens_v
+                density_term_count[term_l] += 1
+                density_term_max[term_l] = max(density_term_max.get(term_l, 0.0), dens_v)
+
+            # 4) Data for n-gram anomalies by section
+            section = extract_section(url)
+            tokens = [t for t in token_re.findall(merged_text.lower()) if t not in stop_words]
+            if tokens:
+                section_token_total[section] += len(tokens)
+                term_counter = Counter(tokens)
+                section_term_counts[section].update(term_counter)
+                for term in set(tokens):
+                    section_term_pages[section][term].add(url)
+
+        # Cannibalization insights
+        for term, urls_set in density_term_urls.items():
+            urls_count = len(urls_set)
+            if urls_count < 2:
+                continue
+            avg_density = density_term_sum.get(term, 0.0) / max(1, density_term_count.get(term, 0))
+            max_density = density_term_max.get(term, 0.0)
+            sev = "warning"
+            if urls_count >= 4 and (max_density >= 6.0 or avg_density >= 3.5):
+                sev = "critical"
+            elif urls_count <= 2 and avg_density < 2.0:
+                sev = "info"
+            insights_rows.append([
+                "Cannibalization",
+                f"{urls_count} URLs",
+                "",
+                term,
+                f"avg_density={round(avg_density, 2)}%, max_density={round(max_density, 2)}%",
+                sev,
+                "Differentiate intent and unique primary keyword per page.",
+                ", ".join(sorted(list(urls_set))[:6]),
+            ])
+
+        # Section n-gram anomalies
+        for section, counts in section_term_counts.items():
+            sec_total = max(1, section_token_total.get(section, 0))
+            for term, freq in counts.items():
+                if freq < 3:
+                    continue
+                global_freq = unigram_counter.get(term, 0)
+                if global_freq <= 0:
+                    continue
+                global_share = global_freq / max(1, total_unigram_tokens)
+                section_share = freq / sec_total
+                lift = section_share / max(0.0001, global_share)
+                pages_with_term = len(section_term_pages.get(section, {}).get(term, set()))
+                if lift < 2.5 or pages_with_term < 2:
+                    continue
+                sev = "warning" if lift >= 3.0 else "info"
+                if lift >= 4.5:
+                    sev = "critical"
+                insights_rows.append([
+                    "Section anomaly",
+                    section,
+                    "",
+                    term,
+                    f"share={round(section_share*100,2)}% vs global={round(global_share*100,2)}%, lift={round(lift,2)}",
+                    sev,
+                    "Check if repeated term is intentional for this section cluster.",
+                    f"pages={pages_with_term}",
+                ])
+
+        for intent, count in sorted(intent_counter.items(), key=lambda x: x[1], reverse=True):
+            share = round((count / max(1, len(pages))) * 100.0, 1)
+            sev = "warning" if share >= 70.0 else "info"
+            insights_rows.append([
+                "Intent overview",
+                "site-wide",
+                intent,
+                "",
+                f"pages={count}, share={share}%",
+                sev,
+                "Validate distribution against business goals and funnel mix.",
+                "",
+            ])
+
+        severity_order = {"critical": 0, "warning": 1, "info": 2, "ok": 3}
+        insights_rows.sort(key=lambda row: (severity_order.get(str(row[5]).lower(), 9), str(row[0]), str(row[1])))
+        fill_sheet(
+            "8c_Keywords_Insights",
+            insights_headers,
+            insights_rows,
+            widths=[18, 46, 16, 28, 34, 10, 48, 56],
         )
 
         # Optional full-mode optimized deep sheets (no compatibility duplication).
