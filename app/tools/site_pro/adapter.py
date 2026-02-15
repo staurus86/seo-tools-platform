@@ -305,6 +305,13 @@ class SiteAuditProAdapter:
         h1_count = int(heading_distribution.get("h1", 0))
         errors: List[str] = []
         heading_sequence = [int(tag.name[1]) for tag in soup.find_all(re.compile(r"^h[1-6]$", re.I))]
+        heading_outline = [
+            {
+                "level": int(tag.name[1]),
+                "text": (tag.get_text(" ", strip=True) or "")[:120],
+            }
+            for tag in soup.find_all(re.compile(r"^h[1-6]$", re.I))[:20]
+        ]
         if h1_count == 0:
             errors.append("missing_h1")
         elif h1_count > 1:
@@ -315,11 +322,23 @@ class SiteAuditProAdapter:
             if (current - prev) > 1:
                 errors.append("heading_level_skip")
                 break
-        status = "valid" if not errors else "issues"
+        if not errors:
+            status = "Good"
+        elif "wrong_start" in errors:
+            status = "Bad (wrong start)"
+        elif "missing_h1" in errors:
+            status = "Bad (missing h1)"
+        elif "multiple_h1" in errors:
+            status = "Bad (multiple h1)"
+        elif "heading_level_skip" in errors:
+            status = "Bad (level skip)"
+        else:
+            status = "Bad"
         details = {
             "total_headers": int(sum(heading_distribution.values())),
             "h1_count": h1_count,
             "heading_sequence_preview": heading_sequence[:20],
+            "heading_outline": heading_outline,
         }
         return status, errors, details
 
@@ -330,13 +349,16 @@ class SiteAuditProAdapter:
         marker = str(markers[0]).strip()
         if not marker:
             return ""
-        m = re.search(rf"\b{re.escape(marker)}\b", raw, flags=re.I)
-        if not m:
-            return ""
-        start = max(0, m.start() - 80)
-        end = min(len(raw), m.end() + 80)
-        snippet = raw[start:end].strip()
-        return re.sub(r"\s+", " ", snippet)
+        snippets: List[str] = []
+        for m in re.finditer(rf"\b{re.escape(marker)}\b", raw, flags=re.I):
+            start = max(0, m.start() - 70)
+            end = min(len(raw), m.end() + 70)
+            snippet = re.sub(r"\s+", " ", raw[start:end].strip())
+            if snippet:
+                snippets.append(snippet)
+            if len(snippets) >= 2:
+                break
+        return " ... ".join(snippets)
 
     def _detect_cloaking(self, body_text: str, hidden_content: bool, hidden_nodes_count: int) -> bool:
         if not hidden_content:

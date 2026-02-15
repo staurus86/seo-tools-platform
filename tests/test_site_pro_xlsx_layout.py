@@ -193,6 +193,39 @@ class SiteProXlsxLayoutTests(unittest.TestCase):
             ]
             for sheet_name in compat_sheets:
                 self.assertIn(sheet_name, wb.sheetnames)
+
+            main_headers = [cell.value for cell in wb["13_MainReport_Compat"][1] if cell.value]
+            self.assertEqual(
+                main_headers,
+                [
+                    "URL",
+                    "Title",
+                    "Meta",
+                    "H1",
+                    "Toxicity",
+                    "Hierarchy",
+                    "Health",
+                    "HTTP",
+                    "Indexable",
+                    "Canonical",
+                    "Resp ms",
+                    "Problems",
+                    "Solution",
+                    "Severity",
+                ],
+            )
+            ai_headers = [cell.value for cell in wb["29_AIMarkers_Compat"][1] if cell.value]
+            self.assertEqual(
+                ai_headers,
+                [
+                    "URL",
+                    "AI Markers Count",
+                    "AI Markers Found",
+                    "Text Sample with Markers",
+                    "Recommendation",
+                    "Severity",
+                ],
+            )
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 

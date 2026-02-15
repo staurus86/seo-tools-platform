@@ -859,7 +859,13 @@ class XLSXGenerator:
         def hierarchy_problem(page: Dict[str, Any]) -> str:
             errors = page.get("h_errors") or []
             if errors:
-                return "; ".join(str(e) for e in errors)
+                mapping = {
+                    "wrong_start": "Hierarchy starts from H2+ instead of H1",
+                    "missing_h1": "Missing H1",
+                    "multiple_h1": "Multiple H1 tags",
+                    "heading_level_skip": "Heading level skip detected",
+                }
+                return "; ".join(mapping.get(str(e), str(e)) for e in errors)
             return "No hierarchy issues"
 
         def ai_found_list(page: Dict[str, Any]) -> str:
