@@ -50,24 +50,28 @@ HTML_BLOG = """
 """
 
 
+def build_mock_public_result():
+    adapter = SiteAuditProAdapter()
+    by_url = {
+        "https://site.test": _MockResponse("https://site.test", 200, HTML_HOME),
+        "https://site.test/about": _MockResponse("https://site.test/about", 200, HTML_ABOUT),
+        "https://site.test/blog": _MockResponse("https://site.test/blog", 200, HTML_BLOG),
+    }
+
+    def fake_get(url, timeout=0, allow_redirects=True):
+        key = url.rstrip("/")
+        if key == "https://site.test":
+            return by_url["https://site.test"]
+        return by_url[key]
+
+    with patch("requests.Session.get", side_effect=fake_get):
+        normalized = adapter.run("https://site.test", mode="quick", max_pages=10)
+        return adapter.to_public_results(normalized)
+
+
 class SiteProAdapterTests(unittest.TestCase):
     def test_pipeline_and_duplicates(self):
-        adapter = SiteAuditProAdapter()
-        by_url = {
-            "https://site.test": _MockResponse("https://site.test", 200, HTML_HOME),
-            "https://site.test/about": _MockResponse("https://site.test/about", 200, HTML_ABOUT),
-            "https://site.test/blog": _MockResponse("https://site.test/blog", 200, HTML_BLOG),
-        }
-
-        def fake_get(url, timeout=0, allow_redirects=True):
-            key = url.rstrip("/")
-            if key == "https://site.test":
-                return by_url["https://site.test"]
-            return by_url[key]
-
-        with patch("requests.Session.get", side_effect=fake_get):
-            normalized = adapter.run("https://site.test", mode="quick", max_pages=10)
-            public = adapter.to_public_results(normalized)
+        public = build_mock_public_result()
 
         self.assertEqual(public["summary"]["total_pages"], 3)
         self.assertIn("pipeline", public)

@@ -1,0 +1,102 @@
+{
+  "anchor_text_quality": {
+    "average_weak_anchor_ratio": 0.167,
+    "pages_with_weak_anchors": 1
+  },
+  "duplicates": {
+    "description_groups": [
+      {
+        "urls": [
+          "https://site.test/about",
+          "https://site.test/blog"
+        ],
+        "value": "about page description"
+      }
+    ],
+    "title_groups": [
+      {
+        "urls": [
+          "https://site.test/about",
+          "https://site.test/blog"
+        ],
+        "value": "about team"
+      }
+    ]
+  },
+  "pagerank": [
+    {
+      "score": 100.0,
+      "url": "https://site.test"
+    },
+    {
+      "score": 54.05,
+      "url": "https://site.test/about"
+    },
+    {
+      "score": 54.05,
+      "url": "https://site.test/blog"
+    }
+  ],
+  "pages": {
+    "https://site.test": {
+      "ai_markers_count": 0,
+      "duplicate_description_count": 1,
+      "duplicate_title_count": 1,
+      "health_score": 90.0,
+      "link_quality_score": 85.0,
+      "topic_label": "home",
+      "weak_anchor_ratio": 0.5
+    },
+    "https://site.test/about": {
+      "ai_markers_count": 0,
+      "duplicate_description_count": 2,
+      "duplicate_title_count": 2,
+      "health_score": 85.0,
+      "link_quality_score": 100.0,
+      "topic_label": "team",
+      "weak_anchor_ratio": 0.0
+    },
+    "https://site.test/blog": {
+      "ai_markers_count": 3,
+      "duplicate_description_count": 2,
+      "duplicate_title_count": 2,
+      "health_score": 85.0,
+      "link_quality_score": 100.0,
+      "topic_label": "blog",
+      "weak_anchor_ratio": 0.0
+    }
+  },
+  "summary": {
+    "critical_issues": 0,
+    "info_issues": 2,
+    "internal_pages": 3,
+    "issues_total": 9,
+    "mode": "quick",
+    "score": 86.7,
+    "total_pages": 3,
+    "warning_issues": 7
+  },
+  "topic_clusters": [
+    {
+      "count": 1,
+      "topic": "home",
+      "urls": [
+        "https://site.test"
+      ]
+    },
+    {
+      "count": 1,
+      "topic": "team",
+      "urls": [
+        "https://site.test/about"
+      ]
+    },
+    {
+      "count": 1,
+      "topic": "blog",
+      "urls": [
+        "https://site.test/blog"
+      ]
+    }
+  ]
+}
