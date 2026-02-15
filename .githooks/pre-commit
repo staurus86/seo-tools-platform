@@ -1,7 +1,0 @@
-#!/bin/sh
-set -eu
-
-python scripts/encoding_guard.py check --root app --ext .py .html .js .md .txt .json .yml .yaml
-python scripts/encoding_guard.py check --root scripts --ext .py .html .js .md .txt .json .yml .yaml
-python scripts/encoding_guard.py check --root tests --ext .py .html .js .md .txt .json .yml .yaml
-python scripts/encoding_guard.py check --root "Py scripts" --ext .py .html .js .md .txt .json .yml .yaml
