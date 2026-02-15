@@ -85,6 +85,7 @@ def create_task_pending(task_id: str, task_type: str, url: str, status_message: 
         "url": url,
         "status": "PENDING",
         "progress": 0,
+        "progress_meta": {},
         "status_message": status_message,
         "error": None,
         "created_at": now,
@@ -102,6 +103,7 @@ def update_task_state(
     status_message: Optional[str] = None,
     result: Optional[Dict[str, Any]] = None,
     error: Optional[str] = None,
+    progress_meta: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Update task fields while preserving existing payload."""
     task = get_task_result(task_id)
@@ -117,6 +119,8 @@ def update_task_state(
         task["result"] = result
     if error is not None:
         task["error"] = error
+    if progress_meta is not None:
+        task["progress_meta"] = progress_meta
     if status in ("SUCCESS", "FAILURE"):
         task["completed_at"] = datetime.utcnow().isoformat()
     _save_task_payload(task_id, task)
@@ -1972,6 +1976,7 @@ async def get_task_status(task_id: str):
             "status": data.get("status", "SUCCESS"),
             "progress": data.get("progress", 100),
             "status_message": data.get("status_message", ""),
+            "progress_meta": data.get("progress_meta", {}),
             "task_type": data.get("task_type"),
             "url": data.get("url", ""),
             "created_at": data.get("created_at"),
@@ -1985,6 +1990,7 @@ async def get_task_status(task_id: str):
         "task_id": task_id,
         "status": "PENDING",
         "progress": 0,
+        "progress_meta": {},
         "status_message": "Задача пока не найдена",
         "task_type": "site_analyze",
         "url": "",
@@ -3486,10 +3492,28 @@ async def create_site_audit_pro(data: SiteAuditProRequest, background_tasks: Bac
             )
         )
         try:
-            update_task_state(task_id, status="RUNNING", progress=5, status_message="Preparing Site Audit Pro")
+            update_task_state(
+                task_id,
+                status="RUNNING",
+                progress=5,
+                status_message="Preparing Site Audit Pro",
+                progress_meta={
+                    "processed_pages": 0,
+                    "total_pages": len(normalized_batch_urls) if batch_mode else max_pages,
+                    "queue_size": len(normalized_batch_urls) if batch_mode else 1,
+                    "batch_mode": batch_mode,
+                    "current_url": url,
+                },
+            )
 
-            def _progress(progress: int, message: str) -> None:
-                update_task_state(task_id, status="RUNNING", progress=progress, status_message=message)
+            def _progress(progress: int, message: str, meta: Optional[Dict[str, Any]] = None) -> None:
+                update_task_state(
+                    task_id,
+                    status="RUNNING",
+                    progress=progress,
+                    status_message=message,
+                    progress_meta=meta or {},
+                )
 
             result = check_site_audit_pro(
                 url=url,
@@ -3512,6 +3536,13 @@ async def create_site_audit_pro(data: SiteAuditProRequest, background_tasks: Bac
                 status="SUCCESS",
                 progress=100,
                 status_message="Site Audit Pro completed",
+                progress_meta={
+                    "processed_pages": (((result or {}).get("results") or {}).get("summary") or {}).get("total_pages", 0),
+                    "total_pages": (((result or {}).get("results") or {}).get("summary") or {}).get("total_pages", 0),
+                    "queue_size": 0,
+                    "batch_mode": batch_mode,
+                    "current_url": "",
+                },
                 result=result,
                 error=None,
             )

@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List, Optional
 from .adapter import SiteAuditProAdapter
 from .artifacts import SiteProArtifactStore
 
-ProgressCallback = Optional[Callable[[int, str], None]]
+ProgressCallback = Optional[Callable[[int, str, Optional[Dict[str, Any]]], None]]
 
 
 class SiteAuditProService:
@@ -28,9 +28,9 @@ class SiteAuditProService:
         extended_hreflang_checks: bool = False,
         progress_callback: ProgressCallback = None,
     ) -> Dict[str, Any]:
-        def notify(progress: int, message: str) -> None:
+        def notify(progress: int, message: str, meta: Optional[Dict[str, Any]] = None) -> None:
             if callable(progress_callback):
-                progress_callback(progress, message)
+                progress_callback(progress, message, meta)
 
         selected_mode = "full" if mode == "full" else "quick"
         started_at = datetime.now(timezone.utc).isoformat()
@@ -42,6 +42,8 @@ class SiteAuditProService:
         else:
             notify(20, "Collecting crawl scope")
         notify(45, "Running scoring pipeline")
+        def _adapter_progress(progress: int, message: str, meta: Optional[Dict[str, Any]] = None) -> None:
+            notify(progress, message, meta)
         normalized = self.adapter.run(
             url=url,
             mode=selected_mode,
@@ -49,6 +51,7 @@ class SiteAuditProService:
             batch_mode=batch_mode,
             batch_urls=batch_urls or [],
             extended_hreflang_checks=extended_hreflang_checks,
+            progress_callback=_adapter_progress,
         )
         notify(75, "Building normalized report payload")
         public_results = self.adapter.to_public_results(normalized)

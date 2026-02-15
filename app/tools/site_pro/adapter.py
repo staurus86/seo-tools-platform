@@ -8,7 +8,7 @@ import hashlib
 import json
 import math
 import re
-from typing import Any, Deque, Dict, List, Set, Tuple
+from typing import Any, Callable, Deque, Dict, List, Optional, Set, Tuple
 from urllib.parse import parse_qs, urljoin, urldefrag, urlparse
 
 import requests
@@ -1727,7 +1727,12 @@ class SiteAuditProAdapter:
         batch_urls: List[str] | None = None,
         batch_mode: bool = False,
         extended_hreflang_checks: bool = False,
+        progress_callback: Optional[Callable[[int, str, Optional[Dict[str, Any]]], None]] = None,
     ) -> NormalizedSiteAuditPayload:
+        def notify(progress: int, message: str, meta: Optional[Dict[str, Any]] = None) -> None:
+            if callable(progress_callback):
+                progress_callback(progress, message, meta)
+
         selected_mode = "full" if mode == "full" else "quick"
         page_limit = max(1, min(int(max_pages or 5), 5000))
         timeout = 12
@@ -1769,6 +1774,8 @@ class SiteAuditProAdapter:
 
         session = requests.Session()
         session.headers.update({"User-Agent": "SEO-Tools-SiteAuditPro/0.1"})
+        total_target = len(prepared_batch_urls) if effective_batch_mode else page_limit
+        total_target = max(1, total_target)
 
         while queue and len(visited) < page_limit:
             current = queue.popleft()
@@ -1846,6 +1853,21 @@ class SiteAuditProAdapter:
                 link_graph[current] = set()
                 page_texts[current] = ""
                 anchor_quality_raw[current] = (0, 0)
+
+            processed_pages = len(visited)
+            loop_progress = 25 + int((processed_pages / total_target) * 45)
+            loop_progress = max(25, min(70, loop_progress))
+            notify(
+                loop_progress,
+                f"Processed pages: {processed_pages}/{total_target}",
+                {
+                    "processed_pages": processed_pages,
+                    "total_pages": total_target,
+                    "queue_size": len(queue),
+                    "batch_mode": effective_batch_mode,
+                    "current_url": current,
+                },
+            )
 
         duplicate_titles = {t for t, count in title_counter.items() if t and count > 1}
         duplicate_desc = {t for t, count in desc_counter.items() if t and count > 1}
