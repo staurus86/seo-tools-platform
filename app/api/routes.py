@@ -1903,6 +1903,27 @@ async def get_site_pro_artifact(task_id: str, filename: str):
         return {"error": str(e)}
 
 
+@router.get("/site-pro-artifacts/{task_id}/manifest")
+async def get_site_pro_artifact_manifest(task_id: str):
+    """Return Site Audit Pro chunk manifest and compact payload meta."""
+    try:
+        task = get_task_result(task_id)
+        if not task:
+            return {"error": "Задача не найдена", "task_id": task_id}
+        task_result = task.get("result", {})
+        results = task_result.get("results", task_result) or {}
+        artifacts = results.get("artifacts", {}) or {}
+        return {
+            "task_id": task_id,
+            "payload_compacted": bool(artifacts.get("payload_compacted", False)),
+            "inline_limits": artifacts.get("inline_limits", {}),
+            "omitted_counts": artifacts.get("omitted_counts", {}),
+            "chunk_manifest": artifacts.get("chunk_manifest", {}),
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.post("/tasks/sitemap-validate")
 async def create_sitemap_validate(data: SitemapValidateRequest):
     """Full sitemap validation"""

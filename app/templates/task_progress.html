@@ -1849,6 +1849,12 @@ function generateSiteAuditProHTML(result) {
                     <div class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-3">
                         Payload compact mode is enabled. Full deep data is available via chunk downloads below.
                     </div>
+                    <div class="text-xs text-gray-600 mb-3">
+                        Omitted from inline payload:
+                        issues=${(artifactsMeta.omitted_counts || {}).issues ?? 0},
+                        semantic=${(artifactsMeta.omitted_counts || {}).semantic_linking_map ?? 0},
+                        pages=${(artifactsMeta.omitted_counts || {}).pages ?? 0}
+                    </div>
                 ` : ''}
                 ${downloadsHtml || '<div class="text-sm text-gray-500">Chunk artifacts are not available for this run.</div>'}
             </div>
