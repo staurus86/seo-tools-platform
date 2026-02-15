@@ -3026,6 +3026,26 @@ def check_mobile_full(
     return legacy
 
 
+def check_site_audit_pro(
+    url: str,
+    task_id: str,
+    mode: str = "quick",
+    max_pages: int = 100,
+    progress_callback=None,
+) -> Dict[str, Any]:
+    """Feature-flagged Site Audit Pro entrypoint."""
+    from app.tools.site_pro.service import SiteAuditProService
+
+    service = SiteAuditProService()
+    return service.run(
+        url=url,
+        task_id=task_id,
+        mode=mode,
+        max_pages=max_pages,
+        progress_callback=progress_callback,
+    )
+
+
 class SiteAnalyzeRequest(BaseModel):
     url: str
     max_pages: int = 20
@@ -3037,6 +3057,12 @@ class MobileCheckRequest(BaseModel):
     url: str
     mode: Optional[str] = "quick"
     devices: Optional[List[str]] = None
+
+
+class SiteAuditProRequest(BaseModel):
+    url: str
+    mode: Optional[str] = "quick"
+    max_pages: int = 100
 
 
 @router.post("/tasks/site-analyze")
@@ -3194,3 +3220,50 @@ async def create_mobile_check(data: MobileCheckRequest, background_tasks: Backgr
 
 
 
+
+@router.post("/tasks/site-audit-pro")
+async def create_site_audit_pro(data: SiteAuditProRequest, background_tasks: BackgroundTasks):
+    """Site Audit Pro queued as isolated background task."""
+    url = data.url
+    mode = (data.mode or "quick").lower()
+    if mode not in ("quick", "full"):
+        mode = "quick"
+    max_pages = max(1, min(int(data.max_pages or 100), 5000))
+
+    print(f"[API] Site Audit Pro queued for: {url} (mode={mode}, max_pages={max_pages})")
+    task_id = f"sitepro-{datetime.now().timestamp()}"
+    create_task_pending(task_id, "site_audit_pro", url, status_message="Site Audit Pro queued")
+
+    def _run_site_audit_pro_task() -> None:
+        try:
+            update_task_state(task_id, status="RUNNING", progress=5, status_message="Preparing Site Audit Pro")
+
+            def _progress(progress: int, message: str) -> None:
+                update_task_state(task_id, status="RUNNING", progress=progress, status_message=message)
+
+            result = check_site_audit_pro(
+                url=url,
+                task_id=task_id,
+                mode=mode,
+                max_pages=max_pages,
+                progress_callback=_progress,
+            )
+            update_task_state(
+                task_id,
+                status="SUCCESS",
+                progress=100,
+                status_message="Site Audit Pro completed",
+                result=result,
+                error=None,
+            )
+        except Exception as exc:
+            update_task_state(
+                task_id,
+                status="FAILURE",
+                progress=100,
+                status_message="Site Audit Pro failed",
+                error=str(exc),
+            )
+
+    background_tasks.add_task(_run_site_audit_pro_task)
+    return {"task_id": task_id, "status": "PENDING", "message": "Site Audit Pro started"}

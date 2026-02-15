@@ -10,6 +10,7 @@ from enum import Enum
 class TaskType(str, Enum):
     """Типы задач"""
     SITE_ANALYZE = "site_analyze"
+    SITE_AUDIT_PRO = "site_audit_pro"
     ROBOTS_CHECK = "robots_check"
     SITEMAP_VALIDATE = "sitemap_validate"
     RENDER_AUDIT = "render_audit"
@@ -108,3 +109,5 @@ class DownloadResponse(BaseModel):
     download_url: str
     filename: str
     expires_at: datetime
+
+
