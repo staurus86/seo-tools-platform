@@ -1639,6 +1639,47 @@ async def export_render_docx(data: ExportRequest):
         return {"error": str(e)}
 
 
+@router.post("/export/onpage-docx")
+async def export_onpage_docx(data: ExportRequest):
+    """Export OnPage audit report to DOCX."""
+    import os
+    import re
+    from fastapi.responses import Response
+    from app.reports.docx_generator import docx_generator
+
+    try:
+        task_id = data.task_id
+        task = get_task_result(task_id)
+        if not task:
+            return {"error": "Task not found", "task_id": task_id}
+
+        task_type = task.get("task_type")
+        if task_type != "onpage_audit":
+            return {"error": f"Unsupported task type for onpage DOCX export: {task_type}"}
+
+        task_result = task.get("result", {})
+        url = task.get("url", "") or task_result.get("url", "")
+        report_payload = {"url": url, "results": task_result.get("results", task_result)}
+        filepath = docx_generator.generate_onpage_report(task_id, report_payload)
+        if not filepath or not os.path.exists(filepath):
+            return {"error": "Failed to generate report"}
+        append_task_artifact(task_id, filepath, kind="export")
+
+        with open(filepath, "rb") as f:
+            content = f.read()
+
+        domain = re.sub(r"[^a-zA-Z0-9._-]+", "_", (urlparse(url).netloc or "site"))
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+        filename = f"onpage_report_{domain}_{timestamp}.docx"
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.post("/export/site-audit-pro-docx")
 async def export_site_audit_pro_docx(data: ExportRequest):
     """Export Site Audit Pro report to DOCX."""
@@ -1825,6 +1866,47 @@ async def export_site_audit_pro_xlsx(data: ExportRequest):
         domain = re.sub(r"[^a-zA-Z0-9._-]+", "_", (urlparse(url).netloc or "site"))
         timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
         filename = f"site_audit_pro_{domain}_{timestamp}.xlsx"
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.post("/export/onpage-xlsx")
+async def export_onpage_xlsx(data: ExportRequest):
+    """Export OnPage audit report to XLSX."""
+    import os
+    import re
+    from fastapi.responses import Response
+    from app.reports.xlsx_generator import xlsx_generator
+
+    try:
+        task_id = data.task_id
+        task = get_task_result(task_id)
+        if not task:
+            return {"error": "Task not found", "task_id": task_id}
+
+        task_type = task.get("task_type")
+        if task_type != "onpage_audit":
+            return {"error": f"Unsupported task type for onpage XLSX export: {task_type}"}
+
+        task_result = task.get("result", {})
+        url = task.get("url", "") or task_result.get("url", "")
+        report_payload = {"url": url, "results": task_result.get("results", task_result)}
+        filepath = xlsx_generator.generate_onpage_report(task_id, report_payload)
+        if not filepath or not os.path.exists(filepath):
+            return {"error": "Failed to generate report"}
+        append_task_artifact(task_id, filepath, kind="export")
+
+        with open(filepath, "rb") as f:
+            content = f.read()
+
+        domain = re.sub(r"[^a-zA-Z0-9._-]+", "_", (urlparse(url).netloc or "site"))
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+        filename = f"onpage_report_{domain}_{timestamp}.xlsx"
         return Response(
             content=content,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -3232,6 +3314,41 @@ def check_site_audit_pro(
     )
 
 
+def check_onpage_audit(
+    *,
+    url: str,
+    keywords: Optional[List[str]] = None,
+    language: str = "auto",
+    min_word_count: int = 250,
+    keyword_density_warn_pct: float = 3.0,
+    keyword_density_critical_pct: float = 5.0,
+    title_min_len: int = 30,
+    title_max_len: int = 60,
+    description_min_len: int = 120,
+    description_max_len: int = 160,
+    h1_required: bool = True,
+    h1_max_count: int = 1,
+) -> Dict[str, Any]:
+    """Single-page on-page audit."""
+    from app.tools.onpage import OnPageAuditServiceV1
+
+    service = OnPageAuditServiceV1()
+    return service.run(
+        url=url,
+        keywords=keywords or [],
+        language=language,
+        min_word_count=min_word_count,
+        keyword_density_warn_pct=keyword_density_warn_pct,
+        keyword_density_critical_pct=keyword_density_critical_pct,
+        title_min_len=title_min_len,
+        title_max_len=title_max_len,
+        description_min_len=description_min_len,
+        description_max_len=description_max_len,
+        h1_required=h1_required,
+        h1_max_count=h1_max_count,
+    )
+
+
 class SiteAnalyzeRequest(BaseModel):
     url: str
     max_pages: int = 20
@@ -3260,6 +3377,36 @@ class SiteAuditProRequest(BaseModel):
             return []
         if isinstance(value, str):
             return [value]
+        if isinstance(value, list):
+            return [str(v).strip() for v in value if str(v).strip()]
+        return []
+
+
+class OnPageAuditRequest(BaseModel):
+    url: str
+    keywords: Optional[List[str]] = None
+    language: Optional[str] = "auto"
+    min_word_count: int = 250
+    keyword_density_warn_pct: float = 3.0
+    keyword_density_critical_pct: float = 5.0
+    title_min_len: int = 30
+    title_max_len: int = 60
+    description_min_len: int = 120
+    description_max_len: int = 160
+    h1_required: bool = True
+    h1_max_count: int = 1
+
+    @field_validator("keywords", mode="before")
+    @classmethod
+    def _normalize_keywords(cls, value):
+        if value is None:
+            return []
+        if isinstance(value, str):
+            raw = value.replace("\r", "\n")
+            parts = []
+            for chunk in raw.split("\n"):
+                parts.extend([x.strip() for x in chunk.split(",") if x.strip()])
+            return parts
         if isinstance(value, list):
             return [str(v).strip() for v in value if str(v).strip()]
         return []
@@ -3419,6 +3566,51 @@ async def create_mobile_check(data: MobileCheckRequest, background_tasks: Backgr
     return {"task_id": task_id, "status": "PENDING", "message": "Проверка мобильной версии запущена"}
 
 
+
+
+@router.post("/tasks/onpage-audit")
+async def create_onpage_audit(data: OnPageAuditRequest, background_tasks: BackgroundTasks):
+    """OnPage audit queued as isolated background task."""
+    url = (data.url or "").strip()
+    task_id = f"onpage-{datetime.now().timestamp()}"
+    create_task_pending(task_id, "onpage_audit", url, status_message="Задача поставлена в очередь")
+
+    def _run_onpage_task() -> None:
+        try:
+            update_task_state(task_id, status="RUNNING", progress=10, status_message="Анализ on-page факторов")
+            result = check_onpage_audit(
+                url=url,
+                keywords=data.keywords or [],
+                language=(data.language or "auto"),
+                min_word_count=int(data.min_word_count or 250),
+                keyword_density_warn_pct=float(data.keyword_density_warn_pct or 3.0),
+                keyword_density_critical_pct=float(data.keyword_density_critical_pct or 5.0),
+                title_min_len=int(data.title_min_len or 30),
+                title_max_len=int(data.title_max_len or 60),
+                description_min_len=int(data.description_min_len or 120),
+                description_max_len=int(data.description_max_len or 160),
+                h1_required=bool(data.h1_required),
+                h1_max_count=int(data.h1_max_count or 1),
+            )
+            update_task_state(
+                task_id,
+                status="SUCCESS",
+                progress=100,
+                status_message="OnPage аудит завершен",
+                result=result,
+                error=None,
+            )
+        except Exception as exc:
+            update_task_state(
+                task_id,
+                status="FAILURE",
+                progress=100,
+                status_message="OnPage аудит завершился с ошибкой",
+                error=str(exc),
+            )
+
+    background_tasks.add_task(_run_onpage_task)
+    return {"task_id": task_id, "status": "PENDING", "message": "OnPage аудит запущен"}
 
 
 @router.post("/tasks/site-audit-pro")

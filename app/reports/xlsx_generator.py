@@ -3370,6 +3370,125 @@ class XLSXGenerator:
         wb.close()
         return filepath
 
+    def generate_onpage_report(self, task_id: str, data: Dict[str, Any]) -> str:
+        """Generate XLSX report for onpage_audit."""
+        wb = Workbook()
+        header_style = self._create_header_style()
+        cell_style = self._create_cell_style()
+
+        results = data.get("results", {}) or {}
+        summary = results.get("summary", {}) or {}
+        url = data.get("url", "n/a")
+
+        ws = wb.active
+        ws.title = "Summary"
+        ws["A1"] = "OnPage Audit Report"
+        ws["A1"].font = Font(bold=True, size=16)
+        ws.merge_cells("A1:E1")
+
+        summary_rows = [
+            ("URL", url),
+            ("Engine", results.get("engine", "onpage-v1")),
+            ("Score", results.get("score", summary.get("score", 0))),
+            ("Critical", summary.get("critical_issues", 0)),
+            ("Warning", summary.get("warning_issues", 0)),
+            ("Info", summary.get("info_issues", 0)),
+            ("HTTP status", results.get("status_code", "n/a")),
+            ("Final URL", results.get("final_url", url)),
+            ("Language", results.get("language", "auto")),
+        ]
+        row = 3
+        for key, value in summary_rows:
+            self._apply_style(ws.cell(row=row, column=1, value=key), header_style)
+            self._apply_style(ws.cell(row=row, column=2, value=value), cell_style)
+            row += 1
+        ws.column_dimensions["A"].width = 28
+        ws.column_dimensions["B"].width = 120
+
+        meta_ws = wb.create_sheet("Meta")
+        meta_headers = ["Field", "Value"]
+        for col, header in enumerate(meta_headers, 1):
+            self._apply_style(meta_ws.cell(row=1, column=col, value=header), header_style)
+        title_meta = results.get("title", {}) or {}
+        desc_meta = results.get("description", {}) or {}
+        h1_meta = results.get("h1", {}) or {}
+        meta_rows = [
+            ("Title", title_meta.get("text", "")),
+            ("Title length", title_meta.get("length", 0)),
+            ("Description", desc_meta.get("text", "")),
+            ("Description length", desc_meta.get("length", 0)),
+            ("H1 count", h1_meta.get("count", 0)),
+            ("H1 values", ", ".join(h1_meta.get("values", []) or [])),
+        ]
+        for row_idx, (key, value) in enumerate(meta_rows, start=2):
+            self._apply_style(meta_ws.cell(row=row_idx, column=1, value=key), cell_style)
+            self._apply_style(meta_ws.cell(row=row_idx, column=2, value=value), cell_style)
+        meta_ws.column_dimensions["A"].width = 24
+        meta_ws.column_dimensions["B"].width = 120
+
+        kw_ws = wb.create_sheet("Keywords")
+        kw_headers = ["Keyword", "Occurrences", "Density %", "In title", "In description", "In H1", "Status"]
+        for col, header in enumerate(kw_headers, 1):
+            self._apply_style(kw_ws.cell(row=1, column=col, value=header), header_style)
+        for row_idx, item in enumerate(results.get("keywords", []) or [], start=2):
+            values = [
+                item.get("keyword", ""),
+                item.get("occurrences", 0),
+                item.get("density_pct", 0),
+                "Yes" if item.get("in_title") else "No",
+                "Yes" if item.get("in_description") else "No",
+                "Yes" if item.get("in_h1") else "No",
+                str(item.get("status", "ok")).upper(),
+            ]
+            for col, value in enumerate(values, 1):
+                self._apply_style(kw_ws.cell(row=row_idx, column=col, value=value), cell_style)
+        kw_ws.freeze_panes = "A2"
+        kw_ws.auto_filter.ref = "A1:G1"
+        for col, width in enumerate([30, 12, 12, 12, 15, 10, 12], 1):
+            kw_ws.column_dimensions[get_column_letter(col)].width = width
+
+        issue_ws = wb.create_sheet("Issues")
+        issue_headers = ["Severity", "Code", "Issue", "Details"]
+        for col, header in enumerate(issue_headers, 1):
+            self._apply_style(issue_ws.cell(row=1, column=col, value=header), header_style)
+        for row_idx, issue in enumerate(results.get("issues", []) or [], start=2):
+            severity = str(issue.get("severity", "info")).lower()
+            values = [
+                severity.upper(),
+                issue.get("code", ""),
+                issue.get("title", ""),
+                issue.get("details", ""),
+            ]
+            for col, value in enumerate(values, 1):
+                self._apply_style(issue_ws.cell(row=row_idx, column=col, value=value), cell_style)
+            self._apply_row_severity_fill(issue_ws, row_idx, 1, len(issue_headers), severity)
+        issue_ws.freeze_panes = "A2"
+        issue_ws.auto_filter.ref = "A1:D1"
+        for col, width in enumerate([12, 24, 40, 110], 1):
+            issue_ws.column_dimensions[get_column_letter(col)].width = width
+
+        rec_ws = wb.create_sheet("Recommendations")
+        self._apply_style(rec_ws.cell(row=1, column=1, value="Recommendation"), header_style)
+        for row_idx, rec in enumerate(results.get("recommendations", []) or [], start=2):
+            self._apply_style(rec_ws.cell(row=row_idx, column=1, value=rec), cell_style)
+        rec_ws.column_dimensions["A"].width = 150
+
+        terms_ws = wb.create_sheet("Top Terms")
+        term_headers = ["Term", "Count", "Share %"]
+        for col, header in enumerate(term_headers, 1):
+            self._apply_style(terms_ws.cell(row=1, column=col, value=header), header_style)
+        for row_idx, item in enumerate(results.get("top_terms", []) or [], start=2):
+            vals = [item.get("term", ""), item.get("count", 0), item.get("pct", 0)]
+            for col, value in enumerate(vals, 1):
+                self._apply_style(terms_ws.cell(row=row_idx, column=col, value=value), cell_style)
+        for col, width in enumerate([32, 14, 14], 1):
+            terms_ws.column_dimensions[get_column_letter(col)].width = width
+
+        filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
+        wb.save(filepath)
+        wb.close()
+        return filepath
+
     def generate_report(self, task_id: str, task_type: str, data: Dict[str, Any]) -> str:
         """Dispatch report generation by task type."""
         generators = {
@@ -3380,6 +3499,7 @@ class XLSXGenerator:
             'mobile_check': self.generate_mobile_report,
             'bot_check': self.generate_bot_report,
             'site_audit_pro': self.generate_site_audit_pro_report,
+            'onpage_audit': self.generate_onpage_report,
         }
         
         generator = generators.get(task_type, self.generate_site_analyze_report)

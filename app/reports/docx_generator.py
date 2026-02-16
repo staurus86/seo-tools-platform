@@ -821,6 +821,108 @@ class DOCXGenerator:
         doc.save(filepath)
         return filepath
     
+    def generate_onpage_report(self, task_id: str, data: Dict[str, Any]) -> str:
+        """Generate DOCX report for onpage_audit."""
+        doc = Document()
+        title = doc.add_heading("OnPage Audit Report", 0)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        results = data.get("results", {}) or {}
+        summary = results.get("summary", {}) or {}
+        url = data.get("url", "n/a")
+        generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        doc.add_paragraph(f"URL: {url}")
+        doc.add_paragraph(f"Generated: {generated_at}")
+        doc.add_paragraph(f"Engine: {results.get('engine', 'onpage-v1')}")
+
+        self._add_heading(doc, "1. Executive Summary", level=1)
+        summary_rows = [
+            ["Score", results.get("score", summary.get("score", 0))],
+            ["Critical issues", summary.get("critical_issues", 0)],
+            ["Warning issues", summary.get("warning_issues", 0)],
+            ["Info issues", summary.get("info_issues", 0)],
+            ["HTTP status", results.get("status_code", "n/a")],
+            ["Final URL", results.get("final_url", url)],
+            ["Language", results.get("language", "auto")],
+        ]
+        self._add_table(doc, ["Metric", "Value"], summary_rows)
+
+        content = results.get("content", {}) or {}
+        self._add_heading(doc, "2. Content Metrics", level=1)
+        content_rows = [
+            ["Word count", content.get("word_count", 0)],
+            ["Unique words", content.get("unique_word_count", 0)],
+            ["Characters", content.get("char_count", 0)],
+        ]
+        self._add_table(doc, ["Metric", "Value"], content_rows)
+
+        self._add_heading(doc, "3. Meta Tags", level=1)
+        title_meta = results.get("title", {}) or {}
+        desc_meta = results.get("description", {}) or {}
+        h1_meta = results.get("h1", {}) or {}
+        meta_rows = [
+            ["Title", title_meta.get("text", "")],
+            ["Title length", title_meta.get("length", 0)],
+            ["Description", desc_meta.get("text", "")],
+            ["Description length", desc_meta.get("length", 0)],
+            ["H1 count", h1_meta.get("count", 0)],
+            ["H1 values", ", ".join(h1_meta.get("values", []) or [])],
+        ]
+        self._add_table(doc, ["Field", "Value"], meta_rows)
+
+        self._add_heading(doc, "4. Keywords", level=1)
+        keyword_rows = []
+        for row in (results.get("keywords", []) or [])[:50]:
+            keyword_rows.append(
+                [
+                    row.get("keyword", ""),
+                    row.get("occurrences", 0),
+                    row.get("density_pct", 0),
+                    "Yes" if row.get("in_title") else "No",
+                    "Yes" if row.get("in_description") else "No",
+                    "Yes" if row.get("in_h1") else "No",
+                    str(row.get("status", "ok")).upper(),
+                ]
+            )
+        if keyword_rows:
+            self._add_table(doc, ["Keyword", "Count", "Density %", "Title", "Description", "H1", "Status"], keyword_rows)
+        else:
+            doc.add_paragraph("No keywords provided.")
+
+        self._add_heading(doc, "5. Top Terms", level=1)
+        top_term_rows = []
+        for row in (results.get("top_terms", []) or [])[:20]:
+            top_term_rows.append([row.get("term", ""), row.get("count", 0), row.get("pct", 0)])
+        if top_term_rows:
+            self._add_table(doc, ["Term", "Count", "Share %"], top_term_rows)
+        else:
+            doc.add_paragraph("Top terms are not available.")
+
+        self._add_heading(doc, "6. Issues", level=1)
+        issues = results.get("issues", []) or []
+        if issues:
+            for issue in issues[:80]:
+                sev = str(issue.get("severity", "info")).upper()
+                title_i = issue.get("title", issue.get("code", "Issue"))
+                details_i = issue.get("details", "")
+                doc.add_paragraph(f"[{sev}] {title_i}: {details_i}", style="List Bullet")
+        else:
+            doc.add_paragraph("Issues not found.")
+
+        self._add_heading(doc, "7. Recommendations", level=1)
+        recs = results.get("recommendations", []) or []
+        if recs:
+            for rec in recs[:30]:
+                doc.add_paragraph(str(rec), style="List Bullet")
+        else:
+            doc.add_paragraph("Recommendations are not available.")
+
+        filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
+        self._normalize_document_text(doc)
+        doc.save(filepath)
+        return filepath
+
     def generate_site_audit_pro_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Generate compact DOCX report for site_audit_pro."""
         doc = Document()
@@ -906,7 +1008,8 @@ class DOCXGenerator:
             'render_audit': self.generate_render_report,
             'mobile_check': self.generate_mobile_report,
             'bot_check': self.generate_bot_report,
-            'site_audit_pro': self.generate_site_audit_pro_report
+            'site_audit_pro': self.generate_site_audit_pro_report,
+            'onpage_audit': self.generate_onpage_report,
         }
         
         generator = generators.get(task_type, self.generate_site_analyze_report)

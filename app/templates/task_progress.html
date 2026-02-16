@@ -205,6 +205,12 @@ function showResults(data) {
             task_id: data.task_id || taskId,
             url: data.url || ''
         };
+    } else if (data.task_type === 'onpage_audit') {
+        onpageData = {
+            ...data,
+            task_id: data.task_id || taskId,
+            url: data.url || ''
+        };
     }
     
     const resultsContent = document.getElementById('results-content');
@@ -224,6 +230,8 @@ function showResults(data) {
         resultsContent.innerHTML = generateMobileCheckHTML(result);
     } else if (result.task_type === 'site_audit_pro') {
         resultsContent.innerHTML = generateSiteAuditProHTML(result);
+    } else if (result.task_type === 'onpage_audit') {
+        resultsContent.innerHTML = generateOnPageAuditHTML(result);
     } else {
         resultsContent.innerHTML = generateGenericHTML(result);
     }
@@ -242,6 +250,7 @@ let botData = null;
 let mobileData = null;
 let renderData = null;
 let siteAuditProData = null;
+let onpageData = null;
 let lastTaskResult = null;
 let sitemapExportUrls = [];
 let sitemapDuplicateLines = [];
@@ -708,6 +717,72 @@ async function downloadSiteAuditProDocxReport() {
     } catch (error) {
         console.error('Ошибка скачивания Site Audit Pro DOCX:', error);
         alert(error.message || 'Не удал скачать DOCX-отчет');
+    }
+}
+
+async function downloadOnpageDocxReport() {
+    if (!onpageData) {
+        alert('Нет данных OnPage Audit');
+        return;
+    }
+    try {
+        const response = await fetch('/api/export/onpage-docx', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task_id: onpageData.task_id || taskId })
+        });
+        const payloadType = response.headers.get('content-type') || '';
+        if (!response.ok || payloadType.includes('application/json')) {
+            const err = await response.json();
+            throw new Error(err.error || `HTTP ${response.status}`);
+        }
+        const blob = await response.blob();
+        const href = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const cd = response.headers.get('Content-Disposition') || '';
+        const m = cd.match(/filename=([^;]+)/i);
+        a.download = m ? m[1].replace(/\"/g, '') : `onpage-report-${new Date().toISOString().slice(0,10)}.docx`;
+        a.href = href;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(href);
+    } catch (error) {
+        console.error('Ошибка скачивания OnPage DOCX:', error);
+        alert(error.message || 'Не удалось скачать DOCX-отчет');
+    }
+}
+
+async function downloadOnpageXlsxReport() {
+    if (!onpageData) {
+        alert('Нет данных OnPage Audit');
+        return;
+    }
+    try {
+        const response = await fetch('/api/export/onpage-xlsx', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task_id: onpageData.task_id || taskId })
+        });
+        const payloadType = response.headers.get('content-type') || '';
+        if (!response.ok || payloadType.includes('application/json')) {
+            const err = await response.json();
+            throw new Error(err.error || `HTTP ${response.status}`);
+        }
+        const blob = await response.blob();
+        const href = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const cd = response.headers.get('Content-Disposition') || '';
+        const m = cd.match(/filename=([^;]+)/i);
+        a.download = m ? m[1].replace(/\"/g, '') : `onpage-report-${new Date().toISOString().slice(0,10)}.xlsx`;
+        a.href = href;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(href);
+    } catch (error) {
+        console.error('Ошибка скачивания OnPage XLSX:', error);
+        alert(error.message || 'Не удалось скачать XLSX-отчет');
     }
 }
 
@@ -1781,6 +1856,124 @@ function generateMobileCheckHTML(result) {
             <div class="bg-white rounded-xl shadow-md p-6">
                 <h4 class="font-semibold mb-2">Рекомендации</h4>
                 <ul class="list-disc pl-5 text-sm text-gray-700">${recommendationsHtml || '<li>Рекомендаций нет.</li>'}</ul>
+            </div>
+        </div>
+    `;
+}
+
+function generateOnPageAuditHTML(result) {
+    const r = result.results || {};
+    const summary = r.summary || {};
+    const content = r.content || {};
+    const keywords = r.keywords || [];
+    const issues = r.issues || [];
+    const topTerms = r.top_terms || [];
+    const recs = r.recommendations || [];
+    const titleMeta = r.title || {};
+    const descMeta = r.description || {};
+    const h1Meta = r.h1 || {};
+
+    const keywordsRows = keywords.slice(0, 30).map(k => `
+        <tr class="border-b border-gray-100 text-sm">
+            <td class="py-2 pr-2 font-medium">${k.keyword || ''}</td>
+            <td class="py-2 pr-2">${k.occurrences ?? 0}</td>
+            <td class="py-2 pr-2">${k.density_pct ?? 0}%</td>
+            <td class="py-2 pr-2">${k.in_title ? 'Да' : 'Нет'}</td>
+            <td class="py-2 pr-2">${k.in_description ? 'Да' : 'Нет'}</td>
+            <td class="py-2 pr-2">${k.in_h1 ? 'Да' : 'Нет'}</td>
+            <td class="py-2 pr-2">
+                <span class="px-2 py-1 rounded-full text-xs ${k.status === 'critical' ? 'bg-red-100 text-red-700' : (k.status === 'warning' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}">
+                    ${(k.status || 'ok').toUpperCase()}
+                </span>
+            </td>
+        </tr>
+    `).join('');
+
+    const issuesHtml = issues.slice(0, 25).map(i => `
+        <div class="text-sm border-l-4 ${i.severity === 'critical' ? 'border-red-500 bg-red-50' : i.severity === 'warning' ? 'border-yellow-500 bg-yellow-50' : 'border-blue-500 bg-blue-50'} p-3 rounded-r mb-2">
+            <div class="font-semibold">${(i.severity || 'info').toUpperCase()} | ${i.code || 'issue'}</div>
+            <div>${i.title || ''}</div>
+            <div class="text-gray-600">${i.details || ''}</div>
+        </div>
+    `).join('');
+
+    const termsHtml = topTerms.slice(0, 15).map(t => `
+        <div class="flex items-center justify-between text-sm py-1 border-b border-gray-100">
+            <span>${t.term || ''}</span>
+            <span class="font-medium">${t.count ?? 0} (${t.pct ?? 0}%)</span>
+        </div>
+    `).join('');
+
+    const recsHtml = recs.map(x => `<li>${x}</li>`).join('');
+
+    return `
+        <div class="space-y-6">
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <h3 class="text-lg font-semibold">OnPage Audit</h3>
+                        <p class="text-sm text-gray-500 break-all">${result.url || ''}</p>
+                    </div>
+                    <div class="flex gap-3">
+                        <button onclick="downloadOnpageDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>Скачать DOCX</button>
+                        <button onclick="downloadOnpageXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>Скачать XLSX</button>
+                        <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Score</div><div class="text-xl font-semibold">${r.score ?? summary.score ?? 0}</div></div>
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Слов</div><div class="text-xl font-semibold">${content.word_count ?? 0}</div></div>
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Critical</div><div class="text-xl font-semibold text-red-700">${summary.critical_issues ?? 0}</div></div>
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Warning</div><div class="text-xl font-semibold text-amber-700">${summary.warning_issues ?? 0}</div></div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h4 class="font-semibold mb-3">Meta</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                    <div><span class="text-gray-600">Title:</span> <span class="font-medium">${titleMeta.text || '-'}</span></div>
+                    <div><span class="text-gray-600">Title length:</span> <span class="font-medium">${titleMeta.length ?? 0}</span></div>
+                    <div><span class="text-gray-600">Description:</span> <span class="font-medium">${descMeta.text || '-'}</span></div>
+                    <div><span class="text-gray-600">Description length:</span> <span class="font-medium">${descMeta.length ?? 0}</span></div>
+                    <div><span class="text-gray-600">H1 count:</span> <span class="font-medium">${h1Meta.count ?? 0}</span></div>
+                    <div><span class="text-gray-600">H1:</span> <span class="font-medium">${(h1Meta.values || []).join(', ') || '-'}</span></div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
+                <h4 class="font-semibold mb-3">Keywords & Density</h4>
+                <table class="w-full min-w-[760px]">
+                    <thead>
+                        <tr class="text-left text-xs text-gray-500 border-b">
+                            <th class="py-2 pr-2">Keyword</th>
+                            <th class="py-2 pr-2">Count</th>
+                            <th class="py-2 pr-2">Density</th>
+                            <th class="py-2 pr-2">Title</th>
+                            <th class="py-2 pr-2">Description</th>
+                            <th class="py-2 pr-2">H1</th>
+                            <th class="py-2 pr-2">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${keywordsRows || '<tr><td class="py-2 text-sm text-gray-500" colspan="7">Ключевые слова не заданы.</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Top terms</h4>
+                    ${termsHtml || '<div class="text-sm text-gray-500">Нет данных.</div>'}
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Рекомендации</h4>
+                    <ul class="list-disc pl-5 text-sm text-gray-700">${recsHtml || '<li>Рекомендаций нет.</li>'}</ul>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h4 class="font-semibold mb-2">Issues</h4>
+                ${issuesHtml || '<div class="text-sm text-gray-500">Проблем не обнаружено.</div>'}
             </div>
         </div>
     `;
