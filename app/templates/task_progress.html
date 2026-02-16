@@ -1868,6 +1868,11 @@ function generateOnPageAuditHTML(result) {
     const keywords = r.keywords || [];
     const issues = r.issues || [];
     const topTerms = r.top_terms || [];
+    const technical = r.technical || {};
+    const links = r.links || {};
+    const media = r.media || {};
+    const readability = r.readability || {};
+    const ngrams = r.ngrams || {};
     const recs = r.recommendations || [];
     const titleMeta = r.title || {};
     const descMeta = r.description || {};
@@ -1898,6 +1903,12 @@ function generateOnPageAuditHTML(result) {
     `).join('');
 
     const termsHtml = topTerms.slice(0, 15).map(t => `
+        <div class="flex items-center justify-between text-sm py-1 border-b border-gray-100">
+            <span>${t.term || ''}</span>
+            <span class="font-medium">${t.count ?? 0} (${t.pct ?? 0}%)</span>
+        </div>
+    `).join('');
+    const bigramsHtml = (ngrams.bigrams || []).slice(0, 10).map(t => `
         <div class="flex items-center justify-between text-sm py-1 border-b border-gray-100">
             <span>${t.term || ''}</span>
             <span class="font-medium">${t.count ?? 0} (${t.pct ?? 0}%)</span>
@@ -1966,9 +1977,46 @@ function generateOnPageAuditHTML(result) {
                     ${termsHtml || '<div class="text-sm text-gray-500">Нет данных.</div>'}
                 </div>
                 <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold mb-3">Рекомендации</h4>
-                    <ul class="list-disc pl-5 text-sm text-gray-700">${recsHtml || '<li>Рекомендаций нет.</li>'}</ul>
+                    <h4 class="font-semibold mb-3">Bigrams</h4>
+                    ${bigramsHtml || '<div class="text-sm text-gray-500">Нет данных.</div>'}
                 </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Technical</h4>
+                    <div class="space-y-1 text-sm">
+                        <div><span class="text-gray-600">Canonical:</span> <span class="font-medium break-all">${technical.canonical_href || '-'}</span></div>
+                        <div><span class="text-gray-600">Canonical self:</span> <span class="font-medium">${technical.canonical_is_self ? 'Yes' : 'No'}</span></div>
+                        <div><span class="text-gray-600">Meta robots:</span> <span class="font-medium">${technical.robots || '-'}</span></div>
+                        <div><span class="text-gray-600">Viewport:</span> <span class="font-medium">${technical.viewport ? 'Yes' : 'No'}</span></div>
+                        <div><span class="text-gray-600">Schema blocks:</span> <span class="font-medium">${technical.schema_count ?? 0}</span></div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Links & Media</h4>
+                    <div class="space-y-1 text-sm">
+                        <div><span class="text-gray-600">Links total:</span> <span class="font-medium">${links.links_total ?? 0}</span></div>
+                        <div><span class="text-gray-600">Internal:</span> <span class="font-medium">${links.internal_links ?? 0}</span></div>
+                        <div><span class="text-gray-600">External:</span> <span class="font-medium">${links.external_links ?? 0}</span></div>
+                        <div><span class="text-gray-600">Images:</span> <span class="font-medium">${media.images_total ?? 0}</span></div>
+                        <div><span class="text-gray-600">Missing alt:</span> <span class="font-medium">${media.images_missing_alt ?? 0}</span></div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Readability</h4>
+                    <div class="space-y-1 text-sm">
+                        <div><span class="text-gray-600">Sentences:</span> <span class="font-medium">${readability.sentences_count ?? 0}</span></div>
+                        <div><span class="text-gray-600">Avg sentence:</span> <span class="font-medium">${readability.avg_sentence_len ?? 0}</span></div>
+                        <div><span class="text-gray-600">Long sentence ratio:</span> <span class="font-medium">${((readability.long_sentence_ratio || 0) * 100).toFixed(1)}%</span></div>
+                        <div><span class="text-gray-600">Lexical diversity:</span> <span class="font-medium">${readability.lexical_diversity ?? 0}</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h4 class="font-semibold mb-3">Рекомендации</h4>
+                    <ul class="list-disc pl-5 text-sm text-gray-700">${recsHtml || '<li>Рекомендаций нет.</li>'}</ul>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">

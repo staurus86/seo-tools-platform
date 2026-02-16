@@ -4,19 +4,20 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 import re
 
 import requests
 from bs4 import BeautifulSoup
 
 
-_TOKEN_RE = re.compile(r"[a-zA-Zа-яА-Я0-9]+", re.IGNORECASE)
+_TOKEN_RE = re.compile(r"[A-Za-zА-Яа-яЁё0-9]+", re.IGNORECASE)
+_SENTENCE_SPLIT_RE = re.compile(r"[.!?]+")
 
 _STOPWORDS_RU = {
     "и", "в", "во", "на", "с", "со", "по", "под", "над", "к", "ко", "у", "о", "об", "от", "до", "для",
     "не", "ни", "это", "как", "а", "но", "или", "ли", "же", "бы", "что", "чтобы", "из", "за", "при",
-    "мы", "вы", "они", "он", "она", "оно", "их", "его", "ее", "их", "наш", "ваш", "этот", "эта", "эти",
+    "мы", "вы", "они", "он", "она", "оно", "их", "его", "ее", "наш", "ваш", "этот", "эта", "эти",
 }
 _STOPWORDS_EN = {
     "the", "a", "an", "and", "or", "but", "if", "for", "to", "of", "in", "on", "at", "from", "with",
@@ -71,8 +72,17 @@ class OnPageAuditServiceV1:
             tag.extract()
         body = soup.body or soup
         text = body.get_text(" ", strip=True)
-        text = re.sub(r"\s+", " ", text).strip()
-        return text
+        return re.sub(r"\s+", " ", text).strip()
+
+    def _top_ngrams(self, tokens: List[str], n: int, limit: int = 20) -> List[Dict[str, Any]]:
+        if n <= 1 or len(tokens) < n:
+            return []
+        total = max(1, len(tokens) - n + 1)
+        grams = Counter(" ".join(tokens[i:i + n]) for i in range(0, len(tokens) - n + 1))
+        rows: List[Dict[str, Any]] = []
+        for gram, count in grams.most_common(limit):
+            rows.append({"term": gram, "count": count, "pct": round(count / total * 100.0, 3)})
+        return rows
 
     def _keyword_rows(
         self,
@@ -98,9 +108,7 @@ class OnPageAuditServiceV1:
             status = "ok"
             if density >= critical_density:
                 status = "critical"
-            elif density >= warn_density:
-                status = "warning"
-            elif occurrences == 0:
+            elif density >= warn_density or occurrences == 0:
                 status = "warning"
             rows.append(
                 {
@@ -133,50 +141,47 @@ class OnPageAuditServiceV1:
         h1_max_count: int,
         keyword_rows: List[Dict[str, Any]],
         top_terms: List[Dict[str, Any]],
+        technical: Dict[str, Any],
+        links: Dict[str, Any],
+        media: Dict[str, Any],
+        readability: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         issues: List[Dict[str, Any]] = []
 
         def add(severity: str, code: str, title_text: str, details: str) -> None:
-            issues.append(
-                {
-                    "severity": severity,
-                    "code": code,
-                    "title": title_text,
-                    "details": details,
-                }
-            )
+            issues.append({"severity": severity, "code": code, "title": title_text, "details": details})
 
         if not title:
-            add("critical", "title_missing", "Title отсутствует", "Добавьте уникальный <title> для страницы.")
+            add("critical", "title_missing", "Title is missing", "Add unique <title> for the page.")
         elif title_len < title_min_len or title_len > title_max_len:
             add(
                 "warning",
                 "title_length_out_of_range",
-                "Title имеет нецелевую длину",
-                f"Длина title: {title_len}. Рекомендуемый диапазон: {title_min_len}-{title_max_len}.",
+                "Title length out of range",
+                f"Current title length: {title_len}. Target: {title_min_len}-{title_max_len}.",
             )
 
         if not description:
-            add("warning", "description_missing", "Description отсутствует", "Добавьте meta description.")
+            add("warning", "description_missing", "Description is missing", "Add meta description.")
         elif description_len < description_min_len or description_len > description_max_len:
             add(
                 "warning",
                 "description_length_out_of_range",
-                "Description имеет нецелевую длину",
-                f"Длина description: {description_len}. Рекомендуемый диапазон: {description_min_len}-{description_max_len}.",
+                "Description length out of range",
+                f"Current description length: {description_len}. Target: {description_min_len}-{description_max_len}.",
             )
 
         if h1_required and not h1_values:
-            add("critical", "h1_missing", "H1 отсутствует", "Добавьте один релевантный H1.")
+            add("critical", "h1_missing", "H1 is missing", "Add one relevant H1 heading.")
         if h1_values and len(h1_values) > h1_max_count:
-            add("warning", "h1_multiple", "Найдено несколько H1", f"Найдено H1: {len(h1_values)} (лимит: {h1_max_count}).")
+            add("warning", "h1_multiple", "Multiple H1 headings", f"H1 count: {len(h1_values)} (limit: {h1_max_count}).")
 
         if total_words < min_word_count:
             add(
                 "warning",
                 "low_word_count",
-                "Недостаточный объем контента",
-                f"Слов на странице: {total_words}. Минимум: {min_word_count}.",
+                "Low content volume",
+                f"Word count: {total_words}. Recommended minimum: {min_word_count}.",
             )
 
         for row in keyword_rows:
@@ -184,22 +189,22 @@ class OnPageAuditServiceV1:
                 add(
                     "critical",
                     "keyword_stuffing",
-                    "Вероятный переспам ключа",
-                    f"Ключ '{row['keyword']}' имеет плотность {row['density_pct']}%.",
+                    "Potential keyword stuffing",
+                    f"Keyword '{row['keyword']}' density is {row['density_pct']}%.",
                 )
             elif row["status"] == "warning" and row["occurrences"] == 0:
                 add(
                     "warning",
                     "keyword_missing",
-                    "Ключ отсутствует в тексте",
-                    f"Ключ '{row['keyword']}' не найден на странице.",
+                    "Keyword not found in content",
+                    f"Keyword '{row['keyword']}' is missing in page text.",
                 )
             elif row["status"] == "warning":
                 add(
                     "warning",
                     "keyword_density_high",
-                    "Повышенная плотность ключа",
-                    f"Ключ '{row['keyword']}' имеет плотность {row['density_pct']}%.",
+                    "Elevated keyword density",
+                    f"Keyword '{row['keyword']}' density is {row['density_pct']}%.",
                 )
 
         if top_terms:
@@ -208,16 +213,73 @@ class OnPageAuditServiceV1:
                 add(
                     "critical",
                     "top_term_spam",
-                    "Слишком частое повторение слова",
-                    f"Слово '{top.get('term')}' занимает {top.get('pct')}% текста.",
+                    "Excessive repetition of one term",
+                    f"Term '{top.get('term')}' takes {top.get('pct')}% of all words.",
                 )
             elif top.get("pct", 0) >= 6:
                 add(
                     "warning",
                     "top_term_repetition",
-                    "Высокая повторяемость слова",
-                    f"Слово '{top.get('term')}' занимает {top.get('pct')}% текста.",
+                    "High term repetition",
+                    f"Term '{top.get('term')}' takes {top.get('pct')}% of all words.",
                 )
+
+        if technical.get("noindex"):
+            add("critical", "meta_noindex", "Meta robots contains noindex", "Remove noindex if page should rank.")
+        if technical.get("nofollow"):
+            add("warning", "meta_nofollow", "Meta robots contains nofollow", "Verify if nofollow is intentional.")
+        if not technical.get("canonical_href"):
+            add("warning", "canonical_missing", "Canonical is missing", "Add rel=canonical to avoid duplicates.")
+        elif not technical.get("canonical_is_self"):
+            add("warning", "canonical_not_self", "Canonical points to another URL", "Check canonical target relevance.")
+        if not technical.get("viewport"):
+            add("warning", "viewport_missing", "Viewport meta is missing", "Add viewport for mobile rendering.")
+
+        images_total = int(media.get("images_total", 0))
+        images_missing_alt = int(media.get("images_missing_alt", 0))
+        if images_total > 0:
+            missing_alt_pct = images_missing_alt / max(1, images_total) * 100.0
+            if missing_alt_pct >= 30:
+                add(
+                    "critical",
+                    "images_alt_missing_critical",
+                    "Many images are missing alt attributes",
+                    f"Missing alt: {images_missing_alt}/{images_total} ({round(missing_alt_pct, 1)}%).",
+                )
+            elif missing_alt_pct > 0:
+                add(
+                    "warning",
+                    "images_alt_missing",
+                    "Some images are missing alt attributes",
+                    f"Missing alt: {images_missing_alt}/{images_total} ({round(missing_alt_pct, 1)}%).",
+                )
+
+        external_links = int(links.get("external_links", 0))
+        internal_links = int(links.get("internal_links", 0))
+        empty_anchors = int(links.get("empty_anchor_links", 0))
+        if internal_links == 0:
+            add("warning", "internal_links_missing", "No internal links", "Add internal links to improve crawlability.")
+        if external_links >= 50:
+            add("warning", "external_links_many", "Too many external links", f"External links found: {external_links}.")
+        if empty_anchors > 0:
+            add("warning", "empty_anchor_links", "Empty/weak anchor texts found", f"Links with empty anchor: {empty_anchors}.")
+
+        lexical_diversity = float(readability.get("lexical_diversity", 0.0))
+        long_sentence_ratio = float(readability.get("long_sentence_ratio", 0.0))
+        if lexical_diversity < 0.25:
+            add(
+                "warning",
+                "low_lexical_diversity",
+                "Low lexical diversity",
+                f"Lexical diversity is {round(lexical_diversity, 3)}. Improve semantic variety.",
+            )
+        if long_sentence_ratio > 0.35:
+            add(
+                "warning",
+                "long_sentences_excess",
+                "Too many long sentences",
+                f"Long sentence ratio is {round(long_sentence_ratio * 100, 1)}%.",
+            )
 
         return issues
 
@@ -245,11 +307,11 @@ class OnPageAuditServiceV1:
                 "completed_at": datetime.utcnow().isoformat(),
                 "results": {
                     "engine": "onpage-v1",
-                    "issues": [{"severity": "critical", "code": "invalid_url", "title": "Некорректный URL", "details": "Укажите валидный URL."}],
+                    "issues": [{"severity": "critical", "code": "invalid_url", "title": "Invalid URL", "details": "Specify valid URL."}],
                     "issues_count": 1,
                     "summary": {"critical_issues": 1, "warning_issues": 0, "info_issues": 0, "score": 0},
                     "score": 0,
-                    "recommendations": ["Проверьте формат URL и повторите аудит."],
+                    "recommendations": ["Check URL format and try again."],
                 },
             }
 
@@ -266,11 +328,11 @@ class OnPageAuditServiceV1:
                 "completed_at": datetime.utcnow().isoformat(),
                 "results": {
                     "engine": "onpage-v1",
-                    "issues": [{"severity": "critical", "code": "fetch_error", "title": "Ошибка загрузки страницы", "details": str(exc)}],
+                    "issues": [{"severity": "critical", "code": "fetch_error", "title": "Failed to fetch page", "details": str(exc)}],
                     "issues_count": 1,
                     "summary": {"critical_issues": 1, "warning_issues": 0, "info_issues": 0, "score": 0},
                     "score": 0,
-                    "recommendations": ["Проверьте доступность страницы и повторите аудит."],
+                    "recommendations": ["Check page accessibility and try again."],
                 },
             }
 
@@ -288,6 +350,7 @@ class OnPageAuditServiceV1:
         desc_tag = soup.find("meta", attrs={"name": re.compile(r"^description$", re.I)})
         if desc_tag:
             description = _norm_text(desc_tag.get("content"))
+
         h1_values = [_norm_text(h.get_text(" ", strip=True)) for h in soup.find_all("h1")]
         h1_values = [x for x in h1_values if x]
 
@@ -297,13 +360,22 @@ class OnPageAuditServiceV1:
         unique_words = len(set(all_tokens))
         char_count = len(visible_text)
 
+        sentences = [s.strip() for s in _SENTENCE_SPLIT_RE.split(visible_text) if s.strip()]
+        sentence_lengths = [len(_tokens(s)) for s in sentences]
+        avg_sentence_len = round(sum(sentence_lengths) / max(1, len(sentence_lengths)), 2)
+        long_sentence_ratio = sum(1 for ln in sentence_lengths if ln >= 25) / max(1, len(sentence_lengths))
+        lexical_diversity = unique_words / max(1, total_words)
+
         stopwords = _STOPWORDS_RU if language == "ru" else _STOPWORDS_EN
         content_tokens = [t for t in all_tokens if t not in stopwords and len(t) > 2]
         content_counts = Counter(content_tokens)
-        top_terms = []
+        top_terms: List[Dict[str, Any]] = []
         for term, count in content_counts.most_common(20):
             pct = round((count / total_words * 100.0), 3) if total_words > 0 else 0.0
             top_terms.append({"term": term, "count": count, "pct": pct})
+
+        bigrams = self._top_ngrams(content_tokens, n=2, limit=20)
+        trigrams = self._top_ngrams(content_tokens, n=3, limit=20)
 
         keyword_list = [_norm_text(k) for k in (keywords or []) if _norm_text(k)]
         keyword_rows = self._keyword_rows(
@@ -316,6 +388,91 @@ class OnPageAuditServiceV1:
             warn_density=keyword_density_warn_pct,
             critical_density=keyword_density_critical_pct,
         )
+
+        parsed_final = urlparse(final_url)
+        final_domain = parsed_final.netloc.lower()
+        base_url = f"{parsed_final.scheme}://{parsed_final.netloc}"
+
+        links_total = 0
+        internal_links = 0
+        external_links = 0
+        nofollow_links = 0
+        empty_anchor_links = 0
+        for a in soup.find_all("a"):
+            href = _norm_text(a.get("href"))
+            if not href or href.startswith("#") or href.startswith("javascript:") or href.startswith("mailto:") or href.startswith("tel:"):
+                continue
+            links_total += 1
+            anchor = _norm_text(a.get_text(" ", strip=True))
+            if len(anchor) < 2:
+                empty_anchor_links += 1
+            rel_values = [str(x).lower() for x in (a.get("rel") or [])]
+            if "nofollow" in rel_values:
+                nofollow_links += 1
+            full_href = urljoin(base_url, href)
+            href_domain = urlparse(full_href).netloc.lower()
+            if href_domain == final_domain:
+                internal_links += 1
+            else:
+                external_links += 1
+
+        images = soup.find_all("img")
+        images_total = len(images)
+        images_missing_alt = sum(1 for img in images if not _norm_text(img.get("alt")))
+
+        canonical_href = ""
+        canonical_tag = soup.find("link", attrs={"rel": re.compile(r"canonical", re.I)})
+        if canonical_tag:
+            canonical_href = _norm_text(canonical_tag.get("href"))
+        canonical_abs = urljoin(base_url, canonical_href) if canonical_href else ""
+        canonical_is_self = False
+        if canonical_abs:
+            c = urlparse(canonical_abs)
+            f = urlparse(final_url)
+            canonical_is_self = (c.scheme, c.netloc, c.path.rstrip("/")) == (f.scheme, f.netloc, f.path.rstrip("/"))
+
+        robots_content = ""
+        robots_tag = soup.find("meta", attrs={"name": re.compile(r"^robots$", re.I)})
+        if robots_tag:
+            robots_content = _norm_text(robots_tag.get("content")).lower()
+        noindex = "noindex" in robots_content
+        nofollow = "nofollow" in robots_content
+
+        viewport_tag = soup.find("meta", attrs={"name": re.compile(r"^viewport$", re.I)})
+        viewport = _norm_text(viewport_tag.get("content")) if viewport_tag else ""
+        hreflang_count = len(soup.find_all("link", attrs={"hreflang": True}))
+        schema_count = len(soup.find_all("script", attrs={"type": re.compile(r"application/ld\+json", re.I)}))
+
+        technical = {
+            "canonical_href": canonical_href,
+            "canonical_abs": canonical_abs,
+            "canonical_is_self": canonical_is_self,
+            "robots": robots_content,
+            "noindex": noindex,
+            "nofollow": nofollow,
+            "viewport": viewport,
+            "lang": page_lang,
+            "hreflang_count": hreflang_count,
+            "schema_count": schema_count,
+        }
+        links = {
+            "links_total": links_total,
+            "internal_links": internal_links,
+            "external_links": external_links,
+            "nofollow_links": nofollow_links,
+            "empty_anchor_links": empty_anchor_links,
+        }
+        media = {
+            "images_total": images_total,
+            "images_missing_alt": images_missing_alt,
+            "images_with_alt": max(0, images_total - images_missing_alt),
+        }
+        readability = {
+            "sentences_count": len(sentences),
+            "avg_sentence_len": avg_sentence_len,
+            "long_sentence_ratio": round(long_sentence_ratio, 4),
+            "lexical_diversity": round(lexical_diversity, 4),
+        }
 
         issues = self._build_issues(
             title=title,
@@ -333,12 +490,16 @@ class OnPageAuditServiceV1:
             h1_max_count=max(1, _safe_int(h1_max_count, 1)),
             keyword_rows=keyword_rows,
             top_terms=top_terms,
+            technical=technical,
+            links=links,
+            media=media,
+            readability=readability,
         )
 
         critical_count = sum(1 for i in issues if i.get("severity") == "critical")
         warning_count = sum(1 for i in issues if i.get("severity") == "warning")
         info_count = sum(1 for i in issues if i.get("severity") == "info")
-        score = max(0, 100 - critical_count * 20 - warning_count * 8 - info_count * 3)
+        score = max(0, 100 - critical_count * 20 - warning_count * 7 - info_count * 3)
 
         recommendations: List[str] = []
         for issue in issues:
@@ -349,7 +510,7 @@ class OnPageAuditServiceV1:
             if details and details not in recommendations:
                 recommendations.append(details)
         if not recommendations:
-            recommendations.append("Критичных on-page проблем не обнаружено.")
+            recommendations.append("No critical on-page issues detected.")
 
         headings = {
             "h1_count": len(h1_values),
@@ -404,6 +565,11 @@ class OnPageAuditServiceV1:
                 "headings": headings,
                 "keywords": keyword_rows,
                 "top_terms": top_terms,
+                "ngrams": {"bigrams": bigrams, "trigrams": trigrams},
+                "technical": technical,
+                "links": links,
+                "media": media,
+                "readability": readability,
                 "spam_signals": spam_signals,
                 "issues": issues,
                 "issues_count": len(issues),
@@ -414,7 +580,7 @@ class OnPageAuditServiceV1:
                     "score": score,
                 },
                 "score": score,
-                "recommendations": recommendations[:20],
+                "recommendations": recommendations[:30],
                 "meta": {
                     "domain": urlparse(final_url).netloc,
                     "fetched_at": datetime.utcnow().isoformat(),

@@ -899,7 +899,50 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Top terms are not available.")
 
-        self._add_heading(doc, "6. Issues", level=1)
+        self._add_heading(doc, "6. Technical Signals", level=1)
+        technical = results.get("technical", {}) or {}
+        technical_rows = [
+            ["Canonical href", technical.get("canonical_href", "")],
+            ["Canonical self", "Yes" if technical.get("canonical_is_self") else "No"],
+            ["Meta robots", technical.get("robots", "")],
+            ["Noindex", "Yes" if technical.get("noindex") else "No"],
+            ["Nofollow", "Yes" if technical.get("nofollow") else "No"],
+            ["Viewport", technical.get("viewport", "")],
+            ["HTML lang", technical.get("lang", "")],
+            ["Hreflang tags", technical.get("hreflang_count", 0)],
+            ["Schema blocks", technical.get("schema_count", 0)],
+        ]
+        self._add_table(doc, ["Signal", "Value"], technical_rows)
+
+        self._add_heading(doc, "7. Links, Media, Readability", level=1)
+        links = results.get("links", {}) or {}
+        media = results.get("media", {}) or {}
+        readability = results.get("readability", {}) or {}
+        quality_rows = [
+            ["Total links", links.get("links_total", 0)],
+            ["Internal links", links.get("internal_links", 0)],
+            ["External links", links.get("external_links", 0)],
+            ["Nofollow links", links.get("nofollow_links", 0)],
+            ["Empty anchor links", links.get("empty_anchor_links", 0)],
+            ["Images total", media.get("images_total", 0)],
+            ["Images missing alt", media.get("images_missing_alt", 0)],
+            ["Sentences", readability.get("sentences_count", 0)],
+            ["Avg sentence len", readability.get("avg_sentence_len", 0)],
+            ["Long sentence ratio", readability.get("long_sentence_ratio", 0)],
+            ["Lexical diversity", readability.get("lexical_diversity", 0)],
+        ]
+        self._add_table(doc, ["Metric", "Value"], quality_rows)
+
+        self._add_heading(doc, "8. N-grams", level=1)
+        ngrams = results.get("ngrams", {}) or {}
+        bigrams = ngrams.get("bigrams", []) or []
+        if bigrams:
+            bigram_rows = [[row.get("term", ""), row.get("count", 0), row.get("pct", 0)] for row in bigrams[:20]]
+            self._add_table(doc, ["Bigram", "Count", "Share %"], bigram_rows)
+        else:
+            doc.add_paragraph("Bigrams are not available.")
+
+        self._add_heading(doc, "9. Issues", level=1)
         issues = results.get("issues", []) or []
         if issues:
             for issue in issues[:80]:
@@ -910,7 +953,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Issues not found.")
 
-        self._add_heading(doc, "7. Recommendations", level=1)
+        self._add_heading(doc, "10. Recommendations", level=1)
         recs = results.get("recommendations", []) or []
         if recs:
             for rec in recs[:30]:

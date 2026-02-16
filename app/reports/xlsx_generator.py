@@ -3484,6 +3484,73 @@ class XLSXGenerator:
         for col, width in enumerate([32, 14, 14], 1):
             terms_ws.column_dimensions[get_column_letter(col)].width = width
 
+        tech_ws = wb.create_sheet("Technical")
+        tech_headers = ["Signal", "Value"]
+        for col, header in enumerate(tech_headers, 1):
+            self._apply_style(tech_ws.cell(row=1, column=col, value=header), header_style)
+        technical = results.get("technical", {}) or {}
+        tech_rows = [
+            ("Canonical href", technical.get("canonical_href", "")),
+            ("Canonical self", "Yes" if technical.get("canonical_is_self") else "No"),
+            ("Meta robots", technical.get("robots", "")),
+            ("Noindex", "Yes" if technical.get("noindex") else "No"),
+            ("Nofollow", "Yes" if technical.get("nofollow") else "No"),
+            ("Viewport", technical.get("viewport", "")),
+            ("HTML lang", technical.get("lang", "")),
+            ("Hreflang tags", technical.get("hreflang_count", 0)),
+            ("Schema blocks", technical.get("schema_count", 0)),
+        ]
+        for row_idx, (key, value) in enumerate(tech_rows, start=2):
+            self._apply_style(tech_ws.cell(row=row_idx, column=1, value=key), cell_style)
+            self._apply_style(tech_ws.cell(row=row_idx, column=2, value=value), cell_style)
+        tech_ws.column_dimensions["A"].width = 30
+        tech_ws.column_dimensions["B"].width = 120
+
+        quality_ws = wb.create_sheet("Quality")
+        quality_headers = ["Metric", "Value"]
+        for col, header in enumerate(quality_headers, 1):
+            self._apply_style(quality_ws.cell(row=1, column=col, value=header), header_style)
+        links = results.get("links", {}) or {}
+        media = results.get("media", {}) or {}
+        readability = results.get("readability", {}) or {}
+        quality_rows = [
+            ("Total links", links.get("links_total", 0)),
+            ("Internal links", links.get("internal_links", 0)),
+            ("External links", links.get("external_links", 0)),
+            ("Nofollow links", links.get("nofollow_links", 0)),
+            ("Empty anchor links", links.get("empty_anchor_links", 0)),
+            ("Images total", media.get("images_total", 0)),
+            ("Images missing alt", media.get("images_missing_alt", 0)),
+            ("Sentences", readability.get("sentences_count", 0)),
+            ("Avg sentence len", readability.get("avg_sentence_len", 0)),
+            ("Long sentence ratio", readability.get("long_sentence_ratio", 0)),
+            ("Lexical diversity", readability.get("lexical_diversity", 0)),
+        ]
+        for row_idx, (key, value) in enumerate(quality_rows, start=2):
+            self._apply_style(quality_ws.cell(row=row_idx, column=1, value=key), cell_style)
+            self._apply_style(quality_ws.cell(row=row_idx, column=2, value=value), cell_style)
+        quality_ws.column_dimensions["A"].width = 30
+        quality_ws.column_dimensions["B"].width = 36
+
+        ngram_ws = wb.create_sheet("Ngrams")
+        ngram_headers = ["Type", "Term", "Count", "Share %"]
+        for col, header in enumerate(ngram_headers, 1):
+            self._apply_style(ngram_ws.cell(row=1, column=col, value=header), header_style)
+        ngrams = results.get("ngrams", {}) or {}
+        row_idx = 2
+        for item in (ngrams.get("bigrams", []) or [])[:20]:
+            values = ["bigram", item.get("term", ""), item.get("count", 0), item.get("pct", 0)]
+            for col, value in enumerate(values, 1):
+                self._apply_style(ngram_ws.cell(row=row_idx, column=col, value=value), cell_style)
+            row_idx += 1
+        for item in (ngrams.get("trigrams", []) or [])[:20]:
+            values = ["trigram", item.get("term", ""), item.get("count", 0), item.get("pct", 0)]
+            for col, value in enumerate(values, 1):
+                self._apply_style(ngram_ws.cell(row=row_idx, column=col, value=value), cell_style)
+            row_idx += 1
+        for col, width in enumerate([12, 60, 12, 12], 1):
+            ngram_ws.column_dimensions[get_column_letter(col)].width = width
+
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         wb.save(filepath)
         wb.close()
