@@ -522,8 +522,13 @@ async function downloadMobileDocxReport() {
             body: JSON.stringify({ task_id: mobileData.task_id || taskId })
         });
         if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.error || `HTTP ${response.status}`);
+            const payloadType = response.headers.get('content-type') || '';
+            if (payloadType.includes('application/json')) {
+                const err = await response.json();
+                throw new Error(err.error || `HTTP ${response.status}`);
+            }
+            const rawText = await response.text();
+            throw new Error(rawText || `HTTP ${response.status}`);
         }
         const blob = await response.blob();
         const href = URL.createObjectURL(blob);
