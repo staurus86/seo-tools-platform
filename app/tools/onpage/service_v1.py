@@ -5,6 +5,7 @@ from collections import Counter
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin, urlparse
+import json
 import re
 
 import requests
@@ -84,6 +85,92 @@ class OnPageAuditServiceV1:
             rows.append({"term": gram, "count": count, "pct": round(count / total * 100.0, 3)})
         return rows
 
+    def _heading_structure(self, soup: BeautifulSoup) -> Dict[str, Any]:
+        heading_tags = []
+        for level in range(1, 7):
+            for node in soup.find_all(f"h{level}"):
+                heading_tags.append(
+                    {
+                        "level": level,
+                        "tag": f"h{level}",
+                        "text": _norm_text(node.get_text(" ", strip=True)),
+                    }
+                )
+        heading_tags = [h for h in heading_tags if h["text"]]
+        counts = {f"h{i}_count": len([h for h in heading_tags if h["level"] == i]) for i in range(1, 7)}
+        sequence = [h["level"] for h in heading_tags]
+        level_skips = 0
+        for i in range(1, len(sequence)):
+            if sequence[i] - sequence[i - 1] > 1:
+                level_skips += 1
+        duplicates = sum(1 for c in Counter([h["text"].lower() for h in heading_tags]).values() if c > 1)
+        return {
+            "headings": heading_tags,
+            "counts": counts,
+            "outline_levels": sequence,
+            "level_skips": level_skips,
+            "duplicate_heading_texts": duplicates,
+        }
+
+    def _schema_analysis(self, soup: BeautifulSoup) -> Dict[str, Any]:
+        schema_types: Counter = Counter()
+        json_ld_blocks = soup.find_all("script", attrs={"type": re.compile(r"application/ld\+json", re.I)})
+        json_ld_valid = 0
+        for block in json_ld_blocks:
+            raw = _norm_text(block.string or block.get_text(" ", strip=True))
+            if not raw:
+                continue
+            try:
+                payload = json.loads(raw)
+                json_ld_valid += 1
+            except Exception:
+                continue
+
+            stack = payload if isinstance(payload, list) else [payload]
+            while stack:
+                item = stack.pop()
+                if isinstance(item, dict):
+                    t = item.get("@type")
+                    if isinstance(t, list):
+                        for tv in t:
+                            if _norm_text(tv):
+                                schema_types[_norm_text(tv)] += 1
+                    elif _norm_text(t):
+                        schema_types[_norm_text(t)] += 1
+                    for v in item.values():
+                        if isinstance(v, dict):
+                            stack.append(v)
+                        elif isinstance(v, list):
+                            for vv in v:
+                                if isinstance(vv, dict):
+                                    stack.append(vv)
+        microdata_items = len(soup.select("[itemscope]"))
+        rdfa_items = len(soup.select("[typeof]"))
+        return {
+            "json_ld_blocks": len(json_ld_blocks),
+            "json_ld_valid_blocks": json_ld_valid,
+            "microdata_items": microdata_items,
+            "rdfa_items": rdfa_items,
+            "types": [{"type": k, "count": v} for k, v in schema_types.most_common(30)],
+            "types_count": len(schema_types),
+        }
+
+    def _opengraph_analysis(self, soup: BeautifulSoup) -> Dict[str, Any]:
+        og: Dict[str, str] = {}
+        for tag in soup.find_all("meta", attrs={"property": re.compile(r"^og:", re.I)}):
+            prop = _norm_text(tag.get("property")).lower()
+            content = _norm_text(tag.get("content"))
+            if prop and content and prop not in og:
+                og[prop] = content
+        required = ["og:title", "og:description", "og:type", "og:url", "og:image"]
+        missing = [x for x in required if x not in og]
+        return {
+            "tags": og,
+            "tags_count": len(og),
+            "required_missing": missing,
+            "required_present_count": len(required) - len(missing),
+        }
+
     def _keyword_rows(
         self,
         text: str,
@@ -147,6 +234,10 @@ class OnPageAuditServiceV1:
         readability: Dict[str, Any],
         ngrams: Dict[str, Any],
         spam_metrics: Dict[str, Any],
+        heading_analysis: Dict[str, Any],
+        schema_analysis: Dict[str, Any],
+        opengraph: Dict[str, Any],
+        content_profile: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         issues: List[Dict[str, Any]] = []
 
@@ -250,6 +341,31 @@ class OnPageAuditServiceV1:
             add("warning", "canonical_not_self", "Canonical points to another URL", "Check canonical target relevance.")
         if not technical.get("viewport"):
             add("warning", "viewport_missing", "Viewport meta is missing", "Add viewport for mobile rendering.")
+        if heading_analysis.get("level_skips", 0) > 0:
+            add(
+                "warning",
+                "heading_level_skips",
+                "Heading hierarchy has skipped levels",
+                f"Detected heading level skips: {heading_analysis.get('level_skips', 0)}.",
+            )
+        if heading_analysis.get("duplicate_heading_texts", 0) > 0:
+            add(
+                "warning",
+                "duplicate_headings",
+                "Duplicate heading texts found",
+                f"Duplicate heading texts: {heading_analysis.get('duplicate_heading_texts', 0)}.",
+            )
+        if schema_analysis.get("json_ld_blocks", 0) == 0 and schema_analysis.get("microdata_items", 0) == 0:
+            add("warning", "schema_missing", "Structured data is missing", "Add JSON-LD or microdata schema markup.")
+        elif schema_analysis.get("json_ld_blocks", 0) > 0 and schema_analysis.get("json_ld_valid_blocks", 0) == 0:
+            add("warning", "schema_invalid_jsonld", "JSON-LD detected but not parsed", "Validate JSON-LD syntax.")
+        if opengraph.get("required_missing"):
+            add(
+                "warning",
+                "opengraph_missing_required",
+                "OpenGraph required tags are missing",
+                f"Missing OG tags: {', '.join(opengraph.get('required_missing', []))}.",
+            )
 
         images_total = int(media.get("images_total", 0))
         images_missing_alt = int(media.get("images_missing_alt", 0))
@@ -338,6 +454,27 @@ class OnPageAuditServiceV1:
             add("warning", "stopword_ratio_low", "Low stopword ratio", f"Stopword ratio is {round(stopword_ratio * 100, 1)}%.")
         if content_html_ratio < 0.1:
             add("warning", "content_html_ratio_low", "Low text-to-HTML ratio", f"Content/HTML ratio is {round(content_html_ratio, 3)}.")
+        if content_profile.get("wateriness_pct", 0) > 30:
+            add(
+                "warning",
+                "wateriness_high",
+                "Wateriness above recommended range",
+                f"Wateriness is {content_profile.get('wateriness_pct', 0)}%.",
+            )
+        if content_profile.get("nausea_index", 0) > 30:
+            add(
+                "critical",
+                "nausea_high",
+                "Nausea above recommended range",
+                f"Nausea is {content_profile.get('nausea_index', 0)}.",
+            )
+        elif content_profile.get("nausea_index", 0) > 15:
+            add(
+                "warning",
+                "nausea_elevated",
+                "Nausea is elevated",
+                f"Nausea is {content_profile.get('nausea_index', 0)}.",
+            )
 
         return issues
 
@@ -443,12 +580,14 @@ class OnPageAuditServiceV1:
 
         h1_values = [_norm_text(h.get_text(" ", strip=True)) for h in soup.find_all("h1")]
         h1_values = [x for x in h1_values if x]
+        heading_analysis = self._heading_structure(soup)
 
         visible_text = self._collect_visible_text(soup)
         all_tokens = _tokens(visible_text)
         total_words = len(all_tokens)
         unique_words = len(set(all_tokens))
         char_count = len(visible_text)
+        clean_char_count = len(re.sub(r"[\W_]+", "", visible_text, flags=re.UNICODE))
 
         sentences = [s.strip() for s in _SENTENCE_SPLIT_RE.split(visible_text) if s.strip()]
         sentence_lengths = [len(_tokens(s)) for s in sentences]
@@ -463,6 +602,7 @@ class OnPageAuditServiceV1:
         stopwords = _STOPWORDS_RU if language == "ru" else _STOPWORDS_EN
         content_tokens = [t for t in all_tokens if t not in stopwords and len(t) > 2]
         content_counts = Counter(content_tokens)
+        core_vocabulary = len(set(content_tokens))
         top_terms: List[Dict[str, Any]] = []
         for term, count in content_counts.most_common(20):
             pct = round((count / total_words * 100.0), 3) if total_words > 0 else 0.0
@@ -494,6 +634,7 @@ class OnPageAuditServiceV1:
         external_links = 0
         nofollow_links = 0
         empty_anchor_links = 0
+        anchor_token_counts: Counter = Counter()
         for a in soup.find_all("a"):
             href = _norm_text(a.get("href"))
             if not href or href.startswith("#") or href.startswith("javascript:") or href.startswith("mailto:") or href.startswith("tel:"):
@@ -502,6 +643,9 @@ class OnPageAuditServiceV1:
             anchor = _norm_text(a.get_text(" ", strip=True))
             if len(anchor) < 2:
                 empty_anchor_links += 1
+            for tk in _tokens(anchor):
+                if len(tk) > 2:
+                    anchor_token_counts[tk] += 1
             rel_values = [str(x).lower() for x in (a.get("rel") or [])]
             if "nofollow" in rel_values:
                 nofollow_links += 1
@@ -537,7 +681,9 @@ class OnPageAuditServiceV1:
         viewport_tag = soup.find("meta", attrs={"name": re.compile(r"^viewport$", re.I)})
         viewport = _norm_text(viewport_tag.get("content")) if viewport_tag else ""
         hreflang_count = len(soup.find_all("link", attrs={"hreflang": True}))
-        schema_count = len(soup.find_all("script", attrs={"type": re.compile(r"application/ld\+json", re.I)}))
+        schema_analysis = self._schema_analysis(soup)
+        schema_count = int(schema_analysis.get("json_ld_blocks", 0) or 0)
+        opengraph = self._opengraph_analysis(soup)
 
         technical = {
             "canonical_href": canonical_href,
@@ -573,15 +719,53 @@ class OnPageAuditServiceV1:
         letters = [ch for ch in visible_text if ch.isalpha()]
         uppercase_letters = [ch for ch in letters if ch.isupper()]
         punctuation_count = len([ch for ch in visible_text if ch in "!?.,;:"])
+        text_html_pct = round((char_count / max(1, len(raw_html))) * 100.0, 2)
+        wateriness_pct = round((stopword_count / max(1, total_words)) * 100.0, 1)
+        nausea_index = round(float((top_terms[0] or {}).get("pct", 0.0)) if top_terms else 0.0, 1)
+
+        def _band(value: float, good_min: float, good_max: float, ok_min: float, ok_max: float) -> str:
+            if good_min <= value <= good_max:
+                return "good"
+            if ok_min <= value <= ok_max:
+                return "acceptable"
+            return "bad"
+
+        text_length_band = _band(float(char_count), 1500, 35000, 500, 45000)
+        wateriness_band = _band(float(wateriness_pct), 0, 15, 16, 30)
+        nausea_band = _band(float(nausea_index), 5, 15, 0, 30)
+        text_html_band = _band(float(text_html_pct), 51, 100, 11, 50)
+
         spam_metrics = {
             "stopword_ratio": round(stopword_count / max(1, total_words), 4),
             "content_html_ratio": round(char_count / max(1, len(raw_html)), 4),
+            "content_html_pct": text_html_pct,
             "uppercase_ratio": round(len(uppercase_letters) / max(1, len(letters)), 4),
             "punctuation_ratio": round(punctuation_count / max(1, char_count), 4),
             "duplicate_sentences": duplicate_sentences,
             "duplicate_sentence_ratio": round(duplicate_sentence_ratio, 4),
             "top_bigram_pct": round(top_bigram_pct, 3),
             "top_trigram_pct": round(top_trigram_pct, 3),
+        }
+        link_anchor_terms = [
+            {"term": term, "count": count}
+            for term, count in anchor_token_counts.most_common(10)
+        ]
+        content_profile = {
+            "text_length": char_count,
+            "clean_text_length": clean_char_count,
+            "word_count": total_words,
+            "vocabulary": unique_words,
+            "core_vocabulary": core_vocabulary,
+            "wateriness_pct": wateriness_pct,
+            "nausea_index": nausea_index,
+            "text_html_pct": text_html_pct,
+            "ratings": {
+                "text_length": text_length_band,
+                "wateriness": wateriness_band,
+                "nausea": nausea_band,
+                "text_html": text_html_band,
+            },
+            "top_link_terms": link_anchor_terms,
         }
 
         issues = self._build_issues(
@@ -606,6 +790,10 @@ class OnPageAuditServiceV1:
             readability=readability,
             ngrams={"bigrams": bigrams, "trigrams": trigrams},
             spam_metrics=spam_metrics,
+            heading_analysis=heading_analysis,
+            schema_analysis=schema_analysis,
+            opengraph=opengraph,
+            content_profile=content_profile,
         )
 
         critical_count = sum(1 for i in issues if i.get("severity") == "critical")
@@ -676,14 +864,29 @@ class OnPageAuditServiceV1:
         if not recommendations:
             recommendations.append("No critical on-page issues detected.")
 
-        headings = {
-            "h1_count": len(h1_values),
-            "h2_count": len(soup.find_all("h2")),
-            "h3_count": len(soup.find_all("h3")),
-            "h4_count": len(soup.find_all("h4")),
-            "h5_count": len(soup.find_all("h5")),
-            "h6_count": len(soup.find_all("h6")),
-        }
+        headings = heading_analysis.get("counts", {})
+        headings["outline_levels"] = heading_analysis.get("outline_levels", [])
+        headings["level_skips"] = heading_analysis.get("level_skips", 0)
+        headings["duplicate_heading_texts"] = heading_analysis.get("duplicate_heading_texts", 0)
+
+        parameter_values = [
+            {"parameter": "Длина текста", "value": char_count, "status": text_length_band},
+            {"parameter": "Чистая длина текста", "value": clean_char_count, "status": "info"},
+            {"parameter": "Всего слов", "value": total_words, "status": "info"},
+            {"parameter": "Словарь", "value": unique_words, "status": "info"},
+            {"parameter": "Словарь ядра", "value": core_vocabulary, "status": "info"},
+            {"parameter": "Водность", "value": f"{wateriness_pct}%", "status": wateriness_band},
+            {"parameter": "Тошнота", "value": nausea_index, "status": nausea_band},
+            {"parameter": "Text/HTML", "value": f"{text_html_pct}%", "status": text_html_band},
+            {"parameter": "H1", "value": headings.get("h1_count", 0), "status": "info"},
+            {"parameter": "H2", "value": headings.get("h2_count", 0), "status": "info"},
+            {"parameter": "H3", "value": headings.get("h3_count", 0), "status": "info"},
+            {"parameter": "H4", "value": headings.get("h4_count", 0), "status": "info"},
+            {"parameter": "H5", "value": headings.get("h5_count", 0), "status": "info"},
+            {"parameter": "H6", "value": headings.get("h6_count", 0), "status": "info"},
+            {"parameter": "Schema types", "value": schema_analysis.get("types_count", 0), "status": "info"},
+            {"parameter": "OpenGraph tags", "value": opengraph.get("tags_count", 0), "status": "info"},
+        ]
 
         spam_signals = [
             {
@@ -740,15 +943,21 @@ class OnPageAuditServiceV1:
                 "description": {"text": description, "length": len(description)},
                 "h1": {"count": len(h1_values), "values": h1_values},
                 "headings": headings,
+                "heading_structure": heading_analysis,
                 "keywords": keyword_rows,
                 "top_terms": top_terms,
                 "ngrams": {"bigrams": bigrams, "trigrams": trigrams},
                 "spam_metrics": spam_metrics,
+                "content_profile": content_profile,
                 "technical": technical,
+                "schema": schema_analysis,
+                "opengraph": opengraph,
                 "links": links,
+                "link_anchor_terms": link_anchor_terms,
                 "media": media,
                 "readability": readability,
                 "spam_signals": spam_signals,
+                "parameter_values": parameter_values,
                 "issues": issues,
                 "issues_count": len(issues),
                 "summary": {

@@ -3429,6 +3429,17 @@ class XLSXGenerator:
         meta_ws.column_dimensions["A"].width = 24
         meta_ws.column_dimensions["B"].width = 120
 
+        profile_ws = wb.create_sheet("Content Profile")
+        profile_headers = ["Parameter", "Value", "Status"]
+        for col, header in enumerate(profile_headers, 1):
+            self._apply_style(profile_ws.cell(row=1, column=col, value=header), header_style)
+        for row_idx, item in enumerate(results.get("parameter_values", []) or [], start=2):
+            vals = [item.get("parameter", ""), item.get("value", ""), str(item.get("status", "info")).upper()]
+            for col, val in enumerate(vals, 1):
+                self._apply_style(profile_ws.cell(row=row_idx, column=col, value=val), cell_style)
+        for col, width in enumerate([34, 28, 14], 1):
+            profile_ws.column_dimensions[get_column_letter(col)].width = width
+
         kw_ws = wb.create_sheet("Keywords")
         kw_headers = ["Keyword", "Occurrences", "Density %", "In title", "In description", "In H1", "Status"]
         for col, header in enumerate(kw_headers, 1):
@@ -3566,6 +3577,37 @@ class XLSXGenerator:
             row_idx += 1
         for col, width in enumerate([12, 60, 12, 12], 1):
             ngram_ws.column_dimensions[get_column_letter(col)].width = width
+
+        schema_ws = wb.create_sheet("Schema_OG")
+        schema_headers = ["Field", "Value"]
+        for col, header in enumerate(schema_headers, 1):
+            self._apply_style(schema_ws.cell(row=1, column=col, value=header), header_style)
+        schema = results.get("schema", {}) or {}
+        og = results.get("opengraph", {}) or {}
+        schema_rows = [
+            ("JSON-LD blocks", schema.get("json_ld_blocks", 0)),
+            ("Valid JSON-LD", schema.get("json_ld_valid_blocks", 0)),
+            ("Microdata items", schema.get("microdata_items", 0)),
+            ("RDFa items", schema.get("rdfa_items", 0)),
+            ("Schema types", ", ".join([x.get("type", "") for x in (schema.get("types", []) or [])[:10]])),
+            ("OG tags count", og.get("tags_count", 0)),
+            ("OG required present", og.get("required_present_count", 0)),
+            ("OG missing", ", ".join(og.get("required_missing", []) or [])),
+        ]
+        for row_idx, (k, v) in enumerate(schema_rows, start=2):
+            self._apply_style(schema_ws.cell(row=row_idx, column=1, value=k), cell_style)
+            self._apply_style(schema_ws.cell(row=row_idx, column=2, value=v), cell_style)
+        schema_ws.column_dimensions["A"].width = 32
+        schema_ws.column_dimensions["B"].width = 110
+
+        links_terms_ws = wb.create_sheet("Link Terms")
+        self._apply_style(links_terms_ws.cell(row=1, column=1, value="Term"), header_style)
+        self._apply_style(links_terms_ws.cell(row=1, column=2, value="Count"), header_style)
+        for row_idx, item in enumerate(results.get("link_anchor_terms", []) or [], start=2):
+            self._apply_style(links_terms_ws.cell(row=row_idx, column=1, value=item.get("term", "")), cell_style)
+            self._apply_style(links_terms_ws.cell(row=row_idx, column=2, value=item.get("count", 0)), cell_style)
+        links_terms_ws.column_dimensions["A"].width = 42
+        links_terms_ws.column_dimensions["B"].width = 12
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         wb.save(filepath)

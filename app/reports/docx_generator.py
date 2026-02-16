@@ -852,11 +852,17 @@ class DOCXGenerator:
         self._add_table(doc, ["Metric", "Value"], summary_rows)
 
         content = results.get("content", {}) or {}
+        content_profile = results.get("content_profile", {}) or {}
         self._add_heading(doc, "2. Content Metrics", level=1)
         content_rows = [
             ["Word count", content.get("word_count", 0)],
             ["Unique words", content.get("unique_word_count", 0)],
             ["Characters", content.get("char_count", 0)],
+            ["Clean text length", content_profile.get("clean_text_length", 0)],
+            ["Core vocabulary", content_profile.get("core_vocabulary", 0)],
+            ["Wateriness %", content_profile.get("wateriness_pct", 0)],
+            ["Nausea", content_profile.get("nausea_index", 0)],
+            ["Text/HTML %", content_profile.get("text_html_pct", 0)],
         ]
         self._add_table(doc, ["Metric", "Value"], content_rows)
 
@@ -962,7 +968,31 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Trigrams are not available.")
 
-        self._add_heading(doc, "9. Issues", level=1)
+        self._add_heading(doc, "9. Schema and OpenGraph", level=1)
+        schema = results.get("schema", {}) or {}
+        og = results.get("opengraph", {}) or {}
+        schema_rows = [
+            ["JSON-LD blocks", schema.get("json_ld_blocks", 0)],
+            ["Valid JSON-LD", schema.get("json_ld_valid_blocks", 0)],
+            ["Microdata items", schema.get("microdata_items", 0)],
+            ["RDFa items", schema.get("rdfa_items", 0)],
+            ["Schema types", ", ".join([x.get("type", "") for x in (schema.get("types", []) or [])[:10]])],
+            ["OpenGraph tags", og.get("tags_count", 0)],
+            ["OG required present", og.get("required_present_count", 0)],
+            ["OG missing", ", ".join(og.get("required_missing", []) or [])],
+        ]
+        self._add_table(doc, ["Field", "Value"], schema_rows)
+
+        link_terms = results.get("link_anchor_terms", []) or []
+        if link_terms:
+            self._add_heading(doc, "10. Top Link Terms", level=1)
+            self._add_table(
+                doc,
+                ["Term", "Count"],
+                [[row.get("term", ""), row.get("count", 0)] for row in link_terms[:10]],
+            )
+
+        self._add_heading(doc, "11. Issues", level=1)
         issues = results.get("issues", []) or []
         if issues:
             for issue in issues[:80]:
@@ -973,7 +1003,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Issues not found.")
 
-        self._add_heading(doc, "10. Recommendations", level=1)
+        self._add_heading(doc, "12. Recommendations", level=1)
         recs = results.get("recommendations", []) or []
         if recs:
             for rec in recs[:30]:

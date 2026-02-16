@@ -1869,10 +1869,15 @@ function generateOnPageAuditHTML(result) {
     const issues = r.issues || [];
     const topTerms = r.top_terms || [];
     const technical = r.technical || {};
+    const schema = r.schema || {};
+    const opengraph = r.opengraph || {};
     const links = r.links || {};
     const media = r.media || {};
     const readability = r.readability || {};
     const ngrams = r.ngrams || {};
+    const contentProfile = r.content_profile || {};
+    const params = r.parameter_values || [];
+    const linkAnchorTerms = r.link_anchor_terms || [];
     const recs = r.recommendations || [];
     const titleMeta = r.title || {};
     const descMeta = r.description || {};
@@ -1925,6 +1930,23 @@ function generateOnPageAuditHTML(result) {
     const spam = r.spam_metrics || {};
 
     const recsHtml = recs.map(x => `<li>${x}</li>`).join('');
+    const linkTermsHtml = linkAnchorTerms.slice(0, 10).map(t => `
+        <div class="flex items-center justify-between text-sm py-1 border-b border-gray-100">
+            <span>${t.term || ''}</span>
+            <span class="font-medium">${t.count ?? 0}</span>
+        </div>
+    `).join('');
+    const paramRows = params.map(p => `
+        <tr class="border-b border-gray-100 text-sm">
+            <td class="py-2 pr-2 font-medium">${p.parameter || ''}</td>
+            <td class="py-2 pr-2">${p.value ?? ''}</td>
+            <td class="py-2 pr-2">
+                <span class="px-2 py-1 rounded-full text-xs ${p.status === 'good' ? 'bg-emerald-100 text-emerald-700' : (p.status === 'acceptable' ? 'bg-amber-100 text-amber-700' : (p.status === 'bad' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'))}">
+                    ${(p.status || 'info').toUpperCase()}
+                </span>
+            </td>
+        </tr>
+    `).join('');
 
     return `
         <div class="space-y-6">
@@ -1960,6 +1982,22 @@ function generateOnPageAuditHTML(result) {
                     <div><span class="text-gray-600">H1 count:</span> <span class="font-medium">${h1Meta.count ?? 0}</span></div>
                     <div><span class="text-gray-600">H1:</span> <span class="font-medium">${(h1Meta.values || []).join(', ') || '-'}</span></div>
                 </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
+                <h4 class="font-semibold mb-3">Параметр | Значение</h4>
+                <table class="w-full min-w-[640px]">
+                    <thead>
+                        <tr class="text-left text-xs text-gray-500 border-b">
+                            <th class="py-2 pr-2">Параметр</th>
+                            <th class="py-2 pr-2">Значение</th>
+                            <th class="py-2 pr-2">Статус</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${paramRows || '<tr><td class="py-2 text-sm text-gray-500" colspan="3">Нет данных.</td></tr>'}
+                    </tbody>
+                </table>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
@@ -2017,20 +2055,53 @@ function generateOnPageAuditHTML(result) {
                         <div><span class="text-gray-600">Images:</span> <span class="font-medium">${media.images_total ?? 0}</span></div>
                         <div><span class="text-gray-600">Missing alt:</span> <span class="font-medium">${media.images_missing_alt ?? 0}</span></div>
                     </div>
+                    <div class="mt-4">
+                        <div class="text-sm font-medium mb-2">TOP-10 слов в ссылках</div>
+                        ${linkTermsHtml || '<div class="text-sm text-gray-500">Нет данных.</div>'}
+                    </div>
                 </div>
                 <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold mb-3">Readability</h4>
+                    <h4 class="font-semibold mb-3">Readability & Content</h4>
                     <div class="space-y-1 text-sm">
                         <div><span class="text-gray-600">Sentences:</span> <span class="font-medium">${readability.sentences_count ?? 0}</span></div>
                         <div><span class="text-gray-600">Avg sentence:</span> <span class="font-medium">${readability.avg_sentence_len ?? 0}</span></div>
                         <div><span class="text-gray-600">Long sentence ratio:</span> <span class="font-medium">${((readability.long_sentence_ratio || 0) * 100).toFixed(1)}%</span></div>
                         <div><span class="text-gray-600">Lexical diversity:</span> <span class="font-medium">${readability.lexical_diversity ?? 0}</span></div>
+                        <div><span class="text-gray-600">Text length:</span> <span class="font-medium">${contentProfile.text_length ?? 0}</span></div>
+                        <div><span class="text-gray-600">Clean length:</span> <span class="font-medium">${contentProfile.clean_text_length ?? 0}</span></div>
+                        <div><span class="text-gray-600">Wateriness:</span> <span class="font-medium">${contentProfile.wateriness_pct ?? 0}%</span></div>
+                        <div><span class="text-gray-600">Nausea:</span> <span class="font-medium">${contentProfile.nausea_index ?? 0}</span></div>
+                        <div><span class="text-gray-600">Text/HTML:</span> <span class="font-medium">${contentProfile.text_html_pct ?? 0}%</span></div>
                         <div><span class="text-gray-600">Stopword ratio:</span> <span class="font-medium">${((spam.stopword_ratio || 0) * 100).toFixed(1)}%</span></div>
                         <div><span class="text-gray-600">Duplicate sentences:</span> <span class="font-medium">${spam.duplicate_sentences ?? 0} (${((spam.duplicate_sentence_ratio || 0) * 100).toFixed(1)}%)</span></div>
                         <div><span class="text-gray-600">Top bigram:</span> <span class="font-medium">${spam.top_bigram_pct ?? 0}%</span></div>
                         <div><span class="text-gray-600">Top trigram:</span> <span class="font-medium">${spam.top_trigram_pct ?? 0}%</span></div>
                         <div><span class="text-gray-600">KW in title:</span> <span class="font-medium">${keywordCoverage.title_coverage_pct ?? 0}%</span></div>
                         <div><span class="text-gray-600">KW in H1:</span> <span class="font-medium">${keywordCoverage.h1_coverage_pct ?? 0}%</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Schema</h4>
+                    <div class="space-y-1 text-sm">
+                        <div><span class="text-gray-600">JSON-LD blocks:</span> <span class="font-medium">${schema.json_ld_blocks ?? 0}</span></div>
+                        <div><span class="text-gray-600">Valid JSON-LD:</span> <span class="font-medium">${schema.json_ld_valid_blocks ?? 0}</span></div>
+                        <div><span class="text-gray-600">Microdata items:</span> <span class="font-medium">${schema.microdata_items ?? 0}</span></div>
+                        <div><span class="text-gray-600">RDFa items:</span> <span class="font-medium">${schema.rdfa_items ?? 0}</span></div>
+                        <div><span class="text-gray-600">Types:</span> <span class="font-medium">${(schema.types || []).map(t => t.type).slice(0, 8).join(', ') || '-'}</span></div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">OpenGraph</h4>
+                    <div class="space-y-1 text-sm">
+                        <div><span class="text-gray-600">Tags count:</span> <span class="font-medium">${opengraph.tags_count ?? 0}</span></div>
+                        <div><span class="text-gray-600">Required present:</span> <span class="font-medium">${opengraph.required_present_count ?? 0}/5</span></div>
+                        <div><span class="text-gray-600">Missing:</span> <span class="font-medium">${(opengraph.required_missing || []).join(', ') || '-'}</span></div>
+                        <div><span class="text-gray-600">og:title:</span> <span class="font-medium">${(opengraph.tags || {})['og:title'] || '-'}</span></div>
+                        <div><span class="text-gray-600">og:description:</span> <span class="font-medium">${(opengraph.tags || {})['og:description'] || '-'}</span></div>
+                        <div><span class="text-gray-600">og:image:</span> <span class="font-medium break-all">${(opengraph.tags || {})['og:image'] || '-'}</span></div>
                     </div>
                 </div>
             </div>
