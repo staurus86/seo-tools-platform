@@ -641,8 +641,10 @@ class DOCXGenerator:
         self._add_heading(doc, "5. Информационные наблюдения", level=1)
         if info_issues:
             for issue in info_issues:
+                info_title = issue.get("title") or "\u041d\u0430\u0431\u043b\u044e\u0434\u0435\u043d\u0438\u0435"
+                info_details = issue.get("details", "")
                 doc.add_paragraph(
-                    f"{issue.get('title', '\u041d\u0430\u0431\u043b\u044e\u0434\u0435\u043d\u0438\u0435')}: {issue.get('details', '')}",
+                    f"{info_title}: {info_details}",
                     style="List Bullet",
                 )
         else:
@@ -654,10 +656,11 @@ class DOCXGenerator:
             shot = d.get("screenshot_path")
             if not shot or not os.path.exists(shot):
                 continue
+            device_name = d.get("device_name") or "\u0423\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u043e"
             doc.add_paragraph(
-                f"{d.get('device_name', '\u0423\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u043e')} | "
+                f"{device_name} | "
                 f"Viewport {(d.get('viewport') or {}).get('width', '-')}x{(d.get('viewport') or {}).get('height', '-')} | "
-                f"\u041e\u0448\u0438\u0431\u043e\u043a: {d.get('issues_count', 0)}"
+                f"\u0417\u0430\u043c\u0435\u0447\u0430\u043d\u0438\u0439: {d.get('issues_count', 0)}"
             )
             try:
                 doc.add_picture(shot, width=Inches(5.8))
