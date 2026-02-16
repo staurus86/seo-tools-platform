@@ -554,8 +554,31 @@ class DOCXGenerator:
         summary = results.get("summary", {}) or {}
         devices = results.get("device_results", []) or []
         all_issues = results.get("issues", []) or []
+        artifacts = results.get("artifacts", {}) or {}
+        screenshot_dir = str(artifacts.get("screenshot_dir") or "").strip()
         actionable_issues = [i for i in all_issues if i.get("severity") in ("critical", "warning")]
         info_issues = [i for i in all_issues if i.get("severity") == "info"]
+
+        def _resolve_mobile_screenshot_path(device: Dict[str, Any]) -> str:
+            candidates: List[str] = []
+            raw_path = str(device.get("screenshot_path") or "").strip()
+            shot_name = str(device.get("screenshot_name") or "").strip()
+
+            if raw_path:
+                candidates.append(raw_path)
+            if shot_name and screenshot_dir:
+                candidates.append(os.path.join(screenshot_dir, shot_name))
+            if shot_name:
+                candidates.append(os.path.join(self.reports_dir, "mobile", task_id, "screenshots", shot_name))
+            if raw_path:
+                candidates.append(
+                    os.path.join(self.reports_dir, "mobile", task_id, "screenshots", os.path.basename(raw_path))
+                )
+
+            for candidate in candidates:
+                if candidate and os.path.exists(candidate):
+                    return candidate
+            return ""
 
         self._add_heading(doc, "1. Сводка по проверке", level=1)
         summary_rows = [
@@ -607,6 +630,30 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Данные по устройствам отсутствуют.")
 
+        self._add_heading(doc, "3.1 \u0414\u0435\u0442\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u044f \u043f\u0440\u043e\u0431\u043b\u0435\u043c \u043f\u043e \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u0430\u043c", level=2)
+        detailed_added = 0
+        for d in devices:
+            device_issues = d.get("issues", []) or []
+            if not device_issues:
+                continue
+            detailed_added += 1
+            device_name = d.get("device_name") or "\u0423\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u043e"
+            doc.add_paragraph(
+                f"{device_name} | "
+                f"Viewport {(d.get('viewport') or {}).get('width', '-')}x{(d.get('viewport') or {}).get('height', '-')} | "
+                f"\u0417\u0430\u043c\u0435\u0447\u0430\u043d\u0438\u0439: {len(device_issues)}"
+            )
+            for issue in device_issues[:15]:
+                sev = str(issue.get("severity", "info")).upper()
+                title_i = str(issue.get("title", issue.get("code", "\u041f\u0440\u043e\u0431\u043b\u0435\u043c\u0430")))
+                details_i = str(issue.get("details", "") or "").strip()
+                if details_i:
+                    doc.add_paragraph(f"[{sev}] {title_i}: {details_i}", style="List Bullet")
+                else:
+                    doc.add_paragraph(f"[{sev}] {title_i}", style="List Bullet")
+        if detailed_added == 0:
+            doc.add_paragraph("\u0414\u0435\u0442\u0430\u043b\u0438 \u043f\u043e \u043f\u0440\u043e\u0431\u043b\u0435\u043c\u0430\u043c \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432 \u043e\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u044e\u0442.")
+
         self._add_heading(doc, "4. Выявленные ошибки и план исправления", level=1)
         if not actionable_issues:
             doc.add_paragraph("Критические ошибки и предупреждения не обнаружены.")
@@ -652,9 +699,12 @@ class DOCXGenerator:
 
         self._add_heading(doc, "6. Скриншоты проверенных устройств", level=1)
         added = 0
+        missing_files = 0
         for d in devices:
-            shot = d.get("screenshot_path")
+            shot = _resolve_mobile_screenshot_path(d)
             if not shot or not os.path.exists(shot):
+                if d.get("screenshot_name") or d.get("screenshot_path"):
+                    missing_files += 1
                 continue
             device_name = d.get("device_name") or "\u0423\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u043e"
             doc.add_paragraph(
@@ -669,6 +719,10 @@ class DOCXGenerator:
                 doc.add_paragraph(f"\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0432\u0441\u0442\u0440\u043e\u0438\u0442\u044c \u0441\u043a\u0440\u0438\u043d\u0448\u043e\u0442: {shot}")
         if added == 0:
             doc.add_paragraph("Скриншоты отсутствуют.")
+            if missing_files > 0:
+                doc.add_paragraph(
+                    f"\u0424\u0430\u0439\u043b\u044b \u0441\u043a\u0440\u0438\u043d\u0448\u043e\u0442\u043e\u0432 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u044b \u043d\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0435: {missing_files}."
+                )
 
         self._add_heading(doc, "7. Итоги", level=1)
         if actionable_issues:
