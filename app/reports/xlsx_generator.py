@@ -3393,6 +3393,7 @@ class XLSXGenerator:
             ("Spam score", summary.get("spam_score", (results.get("scores", {}) or {}).get("spam_score", 0))),
             ("Keyword coverage score", summary.get("keyword_coverage_score", (results.get("scores", {}) or {}).get("keyword_coverage_score", 0))),
             ("Keyword coverage %", summary.get("keyword_coverage_pct", (results.get("keyword_coverage", {}) or {}).get("coverage_pct", 0))),
+            ("AI risk composite", summary.get("ai_risk_composite", (results.get("scores", {}) or {}).get("ai_risk_composite", 0))),
             ("Critical", summary.get("critical_issues", 0)),
             ("Warning", summary.get("warning_issues", 0)),
             ("Info", summary.get("info_issues", 0)),
@@ -3608,6 +3609,29 @@ class XLSXGenerator:
             self._apply_style(links_terms_ws.cell(row=row_idx, column=2, value=item.get("count", 0)), cell_style)
         links_terms_ws.column_dimensions["A"].width = 42
         links_terms_ws.column_dimensions["B"].width = 12
+
+        ai_ws = wb.create_sheet("AI Signals")
+        ai_headers = ["Signal", "Value"]
+        for col, header in enumerate(ai_headers, 1):
+            self._apply_style(ai_ws.cell(row=1, column=col, value=header), header_style)
+        ai = results.get("ai_insights", {}) or {}
+        ai_rows = [
+            ("AI marker density /1k", ai.get("ai_marker_density_1k", 0)),
+            ("Hedging ratio", ai.get("hedging_ratio", 0)),
+            ("Template repetition /1k", ai.get("template_repetition", 0)),
+            ("Burstiness CV", ai.get("burstiness_cv", 0)),
+            ("Perplexity proxy", ai.get("perplexity_proxy", 0)),
+            ("Entity depth /1k", ai.get("entity_depth_1k", 0)),
+            ("Claim specificity score", ai.get("claim_specificity_score", 0)),
+            ("Author signal score", ai.get("author_signal_score", 0)),
+            ("Source attribution score", ai.get("source_attribution_score", 0)),
+            ("AI risk composite", ai.get("ai_risk_composite", 0)),
+        ]
+        for row_idx, (k, v) in enumerate(ai_rows, start=2):
+            self._apply_style(ai_ws.cell(row=row_idx, column=1, value=k), cell_style)
+            self._apply_style(ai_ws.cell(row=row_idx, column=2, value=v), cell_style)
+        ai_ws.column_dimensions["A"].width = 34
+        ai_ws.column_dimensions["B"].width = 18
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         wb.save(filepath)

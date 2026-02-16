@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin, urlparse
 import json
+import math
 import re
 
 import requests
@@ -171,6 +172,98 @@ class OnPageAuditServiceV1:
             "required_present_count": len(required) - len(missing),
         }
 
+    def _ai_insights(
+        self,
+        *,
+        visible_text: str,
+        total_words: int,
+        content_tokens: List[str],
+        sentence_lengths: List[int],
+        links: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        text_l = visible_text.lower()
+        ai_markers = [
+            "as an ai", "as a language model", "in conclusion", "it is important to note",
+            "в заключение", "важно отметить", "как ии", "как языковая модель",
+            "следует отметить", "подводя итог", "таким образом",
+        ]
+        hedge_words = {
+            "maybe", "perhaps", "likely", "possibly", "generally", "often", "can",
+            "возможно", "вероятно", "может", "обычно", "часто", "как правило",
+        }
+        template_phrases = [
+            "in today's world", "unlock the power", "seamless experience",
+            "в современном мире", "лучшее решение", "высокое качество",
+        ]
+
+        ai_marker_hits = sum(text_l.count(m) for m in ai_markers)
+        ai_marker_density_1k = round(ai_marker_hits * 1000.0 / max(1, total_words), 2)
+
+        hedge_hits = sum(1 for t in content_tokens if t in hedge_words)
+        hedging_ratio = round(hedge_hits / max(1, len(content_tokens)), 4)
+
+        template_hits = sum(text_l.count(p) for p in template_phrases)
+        template_repetition = round(template_hits * 1000.0 / max(1, total_words), 2)
+
+        mean_len = sum(sentence_lengths) / max(1, len(sentence_lengths))
+        variance = sum((x - mean_len) ** 2 for x in sentence_lengths) / max(1, len(sentence_lengths))
+        stddev = math.sqrt(variance)
+        burstiness_cv = round(stddev / max(1.0, mean_len), 4)
+
+        freq = Counter(content_tokens)
+        probs = [c / max(1, len(content_tokens)) for c in freq.values() if c > 0]
+        entropy = -sum(p * math.log(p, 2) for p in probs) if probs else 0.0
+        max_entropy = math.log(max(2, len(freq)), 2) if freq else 1.0
+        perplexity_proxy = round(1.0 - (entropy / max(0.0001, max_entropy)), 4)
+
+        # Rough entity extraction by capitalized tokens in original text.
+        entity_candidates = re.findall(r"\b[А-ЯЁA-Z][а-яёa-zA-Z\-]{2,}\b", visible_text)
+        entities_unique = len(set(entity_candidates))
+        entity_depth_1k = round(entities_unique * 1000.0 / max(1, total_words), 2)
+
+        numbers_count = len(re.findall(r"\b\d+(?:[.,]\d+)?\b", visible_text))
+        percent_count = len(re.findall(r"\b\d+(?:[.,]\d+)?\s*%", visible_text))
+        date_like_count = len(re.findall(r"\b(?:19|20)\d{2}\b", visible_text))
+        claim_specificity_score = round(
+            min(100.0, ((numbers_count + percent_count + date_like_count * 2) * 100.0) / max(1, total_words / 25.0)),
+            1,
+        )
+
+        author_signals = ["author", "editor", "reviewed by", "эксперт", "автор", "редактор", "обновлено"]
+        author_signal_score = round(min(100.0, sum(1 for s in author_signals if s in text_l) * 20.0), 1)
+
+        source_tokens = ["source", "according to", "study", "исследование", "источник", "по данным"]
+        source_mentions = sum(text_l.count(s) for s in source_tokens)
+        external_links = int(links.get("external_links", 0))
+        source_attribution_score = round(min(100.0, source_mentions * 10.0 + external_links * 5.0), 1)
+
+        ai_risk = (
+            min(100.0, ai_marker_density_1k * 5.0) * 0.22
+            + min(100.0, hedging_ratio * 400.0) * 0.12
+            + min(100.0, template_repetition * 8.0) * 0.14
+            + min(100.0, perplexity_proxy * 100.0) * 0.18
+            + min(100.0, max(0.0, (0.35 - burstiness_cv) * 220.0)) * 0.14
+            + min(100.0, max(0.0, 80.0 - claim_specificity_score)) * 0.10
+            + min(100.0, max(0.0, 70.0 - source_attribution_score)) * 0.06
+            + min(100.0, max(0.0, 60.0 - author_signal_score)) * 0.04
+        )
+        ai_risk_composite = round(max(0.0, min(100.0, ai_risk)), 1)
+
+        return {
+            "ai_marker_hits": ai_marker_hits,
+            "ai_marker_density_1k": ai_marker_density_1k,
+            "hedging_ratio": hedging_ratio,
+            "template_repetition": template_repetition,
+            "burstiness_cv": burstiness_cv,
+            "perplexity_proxy": perplexity_proxy,
+            "entity_depth_1k": entity_depth_1k,
+            "entities_unique": entities_unique,
+            "claim_specificity_score": claim_specificity_score,
+            "author_signal_score": author_signal_score,
+            "source_attribution_score": source_attribution_score,
+            "ai_risk_composite": ai_risk_composite,
+        }
+
     def _keyword_rows(
         self,
         text: str,
@@ -238,6 +331,7 @@ class OnPageAuditServiceV1:
         schema_analysis: Dict[str, Any],
         opengraph: Dict[str, Any],
         content_profile: Dict[str, Any],
+        ai_insights: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         issues: List[Dict[str, Any]] = []
 
@@ -476,6 +570,26 @@ class OnPageAuditServiceV1:
                 f"Nausea is {content_profile.get('nausea_index', 0)}.",
             )
 
+        ai_risk = float(ai_insights.get("ai_risk_composite", 0.0))
+        if ai_risk >= 75:
+            add("critical", "ai_risk_high", "High AI-pattern risk", f"AI risk composite is {ai_risk}.")
+        elif ai_risk >= 55:
+            add("warning", "ai_risk_elevated", "Elevated AI-pattern risk", f"AI risk composite is {ai_risk}.")
+        if float(ai_insights.get("ai_marker_density_1k", 0.0)) >= 8.0:
+            add(
+                "warning",
+                "ai_marker_density_high",
+                "AI marker density is high",
+                f"AI marker density is {ai_insights.get('ai_marker_density_1k', 0.0)} per 1000 words.",
+            )
+        if float(ai_insights.get("template_repetition", 0.0)) >= 6.0:
+            add(
+                "warning",
+                "template_repetition_high",
+                "Template phrase repetition is high",
+                f"Template repetition is {ai_insights.get('template_repetition', 0.0)} per 1000 words.",
+            )
+
         return issues
 
     def run(
@@ -515,6 +629,18 @@ class OnPageAuditServiceV1:
                     },
                     "score": 0,
                     "scores": {"onpage_score": 0, "spam_score": 0, "keyword_coverage_score": 0},
+                    "ai_insights": {
+                        "ai_marker_density_1k": 0,
+                        "hedging_ratio": 0,
+                        "template_repetition": 0,
+                        "burstiness_cv": 0,
+                        "perplexity_proxy": 0,
+                        "entity_depth_1k": 0,
+                        "claim_specificity_score": 0,
+                        "author_signal_score": 0,
+                        "source_attribution_score": 0,
+                        "ai_risk_composite": 0,
+                    },
                     "keyword_coverage": {
                         "keywords_total": 0,
                         "present_keywords": 0,
@@ -552,6 +678,18 @@ class OnPageAuditServiceV1:
                     },
                     "score": 0,
                     "scores": {"onpage_score": 0, "spam_score": 0, "keyword_coverage_score": 0},
+                    "ai_insights": {
+                        "ai_marker_density_1k": 0,
+                        "hedging_ratio": 0,
+                        "template_repetition": 0,
+                        "burstiness_cv": 0,
+                        "perplexity_proxy": 0,
+                        "entity_depth_1k": 0,
+                        "claim_specificity_score": 0,
+                        "author_signal_score": 0,
+                        "source_attribution_score": 0,
+                        "ai_risk_composite": 0,
+                    },
                     "keyword_coverage": {
                         "keywords_total": 0,
                         "present_keywords": 0,
@@ -767,6 +905,13 @@ class OnPageAuditServiceV1:
             },
             "top_link_terms": link_anchor_terms,
         }
+        ai_insights = self._ai_insights(
+            visible_text=visible_text,
+            total_words=total_words,
+            content_tokens=content_tokens,
+            sentence_lengths=sentence_lengths,
+            links=links,
+        )
 
         issues = self._build_issues(
             title=title,
@@ -794,6 +939,7 @@ class OnPageAuditServiceV1:
             schema_analysis=schema_analysis,
             opengraph=opengraph,
             content_profile=content_profile,
+            ai_insights=ai_insights,
         )
 
         critical_count = sum(1 for i in issues if i.get("severity") == "critical")
@@ -861,6 +1007,8 @@ class OnPageAuditServiceV1:
             recommendations.append("Reduce repetitive phrases and normalize n-gram distribution.")
         if keyword_coverage_score < 70 and keywords_total > 0:
             recommendations.append("Improve keyword coverage in content, title and H1.")
+        if float(ai_insights.get("ai_risk_composite", 0.0)) >= 55:
+            recommendations.append("Increase specificity, sources and author evidence to reduce AI-pattern risk.")
         if not recommendations:
             recommendations.append("No critical on-page issues detected.")
 
@@ -886,6 +1034,16 @@ class OnPageAuditServiceV1:
             {"parameter": "H6", "value": headings.get("h6_count", 0), "status": "info"},
             {"parameter": "Schema types", "value": schema_analysis.get("types_count", 0), "status": "info"},
             {"parameter": "OpenGraph tags", "value": opengraph.get("tags_count", 0), "status": "info"},
+            {"parameter": "AI Marker Density/1k", "value": ai_insights.get("ai_marker_density_1k", 0), "status": "bad" if ai_insights.get("ai_marker_density_1k", 0) >= 8 else ("acceptable" if ai_insights.get("ai_marker_density_1k", 0) >= 4 else "good")},
+            {"parameter": "Hedging Ratio", "value": ai_insights.get("hedging_ratio", 0), "status": "bad" if ai_insights.get("hedging_ratio", 0) >= 0.12 else ("acceptable" if ai_insights.get("hedging_ratio", 0) >= 0.07 else "good")},
+            {"parameter": "Template Repetition", "value": ai_insights.get("template_repetition", 0), "status": "bad" if ai_insights.get("template_repetition", 0) >= 6 else ("acceptable" if ai_insights.get("template_repetition", 0) >= 3 else "good")},
+            {"parameter": "Burstiness CV", "value": ai_insights.get("burstiness_cv", 0), "status": "bad" if ai_insights.get("burstiness_cv", 0) < 0.22 else ("acceptable" if ai_insights.get("burstiness_cv", 0) < 0.30 else "good")},
+            {"parameter": "Perplexity Proxy", "value": ai_insights.get("perplexity_proxy", 0), "status": "bad" if ai_insights.get("perplexity_proxy", 0) >= 0.72 else ("acceptable" if ai_insights.get("perplexity_proxy", 0) >= 0.58 else "good")},
+            {"parameter": "Entity Depth/1k", "value": ai_insights.get("entity_depth_1k", 0), "status": "bad" if ai_insights.get("entity_depth_1k", 0) < 6 else ("acceptable" if ai_insights.get("entity_depth_1k", 0) < 12 else "good")},
+            {"parameter": "Claim Specificity Score", "value": ai_insights.get("claim_specificity_score", 0), "status": "bad" if ai_insights.get("claim_specificity_score", 0) < 35 else ("acceptable" if ai_insights.get("claim_specificity_score", 0) < 65 else "good")},
+            {"parameter": "Author Signal Score", "value": ai_insights.get("author_signal_score", 0), "status": "bad" if ai_insights.get("author_signal_score", 0) < 20 else ("acceptable" if ai_insights.get("author_signal_score", 0) < 45 else "good")},
+            {"parameter": "Source Attribution Score", "value": ai_insights.get("source_attribution_score", 0), "status": "bad" if ai_insights.get("source_attribution_score", 0) < 25 else ("acceptable" if ai_insights.get("source_attribution_score", 0) < 55 else "good")},
+            {"parameter": "AI Risk Composite", "value": ai_insights.get("ai_risk_composite", 0), "status": "bad" if ai_insights.get("ai_risk_composite", 0) >= 75 else ("acceptable" if ai_insights.get("ai_risk_composite", 0) >= 55 else "good")},
         ]
 
         spam_signals = [
@@ -956,6 +1114,7 @@ class OnPageAuditServiceV1:
                 "link_anchor_terms": link_anchor_terms,
                 "media": media,
                 "readability": readability,
+                "ai_insights": ai_insights,
                 "spam_signals": spam_signals,
                 "parameter_values": parameter_values,
                 "issues": issues,
@@ -968,12 +1127,14 @@ class OnPageAuditServiceV1:
                     "spam_score": round(spam_score, 1),
                     "keyword_coverage_score": keyword_coverage_score,
                     "keyword_coverage_pct": round(keyword_coverage_pct, 1),
+                    "ai_risk_composite": ai_insights.get("ai_risk_composite", 0),
                 },
                 "score": score,
                 "scores": {
                     "onpage_score": score,
                     "spam_score": round(spam_score, 1),
                     "keyword_coverage_score": keyword_coverage_score,
+                    "ai_risk_composite": ai_insights.get("ai_risk_composite", 0),
                 },
                 "keyword_coverage": {
                     "keywords_total": keywords_total,

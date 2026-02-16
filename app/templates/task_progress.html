@@ -1874,6 +1874,7 @@ function generateOnPageAuditHTML(result) {
     const links = r.links || {};
     const media = r.media || {};
     const readability = r.readability || {};
+    const ai = r.ai_insights || {};
     const ngrams = r.ngrams || {};
     const contentProfile = r.content_profile || {};
     const params = r.parameter_values || [];
@@ -1962,11 +1963,12 @@ function generateOnPageAuditHTML(result) {
                         <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
                     </div>
                 </div>
-                <div class="grid grid-cols-2 md:grid-cols-6 gap-3 text-sm">
+                <div class="grid grid-cols-2 md:grid-cols-7 gap-3 text-sm">
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Score</div><div class="text-xl font-semibold">${r.score ?? summary.score ?? 0}</div></div>
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Слов</div><div class="text-xl font-semibold">${content.word_count ?? 0}</div></div>
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Spam Score</div><div class="text-xl font-semibold">${scores.spam_score ?? summary.spam_score ?? 0}</div></div>
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">KW Coverage</div><div class="text-xl font-semibold">${keywordCoverage.coverage_pct ?? summary.keyword_coverage_pct ?? 0}%</div></div>
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">AI Risk</div><div class="text-xl font-semibold">${ai.ai_risk_composite ?? summary.ai_risk_composite ?? 0}</div></div>
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Critical</div><div class="text-xl font-semibold text-red-700">${summary.critical_issues ?? 0}</div></div>
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Warning</div><div class="text-xl font-semibold text-amber-700">${summary.warning_issues ?? 0}</div></div>
                 </div>
@@ -2107,6 +2109,22 @@ function generateOnPageAuditHTML(result) {
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
+                <h4 class="font-semibold mb-3">AI Signals</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3 text-sm">
+                    <div><span class="text-gray-600">AI marker density/1k:</span> <span class="font-medium">${ai.ai_marker_density_1k ?? 0}</span></div>
+                    <div><span class="text-gray-600">Hedging ratio:</span> <span class="font-medium">${ai.hedging_ratio ?? 0}</span></div>
+                    <div><span class="text-gray-600">Template repetition:</span> <span class="font-medium">${ai.template_repetition ?? 0}</span></div>
+                    <div><span class="text-gray-600">Burstiness CV:</span> <span class="font-medium">${ai.burstiness_cv ?? 0}</span></div>
+                    <div><span class="text-gray-600">Perplexity proxy:</span> <span class="font-medium">${ai.perplexity_proxy ?? 0}</span></div>
+                    <div><span class="text-gray-600">Entity depth/1k:</span> <span class="font-medium">${ai.entity_depth_1k ?? 0}</span></div>
+                    <div><span class="text-gray-600">Claim specificity:</span> <span class="font-medium">${ai.claim_specificity_score ?? 0}</span></div>
+                    <div><span class="text-gray-600">Author signal:</span> <span class="font-medium">${ai.author_signal_score ?? 0}</span></div>
+                    <div><span class="text-gray-600">Source attribution:</span> <span class="font-medium">${ai.source_attribution_score ?? 0}</span></div>
+                    <div><span class="text-gray-600">AI risk composite:</span> <span class="font-medium">${ai.ai_risk_composite ?? 0}</span></div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6">
                 <h4 class="font-semibold mb-3">Рекомендации</h4>
                     <ul class="list-disc pl-5 text-sm text-gray-700">${recsHtml || '<li>Рекомендаций нет.</li>'}</ul>
             </div>
@@ -2236,7 +2254,7 @@ function generateSiteAuditProHTML(result) {
 
             <div class="bg-white rounded-xl shadow-md p-6">
                 <h4 class="font-semibold mb-3">Pipeline Metrics</h4>
-                <div class="grid grid-cols-2 md:grid-cols-6 gap-3 text-sm">
+                <div class="grid grid-cols-2 md:grid-cols-7 gap-3 text-sm">
                     <div><span class="text-gray-600">Avg response:</span> <span class="font-medium">${metrics.avg_response_time_ms ?? 0} ms</span></div>
                     <div><span class="text-gray-600">Avg readability:</span> <span class="font-medium">${metrics.avg_readability_score ?? 0}</span></div>
                     <div><span class="text-gray-600">Avg link quality:</span> <span class="font-medium">${metrics.avg_link_quality_score ?? 0}</span></div>
@@ -2277,5 +2295,7 @@ function generateSiteAuditProHTML(result) {
 window.copyToClipboard = copyToClipboard;
 </script>
 {% endblock %}
+
+
 
 

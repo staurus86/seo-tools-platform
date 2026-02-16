@@ -842,6 +842,7 @@ class DOCXGenerator:
             ["Spam score", summary.get("spam_score", (results.get("scores", {}) or {}).get("spam_score", 0))],
             ["Keyword coverage score", summary.get("keyword_coverage_score", (results.get("scores", {}) or {}).get("keyword_coverage_score", 0))],
             ["Keyword coverage %", summary.get("keyword_coverage_pct", (results.get("keyword_coverage", {}) or {}).get("coverage_pct", 0))],
+            ["AI risk composite", summary.get("ai_risk_composite", (results.get("scores", {}) or {}).get("ai_risk_composite", 0))],
             ["Critical issues", summary.get("critical_issues", 0)],
             ["Warning issues", summary.get("warning_issues", 0)],
             ["Info issues", summary.get("info_issues", 0)],
@@ -983,16 +984,32 @@ class DOCXGenerator:
         ]
         self._add_table(doc, ["Field", "Value"], schema_rows)
 
+        self._add_heading(doc, "10. AI Signals", level=1)
+        ai = results.get("ai_insights", {}) or {}
+        ai_rows = [
+            ["AI marker density /1k", ai.get("ai_marker_density_1k", 0)],
+            ["Hedging ratio", ai.get("hedging_ratio", 0)],
+            ["Template repetition /1k", ai.get("template_repetition", 0)],
+            ["Burstiness CV", ai.get("burstiness_cv", 0)],
+            ["Perplexity proxy", ai.get("perplexity_proxy", 0)],
+            ["Entity depth /1k", ai.get("entity_depth_1k", 0)],
+            ["Claim specificity score", ai.get("claim_specificity_score", 0)],
+            ["Author signal score", ai.get("author_signal_score", 0)],
+            ["Source attribution score", ai.get("source_attribution_score", 0)],
+            ["AI risk composite", ai.get("ai_risk_composite", 0)],
+        ]
+        self._add_table(doc, ["Signal", "Value"], ai_rows)
+
         link_terms = results.get("link_anchor_terms", []) or []
         if link_terms:
-            self._add_heading(doc, "10. Top Link Terms", level=1)
+            self._add_heading(doc, "11. Top Link Terms", level=1)
             self._add_table(
                 doc,
                 ["Term", "Count"],
                 [[row.get("term", ""), row.get("count", 0)] for row in link_terms[:10]],
             )
 
-        self._add_heading(doc, "11. Issues", level=1)
+        self._add_heading(doc, "12. Issues", level=1)
         issues = results.get("issues", []) or []
         if issues:
             for issue in issues[:80]:
@@ -1003,7 +1020,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Issues not found.")
 
-        self._add_heading(doc, "12. Recommendations", level=1)
+        self._add_heading(doc, "13. Recommendations", level=1)
         recs = results.get("recommendations", []) or []
         if recs:
             for rec in recs[:30]:
