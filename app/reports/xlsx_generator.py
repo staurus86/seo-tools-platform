@@ -4,6 +4,7 @@ Excel Р С–Р ВµР Р…Р ВµРЎР‚Р В°РЎвЂљРѕСЂ Р 
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.drawing.image import Image as XLImage
 from collections import Counter, defaultdict
 from typing import Dict, Any, List, Set
 from datetime import datetime
@@ -11,6 +12,10 @@ import os
 import re
 import math
 import hashlib
+import tempfile
+from urllib.parse import urljoin
+
+import requests
 
 from app.config import settings
 
@@ -698,6 +703,51 @@ class XLSXGenerator:
         devices = results.get("device_results", []) or []
         issues = results.get("issues", []) or []
         recommendations = results.get("recommendations", []) or []
+        artifacts = results.get("artifacts", {}) or {}
+        screenshot_dir = str(artifacts.get("screenshot_dir") or "").strip()
+        server_base_url = str(data.get("server_base_url") or "").strip()
+        temp_screenshots: List[str] = []
+
+        def _resolve_mobile_screenshot_path(device: Dict[str, Any]) -> str:
+            candidates: List[str] = []
+            raw_path = str(device.get("screenshot_path") or "").strip()
+            shot_name = str(device.get("screenshot_name") or "").strip()
+            shot_url = str(device.get("screenshot_url") or "").strip()
+
+            if raw_path:
+                candidates.append(raw_path)
+            if shot_name and screenshot_dir:
+                candidates.append(os.path.join(screenshot_dir, shot_name))
+            if shot_name:
+                candidates.append(os.path.join(self.reports_dir, "mobile", task_id, "screenshots", shot_name))
+            if raw_path:
+                candidates.append(
+                    os.path.join(self.reports_dir, "mobile", task_id, "screenshots", os.path.basename(raw_path))
+                )
+
+            for candidate in candidates:
+                if candidate and os.path.exists(candidate):
+                    return candidate
+
+            if shot_url:
+                if shot_url.startswith("/"):
+                    if server_base_url:
+                        shot_url = urljoin(server_base_url, shot_url)
+                    else:
+                        shot_url = ""
+                if shot_url:
+                    try:
+                        response = requests.get(shot_url, timeout=25)
+                        if response.status_code == 200 and response.content:
+                            fd, temp_path = tempfile.mkstemp(prefix=f"mobile_xlsx_{task_id}_", suffix=".png")
+                            os.close(fd)
+                            with open(temp_path, "wb") as f:
+                                f.write(response.content)
+                            temp_screenshots.append(temp_path)
+                            return temp_path
+                    except Exception:
+                        pass
+            return ""
 
         ws = wb.active
         ws.title = "Summary"
@@ -790,21 +840,39 @@ class XLSXGenerator:
         rws.freeze_panes = "A2"
 
         sws = wb.create_sheet("Screenshots")
-        shot_headers = ["Device", "Screenshot name", "Path", "URL"]
+        shot_headers = ["Device", "Screenshot name", "Path", "URL", "Preview"]
         for col, header in enumerate(shot_headers, 1):
             self._apply_style(sws.cell(row=1, column=col, value=header), header_style)
         for row_idx, d in enumerate(devices, start=2):
             vals = [d.get("device_name", ""), d.get("screenshot_name", ""), d.get("screenshot_path", ""), d.get("screenshot_url", "")]
             for col, value in enumerate(vals, 1):
                 self._apply_style(sws.cell(row=row_idx, column=col, value=value), cell_style)
+            resolved_shot = _resolve_mobile_screenshot_path(d)
+            if resolved_shot and os.path.exists(resolved_shot):
+                try:
+                    img = XLImage(resolved_shot)
+                    img.width = 360
+                    img.height = 200
+                    sws.row_dimensions[row_idx].height = 155
+                    sws.add_image(img, f"E{row_idx}")
+                except Exception:
+                    pass
         sws.freeze_panes = "A2"
-        sws.auto_filter.ref = "A1:D1"
-        for col, width in enumerate([26, 40, 80, 48], 1):
+        sws.auto_filter.ref = "A1:E1"
+        for col, width in enumerate([26, 40, 80, 48, 52], 1):
             sws.column_dimensions[get_column_letter(col)].width = width
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
-        wb.save(filepath)
-        return filepath
+        try:
+            wb.save(filepath)
+            return filepath
+        finally:
+            for temp_path in temp_screenshots:
+                try:
+                    if temp_path and os.path.exists(temp_path):
+                        os.remove(temp_path)
+                except Exception:
+                    pass
 
     def generate_bot_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Generate detailed bot accessibility report with severity styling."""

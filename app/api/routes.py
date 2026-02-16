@@ -1736,7 +1736,7 @@ async def export_render_xlsx(data: ExportRequest):
 
 
 @router.post("/export/mobile-xlsx")
-async def export_mobile_xlsx(data: ExportRequest):
+async def export_mobile_xlsx(data: ExportRequest, request: Request):
     """Export mobile issues report to XLSX only if issues exist."""
     import os
     import re
@@ -1762,7 +1762,11 @@ async def export_mobile_xlsx(data: ExportRequest):
         if issues_count <= 0:
             return {"error": "Проблемы не найдены, XLSX-отчет не формируется"}
 
-        report_payload = {"url": url, "results": results}
+        report_payload = {
+            "url": url,
+            "results": results,
+            "server_base_url": str(request.base_url),
+        }
         filepath = xlsx_generator.generate_mobile_report(task_id, report_payload)
         if not filepath or not os.path.exists(filepath):
             return {"error": "Не удалось сформировать отчет"}
