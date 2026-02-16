@@ -446,8 +446,101 @@ class DOCXGenerator:
         doc.save(filepath)
         return filepath
     def generate_mobile_report(self, task_id: str, data: Dict[str, Any]) -> str:
-        """Generate mobile DOCX report with UTF-8-safe Russian strings."""
+        """Extended mobile DOCX report with Russian content."""
         doc = Document()
+
+        issue_guides = {
+            "viewport_missing": {
+                "name": "Отсутствует meta viewport",
+                "why": "Страница отображается как десктопная и плохо адаптируется под мобильные экраны.",
+                "impact": "Высокое",
+                "fix": [
+                    "Добавить тег <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"> в <head>.",
+                    "Проверить наличие тега на всех шаблонах страниц.",
+                ],
+            },
+            "viewport_invalid": {
+                "name": "Некорректный viewport",
+                "why": "Неправильные параметры viewport ломают масштаб и адаптивность.",
+                "impact": "Высокое",
+                "fix": [
+                    "Исправить viewport на width=device-width, initial-scale=1.",
+                    "Убрать дублирующиеся viewport-теги.",
+                ],
+            },
+            "horizontal_overflow": {
+                "name": "Горизонтальная прокрутка",
+                "why": "Контент выходит за ширину экрана.",
+                "impact": "Высокое",
+                "fix": [
+                    "Найти элементы с шириной больше viewport.",
+                    "Добавить max-width: 100% для медиа-элементов.",
+                ],
+            },
+            "small_touch_targets": {
+                "name": "Маленькие интерактивные элементы",
+                "why": "Элементы < 44x44px неудобны для тача.",
+                "impact": "Среднее",
+                "fix": [
+                    "Увеличить размеры кнопок/ссылок до 44x44px и больше.",
+                    "Добавить отступы между соседними элементами.",
+                ],
+            },
+            "small_fonts": {
+                "name": "Слишком мелкий текст",
+                "why": "Низкая читаемость ухудшает UX-метрики.",
+                "impact": "Среднее",
+                "fix": [
+                    "Привести базовый размер шрифта к 16px+ на мобильных экранах.",
+                    "Проверить читаемость ключевых блоков.",
+                ],
+            },
+            "large_images": {
+                "name": "Изображения шире экрана",
+                "why": "Широкие изображения ломают сетку и провоцируют скролл.",
+                "impact": "Среднее",
+                "fix": [
+                    "Добавить для изображений max-width: 100%; height: auto;.",
+                    "Проверить адаптивность баннеров/слайдеров.",
+                ],
+            },
+            "console_errors": {
+                "name": "Ошибки JavaScript в консоли",
+                "why": "JS-ошибки могут ломать ключевые UI-сценарии.",
+                "impact": "Среднее",
+                "fix": [
+                    "Разобрать ошибки консоли по приоритету.",
+                    "Исправить недоступные ресурсы и исключения.",
+                ],
+            },
+            "runtime_error": {
+                "name": "Ошибка выполнения проверки",
+                "why": "Часть данных по устройству может быть неполной.",
+                "impact": "Высокое",
+                "fix": [
+                    "Проверить доступность сайта и окружение анализа.",
+                    "Повторить аудит после устранения причины.",
+                ],
+            },
+            "playwright_unavailable": {
+                "name": "Среда Playwright недоступна",
+                "why": "Без браузерного движка нельзя выполнить полный аудит.",
+                "impact": "Высокое",
+                "fix": [
+                    "Установить Playwright и Chromium в окружении сервера.",
+                    "Перезапустить сервис и повторить аудит.",
+                ],
+            },
+            "mobile_engine_error": {
+                "name": "Сбой движка мобильной проверки",
+                "why": "Движок не смог корректно завершить анализ.",
+                "impact": "Высокое",
+                "fix": [
+                    "Проверить логи сервиса и окружение выполнения.",
+                    "Устранить причину и повторно запустить аудит.",
+                ],
+            },
+        }
 
         title = doc.add_heading("Клиентский отчет: мобильная версия сайта", 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -460,15 +553,22 @@ class DOCXGenerator:
         results = data.get("results", {}) or {}
         summary = results.get("summary", {}) or {}
         devices = results.get("device_results", []) or []
-        issues = results.get("issues", []) or []
+        all_issues = results.get("issues", []) or []
+        actionable_issues = [i for i in all_issues if i.get("severity") in ("critical", "warning")]
+        info_issues = [i for i in all_issues if i.get("severity") == "info"]
 
-        self._add_heading(doc, "1. Сводка", level=1)
+        self._add_heading(doc, "1. Сводка по проверке", level=1)
         summary_rows = [
-            ["Движок", results.get("engine", "legacy")],
-            ["Режим", "Быстрый" if results.get("mode") == "quick" else "Полный"],
+            ["Движок проверки", results.get("engine", "legacy")],
+            ["Режим проверки", "Быстрый" if results.get("mode") == "quick" else "Полный"],
             ["Проверено устройств", summary.get("total_devices", len(devices))],
-            ["Ошибок", len(issues)],
-            ["Итог", "Да" if results.get("mobile_friendly") else "Нет"],
+            ["Устройств без критичных проблем", summary.get("mobile_friendly_devices", 0)],
+            ["Устройств с проблемами", summary.get("non_friendly_devices", 0)],
+            ["Среднее время загрузки, мс", summary.get("avg_load_time_ms", 0)],
+            ["Ошибок (critical + warning)", len(actionable_issues)],
+            ["Информационных замечаний", len(info_issues)],
+            ["Интегральная оценка", results.get("score", "н/д")],
+            ["Итог", "Соответствует требованиям" if results.get("mobile_friendly") else "Требуются доработки"],
         ]
         self._add_table(doc, ["Показатель", "Значение"], summary_rows)
 
@@ -476,12 +576,12 @@ class DOCXGenerator:
         tech_rows = [
             ["HTTP", results.get("status_code", "n/a")],
             ["Final URL", results.get("final_url", url)],
-            ["Viewport", "Да" if results.get("viewport_found") else "Нет"],
+            ["Viewport найден", "Да" if results.get("viewport_found") else "Нет"],
             ["Viewport content", results.get("viewport_content") or "-"],
         ]
         self._add_table(doc, ["Параметр", "Значение"], tech_rows)
 
-        self._add_heading(doc, "3. Устройства", level=1)
+        self._add_heading(doc, "3. Результаты по устройствам", level=1)
         if devices:
             device_rows = []
             for d in devices:
@@ -497,42 +597,91 @@ class DOCXGenerator:
                     d.get("status_code", "n/a"),
                     d.get("load_time_ms", 0),
                     d.get("issues_count", 0),
+                    "Да" if d.get("mobile_friendly") else "Нет",
                 ])
             self._add_table(
                 doc,
-                ["Устройство", "Тип", "Viewport", "HTTP", "Load ms", "Ошибок"],
+                ["Устройство", "Тип", "Viewport", "HTTP", "Load ms", "Ошибок", "ОК для mobile"],
                 device_rows,
             )
         else:
             doc.add_paragraph("Данные по устройствам отсутствуют.")
 
-        self._add_heading(doc, "4. Ошибки", level=1)
-        if issues:
-            for issue in issues:
-                sev = (issue.get("severity") or "info").upper()
-                title_i = issue.get("title", "")
-                details_i = issue.get("details", "")
-                doc.add_paragraph(f"[{sev}] {title_i}: {details_i}", style="List Bullet")
+        self._add_heading(doc, "4. Выявленные ошибки и план исправления", level=1)
+        if not actionable_issues:
+            doc.add_paragraph("Критические ошибки и предупреждения не обнаружены.")
         else:
-            doc.add_paragraph("Ошибки не обнаружены.")
+            grouped = {}
+            for issue in actionable_issues:
+                grouped.setdefault(issue.get("code", "unknown"), []).append(issue)
 
-        self._add_heading(doc, "5. Скриншоты", level=1)
+            for idx, (code, items) in enumerate(grouped.items(), start=1):
+                guide = issue_guides.get(code, {
+                    "name": items[0].get("title", code),
+                    "why": "Проблема влияет на качество мобильной версии.",
+                    "impact": "Среднее",
+                    "fix": ["Проверить верстку и исправить источник ошибки."],
+                })
+                self._add_heading(doc, f"4.{idx} {guide['name']}", level=2)
+                devices_list = sorted({str(i.get("device", "не указано")) for i in items})
+                doc.add_paragraph(f"Серьезность: {items[0].get('severity', 'warning')}")
+                doc.add_paragraph(f"Затронуто устройств: {len(devices_list)}")
+                doc.add_paragraph(f"Устройства: {', '.join(devices_list)}")
+                doc.add_paragraph(f"Почему это важно: {guide['why']}")
+                doc.add_paragraph(f"Бизнес-влияние: {guide['impact']}")
+                doc.add_paragraph("Что сделать:")
+                for step in guide["fix"]:
+                    doc.add_paragraph(step, style="List Number")
+                doc.add_paragraph("Технические детали из проверки:")
+                for example in items[:5]:
+                    detail = str(example.get("details", "") or "").strip()
+                    if detail:
+                        doc.add_paragraph(f"- {detail}")
+
+        self._add_heading(doc, "5. Информационные наблюдения", level=1)
+        if info_issues:
+            for issue in info_issues:
+                doc.add_paragraph(
+                    f"{issue.get('title', '\u041d\u0430\u0431\u043b\u044e\u0434\u0435\u043d\u0438\u0435')}: {issue.get('details', '')}",
+                    style="List Bullet",
+                )
+        else:
+            doc.add_paragraph("Дополнительные информационные замечания отсутствуют.")
+
+        self._add_heading(doc, "6. Скриншоты проверенных устройств", level=1)
         added = 0
         for d in devices:
             shot = d.get("screenshot_path")
             if not shot or not os.path.exists(shot):
                 continue
             doc.add_paragraph(
-                f"{d.get('device_name', 'Устройство')} | "
-                f"Viewport {(d.get('viewport') or {}).get('width', '-')}x{(d.get('viewport') or {}).get('height', '-')}"
+                f"{d.get('device_name', '\u0423\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u043e')} | "
+                f"Viewport {(d.get('viewport') or {}).get('width', '-')}x{(d.get('viewport') or {}).get('height', '-')} | "
+                f"\u041e\u0448\u0438\u0431\u043e\u043a: {d.get('issues_count', 0)}"
             )
             try:
                 doc.add_picture(shot, width=Inches(5.8))
                 added += 1
             except Exception:
-                doc.add_paragraph(f"Не удалось встроить скриншот: {shot}")
+                doc.add_paragraph(f"\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0432\u0441\u0442\u0440\u043e\u0438\u0442\u044c \u0441\u043a\u0440\u0438\u043d\u0448\u043e\u0442: {shot}")
         if added == 0:
             doc.add_paragraph("Скриншоты отсутствуют.")
+
+        self._add_heading(doc, "7. Итоги", level=1)
+        if actionable_issues:
+            doc.add_paragraph(
+                "Обнаружены ошибки мобильной версии, которые требуют исправления для повышения "
+                "качества UX и стабильности SEO-показателей."
+            )
+            doc.add_paragraph(
+                "Рекомендуется выполнить исправления по приоритету (critical -> warning), затем "
+                "повторить аудит и сравнить метрики."
+            )
+        else:
+            doc.add_paragraph(
+                "Критичных проблем не обнаружено. Мобильная версия сайта соответствует "
+                "базовым требованиям удобства и технической корректности."
+            )
 
         doc.add_paragraph()
         footer = doc.add_paragraph(f"Отчет сформирован SEO Инструменты: {generated_at}")
