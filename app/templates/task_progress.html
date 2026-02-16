@@ -232,6 +232,7 @@ function showResults(data) {
         resultsContent.innerHTML = generateSiteAuditProHTML(result);
     } else if (result.task_type === 'onpage_audit') {
         resultsContent.innerHTML = generateOnPageAuditHTML(result);
+        filterOnpageIssues('all');
     } else {
         resultsContent.innerHTML = generateGenericHTML(result);
     }
@@ -363,6 +364,68 @@ function copyCurrentTaskJson() {
         return;
     }
     copyToClipboard(JSON.stringify(lastTaskResult, null, 2));
+}
+
+function copyOnpageRecommendations() {
+    if (!lastTaskResult || lastTaskResult.task_type !== 'onpage_audit') {
+        alert('Нет данных OnPage для копирования');
+        return;
+    }
+    const r = (lastTaskResult.results || {});
+    const recs = (r.recommendations || []);
+    if (!recs.length) {
+        alert('Рекомендаций пока нет');
+        return;
+    }
+    const lines = recs.map((item, idx) => `${idx + 1}. ${item}`);
+    copyToClipboard(lines.join('\n'));
+}
+
+function copyOnpageTopFixes() {
+    if (!lastTaskResult || lastTaskResult.task_type !== 'onpage_audit') {
+        alert('Нет данных OnPage для копирования');
+        return;
+    }
+    const r = (lastTaskResult.results || {});
+    const queue = (r.priority_queue || []);
+    const fallbackFixes = (r.top_fixes || []);
+    const list = queue.length > 0
+        ? queue.slice(0, 10).map((q, idx) =>
+            `${idx + 1}. [${(q.bucket || 'Later').toUpperCase()}] ${(q.title || q.code || 'Issue')} | Severity: ${(q.severity || 'info').toUpperCase()} | Priority: ${q.priority_score ?? 0} | Effort: ${q.effort ?? 0}`
+        )
+        : fallbackFixes.slice(0, 10).map((f, idx) =>
+            `${idx + 1}. [${String((f.priority || 'medium')).toUpperCase()}] ${f.title || 'Fix'}${f.action ? ` | Action: ${f.action}` : ''}`
+        );
+    if (!list.length) {
+        alert('Top fixes пока нет');
+        return;
+    }
+    copyToClipboard(list.join('\n'));
+}
+
+function filterOnpageIssues(mode) {
+    const wrapper = document.getElementById('onpage-issues-list');
+    if (!wrapper) return;
+    const cards = wrapper.querySelectorAll('[data-issue-severity]');
+    let visibleCount = 0;
+    cards.forEach((card) => {
+        const severity = String(card.getAttribute('data-issue-severity') || 'info').toLowerCase();
+        const shouldShow = mode === 'all' ? true : severity === mode;
+        card.classList.toggle('hidden', !shouldShow);
+        if (shouldShow) visibleCount += 1;
+    });
+    const counter = document.getElementById('onpage-issues-count');
+    if (counter) {
+        counter.textContent = `${visibleCount} / ${cards.length}`;
+    }
+    const buttons = document.querySelectorAll('[data-onpage-issues-filter]');
+    buttons.forEach((btn) => {
+        const isActive = btn.getAttribute('data-onpage-issues-filter') === mode;
+        btn.classList.toggle('bg-slate-900', isActive);
+        btn.classList.toggle('text-white', isActive);
+        btn.classList.toggle('bg-white', !isActive);
+        btn.classList.toggle('text-slate-700', !isActive);
+    });
 }
 
 function downloadTextReport() {
@@ -1906,7 +1969,7 @@ function generateOnPageAuditHTML(result) {
     `).join('');
 
     const issuesHtml = issues.slice(0, 25).map(i => `
-        <div class="text-sm border-l-4 ${i.severity === 'critical' ? 'border-red-500 bg-red-50' : i.severity === 'warning' ? 'border-yellow-500 bg-yellow-50' : 'border-blue-500 bg-blue-50'} p-3 rounded-r mb-2">
+        <div data-issue-severity="${(i.severity || 'info').toLowerCase()}" class="text-sm border-l-4 ${i.severity === 'critical' ? 'border-red-500 bg-red-50' : i.severity === 'warning' ? 'border-yellow-500 bg-yellow-50' : 'border-blue-500 bg-blue-50'} p-3 rounded-r mb-2">
             <div class="font-semibold">${(i.severity || 'info').toUpperCase()} | ${i.code || 'issue'}</div>
             <div>${i.title || ''}</div>
             <div class="text-gray-600">${i.details || ''}</div>
@@ -2023,9 +2086,11 @@ function generateOnPageAuditHTML(result) {
                         <h3 class="text-lg font-semibold">OnPage Audit</h3>
                         <p class="text-sm text-gray-500 break-all">${result.url || ''}</p>
                     </div>
-                    <div class="flex gap-3">
+                    <div class="flex flex-wrap items-center gap-3">
                         <button onclick="downloadOnpageDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>Скачать DOCX</button>
                         <button onclick="downloadOnpageXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>Скачать XLSX</button>
+                        <button onclick="copyOnpageTopFixes()" class="text-rose-700 hover:text-rose-900 text-sm"><i class="fas fa-bolt mr-1"></i>Copy Top Fixes</button>
+                        <button onclick="copyOnpageRecommendations()" class="text-indigo-700 hover:text-indigo-900 text-sm"><i class="fas fa-list-check mr-1"></i>Copy Recommendations</button>
                         <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
                     </div>
                 </div>
@@ -2055,11 +2120,11 @@ function generateOnPageAuditHTML(result) {
             <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
                 <h4 class="font-semibold mb-3">Параметр | Значение</h4>
                 <table class="w-full min-w-[640px]">
-                    <thead>
+                    <thead class="sticky top-0 z-10 bg-white">
                         <tr class="text-left text-xs text-gray-500 border-b">
-                            <th class="py-2 pr-2">Параметр</th>
-                            <th class="py-2 pr-2">Значение</th>
-                            <th class="py-2 pr-2">Статус</th>
+                            <th class="py-2 pr-2 bg-white">Параметр</th>
+                            <th class="py-2 pr-2 bg-white">Значение</th>
+                            <th class="py-2 pr-2 bg-white">Статус</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -2071,15 +2136,15 @@ function generateOnPageAuditHTML(result) {
             <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
                 <h4 class="font-semibold mb-3">Keywords & Density</h4>
                 <table class="w-full min-w-[760px]">
-                    <thead>
+                    <thead class="sticky top-0 z-10 bg-white">
                         <tr class="text-left text-xs text-gray-500 border-b">
-                            <th class="py-2 pr-2">Keyword</th>
-                            <th class="py-2 pr-2">Count</th>
-                            <th class="py-2 pr-2">Density</th>
-                            <th class="py-2 pr-2">Title</th>
-                            <th class="py-2 pr-2">Description</th>
-                            <th class="py-2 pr-2">H1</th>
-                            <th class="py-2 pr-2">Status</th>
+                            <th class="py-2 pr-2 bg-white">Keyword</th>
+                            <th class="py-2 pr-2 bg-white">Count</th>
+                            <th class="py-2 pr-2 bg-white">Density</th>
+                            <th class="py-2 pr-2 bg-white">Title</th>
+                            <th class="py-2 pr-2 bg-white">Description</th>
+                            <th class="py-2 pr-2 bg-white">H1</th>
+                            <th class="py-2 pr-2 bg-white">Status</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -2215,14 +2280,14 @@ function generateOnPageAuditHTML(result) {
             <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
                 <h4 class="font-semibold mb-3">Priority Queue (Now / Next / Later)</h4>
                 <table class="w-full min-w-[860px]">
-                    <thead>
+                    <thead class="sticky top-0 z-10 bg-white">
                         <tr class="text-left text-xs text-gray-500 border-b">
-                            <th class="py-2 pr-2">Bucket</th>
-                            <th class="py-2 pr-2">Severity</th>
-                            <th class="py-2 pr-2">Code</th>
-                            <th class="py-2 pr-2">Issue</th>
-                            <th class="py-2 pr-2">Priority</th>
-                            <th class="py-2 pr-2">Effort</th>
+                            <th class="py-2 pr-2 bg-white">Bucket</th>
+                            <th class="py-2 pr-2 bg-white">Severity</th>
+                            <th class="py-2 pr-2 bg-white">Code</th>
+                            <th class="py-2 pr-2 bg-white">Issue</th>
+                            <th class="py-2 pr-2 bg-white">Priority</th>
+                            <th class="py-2 pr-2 bg-white">Effort</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -2234,12 +2299,12 @@ function generateOnPageAuditHTML(result) {
             <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
                 <h4 class="font-semibold mb-3">Before / After Targets</h4>
                 <table class="w-full min-w-[640px]">
-                    <thead>
+                    <thead class="sticky top-0 z-10 bg-white">
                         <tr class="text-left text-xs text-gray-500 border-b">
-                            <th class="py-2 pr-2">Metric</th>
-                            <th class="py-2 pr-2">Current</th>
-                            <th class="py-2 pr-2">Target</th>
-                            <th class="py-2 pr-2">Delta</th>
+                            <th class="py-2 pr-2 bg-white">Metric</th>
+                            <th class="py-2 pr-2 bg-white">Current</th>
+                            <th class="py-2 pr-2 bg-white">Target</th>
+                            <th class="py-2 pr-2 bg-white">Delta</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -2254,8 +2319,19 @@ function generateOnPageAuditHTML(result) {
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-2">Issues</h4>
-                ${issuesHtml || '<div class="text-sm text-gray-500">Проблем не обнаружено.</div>'}
+                <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+                    <h4 class="font-semibold">Issues</h4>
+                    <div class="inline-flex rounded-lg border border-slate-200 p-1 bg-slate-50 text-xs">
+                        <button type="button" data-onpage-issues-filter="all" onclick="filterOnpageIssues('all')" class="px-2 py-1 rounded-md bg-slate-900 text-white">All</button>
+                        <button type="button" data-onpage-issues-filter="critical" onclick="filterOnpageIssues('critical')" class="px-2 py-1 rounded-md text-slate-700">Critical</button>
+                        <button type="button" data-onpage-issues-filter="warning" onclick="filterOnpageIssues('warning')" class="px-2 py-1 rounded-md text-slate-700">Warning</button>
+                        <button type="button" data-onpage-issues-filter="info" onclick="filterOnpageIssues('info')" class="px-2 py-1 rounded-md text-slate-700">Info</button>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-500 mb-2">Shown: <span id="onpage-issues-count">${Math.min(25, issues.length)} / ${Math.min(25, issues.length)}</span></div>
+                <div id="onpage-issues-list">
+                    ${issuesHtml || '<div class="text-sm text-gray-500">Проблем не обнаружено.</div>'}
+                </div>
             </div>
         </div>
     `;
