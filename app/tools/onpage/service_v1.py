@@ -145,6 +145,8 @@ class OnPageAuditServiceV1:
         links: Dict[str, Any],
         media: Dict[str, Any],
         readability: Dict[str, Any],
+        ngrams: Dict[str, Any],
+        spam_metrics: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         issues: List[Dict[str, Any]] = []
 
@@ -205,6 +207,20 @@ class OnPageAuditServiceV1:
                     "keyword_density_high",
                     "Elevated keyword density",
                     f"Keyword '{row['keyword']}' density is {row['density_pct']}%.",
+                )
+            if row["occurrences"] > 0 and not row.get("in_title"):
+                add(
+                    "warning",
+                    "keyword_not_in_title",
+                    "Keyword missing in title",
+                    f"Keyword '{row['keyword']}' is not used in title.",
+                )
+            if row["occurrences"] > 0 and not row.get("in_h1"):
+                add(
+                    "warning",
+                    "keyword_not_in_h1",
+                    "Keyword missing in H1",
+                    f"Keyword '{row['keyword']}' is not used in H1.",
                 )
 
         if top_terms:
@@ -280,6 +296,48 @@ class OnPageAuditServiceV1:
                 "Too many long sentences",
                 f"Long sentence ratio is {round(long_sentence_ratio * 100, 1)}%.",
             )
+
+        top_bigram_pct = float(spam_metrics.get("top_bigram_pct", 0.0))
+        top_trigram_pct = float(spam_metrics.get("top_trigram_pct", 0.0))
+        duplicate_sentence_ratio = float(spam_metrics.get("duplicate_sentence_ratio", 0.0))
+        uppercase_ratio = float(spam_metrics.get("uppercase_ratio", 0.0))
+        punctuation_ratio = float(spam_metrics.get("punctuation_ratio", 0.0))
+        stopword_ratio = float(spam_metrics.get("stopword_ratio", 0.0))
+        content_html_ratio = float(spam_metrics.get("content_html_ratio", 0.0))
+
+        if top_bigram_pct >= 4.0:
+            add("critical", "bigram_spam", "Bigram repetition spam", f"Top bigram share is {round(top_bigram_pct, 2)}%.")
+        elif top_bigram_pct >= 2.5:
+            add("warning", "bigram_repetition_high", "High bigram repetition", f"Top bigram share is {round(top_bigram_pct, 2)}%.")
+
+        if top_trigram_pct >= 2.5:
+            add("critical", "trigram_spam", "Trigram repetition spam", f"Top trigram share is {round(top_trigram_pct, 2)}%.")
+        elif top_trigram_pct >= 1.6:
+            add("warning", "trigram_repetition_high", "High trigram repetition", f"Top trigram share is {round(top_trigram_pct, 2)}%.")
+
+        if duplicate_sentence_ratio >= 0.2:
+            add(
+                "critical",
+                "duplicate_sentences_high",
+                "High duplicate sentence ratio",
+                f"Duplicate sentences ratio is {round(duplicate_sentence_ratio * 100, 1)}%.",
+            )
+        elif duplicate_sentence_ratio >= 0.1:
+            add(
+                "warning",
+                "duplicate_sentences_warning",
+                "Duplicate sentence ratio is elevated",
+                f"Duplicate sentences ratio is {round(duplicate_sentence_ratio * 100, 1)}%.",
+            )
+
+        if uppercase_ratio > 0.35:
+            add("warning", "uppercase_spam_signal", "Too many uppercase letters", f"Uppercase ratio is {round(uppercase_ratio * 100, 1)}%.")
+        if punctuation_ratio > 0.12:
+            add("warning", "punctuation_spam_signal", "Too many punctuation marks", f"Punctuation ratio is {round(punctuation_ratio * 100, 1)}%.")
+        if stopword_ratio < 0.2:
+            add("warning", "stopword_ratio_low", "Low stopword ratio", f"Stopword ratio is {round(stopword_ratio * 100, 1)}%.")
+        if content_html_ratio < 0.1:
+            add("warning", "content_html_ratio_low", "Low text-to-HTML ratio", f"Content/HTML ratio is {round(content_html_ratio, 3)}.")
 
         return issues
 
@@ -365,6 +423,10 @@ class OnPageAuditServiceV1:
         avg_sentence_len = round(sum(sentence_lengths) / max(1, len(sentence_lengths)), 2)
         long_sentence_ratio = sum(1 for ln in sentence_lengths if ln >= 25) / max(1, len(sentence_lengths))
         lexical_diversity = unique_words / max(1, total_words)
+        sentence_norm = [re.sub(r"\s+", " ", s.lower()) for s in sentences if len(_tokens(s)) >= 6]
+        sentence_counts = Counter(sentence_norm)
+        duplicate_sentences = sum(c - 1 for c in sentence_counts.values() if c > 1)
+        duplicate_sentence_ratio = duplicate_sentences / max(1, len(sentence_norm))
 
         stopwords = _STOPWORDS_RU if language == "ru" else _STOPWORDS_EN
         content_tokens = [t for t in all_tokens if t not in stopwords and len(t) > 2]
@@ -376,6 +438,8 @@ class OnPageAuditServiceV1:
 
         bigrams = self._top_ngrams(content_tokens, n=2, limit=20)
         trigrams = self._top_ngrams(content_tokens, n=3, limit=20)
+        top_bigram_pct = float((bigrams[0] or {}).get("pct", 0.0)) if bigrams else 0.0
+        top_trigram_pct = float((trigrams[0] or {}).get("pct", 0.0)) if trigrams else 0.0
 
         keyword_list = [_norm_text(k) for k in (keywords or []) if _norm_text(k)]
         keyword_rows = self._keyword_rows(
@@ -473,6 +537,20 @@ class OnPageAuditServiceV1:
             "long_sentence_ratio": round(long_sentence_ratio, 4),
             "lexical_diversity": round(lexical_diversity, 4),
         }
+        stopword_count = max(0, total_words - len(content_tokens))
+        letters = [ch for ch in visible_text if ch.isalpha()]
+        uppercase_letters = [ch for ch in letters if ch.isupper()]
+        punctuation_count = len([ch for ch in visible_text if ch in "!?.,;:"])
+        spam_metrics = {
+            "stopword_ratio": round(stopword_count / max(1, total_words), 4),
+            "content_html_ratio": round(char_count / max(1, len(raw_html)), 4),
+            "uppercase_ratio": round(len(uppercase_letters) / max(1, len(letters)), 4),
+            "punctuation_ratio": round(punctuation_count / max(1, char_count), 4),
+            "duplicate_sentences": duplicate_sentences,
+            "duplicate_sentence_ratio": round(duplicate_sentence_ratio, 4),
+            "top_bigram_pct": round(top_bigram_pct, 3),
+            "top_trigram_pct": round(top_trigram_pct, 3),
+        }
 
         issues = self._build_issues(
             title=title,
@@ -494,6 +572,8 @@ class OnPageAuditServiceV1:
             links=links,
             media=media,
             readability=readability,
+            ngrams={"bigrams": bigrams, "trigrams": trigrams},
+            spam_metrics=spam_metrics,
         )
 
         critical_count = sum(1 for i in issues if i.get("severity") == "critical")
@@ -523,13 +603,26 @@ class OnPageAuditServiceV1:
 
         spam_signals = [
             {
-                "severity": "critical" if i.get("code") in ("keyword_stuffing", "top_term_spam") else "warning",
+                "severity": "critical" if i.get("code") in ("keyword_stuffing", "top_term_spam", "bigram_spam", "trigram_spam", "duplicate_sentences_high") else "warning",
                 "code": i.get("code"),
                 "title": i.get("title"),
                 "details": i.get("details"),
             }
             for i in issues
-            if i.get("code") in ("keyword_stuffing", "keyword_density_high", "top_term_spam", "top_term_repetition")
+            if i.get("code") in (
+                "keyword_stuffing",
+                "keyword_density_high",
+                "top_term_spam",
+                "top_term_repetition",
+                "bigram_spam",
+                "bigram_repetition_high",
+                "trigram_spam",
+                "trigram_repetition_high",
+                "duplicate_sentences_high",
+                "duplicate_sentences_warning",
+                "uppercase_spam_signal",
+                "punctuation_spam_signal",
+            )
         ]
 
         return {
@@ -566,6 +659,7 @@ class OnPageAuditServiceV1:
                 "keywords": keyword_rows,
                 "top_terms": top_terms,
                 "ngrams": {"bigrams": bigrams, "trigrams": trigrams},
+                "spam_metrics": spam_metrics,
                 "technical": technical,
                 "links": links,
                 "media": media,
@@ -587,4 +681,3 @@ class OnPageAuditServiceV1:
                 },
             },
         }
-

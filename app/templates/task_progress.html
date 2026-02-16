@@ -1914,6 +1914,13 @@ function generateOnPageAuditHTML(result) {
             <span class="font-medium">${t.count ?? 0} (${t.pct ?? 0}%)</span>
         </div>
     `).join('');
+    const trigramsHtml = (ngrams.trigrams || []).slice(0, 10).map(t => `
+        <div class="flex items-center justify-between text-sm py-1 border-b border-gray-100">
+            <span>${t.term || ''}</span>
+            <span class="font-medium">${t.count ?? 0} (${t.pct ?? 0}%)</span>
+        </div>
+    `).join('');
+    const spam = r.spam_metrics || {};
 
     const recsHtml = recs.map(x => `<li>${x}</li>`).join('');
 
@@ -1980,6 +1987,10 @@ function generateOnPageAuditHTML(result) {
                     <h4 class="font-semibold mb-3">Bigrams</h4>
                     ${bigramsHtml || '<div class="text-sm text-gray-500">Нет данных.</div>'}
                 </div>
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Trigrams</h4>
+                    ${trigramsHtml || '<div class="text-sm text-gray-500">Нет данных.</div>'}
+                </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -2010,6 +2021,10 @@ function generateOnPageAuditHTML(result) {
                         <div><span class="text-gray-600">Avg sentence:</span> <span class="font-medium">${readability.avg_sentence_len ?? 0}</span></div>
                         <div><span class="text-gray-600">Long sentence ratio:</span> <span class="font-medium">${((readability.long_sentence_ratio || 0) * 100).toFixed(1)}%</span></div>
                         <div><span class="text-gray-600">Lexical diversity:</span> <span class="font-medium">${readability.lexical_diversity ?? 0}</span></div>
+                        <div><span class="text-gray-600">Stopword ratio:</span> <span class="font-medium">${((spam.stopword_ratio || 0) * 100).toFixed(1)}%</span></div>
+                        <div><span class="text-gray-600">Duplicate sentences:</span> <span class="font-medium">${spam.duplicate_sentences ?? 0} (${((spam.duplicate_sentence_ratio || 0) * 100).toFixed(1)}%)</span></div>
+                        <div><span class="text-gray-600">Top bigram:</span> <span class="font-medium">${spam.top_bigram_pct ?? 0}%</span></div>
+                        <div><span class="text-gray-600">Top trigram:</span> <span class="font-medium">${spam.top_trigram_pct ?? 0}%</span></div>
                     </div>
                 </div>
             </div>

@@ -931,6 +931,17 @@ class DOCXGenerator:
             ["Long sentence ratio", readability.get("long_sentence_ratio", 0)],
             ["Lexical diversity", readability.get("lexical_diversity", 0)],
         ]
+        spam_metrics = results.get("spam_metrics", {}) or {}
+        quality_rows.extend(
+            [
+                ["Stopword ratio", spam_metrics.get("stopword_ratio", 0)],
+                ["Content/HTML ratio", spam_metrics.get("content_html_ratio", 0)],
+                ["Uppercase ratio", spam_metrics.get("uppercase_ratio", 0)],
+                ["Punctuation ratio", spam_metrics.get("punctuation_ratio", 0)],
+                ["Duplicate sentences", spam_metrics.get("duplicate_sentences", 0)],
+                ["Duplicate sentence ratio", spam_metrics.get("duplicate_sentence_ratio", 0)],
+            ]
+        )
         self._add_table(doc, ["Metric", "Value"], quality_rows)
 
         self._add_heading(doc, "8. N-grams", level=1)
@@ -941,6 +952,12 @@ class DOCXGenerator:
             self._add_table(doc, ["Bigram", "Count", "Share %"], bigram_rows)
         else:
             doc.add_paragraph("Bigrams are not available.")
+        trigrams = ngrams.get("trigrams", []) or []
+        if trigrams:
+            trigram_rows = [[row.get("term", ""), row.get("count", 0), row.get("pct", 0)] for row in trigrams[:20]]
+            self._add_table(doc, ["Trigram", "Count", "Share %"], trigram_rows)
+        else:
+            doc.add_paragraph("Trigrams are not available.")
 
         self._add_heading(doc, "9. Issues", level=1)
         issues = results.get("issues", []) or []

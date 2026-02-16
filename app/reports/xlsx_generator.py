@@ -3526,6 +3526,19 @@ class XLSXGenerator:
             ("Long sentence ratio", readability.get("long_sentence_ratio", 0)),
             ("Lexical diversity", readability.get("lexical_diversity", 0)),
         ]
+        spam_metrics = results.get("spam_metrics", {}) or {}
+        quality_rows.extend(
+            [
+                ("Stopword ratio", spam_metrics.get("stopword_ratio", 0)),
+                ("Content/HTML ratio", spam_metrics.get("content_html_ratio", 0)),
+                ("Uppercase ratio", spam_metrics.get("uppercase_ratio", 0)),
+                ("Punctuation ratio", spam_metrics.get("punctuation_ratio", 0)),
+                ("Duplicate sentences", spam_metrics.get("duplicate_sentences", 0)),
+                ("Duplicate sentence ratio", spam_metrics.get("duplicate_sentence_ratio", 0)),
+                ("Top bigram share %", spam_metrics.get("top_bigram_pct", 0)),
+                ("Top trigram share %", spam_metrics.get("top_trigram_pct", 0)),
+            ]
+        )
         for row_idx, (key, value) in enumerate(quality_rows, start=2):
             self._apply_style(quality_ws.cell(row=row_idx, column=1, value=key), cell_style)
             self._apply_style(quality_ws.cell(row=row_idx, column=2, value=value), cell_style)
