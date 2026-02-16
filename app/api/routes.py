@@ -1,7 +1,7 @@
 """
 SEO Tools API Routes - Full integration with original scripts
 """
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
@@ -1547,7 +1547,7 @@ async def export_bot_xlsx(data: ExportRequest):
 
 
 @router.post("/export/mobile-docx")
-async def export_mobile_docx(data: ExportRequest):
+async def export_mobile_docx(data: ExportRequest, request: Request):
     """Export mobile check report to DOCX."""
     import os
     import re
@@ -1571,6 +1571,7 @@ async def export_mobile_docx(data: ExportRequest):
         report_payload = {
             "url": url,
             "results": task_result.get("results", task_result),
+            "server_base_url": str(request.base_url),
         }
         filepath = docx_generator.generate_mobile_report(task_id, report_payload)
         if not filepath or not os.path.exists(filepath):

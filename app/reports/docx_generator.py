@@ -8,6 +8,10 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from typing import Dict, Any, List
 from datetime import datetime
 import os
+import tempfile
+from urllib.parse import urljoin
+
+import requests
 
 from app.config import settings
 
@@ -556,13 +560,16 @@ class DOCXGenerator:
         all_issues = results.get("issues", []) or []
         artifacts = results.get("artifacts", {}) or {}
         screenshot_dir = str(artifacts.get("screenshot_dir") or "").strip()
+        server_base_url = str(data.get("server_base_url") or "").strip()
         actionable_issues = [i for i in all_issues if i.get("severity") in ("critical", "warning")]
         info_issues = [i for i in all_issues if i.get("severity") == "info"]
+        temp_screenshots: List[str] = []
 
         def _resolve_mobile_screenshot_path(device: Dict[str, Any]) -> str:
             candidates: List[str] = []
             raw_path = str(device.get("screenshot_path") or "").strip()
             shot_name = str(device.get("screenshot_name") or "").strip()
+            shot_url = str(device.get("screenshot_url") or "").strip()
 
             if raw_path:
                 candidates.append(raw_path)
@@ -578,6 +585,25 @@ class DOCXGenerator:
             for candidate in candidates:
                 if candidate and os.path.exists(candidate):
                     return candidate
+
+            if shot_url:
+                if shot_url.startswith("/"):
+                    if server_base_url:
+                        shot_url = urljoin(server_base_url, shot_url)
+                    else:
+                        shot_url = ""
+                if shot_url:
+                    try:
+                        response = requests.get(shot_url, timeout=25)
+                        if response.status_code == 200 and response.content:
+                            fd, temp_path = tempfile.mkstemp(prefix=f"mobile_docx_{task_id}_", suffix=".png")
+                            os.close(fd)
+                            with open(temp_path, "wb") as f:
+                                f.write(response.content)
+                            temp_screenshots.append(temp_path)
+                            return temp_path
+                    except Exception:
+                        pass
             return ""
 
         self._add_heading(doc, "1. Сводка по проверке", level=1)
@@ -747,9 +773,17 @@ class DOCXGenerator:
         footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
-        self._normalize_document_text(doc)
-        doc.save(filepath)
-        return filepath
+        try:
+            self._normalize_document_text(doc)
+            doc.save(filepath)
+            return filepath
+        finally:
+            for temp_path in temp_screenshots:
+                try:
+                    if temp_path and os.path.exists(temp_path):
+                        os.remove(temp_path)
+                except Exception:
+                    pass
 
     def generate_bot_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Р“РµРЅРµСЂРёСЂСѓРµС‚ РєР»РёРµРЅС‚СЃРєРёР№ РѕС‚С‡РµС‚ РїСЂРѕРІРµСЂРєРё Р±РѕС‚ов."""
