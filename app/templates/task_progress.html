@@ -525,7 +525,7 @@ async function downloadMobileDocxReport() {
             const payloadType = response.headers.get('content-type') || '';
             if (payloadType.includes('application/json')) {
                 const err = await response.json();
-                throw new Error(err.error || `HTTP ${response.status}`);
+                throw new Error(err.error || err.detail || `HTTP ${response.status}`);
             }
             const rawText = await response.text();
             throw new Error(rawText || `HTTP ${response.status}`);

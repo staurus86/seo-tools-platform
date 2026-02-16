@@ -1551,18 +1551,20 @@ async def export_mobile_docx(data: ExportRequest):
     """Export mobile check report to DOCX."""
     import os
     import re
-    from fastapi.responses import Response
-    from app.reports.docx_generator import docx_generator
+    import traceback
+    from fastapi.responses import Response, JSONResponse
 
     try:
+        from app.reports.docx_generator import docx_generator
+
         task_id = data.task_id
         task = get_task_result(task_id)
         if not task:
-            return {"error": "Задача не найдена", "task_id": task_id}
+            return {"error": "Task not found", "task_id": task_id}
 
         task_type = task.get("task_type")
         if task_type != "mobile_check":
-            return {"error": f"Неподдерживаемый тип задачи для экспорта mobile DOCX: {task_type}"}
+            return {"error": f"Unsupported task type for mobile DOCX export: {task_type}"}
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
@@ -1572,7 +1574,7 @@ async def export_mobile_docx(data: ExportRequest):
         }
         filepath = docx_generator.generate_mobile_report(task_id, report_payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Не удалось сформировать отчет"}
+            return {"error": "Failed to generate report"}
         append_task_artifact(task_id, filepath, kind="export")
 
         with open(filepath, "rb") as f:
@@ -1587,7 +1589,9 @@ async def export_mobile_docx(data: ExportRequest):
             headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
     except Exception as e:
-        return {"error": str(e)}
+        print(f"[mobile-docx] export failed: {e}")
+        print(traceback.format_exc())
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @router.post("/export/render-docx")
