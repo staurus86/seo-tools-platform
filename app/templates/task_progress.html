@@ -1976,6 +1976,44 @@ function generateOnPageAuditHTML(result) {
             <td class="py-2 pr-2 ${Number(t.delta || 0) > 0 ? 'text-red-700' : 'text-emerald-700'}">${t.delta ?? 0}</td>
         </tr>
     `).join('');
+    const clampPct = (v) => Math.max(0, Math.min(100, Number(v || 0)));
+    const scoreBar = (label, value, tone = 'blue') => {
+        const pct = clampPct(value);
+        const toneMap = {
+            blue: 'bg-blue-500',
+            emerald: 'bg-emerald-500',
+            amber: 'bg-amber-500',
+            rose: 'bg-rose-500',
+            indigo: 'bg-indigo-500',
+        };
+        return `
+            <div class="rounded-xl border border-slate-200 p-3 bg-slate-50">
+                <div class="flex items-center justify-between text-xs text-slate-600 mb-1">
+                    <span>${label}</span>
+                    <span class="font-semibold">${pct.toFixed(1)}</span>
+                </div>
+                <div class="h-2 rounded-full bg-slate-200 overflow-hidden">
+                    <div class="h-2 ${toneMap[tone] || toneMap.blue}" style="width:${pct}%"></div>
+                </div>
+            </div>
+        `;
+    };
+    const scoreBars = [
+        scoreBar('Overall Score', r.score ?? summary.score ?? 0, 'blue'),
+        scoreBar('Spam Score', scores.spam_score ?? summary.spam_score ?? 0, 'emerald'),
+        scoreBar('Keyword Coverage', keywordCoverage.coverage_pct ?? summary.keyword_coverage_pct ?? 0, 'indigo'),
+        scoreBar('AI Risk', ai.ai_risk_composite ?? summary.ai_risk_composite ?? 0, 'rose'),
+    ].join('');
+    const quickActions = priorityQueue.slice(0, 6).map((q, idx) => `
+        <div class="rounded-xl border border-slate-200 p-3 ${q.bucket === 'Now' ? 'bg-rose-50' : (q.bucket === 'Next' ? 'bg-amber-50' : 'bg-emerald-50')}">
+            <div class="flex items-center justify-between mb-1">
+                <span class="text-xs font-semibold uppercase tracking-wide text-slate-600">#${idx + 1} ${q.bucket || 'Later'}</span>
+                <span class="text-xs text-slate-500">P ${q.priority_score ?? 0}</span>
+            </div>
+            <div class="text-sm font-medium text-slate-800">${q.title || q.code || 'Issue'}</div>
+            <div class="text-xs text-slate-600 mt-1">${(q.severity || '').toUpperCase()} | Effort ${q.effort ?? 0}</div>
+        </div>
+    `).join('');
 
     return `
         <div class="space-y-6">
@@ -2149,6 +2187,21 @@ function generateOnPageAuditHTML(result) {
                     <div><span class="text-gray-600">Author signal:</span> <span class="font-medium">${ai.author_signal_score ?? 0}</span></div>
                     <div><span class="text-gray-600">Source attribution:</span> <span class="font-medium">${ai.source_attribution_score ?? 0}</span></div>
                     <div><span class="text-gray-600">AI risk composite:</span> <span class="font-medium">${ai.ai_risk_composite ?? 0}</span></div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Score Overview</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        ${scoreBars}
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Top Fixes (Quick Actions)</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        ${quickActions || '<div class="text-sm text-gray-500">Нет данных.</div>'}
+                    </div>
                 </div>
             </div>
 
