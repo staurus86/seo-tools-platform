@@ -1070,6 +1070,90 @@ class OnPageAuditServiceV1:
             )
         ]
 
+        def _issue_category(code: str) -> str:
+            c = (code or "").lower()
+            if any(x in c for x in ("link", "anchor")):
+                return "links"
+            if any(x in c for x in ("schema", "open", "og", "structured")):
+                return "schema"
+            if any(x in c for x in ("keyword", "term", "water", "nausea", "content", "lexical", "sentence")):
+                return "content"
+            if any(x in c for x in ("canonical", "robots", "viewport", "h1", "title", "description", "heading")):
+                return "technical"
+            if any(x in c for x in ("ai_", "template", "burst", "perplex", "source", "author")):
+                return "ai"
+            return "other"
+
+        severity_weight = {"critical": 3, "warning": 2, "info": 1}
+        heatmap: Dict[str, Dict[str, Any]] = {}
+        for cat in ("technical", "content", "ai", "links", "schema", "other"):
+            cat_issues = [i for i in issues if _issue_category(i.get("code", "")) == cat]
+            score_cat = max(0, 100 - sum(severity_weight.get(str(i.get("severity", "info")).lower(), 1) * 8 for i in cat_issues))
+            heatmap[cat] = {
+                "issues": len(cat_issues),
+                "score": score_cat,
+                "critical": sum(1 for i in cat_issues if i.get("severity") == "critical"),
+                "warning": sum(1 for i in cat_issues if i.get("severity") == "warning"),
+            }
+
+        def _queue_item(issue: Dict[str, Any]) -> Dict[str, Any]:
+            sev = str(issue.get("severity", "info")).lower()
+            impact = 90 if sev == "critical" else (65 if sev == "warning" else 35)
+            code_l = str(issue.get("code", "")).lower()
+            effort = 50
+            if any(x in code_l for x in ("title", "description", "h1", "open", "og", "schema_missing")):
+                effort = 25
+            elif any(x in code_l for x in ("canonical", "robots", "viewport")):
+                effort = 35
+            elif any(x in code_l for x in ("duplicate", "template", "ai_risk", "nausea", "wateriness")):
+                effort = 60
+            priority_score = round((impact * 0.7) + ((100 - effort) * 0.3), 1)
+            bucket = "Now" if priority_score >= 75 else ("Next" if priority_score >= 55 else "Later")
+            return {
+                "code": issue.get("code", ""),
+                "title": issue.get("title", ""),
+                "severity": sev,
+                "impact": impact,
+                "effort": effort,
+                "priority_score": priority_score,
+                "bucket": bucket,
+            }
+
+        priority_queue = sorted([_queue_item(i) for i in issues], key=lambda x: x["priority_score"], reverse=True)[:20]
+
+        targets = [
+            {
+                "metric": "Overall Score",
+                "current": score,
+                "target": 85,
+                "delta": round(85 - float(score), 1),
+            },
+            {
+                "metric": "Spam Score",
+                "current": round(spam_score, 1),
+                "target": 80,
+                "delta": round(80 - float(spam_score), 1),
+            },
+            {
+                "metric": "Keyword Coverage %",
+                "current": round(keyword_coverage_pct, 1),
+                "target": 75,
+                "delta": round(75 - float(keyword_coverage_pct), 1),
+            },
+            {
+                "metric": "AI Risk Composite",
+                "current": ai_insights.get("ai_risk_composite", 0),
+                "target": 40,
+                "delta": round(float(ai_insights.get("ai_risk_composite", 0)) - 40, 1),
+            },
+            {
+                "metric": "Text/HTML %",
+                "current": text_html_pct,
+                "target": 12,
+                "delta": round(12 - float(text_html_pct), 1),
+            },
+        ]
+
         return {
             "task_type": "onpage_audit",
             "url": clean_url,
@@ -1116,6 +1200,9 @@ class OnPageAuditServiceV1:
                 "readability": readability,
                 "ai_insights": ai_insights,
                 "spam_signals": spam_signals,
+                "heatmap": heatmap,
+                "priority_queue": priority_queue,
+                "targets": targets,
                 "parameter_values": parameter_values,
                 "issues": issues,
                 "issues_count": len(issues),

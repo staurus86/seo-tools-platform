@@ -851,6 +851,15 @@ class DOCXGenerator:
             ["Language", results.get("language", "auto")],
         ]
         self._add_table(doc, ["Metric", "Value"], summary_rows)
+        top_risks = sorted((results.get("issues", []) or []), key=lambda x: 0 if x.get("severity") == "critical" else 1)[:5]
+        top_actions = (results.get("priority_queue", []) or [])[:5]
+        self._add_heading(doc, "1a. Executive One-Page Summary", level=2)
+        doc.add_paragraph("Top Risks", style="List Bullet")
+        for risk in top_risks:
+            doc.add_paragraph(f"{risk.get('severity', '').upper()} | {risk.get('title', '')}", style="List Bullet 2")
+        doc.add_paragraph("Top Actions", style="List Bullet")
+        for act in top_actions:
+            doc.add_paragraph(f"{act.get('bucket', '')}: {act.get('title', '')} (priority {act.get('priority_score', 0)})", style="List Bullet 2")
 
         content = results.get("content", {}) or {}
         content_profile = results.get("content_profile", {}) or {}
@@ -1008,6 +1017,26 @@ class DOCXGenerator:
                 ["Term", "Count"],
                 [[row.get("term", ""), row.get("count", 0)] for row in link_terms[:10]],
             )
+
+        self._add_heading(doc, "11a. Severity Heatmap", level=2)
+        heatmap = results.get("heatmap", {}) or {}
+        heatmap_rows = []
+        for cat, payload in heatmap.items():
+            heatmap_rows.append([cat, payload.get("score", 0), payload.get("issues", 0), payload.get("critical", 0), payload.get("warning", 0)])
+        if heatmap_rows:
+            self._add_table(doc, ["Category", "Score", "Issues", "Critical", "Warning"], heatmap_rows)
+
+        self._add_heading(doc, "11b. Priority Queue", level=2)
+        queue = results.get("priority_queue", []) or []
+        if queue:
+            queue_rows = [[x.get("bucket", ""), x.get("severity", ""), x.get("code", ""), x.get("title", ""), x.get("priority_score", 0), x.get("effort", 0)] for x in queue[:15]]
+            self._add_table(doc, ["Bucket", "Severity", "Code", "Issue", "Priority", "Effort"], queue_rows)
+
+        self._add_heading(doc, "11c. Before/After Targets", level=2)
+        targets = results.get("targets", []) or []
+        if targets:
+            target_rows = [[x.get("metric", ""), x.get("current", 0), x.get("target", 0), x.get("delta", 0)] for x in targets]
+            self._add_table(doc, ["Metric", "Current", "Target", "Delta"], target_rows)
 
         self._add_heading(doc, "12. Issues", level=1)
         issues = results.get("issues", []) or []

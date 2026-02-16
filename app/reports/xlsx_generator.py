@@ -3633,6 +3633,39 @@ class XLSXGenerator:
         ai_ws.column_dimensions["A"].width = 34
         ai_ws.column_dimensions["B"].width = 18
 
+        heat_ws = wb.create_sheet("Heatmap")
+        heat_headers = ["Category", "Score", "Issues", "Critical", "Warning"]
+        for col, h in enumerate(heat_headers, 1):
+            self._apply_style(heat_ws.cell(row=1, column=col, value=h), header_style)
+        for row_idx, (cat, payload) in enumerate((results.get("heatmap", {}) or {}).items(), start=2):
+            vals = [cat, payload.get("score", 0), payload.get("issues", 0), payload.get("critical", 0), payload.get("warning", 0)]
+            for col, v in enumerate(vals, 1):
+                self._apply_style(heat_ws.cell(row=row_idx, column=col, value=v), cell_style)
+        for col, width in enumerate([18, 12, 12, 12, 12], 1):
+            heat_ws.column_dimensions[get_column_letter(col)].width = width
+
+        pq_ws = wb.create_sheet("Priority Queue")
+        pq_headers = ["Bucket", "Severity", "Code", "Issue", "Priority", "Effort"]
+        for col, h in enumerate(pq_headers, 1):
+            self._apply_style(pq_ws.cell(row=1, column=col, value=h), header_style)
+        for row_idx, item in enumerate(results.get("priority_queue", []) or [], start=2):
+            vals = [item.get("bucket", ""), item.get("severity", ""), item.get("code", ""), item.get("title", ""), item.get("priority_score", 0), item.get("effort", 0)]
+            for col, v in enumerate(vals, 1):
+                self._apply_style(pq_ws.cell(row=row_idx, column=col, value=v), cell_style)
+        for col, width in enumerate([12, 12, 24, 68, 12, 10], 1):
+            pq_ws.column_dimensions[get_column_letter(col)].width = width
+
+        tgt_ws = wb.create_sheet("Targets")
+        tgt_headers = ["Metric", "Current", "Target", "Delta"]
+        for col, h in enumerate(tgt_headers, 1):
+            self._apply_style(tgt_ws.cell(row=1, column=col, value=h), header_style)
+        for row_idx, item in enumerate(results.get("targets", []) or [], start=2):
+            vals = [item.get("metric", ""), item.get("current", 0), item.get("target", 0), item.get("delta", 0)]
+            for col, v in enumerate(vals, 1):
+                self._apply_style(tgt_ws.cell(row=row_idx, column=col, value=v), cell_style)
+        for col, width in enumerate([30, 16, 16, 16], 1):
+            tgt_ws.column_dimensions[get_column_letter(col)].width = width
+
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         wb.save(filepath)
         wb.close()

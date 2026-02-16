@@ -1879,6 +1879,9 @@ function generateOnPageAuditHTML(result) {
     const contentProfile = r.content_profile || {};
     const params = r.parameter_values || [];
     const linkAnchorTerms = r.link_anchor_terms || [];
+    const heatmap = r.heatmap || {};
+    const priorityQueue = r.priority_queue || [];
+    const targets = r.targets || [];
     const recs = r.recommendations || [];
     const titleMeta = r.title || {};
     const descMeta = r.description || {};
@@ -1946,6 +1949,31 @@ function generateOnPageAuditHTML(result) {
                     ${(p.status || 'info').toUpperCase()}
                 </span>
             </td>
+        </tr>
+    `).join('');
+    const heatmapCards = Object.entries(heatmap).map(([k, v]) => `
+        <div class="rounded-xl border p-3 ${v.score >= 80 ? 'bg-emerald-50 border-emerald-200' : (v.score >= 60 ? 'bg-amber-50 border-amber-200' : 'bg-rose-50 border-rose-200')}">
+            <div class="text-xs uppercase tracking-wide text-gray-500">${k}</div>
+            <div class="text-2xl font-semibold">${v.score ?? 0}</div>
+            <div class="text-xs text-gray-600">Issues: ${v.issues ?? 0}, C:${v.critical ?? 0}, W:${v.warning ?? 0}</div>
+        </div>
+    `).join('');
+    const queueRows = priorityQueue.slice(0, 12).map(q => `
+        <tr class="border-b border-gray-100 text-sm">
+            <td class="py-2 pr-2">${q.bucket || '-'}</td>
+            <td class="py-2 pr-2">${(q.severity || '').toUpperCase()}</td>
+            <td class="py-2 pr-2">${q.code || ''}</td>
+            <td class="py-2 pr-2">${q.title || ''}</td>
+            <td class="py-2 pr-2">${q.priority_score ?? 0}</td>
+            <td class="py-2 pr-2">${q.effort ?? 0}</td>
+        </tr>
+    `).join('');
+    const targetRows = targets.map(t => `
+        <tr class="border-b border-gray-100 text-sm">
+            <td class="py-2 pr-2 font-medium">${t.metric || ''}</td>
+            <td class="py-2 pr-2">${t.current ?? 0}</td>
+            <td class="py-2 pr-2">${t.target ?? 0}</td>
+            <td class="py-2 pr-2 ${Number(t.delta || 0) > 0 ? 'text-red-700' : 'text-emerald-700'}">${t.delta ?? 0}</td>
         </tr>
     `).join('');
 
@@ -2122,6 +2150,49 @@ function generateOnPageAuditHTML(result) {
                     <div><span class="text-gray-600">Source attribution:</span> <span class="font-medium">${ai.source_attribution_score ?? 0}</span></div>
                     <div><span class="text-gray-600">AI risk composite:</span> <span class="font-medium">${ai.ai_risk_composite ?? 0}</span></div>
                 </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h4 class="font-semibold mb-3">Severity Heatmap</h4>
+                <div class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3">
+                    ${heatmapCards || '<div class="text-sm text-gray-500">Нет данных.</div>'}
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
+                <h4 class="font-semibold mb-3">Priority Queue (Now / Next / Later)</h4>
+                <table class="w-full min-w-[860px]">
+                    <thead>
+                        <tr class="text-left text-xs text-gray-500 border-b">
+                            <th class="py-2 pr-2">Bucket</th>
+                            <th class="py-2 pr-2">Severity</th>
+                            <th class="py-2 pr-2">Code</th>
+                            <th class="py-2 pr-2">Issue</th>
+                            <th class="py-2 pr-2">Priority</th>
+                            <th class="py-2 pr-2">Effort</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${queueRows || '<tr><td class="py-2 text-sm text-gray-500" colspan="6">Нет данных.</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
+                <h4 class="font-semibold mb-3">Before / After Targets</h4>
+                <table class="w-full min-w-[640px]">
+                    <thead>
+                        <tr class="text-left text-xs text-gray-500 border-b">
+                            <th class="py-2 pr-2">Metric</th>
+                            <th class="py-2 pr-2">Current</th>
+                            <th class="py-2 pr-2">Target</th>
+                            <th class="py-2 pr-2">Delta</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${targetRows || '<tr><td class="py-2 text-sm text-gray-500" colspan="4">Нет данных.</td></tr>'}
+                    </tbody>
+                </table>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
