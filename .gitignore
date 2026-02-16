@@ -54,3 +54,8 @@ reports_output/
 
 # Playwright
 .ms-playwright/
+
+# Local planning scratch files
+MASTER_MIGRATION_AND_SCALING_PLAN.txt
+SEOPRO_INTEGRATION_PLAN.txt
+Py scripts/
