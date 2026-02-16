@@ -367,8 +367,24 @@ class OnPageAuditServiceV1:
                     "engine": "onpage-v1",
                     "issues": [{"severity": "critical", "code": "invalid_url", "title": "Invalid URL", "details": "Specify valid URL."}],
                     "issues_count": 1,
-                    "summary": {"critical_issues": 1, "warning_issues": 0, "info_issues": 0, "score": 0},
+                    "summary": {
+                        "critical_issues": 1,
+                        "warning_issues": 0,
+                        "info_issues": 0,
+                        "score": 0,
+                        "spam_score": 0,
+                        "keyword_coverage_score": 0,
+                        "keyword_coverage_pct": 0,
+                    },
                     "score": 0,
+                    "scores": {"onpage_score": 0, "spam_score": 0, "keyword_coverage_score": 0},
+                    "keyword_coverage": {
+                        "keywords_total": 0,
+                        "present_keywords": 0,
+                        "coverage_pct": 0,
+                        "title_coverage_pct": 0,
+                        "h1_coverage_pct": 0,
+                    },
                     "recommendations": ["Check URL format and try again."],
                 },
             }
@@ -388,8 +404,24 @@ class OnPageAuditServiceV1:
                     "engine": "onpage-v1",
                     "issues": [{"severity": "critical", "code": "fetch_error", "title": "Failed to fetch page", "details": str(exc)}],
                     "issues_count": 1,
-                    "summary": {"critical_issues": 1, "warning_issues": 0, "info_issues": 0, "score": 0},
+                    "summary": {
+                        "critical_issues": 1,
+                        "warning_issues": 0,
+                        "info_issues": 0,
+                        "score": 0,
+                        "spam_score": 0,
+                        "keyword_coverage_score": 0,
+                        "keyword_coverage_pct": 0,
+                    },
                     "score": 0,
+                    "scores": {"onpage_score": 0, "spam_score": 0, "keyword_coverage_score": 0},
+                    "keyword_coverage": {
+                        "keywords_total": 0,
+                        "present_keywords": 0,
+                        "coverage_pct": 0,
+                        "title_coverage_pct": 0,
+                        "h1_coverage_pct": 0,
+                    },
                     "recommendations": ["Check page accessibility and try again."],
                 },
             }
@@ -581,6 +613,54 @@ class OnPageAuditServiceV1:
         info_count = sum(1 for i in issues if i.get("severity") == "info")
         score = max(0, 100 - critical_count * 20 - warning_count * 7 - info_count * 3)
 
+        present_keywords = sum(1 for row in keyword_rows if int(row.get("occurrences", 0)) > 0)
+        keywords_total = len(keyword_rows)
+        keyword_coverage_pct = (present_keywords / max(1, keywords_total) * 100.0) if keywords_total else 100.0
+        keyword_title_coverage_pct = (
+            sum(1 for row in keyword_rows if row.get("in_title")) / max(1, keywords_total) * 100.0
+            if keywords_total else 100.0
+        )
+        keyword_h1_coverage_pct = (
+            sum(1 for row in keyword_rows if row.get("in_h1")) / max(1, keywords_total) * 100.0
+            if keywords_total else 100.0
+        )
+
+        spam_score = 100.0
+        spam_score -= min(30.0, spam_metrics.get("top_bigram_pct", 0.0) * 4.0)
+        spam_score -= min(25.0, spam_metrics.get("top_trigram_pct", 0.0) * 8.0)
+        spam_score -= min(20.0, float(spam_metrics.get("duplicate_sentence_ratio", 0.0)) * 100.0 * 0.8)
+        spam_score -= min(10.0, max(0.0, (float(spam_metrics.get("uppercase_ratio", 0.0)) - 0.18) * 100.0))
+        spam_score -= min(10.0, max(0.0, (float(spam_metrics.get("punctuation_ratio", 0.0)) - 0.07) * 120.0))
+        spam_issue_codes = {
+            "keyword_stuffing",
+            "keyword_density_high",
+            "top_term_spam",
+            "top_term_repetition",
+            "bigram_spam",
+            "bigram_repetition_high",
+            "trigram_spam",
+            "trigram_repetition_high",
+            "duplicate_sentences_high",
+            "duplicate_sentences_warning",
+            "uppercase_spam_signal",
+            "punctuation_spam_signal",
+        }
+        spam_issue_count = sum(1 for i in issues if i.get("code") in spam_issue_codes)
+        spam_score -= min(20.0, spam_issue_count * 3.0)
+        spam_score = max(0.0, min(100.0, spam_score))
+
+        keyword_coverage_score = round(
+            max(
+                0.0,
+                min(
+                    100.0,
+                    (keyword_coverage_pct * 0.6) + (keyword_title_coverage_pct * 0.2) + (keyword_h1_coverage_pct * 0.2),
+                ),
+            ),
+            1,
+        )
+        score = round((score * 0.7) + (spam_score * 0.2) + (keyword_coverage_score * 0.1), 1)
+
         recommendations: List[str] = []
         for issue in issues:
             sev = issue.get("severity")
@@ -589,6 +669,10 @@ class OnPageAuditServiceV1:
             details = _norm_text(issue.get("details"))
             if details and details not in recommendations:
                 recommendations.append(details)
+        if spam_score < 70:
+            recommendations.append("Reduce repetitive phrases and normalize n-gram distribution.")
+        if keyword_coverage_score < 70 and keywords_total > 0:
+            recommendations.append("Improve keyword coverage in content, title and H1.")
         if not recommendations:
             recommendations.append("No critical on-page issues detected.")
 
@@ -672,8 +756,23 @@ class OnPageAuditServiceV1:
                     "warning_issues": warning_count,
                     "info_issues": info_count,
                     "score": score,
+                    "spam_score": round(spam_score, 1),
+                    "keyword_coverage_score": keyword_coverage_score,
+                    "keyword_coverage_pct": round(keyword_coverage_pct, 1),
                 },
                 "score": score,
+                "scores": {
+                    "onpage_score": score,
+                    "spam_score": round(spam_score, 1),
+                    "keyword_coverage_score": keyword_coverage_score,
+                },
+                "keyword_coverage": {
+                    "keywords_total": keywords_total,
+                    "present_keywords": present_keywords,
+                    "coverage_pct": round(keyword_coverage_pct, 1),
+                    "title_coverage_pct": round(keyword_title_coverage_pct, 1),
+                    "h1_coverage_pct": round(keyword_h1_coverage_pct, 1),
+                },
                 "recommendations": recommendations[:30],
                 "meta": {
                     "domain": urlparse(final_url).netloc,

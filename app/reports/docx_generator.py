@@ -839,6 +839,9 @@ class DOCXGenerator:
         self._add_heading(doc, "1. Executive Summary", level=1)
         summary_rows = [
             ["Score", results.get("score", summary.get("score", 0))],
+            ["Spam score", summary.get("spam_score", (results.get("scores", {}) or {}).get("spam_score", 0))],
+            ["Keyword coverage score", summary.get("keyword_coverage_score", (results.get("scores", {}) or {}).get("keyword_coverage_score", 0))],
+            ["Keyword coverage %", summary.get("keyword_coverage_pct", (results.get("keyword_coverage", {}) or {}).get("coverage_pct", 0))],
             ["Critical issues", summary.get("critical_issues", 0)],
             ["Warning issues", summary.get("warning_issues", 0)],
             ["Info issues", summary.get("info_issues", 0)],

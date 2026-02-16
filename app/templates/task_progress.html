@@ -1877,6 +1877,8 @@ function generateOnPageAuditHTML(result) {
     const titleMeta = r.title || {};
     const descMeta = r.description || {};
     const h1Meta = r.h1 || {};
+    const keywordCoverage = r.keyword_coverage || {};
+    const scores = r.scores || {};
 
     const keywordsRows = keywords.slice(0, 30).map(k => `
         <tr class="border-b border-gray-100 text-sm">
@@ -1938,9 +1940,11 @@ function generateOnPageAuditHTML(result) {
                         <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
                     </div>
                 </div>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                <div class="grid grid-cols-2 md:grid-cols-6 gap-3 text-sm">
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Score</div><div class="text-xl font-semibold">${r.score ?? summary.score ?? 0}</div></div>
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Слов</div><div class="text-xl font-semibold">${content.word_count ?? 0}</div></div>
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Spam Score</div><div class="text-xl font-semibold">${scores.spam_score ?? summary.spam_score ?? 0}</div></div>
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">KW Coverage</div><div class="text-xl font-semibold">${keywordCoverage.coverage_pct ?? summary.keyword_coverage_pct ?? 0}%</div></div>
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Critical</div><div class="text-xl font-semibold text-red-700">${summary.critical_issues ?? 0}</div></div>
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Warning</div><div class="text-xl font-semibold text-amber-700">${summary.warning_issues ?? 0}</div></div>
                 </div>
@@ -2025,6 +2029,8 @@ function generateOnPageAuditHTML(result) {
                         <div><span class="text-gray-600">Duplicate sentences:</span> <span class="font-medium">${spam.duplicate_sentences ?? 0} (${((spam.duplicate_sentence_ratio || 0) * 100).toFixed(1)}%)</span></div>
                         <div><span class="text-gray-600">Top bigram:</span> <span class="font-medium">${spam.top_bigram_pct ?? 0}%</span></div>
                         <div><span class="text-gray-600">Top trigram:</span> <span class="font-medium">${spam.top_trigram_pct ?? 0}%</span></div>
+                        <div><span class="text-gray-600">KW in title:</span> <span class="font-medium">${keywordCoverage.title_coverage_pct ?? 0}%</span></div>
+                        <div><span class="text-gray-600">KW in H1:</span> <span class="font-medium">${keywordCoverage.h1_coverage_pct ?? 0}%</span></div>
                     </div>
                 </div>
             </div>
@@ -2159,7 +2165,7 @@ function generateSiteAuditProHTML(result) {
 
             <div class="bg-white rounded-xl shadow-md p-6">
                 <h4 class="font-semibold mb-3">Pipeline Metrics</h4>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                <div class="grid grid-cols-2 md:grid-cols-6 gap-3 text-sm">
                     <div><span class="text-gray-600">Avg response:</span> <span class="font-medium">${metrics.avg_response_time_ms ?? 0} ms</span></div>
                     <div><span class="text-gray-600">Avg readability:</span> <span class="font-medium">${metrics.avg_readability_score ?? 0}</span></div>
                     <div><span class="text-gray-600">Avg link quality:</span> <span class="font-medium">${metrics.avg_link_quality_score ?? 0}</span></div>
@@ -2200,3 +2206,5 @@ function generateSiteAuditProHTML(result) {
 window.copyToClipboard = copyToClipboard;
 </script>
 {% endblock %}
+
+
