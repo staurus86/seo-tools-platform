@@ -275,91 +275,178 @@ let sitemapDuplicateLines = [];
 let sitemapFilePreviewUrls = [];
 
 function generateTextReport() {
-    if (!robotsData) return 'Нет данных для отчета';
+    if (!robotsData) return 'No data for report';
     const r = robotsData.results || robotsData;
     const groups = r.groups_detail || r.groups || [];
-    
+
     let totalDisallow = 0;
     let totalAllow = 0;
     groups.forEach(g => {
         totalDisallow += (g.disallow || []).length;
         totalAllow += (g.allow || []).length;
     });
-    
-    let report = 'ОТЧЕТ АНАЛИЗА ROBOTS.TXT\n';
-    report += '='.repeat(50) + '\n';
-    report += 'URL сайта: ' + robotsData.url + '\n';
-    report += 'Дата проверки: ' + new Date().toLocaleString() + '\n';
-    report += '='.repeat(50) + '\n\n';
-    
-    report += 'СТАТИСТИ\n';
-    report += '-'.repeat(30) + '\n';
+
+    let report = 'ROBOTS.TXT AUDIT REPORT\n';
+    report += '='.repeat(60) + '\n';
+    report += 'Site URL: ' + (robotsData.url || '') + '\n';
+    report += 'Generated at: ' + new Date().toLocaleString() + '\n';
+    report += '='.repeat(60) + '\n\n';
+
+    report += 'SUMMARY\n' + '-'.repeat(30) + '\n';
+    report += 'robots.txt found: ' + (r.robots_txt_found ? 'yes' : 'no') + '\n';
+    report += 'HTTP status: ' + (r.status_code ?? 'n/a') + '\n';
+    report += 'Quality score: ' + (r.quality_score ?? 'n/a') + ' (' + (r.quality_grade || 'n/a') + ')\n';
+    report += 'Production ready: ' + (r.production_ready ? 'yes' : 'no') + '\n';
     report += 'User-Agents: ' + (r.user_agents || 0) + '\n';
-    report += 'Disallow правил: ' + totalDisallow + '\n';
-    report += 'Allow правил: ' + totalAllow + '\n';
-    report += 'SEO Оценка: ' + (r.quality_score ?? 'н/д') + ' (' + (r.quality_grade || 'н/д') + ')\n';
-    report += 'Готовность к продакше: ' + (r.production_ready ? 'Да' : 'Нет') + '\n';
-    report += 'Размер файла: ' + (r.content_length || 0) + ' байт\n';
+    report += 'Disallow rules: ' + totalDisallow + '\n';
+    report += 'Allow rules: ' + totalAllow + '\n';
+    report += 'File size: ' + (r.content_length || 0) + ' bytes\n';
     report += 'Lines: ' + (r.lines_count || 0) + '\n\n';
-    
-    const issues = r.issues || [];
+
+    const severity = r.severity_counts || {};
+    report += 'SEVERITY\n' + '-'.repeat(30) + '\n';
+    report += 'Critical: ' + (severity.critical ?? (r.critical_issues || r.issues || []).length) + '\n';
+    report += 'Warning: ' + (severity.warning ?? (r.warning_issues || r.warnings || []).length) + '\n';
+    report += 'Info: ' + (severity.info ?? (r.info_issues || []).length) + '\n\n';
+
+    const issues = r.critical_issues || r.issues || [];
     if (issues.length > 0) {
-        report += 'ПРОБЛЕМЫ\n' + '-'.repeat(30) + '\n';
+        report += 'CRITICAL ISSUES\n' + '-'.repeat(30) + '\n';
         issues.forEach(i => report += '! ' + i + '\n');
         report += '\n';
     }
-    
-    const warnings = r.warnings || [];
+
+    const warnings = r.warning_issues || r.warnings || [];
     if (warnings.length > 0) {
-        report += 'ПРЕДУПРЕЖДЕНИЯ\n' + '-'.repeat(30) + '\n';
+        report += 'WARNINGS\n' + '-'.repeat(30) + '\n';
         warnings.forEach(w => report += '- ' + w + '\n');
         report += '\n';
     }
-    
-    const sitemaps = r.sitemaps || [];
-    if (sitemaps.length > 0) {
-        const processed = sitemaps.map(s => s.url || s);
-        report += 'SITEMAPS\n' + '-'.repeat(30) + '\n';
-        processed.forEach(sm => report += '- ' + sm + '\n');
+
+    const infoIssues = r.info_issues || [];
+    if (infoIssues.length > 0) {
+        report += 'INFO\n' + '-'.repeat(30) + '\n';
+        infoIssues.forEach(i => report += '- ' + i + '\n');
         report += '\n';
     }
-    
-    if (groups.length > 0) {
-        report += 'ГРУППЫ ПРАВИЛ\n' + '-'.repeat(30) + '\n';
-        groups.forEach((group, idx) => {
-            report += '\nГруппа ' + (idx + 1) + ': ' + group.user_agents.join(', ') + '\n';
-            (group.disallow || []).forEach(d => {
-                report += '  Disallow: ' + d.path + ' (line ' + d.line + ')\n';
-            });
-            (group.allow || []).forEach(a => {
-                report += '  Allow: ' + a.path + ' (line ' + a.line + ')\n';
-            });
+
+    const sitemaps = (r.sitemaps || []).map(s => s && s.url ? s.url : s).filter(Boolean);
+    if (sitemaps.length > 0) {
+        report += 'SITEMAPS\n' + '-'.repeat(30) + '\n';
+        sitemaps.forEach(sm => report += '- ' + sm + '\n');
+        report += '\n';
+    }
+
+    const sitemapChecks = r.sitemap_checks || [];
+    if (sitemapChecks.length > 0) {
+        report += 'SITEMAP URL CHECKS\n' + '-'.repeat(30) + '\n';
+        sitemapChecks.forEach(check => {
+            const status = check.ok === true ? 'OK' : (check.ok === false ? 'FAIL' : 'SKIPPED');
+            const code = check.status_code ? ` HTTP ${check.status_code}` : '';
+            const err = check.error ? ` | ${check.error}` : '';
+            report += `- ${status}: ${check.url || ''}${code}${err}\n`;
         });
         report += '\n';
     }
-    
+
+    if (groups.length > 0) {
+        report += 'GROUP RULES\n' + '-'.repeat(30) + '\n';
+        groups.forEach((group, idx) => {
+            report += `\nGroup ${idx + 1}: ${(group.user_agents || []).join(', ')}\n`;
+            (group.disallow || []).forEach(d => report += `  Disallow: ${d.path} (line ${d.line})\n`);
+            (group.allow || []).forEach(a => report += `  Allow: ${a.path} (line ${a.line})\n`);
+        });
+        report += '\n';
+    }
+
+    const syntaxErrors = r.syntax_errors || [];
+    if (syntaxErrors.length > 0) {
+        report += 'SYNTAX ERRORS\n' + '-'.repeat(30) + '\n';
+        syntaxErrors.forEach(err => {
+            report += `- line ${err.line || '?'}: ${err.error || ''}\n`;
+            if (err.content) report += `  content: ${err.content}\n`;
+        });
+        report += '\n';
+    }
+
     const recommendations = r.recommendations || [];
     if (recommendations.length > 0) {
-        report += 'РЕКОМЕНДАЦИИ\n' + '-'.repeat(30) + '\n';
+        report += 'RECOMMENDATIONS\n' + '-'.repeat(30) + '\n';
         recommendations.forEach(rec => report += '- ' + rec + '\n');
+        report += '\n';
     }
 
     const topFixes = r.top_fixes || [];
     if (topFixes.length > 0) {
-        report += '\nTOP FIXES\n' + '-'.repeat(30) + '\n';
+        report += 'TOP FIXES\n' + '-'.repeat(30) + '\n';
         topFixes.forEach(fix => {
             report += '[' + String((fix.priority || 'medium')).toUpperCase() + '] ' + (fix.title || 'Fix') + '\n';
             if (fix.why) report += '  Why: ' + fix.why + '\n';
             if (fix.action) report += '  Action: ' + fix.action + '\n';
         });
+        report += '\n';
+    }
+
+    const httpStatusAnalysis = r.http_status_analysis || {};
+    const httpNotes = httpStatusAnalysis.notes || [];
+    if (httpNotes.length > 0) {
+        report += 'HTTP STATUS ANALYSIS\n' + '-'.repeat(30) + '\n';
+        report += 'Status: ' + (httpStatusAnalysis.status_code ?? r.status_code ?? 'n/a') + '\n';
+        httpNotes.forEach(note => report += '- ' + note + '\n');
+        report += '\n';
+    }
+
+    const unsupported = r.unsupported_directives || [];
+    if (unsupported.length > 0) {
+        report += 'UNSUPPORTED DIRECTIVES\n' + '-'.repeat(30) + '\n';
+        unsupported.forEach(item => {
+            report += `- line ${item.line || '?'}: ${item.directive || ''}${item.value ? `: ${item.value}` : ''}\n`;
+        });
+        report += '\n';
+    }
+
+    const hostValidation = r.host_validation || {};
+    const hostWarnings = hostValidation.warnings || [];
+    const hostList = hostValidation.hosts || r.hosts || [];
+    if (hostList.length > 0 || hostWarnings.length > 0) {
+        report += 'HOST VALIDATION\n' + '-'.repeat(30) + '\n';
+        if (hostList.length > 0) report += 'Hosts: ' + hostList.join(', ') + '\n';
+        hostWarnings.forEach(w => report += '- ' + w + '\n');
+        report += '\n';
+    }
+
+    const conflictScan = r.directive_conflicts || {};
+    const conflictDetails = conflictScan.details || [];
+    if (conflictDetails.length > 0) {
+        report += 'DIRECTIVE CONFLICTS\n' + '-'.repeat(30) + '\n';
+        conflictDetails.forEach(c => {
+            const marker = c.path || c.groups || '';
+            report += `- ${c.type || 'conflict'} | ua=${c.user_agent || ''}${marker ? ` | ${marker}` : ''}\n`;
+        });
+        report += '\n';
+    }
+
+    const longestMatch = r.longest_match_analysis || {};
+    const longestNotes = longestMatch.notes || [];
+    if (longestNotes.length > 0) {
+        report += 'LONGEST-MATCH NOTES\n' + '-'.repeat(30) + '\n';
+        longestNotes.forEach(n => report += '- ' + n + '\n');
+        report += '\n';
+    }
+
+    const paramRecs = r.param_recommendations || [];
+    if (paramRecs.length > 0) {
+        report += 'CLEAN-PARAM RECOMMENDATIONS\n' + '-'.repeat(30) + '\n';
+        paramRecs.forEach(n => report += '- ' + n + '\n');
+        report += '\n';
     }
 
     const rawContent = r.raw_content || '';
     if (rawContent) {
-        report += '\nRAW ROBOTS.TXT\n' + '-'.repeat(30) + '\n';
+        report += 'RAW ROBOTS.TXT\n' + '-'.repeat(30) + '\n';
         report += rawContent + '\n';
     }
-    
+
     return report;
 }
 
@@ -974,6 +1061,18 @@ function generateRobotsHTML(data) {
     const groups = r.groups_detail || r.groups || [];
     const recommendations = r.recommendations || [];
     const topFixes = r.top_fixes || [];
+    const syntaxErrors = r.syntax_errors || [];
+    const unsupportedDirectives = r.unsupported_directives || [];
+    const hostValidation = r.host_validation || {};
+    const hostWarnings = hostValidation.warnings || [];
+    const hostList = hostValidation.hosts || r.hosts || [];
+    const directiveConflicts = r.directive_conflicts || {};
+    const conflictDetails = directiveConflicts.details || [];
+    const longestMatch = r.longest_match_analysis || {};
+    const longestMatchNotes = longestMatch.notes || [];
+    const httpStatusAnalysis = r.http_status_analysis || {};
+    const httpStatusNotes = httpStatusAnalysis.notes || [];
+    const paramRecommendations = r.param_recommendations || [];
     const rawContent = r.raw_content || '';
     const rawWithLineNumbers = formatRobotsRawWithLineNumbers(rawContent);
     const qualityScore = Number.isFinite(r.quality_score) ? r.quality_score : 0;
@@ -1117,6 +1216,69 @@ function generateRobotsHTML(data) {
             `;
         }).join('');
     }
+
+    let syntaxErrorsHTML = '';
+    if (syntaxErrors.length > 0) {
+        syntaxErrorsHTML = syntaxErrors.map(err => `
+            <div class="border rounded-lg p-3 mb-2 bg-rose-50 border-rose-200">
+                <div class="text-sm text-rose-700 font-medium">Line ${err.line || '?'}</div>
+                <div class="text-sm text-rose-700">${err.error || ''}</div>
+                ${err.content ? `<div class="text-xs text-rose-600 mt-1 font-mono break-all">${escapeHtml(err.content)}</div>` : ''}
+            </div>
+        `).join('');
+    }
+
+    let unsupportedDirectivesHTML = '';
+    if (unsupportedDirectives.length > 0) {
+        unsupportedDirectivesHTML = unsupportedDirectives.map(item => `
+            <div class="border rounded-lg p-3 mb-2 bg-amber-50 border-amber-200 text-amber-800 text-sm">
+                <span class="font-semibold">Line ${item.line || '?'}</span>
+                : <span class="font-mono">${item.directive || ''}${item.value ? `: ${item.value}` : ''}</span>
+            </div>
+        `).join('');
+    }
+
+    let hostValidationHTML = '';
+    if (hostList.length > 0 || hostWarnings.length > 0) {
+        hostValidationHTML = `
+            ${hostList.length > 0 ? `<div class="text-sm text-gray-700 mb-2"><span class="font-semibold">Hosts:</span> ${hostList.join(', ')}</div>` : ''}
+            ${hostWarnings.map(w => `<div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-2 text-yellow-700 text-sm">${w}</div>`).join('')}
+        `;
+    }
+
+    let conflictDetailsHTML = '';
+    if (conflictDetails.length > 0) {
+        conflictDetailsHTML = conflictDetails.map(item => `
+            <div class="border rounded-lg p-3 mb-2 bg-orange-50 border-orange-200 text-sm text-orange-800">
+                <span class="font-semibold">${item.type || 'conflict'}</span>
+                ${item.user_agent ? ` | UA: ${item.user_agent}` : ''}
+                ${item.path ? ` | Path: ${item.path}` : ''}
+                ${item.groups ? ` | Groups: ${item.groups}` : ''}
+            </div>
+        `).join('');
+    }
+
+    let longestMatchHTML = '';
+    if (longestMatchNotes.length > 0) {
+        longestMatchHTML = longestMatchNotes.map(note => `
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2 text-blue-700 text-sm">${note}</div>
+        `).join('');
+    }
+
+    let httpStatusAnalysisHTML = '';
+    if (httpStatusNotes.length > 0) {
+        httpStatusAnalysisHTML = `
+            <div class="text-sm text-gray-700 mb-2"><span class="font-semibold">HTTP status context:</span> ${httpStatusAnalysis.status_code ?? r.status_code ?? 'n/a'}</div>
+            ${httpStatusNotes.map(note => `<div class="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-2 text-slate-700 text-sm">${note}</div>`).join('')}
+        `;
+    }
+
+    let paramRecommendationsHTML = '';
+    if (paramRecommendations.length > 0) {
+        paramRecommendationsHTML = paramRecommendations.map(note => `
+            <div class="bg-cyan-50 border border-cyan-200 rounded-lg p-3 mb-2 text-cyan-700 text-sm">${note}</div>
+        `).join('');
+    }
     
     return `
         <div class="space-y-6">
@@ -1214,6 +1376,69 @@ function generateRobotsHTML(data) {
                 </div>
             ` : ''}
              
+            ${httpStatusAnalysisHTML ? `
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="text-lg font-semibold text-slate-700 mb-3">
+                        <i class="fas fa-server mr-2"></i>HTTP Status Analysis
+                    </h4>
+                    ${httpStatusAnalysisHTML}
+                </div>
+            ` : ''}
+
+            ${unsupportedDirectivesHTML ? `
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="text-lg font-semibold text-amber-700 mb-3">
+                        <i class="fas fa-ban mr-2"></i>Unsupported Directives (${unsupportedDirectives.length})
+                    </h4>
+                    ${unsupportedDirectivesHTML}
+                </div>
+            ` : ''}
+
+            ${syntaxErrorsHTML ? `
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="text-lg font-semibold text-rose-700 mb-3">
+                        <i class="fas fa-code-branch mr-2"></i>Syntax Errors (${syntaxErrors.length})
+                    </h4>
+                    ${syntaxErrorsHTML}
+                </div>
+            ` : ''}
+
+            ${hostValidationHTML ? `
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="text-lg font-semibold text-yellow-700 mb-3">
+                        <i class="fas fa-network-wired mr-2"></i>Host Validation
+                    </h4>
+                    ${hostValidationHTML}
+                </div>
+            ` : ''}
+
+            ${conflictDetailsHTML ? `
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="text-lg font-semibold text-orange-700 mb-3">
+                        <i class="fas fa-random mr-2"></i>Directive Conflicts (${conflictDetails.length})
+                    </h4>
+                    ${conflictDetailsHTML}
+                </div>
+            ` : ''}
+
+            ${longestMatchHTML ? `
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="text-lg font-semibold text-blue-700 mb-3">
+                        <i class="fas fa-ruler-combined mr-2"></i>Longest Match Notes (${longestMatchNotes.length})
+                    </h4>
+                    ${longestMatchHTML}
+                </div>
+            ` : ''}
+
+            ${paramRecommendationsHTML ? `
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="text-lg font-semibold text-cyan-700 mb-3">
+                        <i class="fas fa-filter mr-2"></i>Clean-param Recommendations (${paramRecommendations.length})
+                    </h4>
+                    ${paramRecommendationsHTML}
+                </div>
+            ` : ''}
+
             <!-- Sitemaps -->
             ${processedSitemaps.length > 0 ? `
                 <div class="bg-white rounded-xl shadow-md p-6">

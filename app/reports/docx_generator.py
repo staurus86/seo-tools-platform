@@ -8,6 +8,7 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from typing import Dict, Any, List
 from datetime import datetime
 import os
+import json
 import tempfile
 from urllib.parse import urljoin
 
@@ -233,7 +234,15 @@ class DOCXGenerator:
         else:
             doc.add_paragraph('No informational notes.')
 
-        self._add_heading(doc, '6. Top Fixes', level=1)
+        self._add_heading(doc, '6. Recommendations', level=1)
+        recommendations = results.get('recommendations', []) or []
+        if recommendations:
+            for item in recommendations:
+                doc.add_paragraph(str(item), style='List Bullet')
+        else:
+            doc.add_paragraph('No recommendations generated.')
+
+        self._add_heading(doc, '7. Top Fixes', level=1)
         top_fixes = results.get('top_fixes', []) or []
         if top_fixes:
             rows = []
@@ -248,7 +257,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph('No prioritized fixes generated.')
 
-        self._add_heading(doc, '7. Sitemap Checks', level=1)
+        self._add_heading(doc, '8. Sitemap Checks', level=1)
         sitemap_checks = results.get('sitemap_checks', []) or []
         if sitemap_checks:
             rows = []
@@ -270,7 +279,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph('No sitemap checks available.')
 
-        self._add_heading(doc, '8. Group Rules Detail', level=1)
+        self._add_heading(doc, '9. Group Rules Detail', level=1)
         groups = results.get('groups_detail', []) or []
         if groups:
             for idx, group in enumerate(groups, start=1):
@@ -295,7 +304,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph('No parsed group details available.')
 
-        self._add_heading(doc, '9. Syntax Errors', level=1)
+        self._add_heading(doc, '10. Syntax Errors', level=1)
         syntax_errors = results.get('syntax_errors', []) or []
         if syntax_errors:
             rows = []
@@ -309,7 +318,57 @@ class DOCXGenerator:
         else:
             doc.add_paragraph('No syntax errors found.')
 
-        self._add_heading(doc, '10. Raw robots.txt (line-numbered view)', level=1)
+        self._add_heading(doc, '11. Extended Analysis', level=1)
+        http_status_analysis = results.get('http_status_analysis', {}) or {}
+        if http_status_analysis:
+            doc.add_paragraph(f"HTTP status context: {http_status_analysis.get('status_code', 'n/a')}")
+            for note in (http_status_analysis.get('notes', []) or []):
+                doc.add_paragraph(str(note), style='List Bullet')
+
+        unsupported_directives = results.get('unsupported_directives', []) or []
+        if unsupported_directives:
+            rows = []
+            for item in unsupported_directives:
+                rows.append([
+                    str(item.get('line', '')),
+                    str(item.get('directive', '')),
+                    str(item.get('value', '')),
+                ])
+            self._add_table(doc, ['Line', 'Directive', 'Value'], rows)
+
+        host_validation = results.get('host_validation', {}) or {}
+        if host_validation:
+            hosts = ', '.join(host_validation.get('hosts', []) or []) or 'n/a'
+            doc.add_paragraph(f"Host directives: {hosts}")
+            for note in (host_validation.get('warnings', []) or []):
+                doc.add_paragraph(str(note), style='List Bullet')
+
+        directive_conflicts = results.get('directive_conflicts', {}) or {}
+        conflict_items = directive_conflicts.get('details', []) or []
+        if conflict_items:
+            rows = []
+            for item in conflict_items:
+                rows.append([
+                    str(item.get('type', '')),
+                    str(item.get('user_agent', '')),
+                    str(item.get('path', item.get('groups', ''))),
+                ])
+            self._add_table(doc, ['Conflict Type', 'User-agent', 'Path/Value'], rows)
+
+        longest_match = results.get('longest_match_analysis', {}) or {}
+        longest_notes = longest_match.get('notes', []) or []
+        if longest_notes:
+            doc.add_paragraph('Longest-match notes:')
+            for note in longest_notes:
+                doc.add_paragraph(str(note), style='List Bullet')
+
+        param_recommendations = results.get('param_recommendations', []) or []
+        if param_recommendations:
+            doc.add_paragraph('Clean-param recommendations:')
+            for rec in param_recommendations:
+                doc.add_paragraph(str(rec), style='List Bullet')
+
+        self._add_heading(doc, '12. Raw robots.txt (line-numbered view)', level=1)
         raw = str(results.get('raw_content', '') or '')
         if raw:
             for idx, line in enumerate(raw.splitlines(), start=1):
@@ -324,12 +383,14 @@ class DOCXGenerator:
         else:
             doc.add_paragraph('Raw robots.txt content is unavailable.')
 
-        self._add_heading(doc, '11. Additional Fields Snapshot', level=1)
+        self._add_heading(doc, '13. Additional Fields Snapshot', level=1)
         covered = {
             'robots_txt_found', 'status_code', 'quality_score', 'quality_grade', 'production_ready', 'quick_status',
             'content_length', 'lines_count', 'user_agents', 'disallow_rules', 'allow_rules', 'sitemaps', 'hosts',
             'crawl_delays', 'clean_params', 'severity_counts', 'critical_issues', 'issues', 'warning_issues',
-            'warnings', 'info_issues', 'top_fixes', 'sitemap_checks', 'groups_detail', 'syntax_errors', 'raw_content',
+            'warnings', 'info_issues', 'recommendations', 'top_fixes', 'sitemap_checks', 'groups_detail', 'syntax_errors', 'raw_content',
+            'http_status_analysis', 'unsupported_directives', 'host_validation', 'directive_conflicts', 'longest_match_analysis',
+            'param_recommendations',
         }
         extra_rows = []
         for key in sorted(results.keys()):
@@ -348,7 +409,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph('No additional fields beyond core sections.')
 
-        self._add_heading(doc, '12. Official Documentation', level=1)
+        self._add_heading(doc, '14. Official Documentation', level=1)
         doc.add_paragraph('Google Search Central: https://developers.google.com/search/docs/crawling-indexing/robots/robots_txt')
         doc.add_paragraph('Yandex Webmaster: https://yandex.com/support/webmaster/en/robot-workings/allow-disallow')
 

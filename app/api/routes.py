@@ -1530,171 +1530,44 @@ class ExportRequest(BaseModel):
 
 @router.post("/export/robots")
 async def export_robots_word(data: ExportRequest):
-    """Export robots.txt analysis to Word document - pass task_id in JSON body"""
+    """Export robots.txt analysis to DOCX via unified report generator."""
+    import os
     import re
-    
+    from fastapi.responses import Response
+    from app.reports.docx_generator import docx_generator
+
     try:
-        from docx import Document
-        from docx.shared import Pt, RGBColor
-        from docx.enum.text import WD_ALIGN_PARAGRAPH
-        import io
-        
         task_id = data.task_id
         task = get_task_result(task_id)
-        
         if not task:
-            return {"error": "Задача не найдена", "task_id": task_id}
-        
+            return {"error": "Task not found", "task_id": task_id}
+
+        task_type = task.get("task_type")
+        if task_type != "robots_check":
+            return {"error": f"Unsupported task type for DOCX export: {task_type}"}
+
         task_result = task.get("result", {})
-        result = task_result.get("results", task_result)
         url = task.get("url", "") or task_result.get("url", "")
-        
-        # Debug log
-        import logging
-        logging.info(f"DOCX export for task {task_id}, result keys: {result.keys()}")
-        
-        doc = Document()
-        doc.add_heading('Отчет анализа Robots.txt', level=0)
-        
-        # Info section
-        doc.add_heading('Информация о проверке', level=1)
-        now = datetime.now().strftime("%d.%m.%Y, %H:%M:%S")
-        
-        info_table = doc.add_table(rows=10, cols=2)
-        info_table.style = 'Table Grid'
-        
-        # Handle different data formats for user_agents
-        user_agents_str = "Не найдено"
-        if isinstance(result.get("user_agents"), list):
-            user_agents_str = ", ".join(result.get("user_agents", []))
-        elif isinstance(result.get("user_agents"), (int, float)):
-            user_agents_str = f"{result.get('user_agents', 0)} шт."
-        else:
-            user_agents_str = str(result.get("user_agents", "Не найдено"))
-        
-        info_data = [
-            ("URL сайта:", url),
-            ("Дата проверки:", now),
-            ("Robots.txt найден:", "Да" if result.get("robots_txt_found") else "Нет"),
-            ("Статус HTTP:", str(result.get("status_code", "н/д"))),
-            ("Размер файла:", f"{result.get('content_length', 0)} байт"),
-            ("Кол-во строк:", str(result.get("lines_count", 0))),
-            ("User-Agents:", user_agents_str),
-        ]
-        
-        info_data.extend([
-            ("SEO-оценка:", str(result.get("quality_score", "н/д"))),
-            ("Класс оценки:", str(result.get("quality_grade", "н/д"))),
-            ("Готовность к продакшену:", "Да" if result.get("production_ready") else "Нет"),
-        ])
+        report_payload = {
+            "url": url,
+            "results": task_result.get("results", task_result),
+        }
 
-        for i, (label, value) in enumerate(info_data):
-            info_table.rows[i].cells[0].text = label
-            info_table.rows[i].cells[1].text = str(value)
-        
-        # Stats
-        doc.add_heading('Статистика', level=1)
-        stats_table = doc.add_table(rows=7, cols=2)
-        stats_table.style = 'Table Grid'
-        
-        stats_data = [
-            ("User-Agents:", user_agents_str),
-            ("Правил Disallow:", str(result.get("disallow_rules", result.get("disallow_count", result.get("disallow", 0))))),
-            ("Правил Allow:", str(result.get("allow_rules", result.get("allow_count", result.get("allow", 0))))),
-            ("Sitemaps:", str(len(result.get("sitemaps", [])))),
-        ]
-        
-        stats_data.extend([
-            ("Critical:", str((result.get("severity_counts") or {}).get("critical", len(result.get("critical_issues", result.get("issues", [])))))),
-            ("Warning:", str((result.get("severity_counts") or {}).get("warning", len(result.get("warning_issues", result.get("warnings", [])))))),
-            ("Info:", str((result.get("severity_counts") or {}).get("info", len(result.get("info_issues", []))))),
-        ])
+        filepath = docx_generator.generate_robots_report(task_id, report_payload)
+        if not filepath or not os.path.exists(filepath):
+            return {"error": "Failed to generate report"}
 
-        for i, (label, value) in enumerate(stats_data):
-            stats_table.rows[i].cells[0].text = label
-            stats_table.rows[i].cells[1].text = str(value)
-        
-        # Issues
-        issues = result.get("critical_issues", result.get("issues", []))
-        if issues:
-            doc.add_heading('Проблемы', level=1)
-            for issue in issues:
-                p = doc.add_paragraph()
-                run = p.add_run("⚠️ " + issue)
-                run.font.color.rgb = RGBColor(255, 0, 0)
-        
-        # Warnings
-        warnings = result.get("warning_issues", result.get("warnings", []))
-        if warnings:
-            doc.add_heading('Предупреждения', level=1)
-            for warning in warnings:
-                doc.add_paragraph("• " + warning, style='List Bullet')
-        
-        # Sitemaps
-        sitemaps = result.get("sitemaps", [])
-        if sitemaps:
-            doc.add_heading('Sitemaps', level=1)
-            for sm in sitemaps:
-                doc.add_paragraph("• " + sm, style='List Bullet')
+        with open(filepath, "rb") as f:
+            content = f.read()
 
-        sitemap_checks = result.get("sitemap_checks", [])
-        if sitemap_checks:
-            doc.add_heading('Sitemap URL Checks', level=1)
-            for check in sitemap_checks:
-                status = "OK" if check.get("ok") else ("SKIPPED" if check.get("ok") is None else "FAIL")
-                suffix = f" [HTTP {check.get('status_code')}]" if check.get("status_code") else ""
-                line = f"{status}: {check.get('url', '')}{suffix}"
-                if check.get("error"):
-                    line += f" - {check.get('error')}"
-                doc.add_paragraph("• " + line, style='List Bullet')
-        
-        # Groups
-        groups = result.get("groups_detail", [])
-        if groups:
-            doc.add_heading('Группы правил', level=1)
-            for i, group in enumerate(groups, 1):
-                doc.add_heading(f'Группа {i}', level=2)
-                doc.add_paragraph(f"User-Agents: {', '.join(group.get('user_agents', []))}")
-                
-                disallow = group.get("disallow", [])
-                if disallow:
-                    doc.add_paragraph(f"Disallow ({len(disallow)}):", style='List Bullet')
-                    for d in disallow[:20]:  # Limit to 20
-                        doc.add_paragraph(f"  • {d.get('path', '')} (строка {d.get('line', '')})", style='List Bullet')
-        
-        # Recommendations
-        doc.add_heading('Рекомендации', level=1)
-        recommendations = result.get("recommendations", [])
-        for rec in recommendations:
-            doc.add_paragraph("• " + rec, style='List Bullet')
-        
-        top_fixes = result.get("top_fixes", [])
-        if top_fixes:
-            doc.add_heading('Top Fixes', level=1)
-            for fix in top_fixes:
-                title = fix.get("title", "Fix")
-                priority = fix.get("priority", "medium").upper()
-                why = fix.get("why", "")
-                action = fix.get("action", "")
-                doc.add_paragraph(f"[{priority}] {title}", style='List Bullet')
-                if why:
-                    doc.add_paragraph(f"Why: {why}")
-                if action:
-                    doc.add_paragraph(f"Action: {action}")
-        # Save to buffer
-        buffer = io.BytesIO()
-        doc.save(buffer)
-        buffer.seek(0)
-        
-        from fastapi.responses import Response
+        domain = re.sub(r"[^a-zA-Z0-9._-]+", "_", (urlparse(url).netloc or "site"))
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+        filename = f"robots_report_{domain}_{timestamp}.docx"
         return Response(
-            content=buffer.getvalue(),
+            content=content,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": f"attachment; filename=robots_report_{task_id}.docx"}
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
-        
-    except ImportError:
-        return {"error": "python-docx not installed"}
     except Exception as e:
         return {"error": str(e)}
 
