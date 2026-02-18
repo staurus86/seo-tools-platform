@@ -436,7 +436,7 @@ function generateTextReport() {
 
     const paramRecs = r.param_recommendations || [];
     if (paramRecs.length > 0) {
-        report += 'CLEAN-PARAM RECOMMENDATIONS\n' + '-'.repeat(30) + '\n';
+        report += 'YANDEX CLEAN-PARAM RECOMMENDATIONS\n' + '-'.repeat(30) + '\n';
         paramRecs.forEach(n => report += '- ' + n + '\n');
         report += '\n';
     }
@@ -1433,7 +1433,7 @@ function generateRobotsHTML(data) {
             ${paramRecommendationsHTML ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-cyan-700 mb-3">
-                        <i class="fas fa-filter mr-2"></i>Clean-param Recommendations (${paramRecommendations.length})
+                        <i class="fas fa-filter mr-2"></i>Yandex Clean-param Recommendations (${paramRecommendations.length})
                     </h4>
                     ${paramRecommendationsHTML}
                 </div>
@@ -1512,6 +1512,9 @@ function generateRobotsHTML(data) {
                     </a>
                     <a class="text-blue-600 hover:underline break-all" href="https://yandex.com/support/webmaster/en/robot-workings/allow-disallow" target="_blank" rel="noopener noreferrer">
                         Yandex Webmaster: Allow/Disallow directives
+                    </a>
+                    <a class="text-blue-600 hover:underline break-all" href="https://yandex.com/support/webmaster/en/robot-workings/clean-param" target="_blank" rel="noopener noreferrer">
+                        Yandex Webmaster: Clean-param directive
                     </a>
                 </div>
             </div>

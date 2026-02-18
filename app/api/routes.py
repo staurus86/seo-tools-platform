@@ -367,46 +367,103 @@ def dedupe_keep_order(items: List[str]) -> List[str]:
 
 
 def build_param_merge_recommendations(result: ParseResult) -> List[str]:
-    """Enhanced recommendations for merging parameter rules."""
+    """Yandex Clean-param checks and recommendations."""
     recs: List[str] = []
-    by_base: Dict[str, List[str]] = defaultdict(list)
-    by_query_prefix: Dict[str, List[str]] = defaultdict(list)
+    clean_params = [str(v or "").strip() for v in result.clean_params if str(v or "").strip()]
+    if not clean_params:
+        query_disallow = 0
+        for group in result.groups:
+            for rule in (group.disallow or []):
+                path = str(rule.path or "")
+                if "?" in path or "=" in path:
+                    query_disallow += 1
+        if query_disallow >= 3:
+            recs.append(
+                "Detected many parameterized Disallow rules. For Yandex crawling optimization, "
+                "consider using 'Clean-param' for non-content query params."
+            )
+        return recs
 
-    for group in result.groups:
-        for rule in group.disallow:
-            path = (rule.path or "").strip()
-            if not path:
-                continue
+    auto_ignored = {
+        "ysclid", "yrclid", "utm_source", "utm_medium", "utm_campaign",
+        "utm_term", "utm_content", "yclid", "gclid", "fbclid",
+    }
 
-            if path.endswith("*") and len(path) > 1:
+    has_yandex_group = any(
+        "yandex" in str(ua or "").lower()
+        for group in result.groups
+        for ua in (group.user_agents or [])
+    )
+    if not has_yandex_group:
+        recs.append(
+            "Clean-param is Yandex-specific. Consider a dedicated 'User-agent: Yandex' section for these rules."
+        )
+
+    seen_rules: Dict[str, int] = defaultdict(int)
+    path_to_params: Dict[str, List[str]] = defaultdict(list)
+
+    for raw in clean_params:
+        seen_rules[raw] += 1
+        if len(raw) > 500:
+            recs.append(
+                f"Clean-param rule exceeds 500 chars and may be ignored by Yandex: '{raw[:80]}...'"
+            )
+
+        parts = raw.split(None, 1)
+        params_part = parts[0].strip() if parts else ""
+        path_part = parts[1].strip() if len(parts) > 1 else ""
+
+        params = [p.strip() for p in params_part.split("&") if p.strip()]
+        if not params:
+            recs.append(f"Invalid Clean-param syntax: '{raw}'. Expected 'param1&param2 [path]'.")
+            continue
+
+        invalid_params = [
+            p for p in params
+            if ("?" in p or "=" in p or "/" in p or " " in p or "&" in p)
+        ]
+        if invalid_params:
+            recs.append(
+                f"Invalid parameter token(s) in Clean-param '{raw}': {', '.join(invalid_params)}."
+            )
+
+        if path_part:
+            if not path_part.startswith("/"):
                 recs.append(
-                    f"Pattern '{path}' can usually be shortened to '{path[:-1]}' (trailing '*' is often redundant)."
+                    f"Clean-param path should start with '/': '{raw}'."
+                )
+            if "?" in path_part or "&" in path_part:
+                recs.append(
+                    f"Clean-param path should be URL prefix only (no query): '{raw}'."
                 )
 
-            if "?" in path:
-                query_prefix = path.split("*", 1)[0]
-                if query_prefix.endswith("?"):
-                    by_query_prefix[query_prefix].append(path)
-
-            if "?" in path or "=" in path:
-                split_idx = min([i for i in [path.find("?"), path.find("=")] if i != -1])
-                base = path[:split_idx] if split_idx > 0 else path
-                by_base[base].append(path)
-
-    for base, paths in by_base.items():
-        uniq = sorted(set(paths))
-        if len(uniq) >= 3:
-            preview = ", ".join(uniq[:5])
-            recs.append(f"Consider merging parameter patterns for '{base}': {preview}")
-
-    for prefix, paths in by_query_prefix.items():
-        uniq = sorted(set(paths))
-        if len(uniq) >= 3:
-            preview = ", ".join(uniq[:6])
+        lower_set = {p.lower() for p in params}
+        if lower_set and lower_set.issubset(auto_ignored):
             recs.append(
-                f"Found {len(uniq)} similar rules: {preview}. "
-                f"You can merge them into one rule: {prefix}"
+                f"Rule '{raw}' targets mostly tracking params that Yandex can often ignore automatically. "
+                "Keep it only if duplicate URLs are still reported in Webmaster."
             )
+
+        path_key = path_part or "*"
+        path_to_params[path_key].extend(params)
+
+    for raw, cnt in seen_rules.items():
+        if cnt > 1:
+            recs.append(f"Duplicate Clean-param rule repeated {cnt} times: '{raw}'.")
+
+    for path_key, params in path_to_params.items():
+        uniq = dedupe_keep_order([p for p in params if p])
+        if len(uniq) >= 3:
+            merged = "&".join(uniq[:8])
+            if path_key == "*":
+                recs.append(
+                    f"Several global Clean-param rules can be merged into one: 'Clean-param: {merged}'."
+                )
+            else:
+                recs.append(
+                    f"Several Clean-param rules for '{path_key}' can be merged into: "
+                    f"'Clean-param: {merged} {path_key}'."
+                )
 
     return dedupe_keep_order(recs)
 
