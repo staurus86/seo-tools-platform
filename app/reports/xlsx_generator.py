@@ -530,6 +530,52 @@ class XLSXGenerator:
         rec_ws.freeze_panes = "A2"
         rec_ws.auto_filter.ref = "A1:B1"
 
+        insights_ws = wb.create_sheet("Insights")
+        insights_ws.cell(row=1, column=1, value="Metric")
+        insights_ws.cell(row=1, column=2, value="Value")
+        insights_ws.cell(row=1, column=3, value="Interpretation")
+        for col in range(1, 4):
+            self._apply_style(insights_ws.cell(row=1, column=col), header_style)
+
+        total_urls = int(results.get("urls_count", 0) or 0)
+        unique_urls = int(results.get("unique_urls_count", 0) or 0)
+        scanned = int(results.get("sitemaps_scanned", 0) or 0)
+        valid_scanned = int(results.get("sitemaps_valid", 0) or 0)
+        exported_urls = len(results.get("export_urls", []) or [])
+        warnings_count = len(results.get("warnings", []) or [])
+        errors_count = len(results.get("errors", []) or [])
+        unique_ratio = round((unique_urls / total_urls) * 100, 2) if total_urls > 0 else 0.0
+        valid_ratio = round((valid_scanned / scanned) * 100, 2) if scanned > 0 else 0.0
+        export_ratio = round((exported_urls / total_urls) * 100, 2) if total_urls > 0 else 0.0
+
+        insight_rows = [
+            ("Quality score", results.get("quality_score", "n/a"), f"Grade {results.get('quality_grade', 'n/a')}"),
+            ("Errors / Warnings", f"{errors_count} / {warnings_count}", "Lower is better"),
+            ("Unique URL ratio", f"{unique_ratio}%", "Unique URLs divided by total discovered URLs"),
+            ("Valid sitemap files ratio", f"{valid_ratio}%", "Valid sitemap files divided by scanned files"),
+            ("Export coverage ratio", f"{export_ratio}%", "Exported URLs divided by total discovered URLs"),
+            ("Traversal reached limit", "Yes" if any("traversal limit" in str(w).lower() for w in (results.get("warnings", []) or [])) else "No", "If Yes, not all sitemap files may be scanned"),
+            ("Export truncated", "Yes" if results.get("urls_export_truncated") else "No", "If Yes, use part exports for full URL set"),
+        ]
+        for idx, (k, v, i_txt) in enumerate(insight_rows, start=2):
+            self._apply_style(insights_ws.cell(row=idx, column=1, value=k), cell_style)
+            self._apply_style(insights_ws.cell(row=idx, column=2, value=v), cell_style)
+            self._apply_style(insights_ws.cell(row=idx, column=3, value=i_txt), cell_style)
+
+        highlights = results.get("highlights", []) or []
+        start_row = len(insight_rows) + 4
+        self._apply_style(insights_ws.cell(row=start_row, column=1, value="Highlights"), header_style)
+        if highlights:
+            for offset, item in enumerate(highlights, start=1):
+                self._apply_style(insights_ws.cell(row=start_row + offset, column=1, value=str(item)), cell_style)
+        else:
+            self._apply_style(insights_ws.cell(row=start_row + 1, column=1, value="No highlights"), cell_style)
+
+        insights_ws.column_dimensions['A'].width = 34
+        insights_ws.column_dimensions['B'].width = 24
+        insights_ws.column_dimensions['C'].width = 80
+        insights_ws.freeze_panes = "A2"
+
         urls_ws = wb.create_sheet("Export URLs")
         urls_ws.cell(row=1, column=1, value="URL")
         self._apply_style(urls_ws.cell(row=1, column=1), header_style)
