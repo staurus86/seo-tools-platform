@@ -112,6 +112,11 @@ class DOCXGenerator:
             _fix_paragraph(p)
         for t in doc.tables:
             _fix_table(t)
+
+    def _save_document(self, doc: Document, filepath: str) -> None:
+        """Normalize text and save DOCX."""
+        self._normalize_document_text(doc)
+        doc.save(filepath)
     
     def generate_site_analyze_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Р“РµРЅРµСЂРёСЂСѓРµС‚ РєР»РёРµРЅС‚СЃРєРёР№ РѕС‚С‡РµС‚ Р°РЅР°Р»РёР·Р° СЃР°Р№С‚Р°."""
@@ -150,8 +155,7 @@ class DOCXGenerator:
         footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
-        self._normalize_document_text(doc)
-        doc.save(filepath)
+        self._save_document(doc, filepath)
         return filepath
     
     def generate_robots_report(self, task_id: str, data: Dict[str, Any]) -> str:
@@ -181,8 +185,7 @@ class DOCXGenerator:
         footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
-        self._normalize_document_text(doc)
-        doc.save(filepath)
+        self._save_document(doc, filepath)
         return filepath
     
     def generate_sitemap_report(self, task_id: str, data: Dict[str, Any]) -> str:
@@ -213,8 +216,7 @@ class DOCXGenerator:
         footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
-        self._normalize_document_text(doc)
-        doc.save(filepath)
+        self._save_document(doc, filepath)
         return filepath
     
     def generate_render_report(self, task_id: str, data: Dict[str, Any]) -> str:
@@ -446,8 +448,7 @@ class DOCXGenerator:
         footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
-        self._normalize_document_text(doc)
-        doc.save(filepath)
+        self._save_document(doc, filepath)
         return filepath
     def generate_mobile_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Extended mobile DOCX report with Russian content."""
@@ -774,8 +775,7 @@ class DOCXGenerator:
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         try:
-            self._normalize_document_text(doc)
-            doc.save(filepath)
+            self._save_document(doc, filepath)
             return filepath
         finally:
             for temp_path in temp_screenshots:
@@ -817,8 +817,7 @@ class DOCXGenerator:
         footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
-        self._normalize_document_text(doc)
-        doc.save(filepath)
+        self._save_document(doc, filepath)
         return filepath
     
     def generate_onpage_report(self, task_id: str, data: Dict[str, Any]) -> str:
@@ -1058,8 +1057,7 @@ class DOCXGenerator:
             doc.add_paragraph("Recommendations are not available.")
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
-        self._normalize_document_text(doc)
-        doc.save(filepath)
+        self._save_document(doc, filepath)
         return filepath
 
     def generate_site_audit_pro_report(self, task_id: str, data: Dict[str, Any]) -> str:
@@ -1135,8 +1133,7 @@ class DOCXGenerator:
             doc.add_paragraph("Recommendations are not available.")
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
-        self._normalize_document_text(doc)
-        doc.save(filepath)
+        self._save_document(doc, filepath)
         return filepath
     def generate_report(self, task_id: str, task_type: str, data: Dict[str, Any]) -> str:
         """Р“РµРЅРµСЂРёСЂСѓРµС‚ РѕС‚С‡РµС‚ РІ Р·Р°РІРёСЃРёРјРѕСЃС‚Рё РѕС‚ С‚РёРїР° Р·Р°РґР°С‡Рё"""

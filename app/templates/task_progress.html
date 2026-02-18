@@ -283,7 +283,7 @@ function generateTextReport() {
     report += 'SEO Оценка: ' + (r.quality_score ?? 'н/д') + ' (' + (r.quality_grade || 'н/д') + ')\n';
     report += 'Готовность к продакше: ' + (r.production_ready ? 'Да' : 'Нет') + '\n';
     report += 'Размер файла: ' + (r.content_length || 0) + ' байт\n';
-    report += 'РЎС‚рок: ' + (r.lines_count || 0) + '\n\n';
+    report += 'Lines: ' + (r.lines_count || 0) + '\n\n';
     
     const issues = r.issues || [];
     if (issues.length > 0) {
@@ -312,10 +312,10 @@ function generateTextReport() {
         groups.forEach((group, idx) => {
             report += '\nГруппа ' + (idx + 1) + ': ' + group.user_agents.join(', ') + '\n';
             (group.disallow || []).forEach(d => {
-                report += '  Disallow: ' + d.path + ' (СЃС‚СЂ ' + d.line + ')\n';
+                report += '  Disallow: ' + d.path + ' (line ' + d.line + ')\n';
             });
             (group.allow || []).forEach(a => {
-                report += '  Allow: ' + a.path + ' (СЃС‚СЂ ' + a.line + ')\n';
+                report += '  Allow: ' + a.path + ' (line ' + a.line + ')\n';
             });
         });
         report += '\n';
@@ -899,7 +899,7 @@ function generateRobotsHTML(data) {
     if (Array.isArray(r.user_agents)) {
         userAgents = r.user_agents.join(', ');
     } else if (typeof r.user_agents === 'number') {
-        userAgents = `${r.user_agents} С€С‚.`;
+        userAgents = `${r.user_agents} pcs.`;
     } else if (r.user_agents) {
         userAgents = String(r.user_agents);
     }
@@ -980,7 +980,7 @@ function generateRobotsHTML(data) {
                                     <div class="flex items-center text-sm font-mono bg-red-50 px-2 py-1 rounded mb-1">
                                         <span class="text-red-600 mr-2">Disallow:</span>
                                         <span class="text-gray-700 break-all">${d.path}</span>
-                                        <span class="text-gray-400 ml-auto text-xs">СЃС‚СЂ ${d.line}</span>
+                                        <span class="text-gray-400 ml-auto text-xs">line ${d.line}</span>
                                     </div>
                                 `).join('')}
                             </div>
@@ -994,7 +994,7 @@ function generateRobotsHTML(data) {
                                     <div class="flex items-center text-sm font-mono bg-green-50 px-2 py-1 rounded mb-1">
                                         <span class="text-green-600 mr-2">Allow:</span>
                                         <span class="text-gray-700 break-all">${a.path}</span>
-                                        <span class="text-gray-400 ml-auto text-xs">СЃС‚СЂ ${a.line}</span>
+                                        <span class="text-gray-400 ml-auto text-xs">line ${a.line}</span>
                                     </div>
                                 `).join('')}
                             </div>
@@ -1093,7 +1093,7 @@ function generateRobotsHTML(data) {
                     </div>
                     <div class="text-center p-3 bg-gray-50 rounded-lg">
                         <div class="text-2xl font-bold text-gray-600">${r.lines_count || 0}</div>
-                        <div class="text-xs text-gray-500">РЎС‚рок</div>
+                        <div class="text-xs text-gray-500">Lines</div>
                     </div>
                 </div>
                 
@@ -1372,7 +1372,7 @@ function generateBotHTML(result) {
         ? categoryStats.map(c => `
             <div class="flex justify-between items-center py-2 border-b text-sm">
                 <span class="font-medium">${c.category}</span>
-                <span class="text-gray-700">${c.accessible}/${c.total} РґРѕСЃС‚упно</span>
+                <span class="text-gray-700">${c.accessible}/${c.total} available</span>
             </div>
         `).join('')
         : '<div class="text-sm text-gray-500">Нет данных  категориям</div>';
@@ -1380,7 +1380,7 @@ function generateBotHTML(result) {
     const issueRows = issues.slice(0, 20).map(i => `
         <div class="py-2 border-b text-sm">
             <div class="font-medium ${i.severity === 'critical' ? 'text-red-700' : (i.severity === 'warning' ? 'text-amber-700' : 'text-blue-700')}">
-                ${(i.severity || 'info').toUpperCase()} - ${i.bot || 'Р‘РѕС‚'}
+                ${(i.severity || 'info').toUpperCase()} - ${i.bot || 'bot'}
             </div>
             <div class="text-gray-700">${i.title || ''}</div>
             <div class="text-gray-500">${i.details || ''}</div>
@@ -1406,7 +1406,7 @@ function generateBotHTML(result) {
             <div class="grid grid-cols-2 gap-4 text-sm mb-4">
                 <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
                 <div><span class="text-gray-600">Проверено бот:</span> <span class="font-medium">${(r.bots_checked || []).length}</span></div>
-                ${summary.total ? `<div><span class="text-gray-600">Р”РѕСЃС‚упно:</span> <span class="font-medium">${summary.accessible || 0}/${summary.total}</span></div>` : ''}
+                ${summary.total ? `<div><span class="text-gray-600">Available:</span> <span class="font-medium">${summary.accessible || 0}/${summary.total}</span></div>` : ''}
                 ${summary.avg_response_time_ms ? `<div><span class="text-gray-600">Средний ответ:</span> <span class="font-medium">${summary.avg_response_time_ms} </span></div>` : ''}
             </div>
             <div class="border-t pt-4">
@@ -2495,7 +2495,5 @@ function generateSiteAuditProHTML(result) {
 window.copyToClipboard = copyToClipboard;
 </script>
 {% endblock %}
-
-
 
 

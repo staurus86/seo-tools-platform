@@ -3,6 +3,7 @@ Excel Р С–Р ВµР Р…Р ВµРЎР‚Р В°РЎвЂљРѕСЂ Р 
 """
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.cell.cell import MergedCell
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image as XLImage
 from collections import Counter, defaultdict
@@ -120,6 +121,7 @@ class XLSXGenerator:
     
     def _apply_style(self, cell, style):
         """Р В Р’В Р вЂ™Р’В Р В Р Р‹Р РЋРЎСџР В Р’В Р В Р вЂ№Р В Р’В Р Р†Р вЂљРЎв„ўР В Р’В Р вЂ™Р’В Р В Р Р‹Р Р†Р вЂљР’ВР В Р’В Р вЂ™Р’В Р В Р Р‹Р вЂ™Р’ВР В Р’В Р вЂ™Р’В Р В РІР‚в„ўР вЂ™Р’ВµР В Р’В Р вЂ™Р’В Р В Р’В Р Р†Р вЂљР’В¦Р В Р’В Р В Р вЂ№Р В Р’В Р В Р РЏР В Р’В Р вЂ™Р’В Р В РІР‚в„ўР вЂ™Р’ВµР В Р’В Р В Р вЂ№Р В Р вЂ Р В РІР‚С™Р РЋРІвЂћСћ Р В Р’В Р В Р вЂ№Р В Р’В Р РЋРІР‚СљР В Р’В Р В Р вЂ№Р В Р вЂ Р В РІР‚С™Р РЋРІвЂћСћР В Р’В Р вЂ™Р’В Р В Р Р‹Р Р†Р вЂљР’ВР В Р’В Р вЂ™Р’В Р В РІР‚в„ўР вЂ™Р’В»Р В Р’В Р В Р вЂ№Р В Р’В Р В РІР‚В° Р В Р’В Р вЂ™Р’В Р В Р Р‹Р Р†Р вЂљРЎСљ Р В Р’В Р В Р вЂ№Р В Р’В Р В Р РЏР В Р’В Р В Р вЂ№Р В Р вЂ Р В РІР‚С™Р В Р вЂ№Р В Р’В Р вЂ™Р’В Р В РІР‚в„ўР вЂ™Р’ВµР В Р’В Р вЂ™Р’В Р В Р вЂ Р Р†Р вЂљРЎвЂєР Р†Р вЂљРІР‚СљР В Р’В Р вЂ™Р’В Р В Р Р‹Р Р†Р вЂљРЎСљР В Р’В Р вЂ™Р’В Р В РІР‚в„ўР вЂ™Р’Вµ"""
+        cell.value = self._sanitize_cell_value(cell.value)
         if 'font' in style:
             cell.font = style['font']
         if 'fill' in style:
@@ -128,6 +130,19 @@ class XLSXGenerator:
             cell.alignment = style['alignment']
         if 'border' in style:
             cell.border = style['border']
+
+    def _sanitize_workbook_text(self, wb: Workbook) -> None:
+        """Normalize all worksheet cell values before saving."""
+        for ws in wb.worksheets:
+            for row in ws.iter_rows():
+                for cell in row:
+                    if isinstance(cell, MergedCell):
+                        continue
+                    cell.value = self._sanitize_cell_value(cell.value)
+
+    def _save_workbook(self, wb: Workbook, filepath: str) -> None:
+        self._sanitize_workbook_text(wb)
+        wb.save(filepath)
 
     def _severity_style(self, severity: str) -> Dict[str, Any]:
         """Return fill/font style for a severity level."""
@@ -343,7 +358,7 @@ class XLSXGenerator:
         
         # Save
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
-        wb.save(filepath)
+        self._save_workbook(wb, filepath)
         wb.close()
         return filepath
     
@@ -365,7 +380,7 @@ class XLSXGenerator:
         ws['B5'] = 'Р вЂќР В°' if results.get('robots_txt_found') else 'Р СњР ВµРЎвЂљ'
         
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
-        wb.save(filepath)
+        self._save_workbook(wb, filepath)
         wb.close()
         return filepath
     
@@ -495,7 +510,7 @@ class XLSXGenerator:
         dup_ws.column_dimensions['D'].width = 14
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
-        wb.save(filepath)
+        self._save_workbook(wb, filepath)
         wb.close()
         return filepath
 
@@ -690,7 +705,7 @@ class XLSXGenerator:
         seo_ws.column_dimensions['F'].width = 70
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
-        wb.save(filepath)
+        self._save_workbook(wb, filepath)
         return filepath
     def generate_mobile_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Generate detailed mobile XLSX report."""
@@ -864,7 +879,7 @@ class XLSXGenerator:
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         try:
-            wb.save(filepath)
+            self._save_workbook(wb, filepath)
             return filepath
         finally:
             for temp_path in temp_screenshots:
@@ -1048,7 +1063,7 @@ class XLSXGenerator:
         rec_ws.auto_filter.ref = "A1:A1"
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
-        wb.save(filepath)
+        self._save_workbook(wb, filepath)
         return filepath
 
     def generate_site_audit_pro_report(self, task_id: str, data: Dict[str, Any]) -> str:
@@ -3366,7 +3381,7 @@ class XLSXGenerator:
         ws["B22"].font = Font(bold=True)
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
-        wb.save(filepath)
+        self._save_workbook(wb, filepath)
         wb.close()
         return filepath
 
@@ -3667,7 +3682,7 @@ class XLSXGenerator:
             tgt_ws.column_dimensions[get_column_letter(col)].width = width
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
-        wb.save(filepath)
+        self._save_workbook(wb, filepath)
         wb.close()
         return filepath
 
