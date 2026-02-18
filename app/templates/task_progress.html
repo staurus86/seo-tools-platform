@@ -1537,6 +1537,9 @@ function generateSitemapHTMLV2(result) {
     sitemapExportUrls = exportUrls;
     sitemapDuplicateLines = duplicateLines;
     sitemapFilePreviewUrls = sitemapFiles.map(f => (f.urls || []).slice(0, 100000));
+    const totalIssues = errors.length + warnings.length;
+    const healthBadge = r.valid && totalIssues === 0 ? 'bg-emerald-100 text-emerald-700' : (r.valid ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700');
+    const healthText = r.valid && totalIssues === 0 ? 'Healthy sitemap' : (r.valid ? 'Valid with warnings' : 'Needs fixes');
 
     return `
         <div class="space-y-4">
@@ -1564,8 +1567,14 @@ function generateSitemapHTMLV2(result) {
                     </div>
                 </div>
                 <p class="text-sm text-gray-600 mb-4">
-                    Отчет показывает корректность структуры sitemap, качест URL и риски для индексации.
+                    Отчет показывает корректность структуры sitemap, качество URL и риски для индексации.
                 </p>
+                <div class="mb-4">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${healthBadge}">
+                        ${healthText}
+                    </span>
+                    <span class="ml-3 text-sm text-gray-600">Errors: ${errors.length} | Warnings: ${warnings.length} | Recommendations: ${recommendations.length}</span>
+                </div>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div><span class="text-gray-600">URL:</span> <span class="font-medium break-all">${result.url}</span></div>
                     <div><span class="text-gray-600">Валиден:</span> <span class="font-medium">${r.valid ? 'Да' : 'Нет'}</span></div>
@@ -1589,14 +1598,14 @@ function generateSitemapHTMLV2(result) {
             ${errors.length > 0 ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="font-semibold text-red-600 mb-2">Ошибки (${errors.length})</h4>
-                    ${errors.slice(0, 50).map(e => `<div class="text-sm text-red-700 mb-1">${e}</div>`).join('')}
+                    ${errors.slice(0, 50).map(e => `<div class="text-sm text-red-700 mb-1">${escapeHtml(e)}</div>`).join('')}
                 </div>
             ` : ''}
 
             ${warnings.length > 0 ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="font-semibold text-amber-600 mb-2">Предупреждения (${warnings.length})</h4>
-                    ${warnings.slice(0, 50).map(w => `<div class="text-sm text-amber-700 mb-1">${w}</div>`).join('')}
+                    ${warnings.slice(0, 50).map(w => `<div class="text-sm text-amber-700 mb-1">${escapeHtml(w)}</div>`).join('')}
                 </div>
             ` : ''}
 
@@ -1612,9 +1621,9 @@ function generateSitemapHTMLV2(result) {
                     <div class="max-h-72 overflow-auto border rounded">
                         ${duplicateDetails.slice(0, 500).map(d => `
                             <div class="text-xs border-b p-2">
-                                <div class="font-medium break-all text-gray-800">${d.url}</div>
-                                <div class="text-gray-600">первый: <span class="break-all">${d.first_sitemap || '-'}</span></div>
-                                <div class="text-gray-600">дубликат: <span class="break-all">${d.duplicate_sitemap || '-'}</span></div>
+                                <div class="font-medium break-all text-gray-800">${escapeHtml(d.url)}</div>
+                                <div class="text-gray-600">первый: <span class="break-all">${escapeHtml(d.first_sitemap || '-')}</span></div>
+                                <div class="text-gray-600">дубликат: <span class="break-all">${escapeHtml(d.duplicate_sitemap || '-')}</span></div>
                             </div>
                         `).join('')}
                     </div>
@@ -1624,7 +1633,7 @@ function generateSitemapHTMLV2(result) {
             ${recommendations.length > 0 ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="font-semibold text-blue-600 mb-2">Рекомендации</h4>
-                    ${recommendations.map(rec => `<div class="text-sm text-blue-700 mb-1">- ${rec}</div>`).join('')}
+                    ${recommendations.map(rec => `<div class="text-sm text-blue-700 mb-1">- ${escapeHtml(rec)}</div>`).join('')}
                 </div>
             ` : ''}
 
@@ -1634,10 +1643,10 @@ function generateSitemapHTMLV2(result) {
                     ${sitemapFiles.map((f, idx) => `
                         <div class="border rounded-lg p-3">
                             <div class="flex justify-between items-center mb-1">
-                                <div class="text-sm font-medium break-all">${f.sitemap_url}</div>
+                                <div class="text-sm font-medium break-all">${escapeHtml(f.sitemap_url)}</div>
                                 <div class="text-xs ${f.ok ? 'text-green-600' : 'text-red-600'}">${f.ok ? '' : 'ОШИБ'}</div>
                             </div>
-                            <div class="text-xs text-gray-600 mb-2">тип: ${f.type || 'неизвестно'} | HTTP: ${f.status_code || 'н/д'} | URL: ${f.urls_count || 0}</div>
+                            <div class="text-xs text-gray-600 mb-2">тип: ${escapeHtml(f.type || 'неизвестно')} | HTTP: ${f.status_code || 'н/д'} | URL: ${f.urls_count || 0}</div>
                             ${f.duplicate_count > 0 ? `<div class="text-xs text-rose-700 mb-2">дубликат в эт sitemap: ${f.duplicate_count}</div>` : ''}
                             ${(f.urls || []).length > 0 ? `
                                 <button onclick='downloadSitemapFilePreview(${idx}, "sitemap-${safeDomain}-${dateStamp}-${idx + 1}-urls-preview.txt")' class="text-xs text-green-700 hover:text-green-900 mb-2">
@@ -1647,10 +1656,10 @@ function generateSitemapHTMLV2(result) {
                             ${(f.urls_omitted || 0) > 0 ? `<div class="text-xs text-amber-700 mb-1">тол предпросмотр, пропущено: ${f.urls_omitted}</div>` : ''}
                             ${(f.duplicate_urls || []).length > 0 ? `
                                 <div class="text-xs text-rose-700 mb-1">Примеры дублей URL:</div>
-                                <div class="text-xs text-rose-700 break-all">${(f.duplicate_urls || []).slice(0, 10).join(' | ')}</div>
+                                <div class="text-xs text-rose-700 break-all">${escapeHtml((f.duplicate_urls || []).slice(0, 10).join(' | '))}</div>
                             ` : ''}
-                            ${(f.errors || []).length > 0 ? `<div class="text-xs text-red-600">${(f.errors || []).join(' | ')}</div>` : ''}
-                            ${(f.warnings || []).length > 0 ? `<div class="text-xs text-amber-600">${(f.warnings || []).join(' | ')}</div>` : ''}
+                            ${(f.errors || []).length > 0 ? `<div class="text-xs text-red-600">${escapeHtml((f.errors || []).join(' | '))}</div>` : ''}
+                            ${(f.warnings || []).length > 0 ? `<div class="text-xs text-amber-600">${escapeHtml((f.warnings || []).join(' | '))}</div>` : ''}
                         </div>
                     `).join('')}
                 </div>
