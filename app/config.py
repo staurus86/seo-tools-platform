@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     REPORTS_DIR: str = "reports_output"
     MAX_REPORT_AGE_DAYS: int = 7
 
+    # Sitemap validator
+    SITEMAP_MAX_FILES: int = int(os.getenv("SITEMAP_MAX_FILES", "500"))
+    SITEMAP_MAX_EXPORT_URLS: int = int(os.getenv("SITEMAP_MAX_EXPORT_URLS", "100000"))
+
     # Bot check v2
     BOT_CHECK_ENGINE: str = os.getenv("BOT_CHECK_ENGINE", "legacy")
     BOT_CHECK_TIMEOUT: int = int(os.getenv("BOT_CHECK_TIMEOUT", "15"))

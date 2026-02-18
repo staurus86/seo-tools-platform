@@ -1195,6 +1195,7 @@ def check_robots_simple(url: str) -> Dict[str, Any]:
 def check_sitemap_full(url: str) -> Dict[str, Any]:
     """Full sitemap validation with sitemap index traversal and URL export."""
     import xml.etree.ElementTree as ET
+    from app.config import settings
 
     def local_name(tag: str) -> str:
         if not tag:
@@ -1209,7 +1210,13 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
 
     def is_http_url(value: str) -> bool:
         try:
-            p = urlparse(value)
+            v = str(value or "").strip()
+            # Guard against broken concatenated values like "...xmlhttps://...".
+            if not v or any(ch in v for ch in [" ", "\n", "\r", "\t"]):
+                return False
+            if (v.count("http://") + v.count("https://")) > 1:
+                return False
+            p = urlparse(v)
             return p.scheme in ("http", "https") and bool(p.netloc)
         except Exception:
             return False
@@ -1222,8 +1229,8 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
         dt_tz = re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\+|-)\d{2}:\d{2}", value)
         return bool(date_only or dt_utc or dt_tz)
 
-    max_sitemaps = 30
-    max_export_urls = 100000
+    max_sitemaps = max(10, min(2000, int(getattr(settings, "SITEMAP_MAX_FILES", 500) or 500)))
+    max_export_urls = max(1000, int(getattr(settings, "SITEMAP_MAX_EXPORT_URLS", 100000) or 100000))
     export_chunk_size = 25000
     max_urls_preview_per_sitemap = 2000
     max_file_size = 52428800
