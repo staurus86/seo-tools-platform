@@ -181,6 +181,15 @@ RECOMMENDATIONS = [
 # Google ignores Crawl-delay; keep default recommendations aligned with current search guidance.
 RECOMMENDATIONS = [item for item in RECOMMENDATIONS if "Crawl-delay" not in item]
 
+UNSUPPORTED_ROBOTS_DIRECTIVES = {
+    "noindex",
+    "nofollow",
+    "index",
+    "noarchive",
+    "nosnippet",
+    "unavailable_after",
+}
+
 
 class Rule:
     def __init__(self, user_agent: str, path: str, line: int):
@@ -206,6 +215,7 @@ class ParseResult:
         self.raw_lines = []
         self.syntax_errors = []
         self.warnings = []
+        self.unsupported_directives = []
         # For compatibility
         self.all_disallow = []
         self.all_allow = []
@@ -313,7 +323,17 @@ def parse_robots(text: str) -> ParseResult:
             
         elif key == "host":
             result.hosts.append(value)
-            
+
+        elif key in UNSUPPORTED_ROBOTS_DIRECTIVES:
+            result.unsupported_directives.append({
+                "line": idx,
+                "directive": key,
+                "value": value,
+            })
+            result.warnings.append(
+                f"Line {idx}: '{key}' in robots.txt is not supported by Google; use meta robots or X-Robots-Tag."
+            )
+
         else:
             result.warnings.append(f"Строка {idx}: Неизвестная директива '{key}' - будет проигнорирована")
     
@@ -390,6 +410,117 @@ def build_param_merge_recommendations(result: ParseResult) -> List[str]:
 
     return dedupe_keep_order(recs)
 
+
+
+
+def _normalize_rule_path(path: str) -> str:
+    value = (path or "").strip()
+    if value.endswith("*") and len(value) > 1:
+        value = value[:-1]
+    return value
+
+
+def analyze_group_and_rule_conflicts(result: ParseResult) -> Dict[str, Any]:
+    warnings: List[str] = []
+    details: List[Dict[str, Any]] = []
+    groups_by_ua: Dict[str, int] = defaultdict(int)
+    rules_by_ua: Dict[str, Dict[str, set]] = defaultdict(lambda: {"allow": set(), "disallow": set()})
+
+    for group in result.groups:
+        for ua in (group.user_agents or []):
+            ua_l = (ua or "").strip().lower()
+            if not ua_l:
+                continue
+            groups_by_ua[ua_l] += 1
+            for rule in (group.allow or []):
+                rules_by_ua[ua_l]["allow"].add(_normalize_rule_path(rule.path))
+            for rule in (group.disallow or []):
+                rules_by_ua[ua_l]["disallow"].add(_normalize_rule_path(rule.path))
+
+    for ua, count in groups_by_ua.items():
+        if count > 1:
+            warnings.append(
+                f"User-agent '{ua}' appears in multiple groups ({count}). "
+                "Merge into one group to avoid ambiguous interpretation."
+            )
+            details.append({"type": "ua_fragmented_groups", "user_agent": ua, "groups": count})
+
+    for ua, packs in rules_by_ua.items():
+        conflicted = sorted((packs["allow"] & packs["disallow"]) - {""})
+        for path in conflicted:
+            warnings.append(
+                f"Conflicting directives for '{ua}': both Allow and Disallow for '{path}'. "
+                "This can lead to crawler-specific behavior differences."
+            )
+            details.append({"type": "allow_disallow_same_path", "user_agent": ua, "path": path})
+
+    return {"warnings": warnings, "details": details}
+
+
+def analyze_longest_match_behaviour(result: ParseResult) -> Dict[str, Any]:
+    notes: List[str] = []
+    details: List[Dict[str, Any]] = []
+    rules_by_ua: Dict[str, Dict[str, List[str]]] = defaultdict(lambda: {"allow": [], "disallow": []})
+
+    for group in result.groups:
+        for ua in (group.user_agents or []):
+            ua_l = (ua or "").strip().lower()
+            if not ua_l:
+                continue
+            for rule in (group.allow or []):
+                path = _normalize_rule_path(rule.path)
+                if path:
+                    rules_by_ua[ua_l]["allow"].append(path)
+            for rule in (group.disallow or []):
+                path = _normalize_rule_path(rule.path)
+                if path:
+                    rules_by_ua[ua_l]["disallow"].append(path)
+
+    for ua, packs in rules_by_ua.items():
+        for allow_path in packs["allow"]:
+            for disallow_path in packs["disallow"]:
+                if disallow_path.startswith(allow_path) and len(disallow_path) > len(allow_path):
+                    notes.append(
+                        f"Longest-match note for '{ua}': Allow '{allow_path}' is broader than "
+                        f"Disallow '{disallow_path}'. Deeper URLs may remain blocked."
+                    )
+                    details.append(
+                        {
+                            "user_agent": ua,
+                            "allow_path": allow_path,
+                            "disallow_path": disallow_path,
+                            "type": "allow_broader_than_disallow",
+                        }
+                    )
+        if len(notes) >= 30:
+            break
+
+    return {"notes": dedupe_keep_order(notes)[:30], "details": details[:100]}
+
+
+def validate_host_directives(hosts: List[str]) -> Dict[str, Any]:
+    warnings: List[str] = []
+    normalized_hosts = [str(h or "").strip() for h in hosts if str(h or "").strip()]
+    uniq = dedupe_keep_order(normalized_hosts)
+    host_re = re.compile(r"^[a-z0-9.-]+(?::\d+)?$", re.I)
+
+    if len(uniq) > 1:
+        warnings.append(
+            f"Multiple Host directives found ({len(uniq)}). "
+            "Yandex expects a single canonical host value."
+        )
+
+    for host in uniq:
+        if host.startswith(("http://", "https://")) or "/" in host:
+            warnings.append(
+                f"Host directive '{host}' looks invalid. Use host only (no scheme/path), e.g. 'example.com'."
+            )
+        elif not host_re.fullmatch(host):
+            warnings.append(
+                f"Host directive '{host}' has non-standard format for Yandex."
+            )
+
+    return {"warnings": warnings, "hosts": uniq}
 
 def validate_sitemaps(sitemaps: List[str], timeout: int = 4, max_checks: int = 5) -> List[Dict[str, Any]]:
     """Validate sitemap URLs declared in robots.txt."""
@@ -545,6 +676,15 @@ def build_issues_and_warnings(result: ParseResult) -> Dict[str, Any]:
     
     warnings.extend(find_duplicates(all_disallow, "Disallow"))
     warnings.extend(find_duplicates(all_allow, "Allow"))
+
+    conflict_scan = analyze_group_and_rule_conflicts(result)
+    warnings.extend(conflict_scan["warnings"])
+
+    longest_match_scan = analyze_longest_match_behaviour(result)
+    warnings.extend(longest_match_scan["notes"])
+
+    host_scan = validate_host_directives(result.hosts)
+    warnings.extend(host_scan["warnings"])
     if result.crawl_delays:
         warnings.append("Crawl-delay found: Google ignores this directive.")
     
@@ -596,6 +736,11 @@ def build_issues_and_warnings(result: ParseResult) -> Dict[str, Any]:
         )
     
     # Generate recommendations and quality metrics
+    if result.unsupported_directives:
+        warnings.append(
+            "Unsupported directives found in robots.txt (e.g., noindex/nofollow). "
+            "Use meta robots or X-Robots-Tag for indexation control."
+        )
     param_recs = build_param_merge_recommendations(result)
     all_recommendations = dedupe_keep_order(RECOMMENDATIONS.copy() + param_recs)
     warnings = dedupe_keep_order(warnings)
@@ -634,6 +779,10 @@ def build_issues_and_warnings(result: ParseResult) -> Dict[str, Any]:
         "sitemap_checks": sitemap_checks,
         "crawl_delays": result.crawl_delays,
         "hosts": result.hosts,
+        "host_validation": host_scan,
+        "directive_conflicts": conflict_scan,
+        "longest_match_analysis": longest_match_scan,
+        "unsupported_directives": result.unsupported_directives,
         "syntax_errors": result.syntax_errors,
         "quality_score": metrics["quality_score"],
         "quality_grade": metrics["quality_grade"],
@@ -716,6 +865,97 @@ def check_robots_full(url: str) -> Dict[str, Any]:
         }
     
     if status_code != 200:
+        http_notes: List[str] = []
+        issues: List[str] = []
+        warnings: List[str] = []
+        top_fixes: List[Dict[str, str]] = []
+        severity_counts = {"critical": 0, "warning": 0, "info": 0}
+        quality_score = 35
+        quality_grade = "F"
+
+        if status_code in (404, 410):
+            warnings.append(
+                f"Robots.txt returns HTTP {status_code}. Google treats this as no robots restrictions (except 429 case)."
+            )
+            http_notes.append("Google: 4xx (except 429) is processed like missing robots.txt.")
+            http_notes.append("Yandex: robots rules are unavailable for reading until file is restored.")
+            top_fixes.append({
+                "priority": "medium",
+                "title": "Create /robots.txt",
+                "why": "Search bots cannot read explicit crawl/indexing rules from your domain.",
+                "action": "Publish /robots.txt and include at least User-agent and Sitemap directives."
+            })
+            severity_counts["warning"] = 1
+            quality_score = 55
+            quality_grade = "D"
+        elif status_code == 429:
+            issues.append("Robots.txt returns HTTP 429 (Too Many Requests). Bots may postpone crawling.")
+            warnings.append("429 for robots.txt can delay crawling and make rules temporarily unavailable.")
+            http_notes.append("Google: 429 is not treated as normal 4xx missing-file behavior.")
+            top_fixes.append({
+                "priority": "high",
+                "title": "Stabilize robots.txt availability",
+                "why": "Rate limiting blocks crawler access to robots directives.",
+                "action": "Allow reliable access to /robots.txt without aggressive rate limits."
+            })
+            severity_counts["critical"] = 1
+            severity_counts["warning"] = 1
+            quality_score = 25
+            quality_grade = "F"
+        elif status_code in (401, 403):
+            issues.append(f"Robots.txt returns HTTP {status_code}. Access to rules is restricted.")
+            warnings.append("Bots may apply fallback behavior when robots.txt cannot be read.")
+            http_notes.append("Google: 4xx (except 429) is generally treated as no robots file.")
+            http_notes.append("Yandex: inaccessible robots.txt can affect predictable crawl control.")
+            top_fixes.append({
+                "priority": "high",
+                "title": "Open access to /robots.txt",
+                "why": "Crawler cannot read crawl policy due to authorization/forbidden response.",
+                "action": "Return HTTP 200 for public /robots.txt and remove auth blocks."
+            })
+            severity_counts["critical"] = 1
+            severity_counts["warning"] = 1
+            quality_score = 30
+            quality_grade = "F"
+        elif 500 <= status_code < 600:
+            issues.append(f"Robots.txt returns server error HTTP {status_code}.")
+            warnings.append("Server errors on robots.txt can pause or destabilize crawler behavior.")
+            http_notes.append("Google: on 5xx, crawling may pause; cached robots may be reused for a limited period.")
+            http_notes.append("Yandex: unavailable robots.txt reduces crawl predictability until recovered.")
+            top_fixes.append({
+                "priority": "critical",
+                "title": "Fix server errors on /robots.txt",
+                "why": "Search bots cannot reliably fetch robots directives.",
+                "action": "Return stable HTTP 200 and monitor uptime for /robots.txt."
+            })
+            severity_counts["critical"] = 1
+            severity_counts["warning"] = 1
+            quality_score = 20
+            quality_grade = "F"
+        elif 300 <= status_code < 400:
+            warnings.append(f"Robots.txt returns redirect HTTP {status_code}.")
+            http_notes.append("Keep redirects short and stable; long redirect chains may break robots fetch.")
+            top_fixes.append({
+                "priority": "medium",
+                "title": "Serve robots.txt directly",
+                "why": "Redirect chains can prevent some crawlers from reaching final robots content.",
+                "action": "Return HTTP 200 on canonical /robots.txt URL."
+            })
+            severity_counts["warning"] = 1
+            quality_score = 45
+            quality_grade = "E"
+        else:
+            issues.append(f"Robots.txt is unavailable with HTTP {status_code}.")
+            top_fixes.append({
+                "priority": "high",
+                "title": "Restore robots.txt availability",
+                "why": "Search bots cannot consume expected crawl rules.",
+                "action": "Ensure /robots.txt returns HTTP 200 with valid directives."
+            })
+            severity_counts["critical"] = 1
+            quality_score = 30
+            quality_grade = "F"
+
         return {
             "task_type": "robots_check",
             "url": url,
@@ -729,31 +969,30 @@ def check_robots_full(url: str) -> Dict[str, Any]:
                 "disallow_rules": 0,
                 "allow_rules": 0,
                 "sitemaps": [],
-                "issues": [f"Robots.txt не найден (статус: {status_code})"],
-                "warnings": ["Создайте файл robots.txt для управления индексацией"],
+                "issues": issues,
+                "warnings": warnings,
                 "recommendations": RECOMMENDATIONS,
                 "syntax_errors": [],
-                "critical_issues": [f"Robots.txt не найден (статус: {status_code})"],
-                "warning_issues": ["Создайте файл robots.txt для управления индексацией"],
-                "info_issues": [],
+                "critical_issues": issues,
+                "warning_issues": warnings,
+                "info_issues": http_notes,
                 "hosts": [],
                 "sitemap_checks": [],
-                "quality_score": 20 if status_code else 0,
-                "quality_grade": "F",
+                "quality_score": quality_score,
+                "quality_grade": quality_grade,
                 "production_ready": False,
-                "top_fixes": [{
-                    "priority": "high",
-                    "title": "Создайте robots.txt",
-                    "why": "Поисковые системы не получили правила индексации.",
-                    "action": "Добавьте файл /robots.txt и укажите sitemap."
-                }],
-                "severity_counts": {"critical": 1, "warning": 1, "info": 0},
+                "top_fixes": top_fixes,
+                "severity_counts": severity_counts,
                 "error": None,
                 "can_continue": True,
                 "raw_content": raw_text or "",
+                "http_status_analysis": {
+                    "status_code": status_code,
+                    "notes": http_notes
+                }
             }
         }
-    
+
     # Full parsing and analysis
     result = parse_robots(raw_text)
     stats = collect_stats(result)
