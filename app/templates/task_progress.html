@@ -80,6 +80,23 @@
 const taskId = "{{ task_id }}";
 let pollInterval;
 
+function addTaskToLocalHistory(item) {
+    try {
+        if (typeof window.addToHistory === 'function') {
+            window.addToHistory(item);
+            return;
+        }
+        const HISTORY_KEY = 'seo_tools_history';
+        const MAX_HISTORY_ITEMS = 10;
+        const raw = localStorage.getItem(HISTORY_KEY);
+        const history = raw ? JSON.parse(raw) : [];
+        history.unshift(item);
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, MAX_HISTORY_ITEMS)));
+    } catch (e) {
+        console.error('Error writing history:', e);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     checkTaskStatus();
     pollInterval = setInterval(checkTaskStatus, 1000);
@@ -545,6 +562,13 @@ async function runSitemapCheckFromRobots(sitemapUrl) {
         if (!response.ok || !data.task_id) {
             throw new Error(data.error || data.detail || `HTTP ${response.status}`);
         }
+        addTaskToLocalHistory({
+            taskId: data.task_id,
+            tool: 'sitemap-validate',
+            url: sitemapUrl,
+            status: data.status || 'SUCCESS',
+            timestamp: new Date().toISOString()
+        });
         window.location.href = `/results/${data.task_id}`;
     } catch (error) {
         console.error('Error starting sitemap validation:', error);
