@@ -1552,6 +1552,15 @@ function generateSitemapHTMLV2(result) {
     const filesValidRate = scanned > 0 ? Math.round((validScanned / scanned) * 1000) / 10 : 0;
     const exportCoverage = totalUrls > 0 ? Math.round((exported / totalUrls) * 1000) / 10 : 0;
     const riskLevel = errors.length > 0 ? 'High' : (warnings.length > 0 ? 'Medium' : 'Low');
+    const scanLimitFiles = Number(r.scan_limit_files || 0);
+    const scanLimitReached = !!r.scan_limit_reached;
+    const scanQueueRemaining = Number(r.scan_queue_remaining || 0);
+    const scanProgressByLimit = scanLimitFiles > 0 ? Math.min(100, Math.round((scanned / scanLimitFiles) * 1000) / 10) : 100;
+    const maxUrlsPerFile = Math.max(1, ...sitemapFiles.map(f => Number(f.urls_count || 0)));
+    const phaseFetchDone = Number.isFinite(Number(r.status_code)) && Number(r.status_code) > 0;
+    const phaseTraverseDone = scanned > 0;
+    const phaseParseDone = totalUrls > 0 || errors.length > 0;
+    const phaseFinalizeDone = true;
 
     return `
         <div class="space-y-4">
@@ -1605,6 +1614,46 @@ function generateSitemapHTMLV2(result) {
                 ${r.error ? `<div class="mt-3 text-red-600 font-medium">Ошибка: ${r.error}</div>` : ''}
                 ${r.urls_export_truncated ? `<div class="mt-3 text-amber-700 text-sm">Экспорт ограничен до ${r.max_export_urls || 0} URL.</div>` : ''}
                 ${(r.export_parts_count || 0) > 1 ? `<div class="mt-2 text-gray-600 text-sm">Рекомендуемое число частей: ${r.export_parts_count} ( ${exportChunkSize} URL).</div>` : ''}
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h4 class="font-semibold text-gray-700 mb-3">Scan Visualization</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs mb-4">
+                    <div class="px-3 py-2 rounded border ${phaseFetchDone ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">1. Fetch root</div>
+                    <div class="px-3 py-2 rounded border ${phaseTraverseDone ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">2. Traverse sitemap index</div>
+                    <div class="px-3 py-2 rounded border ${phaseParseDone ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">3. Parse URLs</div>
+                    <div class="px-3 py-2 rounded border ${phaseFinalizeDone ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">4. Build report</div>
+                </div>
+                <div class="space-y-3">
+                    <div>
+                        <div class="flex justify-between text-xs text-gray-600 mb-1">
+                            <span>Traversal progress</span>
+                            <span>${scanned} / ${scanLimitFiles || scanned} files (${scanProgressByLimit}%)</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2">
+                            <div class="bg-blue-500 h-2 rounded-full" style="width:${scanProgressByLimit}%"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-xs text-gray-600 mb-1">
+                            <span>Unique URL coverage</span>
+                            <span>${coverageUnique}%</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2">
+                            <div class="bg-emerald-500 h-2 rounded-full" style="width:${coverageUnique}%"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-xs text-gray-600 mb-1">
+                            <span>Export coverage</span>
+                            <span>${exportCoverage}%</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2">
+                            <div class="bg-indigo-500 h-2 rounded-full" style="width:${exportCoverage}%"></div>
+                        </div>
+                    </div>
+                </div>
+                ${scanLimitReached ? `<div class="mt-3 text-xs text-amber-700">Traversal limit reached: ${scanLimitFiles}. Remaining queued sitemaps: ${scanQueueRemaining}.</div>` : ''}
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
