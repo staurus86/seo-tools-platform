@@ -172,23 +172,32 @@ function initSiteAuditProBatchUI() {
     const reportModeSelect = form.querySelector('select[name="mode"]');
     if (!modeSelect || !batchBox || !batchFlag || !maxPagesInput || !rootUrlInput || !reportModeSelect) return;
 
+    const applyCrawlLimitByMode = () => {
+        const isBatch = modeSelect.value === 'batch';
+        const isFull = reportModeSelect.value === 'full';
+        if (isBatch) return;
+        const crawlMax = isFull ? 30 : 5;
+        maxPagesInput.max = String(crawlMax);
+        if (parseInt(maxPagesInput.value || '1', 10) > crawlMax) {
+            maxPagesInput.value = String(crawlMax);
+        }
+        maxPagesInput.title = `Max pages in crawl mode (${isFull ? 'full' : 'quick'})`;
+    };
+
     const sync = () => {
         const isBatch = modeSelect.value === 'batch';
         batchBox.classList.toggle('hidden', !isBatch);
         batchFlag.value = isBatch ? 'true' : 'false';
-        maxPagesInput.max = isBatch ? '500' : '5';
         if (isBatch) {
             maxPagesInput.value = '500';
+            maxPagesInput.max = '500';
             maxPagesInput.title = 'Max URLs in batch mode';
             rootUrlInput.required = false;
             rootUrlInput.disabled = true;
             reportModeSelect.value = 'full';
             reportModeSelect.disabled = true;
         } else {
-            if (parseInt(maxPagesInput.value || '5', 10) > 5) {
-                maxPagesInput.value = '5';
-            }
-            maxPagesInput.title = 'Max pages in crawl mode';
+            applyCrawlLimitByMode();
             rootUrlInput.disabled = false;
             rootUrlInput.required = true;
             reportModeSelect.disabled = false;
@@ -196,6 +205,7 @@ function initSiteAuditProBatchUI() {
     };
 
     modeSelect.addEventListener('change', sync);
+    reportModeSelect.addEventListener('change', applyCrawlLimitByMode);
     sync();
 }
 

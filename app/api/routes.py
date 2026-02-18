@@ -3859,9 +3859,13 @@ async def create_site_audit_pro(data: SiteAuditProRequest, background_tasks: Bac
     extended_hreflang_checks = bool(getattr(data, "extended_hreflang_checks", False))
     if batch_mode:
         mode = "full"
-    max_pages_limit = int(getattr(settings, "SITE_AUDIT_PRO_MAX_PAGES_LIMIT", 5) or 5)
-    effective_max_pages_limit = 500 if batch_mode else max_pages_limit
-    max_pages = max(1, min(int(data.max_pages or 5), effective_max_pages_limit))
+    base_limit = int(getattr(settings, "SITE_AUDIT_PRO_MAX_PAGES_LIMIT", 5) or 5)
+    quick_limit = int(getattr(settings, "SITE_AUDIT_PRO_MAX_PAGES_LIMIT_QUICK", min(base_limit, 5)) or min(base_limit, 5))
+    full_limit = int(getattr(settings, "SITE_AUDIT_PRO_MAX_PAGES_LIMIT_FULL", max(base_limit, 30)) or max(base_limit, 30))
+    mode_limit = full_limit if mode == "full" else quick_limit
+    effective_max_pages_limit = 500 if batch_mode else mode_limit
+    mode_default_pages = 30 if mode == "full" else 5
+    max_pages = max(1, min(int(data.max_pages or mode_default_pages), effective_max_pages_limit))
 
     raw_batch_urls = list(getattr(data, "batch_urls", []) or [])
     normalized_batch_urls: List[str] = []
