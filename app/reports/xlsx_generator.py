@@ -385,46 +385,50 @@ class XLSXGenerator:
         return filepath
     
     def generate_sitemap_report(self, task_id: str, data: Dict[str, Any]) -> str:
-        """Generate a detailed sitemap validation XLSX report."""
+        """Generate a complete sitemap validation XLSX report."""
         wb = Workbook()
         header_style = self._create_header_style()
         cell_style = self._create_cell_style()
         results = data.get('results', {}) or {}
-        report_url = data.get('url', 'РЅ/Рґ')
+        report_url = data.get('url', 'n/a')
 
         ws = wb.active
-        ws.title = "Р РЋР Р†Р С•Р Т‘Р С”Р В°"
-        ws['A1'] = 'Р С›РЎвЂљРЎвЂЎР ВµРЎвЂљ по Р Р†Р В°Р В»Р С‘Р Т‘Р В°РЎвЂ Р С‘Р С‘ sitemap'
+        ws.title = "Summary"
+        ws['A1'] = 'Sitemap Validation Report'
         ws['A1'].font = Font(bold=True, size=16)
         ws.merge_cells('A1:E1')
 
         summary_rows = [
             ("URL", report_url),
-            ("Р вЂ™Р В°Р В»Р С‘Р Т‘Р ВµР Р…", "Р вЂќР В°" if results.get("valid") else "Р СњР ВµРЎвЂљ"),
-            ("HTTP РЎРѓРЎвЂљР В°РЎвЂљСѓСЃ", results.get("status_code", "РЅ/Рґ")),
-            ("Р СџРЎР‚Р С•Р Р†Р ВµРЎР‚Р ВµР Р…Р С• sitemap", results.get("sitemaps_scanned", 0)),
-            ("Р вЂ™Р В°Р В»Р С‘Р Т‘Р Р…РЎвЂ№РЎвЂ¦ sitemap", results.get("sitemaps_valid", 0)),
-            ("Р вЂ™РЎРѓР Вµго URL", results.get("urls_count", 0)),
-            ("Р Р€Р Р…Р С‘Р С”Р В°Р В»РЎРЉР Р…РЎвЂ№РЎвЂ¦ URL", results.get("unique_urls_count", 0)),
-            ("Р вЂќРЎС“Р В±Р В»Р С‘ URL", results.get("duplicate_urls_count", 0)),
-            ("Р СњР ВµР С”Р С•РЎР‚РЎР‚Р ВµР С”РЎвЂљР Р…РЎвЂ№Р Вµ URL", results.get("invalid_urls_count", 0)),
-            ("Р С›РЎв‚¬Р С‘Р В±Р С”Р С‘ lastmod", results.get("invalid_lastmod_count", 0)),
-            ("Р С›РЎв‚¬Р С‘Р В±Р С”Р С‘ changefreq", results.get("invalid_changefreq_count", 0)),
-            ("Р С›РЎв‚¬Р С‘Р В±Р С”Р С‘ priority", results.get("invalid_priority_count", 0)),
-            ("Р В Р В°Р В·Р СР ВµРЎР‚ Р Т‘Р В°Р Р…Р Р…РЎвЂ№РЎвЂ¦ (Р В±Р В°Р в„–РЎвЂљ)", results.get("size", 0)),
+            ("Valid", "Yes" if results.get("valid") else "No"),
+            ("HTTP status", results.get("status_code", "n/a")),
+            ("Sitemaps scanned", results.get("sitemaps_scanned", 0)),
+            ("Sitemaps valid", results.get("sitemaps_valid", 0)),
+            ("Total URLs discovered", results.get("urls_count", 0)),
+            ("Unique URLs", results.get("unique_urls_count", 0)),
+            ("Duplicate URLs", results.get("duplicate_urls_count", 0)),
+            ("Invalid URLs", results.get("invalid_urls_count", 0)),
+            ("Invalid lastmod", results.get("invalid_lastmod_count", 0)),
+            ("Invalid changefreq", results.get("invalid_changefreq_count", 0)),
+            ("Invalid priority", results.get("invalid_priority_count", 0)),
+            ("Total size (bytes)", results.get("size", 0)),
+            ("Export URLs truncated", "Yes" if results.get("urls_export_truncated") else "No"),
+            ("Max export URLs", results.get("max_export_urls", 0)),
+            ("Export chunk size", results.get("export_chunk_size", 0)),
+            ("Export parts count", results.get("export_parts_count", 0)),
         ]
         row = 3
         for key, value in summary_rows:
             ws.cell(row=row, column=1, value=key).font = Font(bold=True)
             ws.cell(row=row, column=2, value=value)
             row += 1
-        ws.column_dimensions['A'].width = 28
+        ws.column_dimensions['A'].width = 34
         ws.column_dimensions['B'].width = 80
 
-        files_ws = wb.create_sheet("Р В¤Р В°Р в„–Р В»РЎвЂ№ Sitemap")
+        files_ws = wb.create_sheet("Sitemap Files")
         files_headers = [
-            "Sitemap URL", "Р СћР С‘Р С—", "HTTP", "OK", "URL",
-            "Р вЂќРЎС“Р В±Р В»Р С‘", "Р В Р В°Р В·Р СР ВµРЎР‚ (Р В±Р В°Р в„–РЎвЂљ)", "Р С›РЎв‚¬Р С‘Р В±Р С”Р С‘", "Р СџРЎР‚Р ВµР Т‘РЎС“Р С—РЎР‚Р ВµР В¶Р Т‘Р ВµР Р…Р С‘РЎРЏ", "Р РЋР ВµРЎР‚РЎРЉР ВµР В·Р Р…Р С•РЎРѓРЎвЂљРЎРЉ"
+            "Sitemap URL", "Type", "HTTP", "OK", "URLs",
+            "Duplicates", "Size bytes", "Errors", "Warnings", "Severity"
         ]
         for col, header in enumerate(files_headers, 1):
             cell = files_ws.cell(row=1, column=col, value=header)
@@ -436,7 +440,7 @@ class XLSXGenerator:
                 item.get("sitemap_url", ""),
                 item.get("type", ""),
                 item.get("status_code", ""),
-                "Р вЂќР В°" if item.get("ok") else "Р СњР ВµРЎвЂљ",
+                "Yes" if item.get("ok") else "No",
                 item.get("urls_count", 0),
                 item.get("duplicate_count", 0),
                 item.get("size_bytes", 0),
@@ -454,14 +458,14 @@ class XLSXGenerator:
         for col, width in enumerate([72, 14, 10, 8, 12, 12, 14, 60, 60, 14], 1):
             files_ws.column_dimensions[get_column_letter(col)].width = width
 
-        errors_ws = wb.create_sheet("Р С›РЎв‚¬Р С‘Р В±Р С”Р С‘")
-        errors_ws.cell(row=1, column=1, value="Р С›РЎв‚¬Р С‘Р В±Р С”Р В°")
-        errors_ws.cell(row=1, column=2, value="Р РЋР ВµРЎР‚РЎРЉР ВµР В·Р Р…Р С•РЎРѓРЎвЂљРЎРЉ")
+        errors_ws = wb.create_sheet("Errors")
+        errors_ws.cell(row=1, column=1, value="Error")
+        errors_ws.cell(row=1, column=2, value="Severity")
         self._apply_style(errors_ws.cell(row=1, column=1), header_style)
         self._apply_style(errors_ws.cell(row=1, column=2), header_style)
         for idx, err in enumerate((results.get("errors", []) or []), start=2):
             err_cell = errors_ws.cell(row=idx, column=1, value=err)
-            sev_cell = errors_ws.cell(row=idx, column=2, value="Р С™РЎР‚Р С‘РЎвЂљР С‘РЎвЂЎР Р…Р С•")
+            sev_cell = errors_ws.cell(row=idx, column=2, value="Critical")
             self._apply_style(err_cell, cell_style)
             self._apply_style(sev_cell, cell_style)
             self._apply_row_severity_fill(errors_ws, idx, 1, 2, "critical")
@@ -471,14 +475,14 @@ class XLSXGenerator:
         errors_ws.freeze_panes = "A2"
         errors_ws.auto_filter.ref = "A1:B1"
 
-        warnings_ws = wb.create_sheet("Р СџРЎР‚Р ВµР Т‘РЎС“Р С—РЎР‚Р ВµР В¶Р Т‘Р ВµР Р…Р С‘РЎРЏ")
-        warnings_ws.cell(row=1, column=1, value="Р СџРЎР‚Р ВµР Т‘РЎС“Р С—РЎР‚Р ВµР В¶Р Т‘Р ВµР Р…Р С‘Р Вµ")
-        warnings_ws.cell(row=1, column=2, value="Р РЋР ВµРЎР‚РЎРЉР ВµР В·Р Р…Р С•РЎРѓРЎвЂљРЎРЉ")
+        warnings_ws = wb.create_sheet("Warnings")
+        warnings_ws.cell(row=1, column=1, value="Warning")
+        warnings_ws.cell(row=1, column=2, value="Severity")
         self._apply_style(warnings_ws.cell(row=1, column=1), header_style)
         self._apply_style(warnings_ws.cell(row=1, column=2), header_style)
         for idx, warn in enumerate((results.get("warnings", []) or []), start=2):
             warn_cell = warnings_ws.cell(row=idx, column=1, value=warn)
-            sev_cell = warnings_ws.cell(row=idx, column=2, value="Р СџРЎР‚Р ВµР Т‘РЎС“Р С—РЎР‚Р ВµР В¶Р Т‘Р ВµР Р…Р С‘Р Вµ")
+            sev_cell = warnings_ws.cell(row=idx, column=2, value="Warning")
             self._apply_style(warn_cell, cell_style)
             self._apply_style(sev_cell, cell_style)
             self._apply_row_severity_fill(warnings_ws, idx, 1, 2, "warning")
@@ -489,7 +493,7 @@ class XLSXGenerator:
         warnings_ws.auto_filter.ref = "A1:B1"
 
         dup_ws = wb.create_sheet("Duplicates")
-        dup_headers = ["URL", "Р СџР ВµРЎР‚Р Р†РЎвЂ№Р в„– sitemap", "Р вЂќРЎС“Р В±Р В»Р С‘Р С”Р В°РЎвЂљ Р Р† sitemap", "Р РЋР ВµРЎР‚РЎРЉР ВµР В·Р Р…Р С•РЎРѓРЎвЂљРЎРЉ"]
+        dup_headers = ["URL", "First sitemap", "Duplicate sitemap", "Severity"]
         for col, header in enumerate(dup_headers, 1):
             cell = dup_ws.cell(row=1, column=col, value=header)
             self._apply_style(cell, header_style)
@@ -497,7 +501,7 @@ class XLSXGenerator:
             dup_ws.cell(row=row_idx, column=1, value=item.get("url", ""))
             dup_ws.cell(row=row_idx, column=2, value=item.get("first_sitemap", ""))
             dup_ws.cell(row=row_idx, column=3, value=item.get("duplicate_sitemap", ""))
-            dup_ws.cell(row=row_idx, column=4, value="Р С™РЎР‚Р С‘РЎвЂљР С‘РЎвЂЎР Р…Р С•")
+            dup_ws.cell(row=row_idx, column=4, value="Critical")
             for col in range(1, 5):
                 self._apply_style(dup_ws.cell(row=row_idx, column=col), cell_style)
             self._apply_row_severity_fill(dup_ws, row_idx, 1, 4, "critical")
@@ -508,6 +512,33 @@ class XLSXGenerator:
         dup_ws.column_dimensions['B'].width = 60
         dup_ws.column_dimensions['C'].width = 60
         dup_ws.column_dimensions['D'].width = 14
+
+        rec_ws = wb.create_sheet("Recommendations")
+        rec_ws.cell(row=1, column=1, value="Recommendation")
+        rec_ws.cell(row=1, column=2, value="Severity")
+        self._apply_style(rec_ws.cell(row=1, column=1), header_style)
+        self._apply_style(rec_ws.cell(row=1, column=2), header_style)
+        for idx, rec in enumerate((results.get("recommendations", []) or []), start=2):
+            rec_cell = rec_ws.cell(row=idx, column=1, value=rec)
+            sev_cell = rec_ws.cell(row=idx, column=2, value="Info")
+            self._apply_style(rec_cell, cell_style)
+            self._apply_style(sev_cell, cell_style)
+            self._apply_row_severity_fill(rec_ws, idx, 1, 2, "info")
+            self._apply_severity_cell_style(sev_cell, "info")
+        rec_ws.column_dimensions['A'].width = 140
+        rec_ws.column_dimensions['B'].width = 14
+        rec_ws.freeze_panes = "A2"
+        rec_ws.auto_filter.ref = "A1:B1"
+
+        urls_ws = wb.create_sheet("Export URLs")
+        urls_ws.cell(row=1, column=1, value="URL")
+        self._apply_style(urls_ws.cell(row=1, column=1), header_style)
+        for idx, u in enumerate((results.get("export_urls", []) or []), start=2):
+            c = urls_ws.cell(row=idx, column=1, value=u)
+            self._apply_style(c, cell_style)
+        urls_ws.column_dimensions['A'].width = 120
+        urls_ws.freeze_panes = "A2"
+        urls_ws.auto_filter.ref = "A1:A1"
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         self._save_workbook(wb, filepath)

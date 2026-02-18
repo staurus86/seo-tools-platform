@@ -1558,6 +1558,9 @@ function generateSitemapHTMLV2(result) {
                         <button onclick="downloadSitemapXlsxReport()" class="text-indigo-600 hover:text-indigo-800 text-sm">
                             <i class="fas fa-file-excel mr-1"></i>Скачать XLSX
                         </button>
+                        <button onclick="copyToClipboard(JSON.stringify(lastTaskResult, null, 2))" class="text-blue-600 hover:text-blue-800 text-sm">
+                            <i class="fas fa-code mr-1"></i>JSON
+                        </button>
                     </div>
                 </div>
                 <p class="text-sm text-gray-600 mb-4">
@@ -1572,6 +1575,11 @@ function generateSitemapHTMLV2(result) {
                     <div><span class="text-gray-600">Дубликат:</span> <span class="font-medium">${r.duplicate_urls_count || 0}</span></div>
                     <div><span class="text-gray-600">Sitemap проверено:</span> <span class="font-medium">${r.sitemaps_scanned || 0}</span></div>
                     <div><span class="text-gray-600">Sitemap валидно:</span> <span class="font-medium">${r.sitemaps_valid || 0}</span></div>
+                    <div><span class="text-gray-600">Invalid URL:</span> <span class="font-medium">${r.invalid_urls_count || 0}</span></div>
+                    <div><span class="text-gray-600">Invalid lastmod:</span> <span class="font-medium">${r.invalid_lastmod_count || 0}</span></div>
+                    <div><span class="text-gray-600">Invalid changefreq:</span> <span class="font-medium">${r.invalid_changefreq_count || 0}</span></div>
+                    <div><span class="text-gray-600">Invalid priority:</span> <span class="font-medium">${r.invalid_priority_count || 0}</span></div>
+                    <div><span class="text-gray-600">Size:</span> <span class="font-medium">${r.size || 0} bytes</span></div>
                 </div>
                 ${r.error ? `<div class="mt-3 text-red-600 font-medium">Ошибка: ${r.error}</div>` : ''}
                 ${r.urls_export_truncated ? `<div class="mt-3 text-amber-700 text-sm">Экспорт ограничен до ${r.max_export_urls || 0} URL.</div>` : ''}
