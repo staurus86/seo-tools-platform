@@ -159,35 +159,210 @@ class DOCXGenerator:
         return filepath
     
     def generate_robots_report(self, task_id: str, data: Dict[str, Any]) -> str:
-        """Р“РµРЅРµСЂРёСЂСѓРµС‚ РєР»РёРµРЅС‚СЃРєРёР№ РѕС‚С‡РµС‚ robots.txt."""
+        """Generate full robots.txt DOCX report with complete result coverage."""
         doc = Document()
 
-        title = doc.add_heading('РћС‚С‡РµС‚ по robots.txt', 0)
-        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        url = data.get('url', 'n/a')
+        results = data.get('results', {}) or {}
+        generated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-        doc.add_paragraph(f"URL: {data.get('url', 'н/д')}")
-        results = data.get('results', {})
-        doc.add_paragraph(f"Р¤Р°Р№Р» robots.txt РЅР°Р№РґРµРЅ: {'Р”Р°' if results.get('robots_txt_found') else 'РќРµС‚'}")
-        doc.add_paragraph(
-            "РћРїРёСЃР°РЅРёРµ: robots.txt СѓРїСЂР°РІР»СЏРµС‚ РґРѕСЃС‚упом РїРѕРёСЃРєРѕРІС‹С… Рё СЃРµСЂРІРёСЃРЅС‹С… Р±РѕС‚ов Рє СЂР°Р·РґРµР»Р°Рј СЃР°Р№С‚Р°. "
-            "Errors in this file may limit indexation of important pages."
+        def yes_no(value: Any) -> str:
+            return 'Yes' if bool(value) else 'No'
+
+        title = doc.add_heading('Robots.txt Audit Report', 0)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        subtitle = doc.add_paragraph('Technical crawl directives, risk profile, and remediation plan')
+        subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        doc.add_paragraph(f"URL: {url}")
+        doc.add_paragraph(f"Generated: {generated_at}")
+
+        self._add_heading(doc, '1. Executive Summary', level=1)
+        summary_rows = [
+            ['robots.txt found', yes_no(results.get('robots_txt_found'))],
+            ['HTTP status', str(results.get('status_code', 'n/a'))],
+            ['Quality score', str(results.get('quality_score', 'n/a'))],
+            ['Quality grade', str(results.get('quality_grade', 'n/a'))],
+            ['Production ready', yes_no(results.get('production_ready'))],
+            ['Quick status', str(results.get('quick_status', 'n/a'))],
+            ['File size (bytes)', str(results.get('content_length', 0))],
+            ['Lines count', str(results.get('lines_count', 0))],
+            ['User-agents', str(results.get('user_agents', 0))],
+            ['Disallow rules', str(results.get('disallow_rules', 0))],
+            ['Allow rules', str(results.get('allow_rules', 0))],
+            ['Sitemaps declared', str(len(results.get('sitemaps', []) or []))],
+            ['Hosts declared', str(len(results.get('hosts', []) or []))],
+            ['Crawl-delay directives', str(len(results.get('crawl_delays', {}) or {}))],
+            ['Clean-param directives', str(len(results.get('clean_params', []) or []))],
+        ]
+        self._add_table(doc, ['Metric', 'Value'], summary_rows)
+
+        severity = results.get('severity_counts', {}) or {}
+        self._add_heading(doc, '2. Severity Overview', level=1)
+        self._add_table(
+            doc,
+            ['Critical', 'Warning', 'Info'],
+            [[
+                str(severity.get('critical', 0)),
+                str(severity.get('warning', 0)),
+                str(severity.get('info', 0)),
+            ]],
         )
-        recs = results.get("recommendations", [])
-        if recs:
-            self._add_heading(doc, 'Р РµРєРѕРјРµРЅРґР°С†РёРё', level=1)
-            for rec in recs[:30]:
-                doc.add_paragraph(str(rec), style='List Bullet')
+
+        self._add_heading(doc, '3. Critical Issues', level=1)
+        critical = results.get('critical_issues', []) or results.get('issues', []) or []
+        if critical:
+            for item in critical:
+                doc.add_paragraph(str(item), style='List Bullet')
+        else:
+            doc.add_paragraph('No critical issues found.')
+
+        self._add_heading(doc, '4. Warnings', level=1)
+        warnings = results.get('warning_issues', []) or results.get('warnings', []) or []
+        if warnings:
+            for item in warnings:
+                doc.add_paragraph(str(item), style='List Bullet')
+        else:
+            doc.add_paragraph('No warnings found.')
+
+        self._add_heading(doc, '5. Informational Notes', level=1)
+        info_issues = results.get('info_issues', []) or []
+        if info_issues:
+            for item in info_issues:
+                doc.add_paragraph(str(item), style='List Bullet')
+        else:
+            doc.add_paragraph('No informational notes.')
+
+        self._add_heading(doc, '6. Top Fixes', level=1)
+        top_fixes = results.get('top_fixes', []) or []
+        if top_fixes:
+            rows = []
+            for fix in top_fixes:
+                rows.append([
+                    str(fix.get('priority', 'medium')).upper(),
+                    str(fix.get('title', '')),
+                    str(fix.get('why', '')),
+                    str(fix.get('action', '')),
+                ])
+            self._add_table(doc, ['Priority', 'Title', 'Why', 'Action'], rows)
+        else:
+            doc.add_paragraph('No prioritized fixes generated.')
+
+        self._add_heading(doc, '7. Sitemap Checks', level=1)
+        sitemap_checks = results.get('sitemap_checks', []) or []
+        if sitemap_checks:
+            rows = []
+            for check in sitemap_checks:
+                ok = check.get('ok')
+                if ok is True:
+                    status = 'OK'
+                elif ok is False:
+                    status = 'FAIL'
+                else:
+                    status = 'SKIPPED'
+                rows.append([
+                    str(check.get('url', '')),
+                    status,
+                    str(check.get('status_code', '')),
+                    str(check.get('error', '')),
+                ])
+            self._add_table(doc, ['URL', 'Status', 'HTTP', 'Error'], rows)
+        else:
+            doc.add_paragraph('No sitemap checks available.')
+
+        self._add_heading(doc, '8. Group Rules Detail', level=1)
+        groups = results.get('groups_detail', []) or []
+        if groups:
+            for idx, group in enumerate(groups, start=1):
+                uas = ', '.join(group.get('user_agents', []) or [])
+                doc.add_paragraph(f"Group {idx}: {uas}")
+                disallow_rows = [
+                    [str(item.get('path', '')), str(item.get('line', ''))]
+                    for item in (group.get('disallow', []) or [])
+                ]
+                allow_rows = [
+                    [str(item.get('path', '')), str(item.get('line', ''))]
+                    for item in (group.get('allow', []) or [])
+                ]
+                if disallow_rows:
+                    doc.add_paragraph('Disallow:')
+                    self._add_table(doc, ['Path', 'Line'], disallow_rows)
+                if allow_rows:
+                    doc.add_paragraph('Allow:')
+                    self._add_table(doc, ['Path', 'Line'], allow_rows)
+                if (not disallow_rows) and (not allow_rows):
+                    doc.add_paragraph('No allow/disallow rules in this group.')
+        else:
+            doc.add_paragraph('No parsed group details available.')
+
+        self._add_heading(doc, '9. Syntax Errors', level=1)
+        syntax_errors = results.get('syntax_errors', []) or []
+        if syntax_errors:
+            rows = []
+            for err in syntax_errors:
+                rows.append([
+                    str(err.get('line', '')),
+                    str(err.get('error', '')),
+                    str(err.get('content', '')),
+                ])
+            self._add_table(doc, ['Line', 'Error', 'Content'], rows)
+        else:
+            doc.add_paragraph('No syntax errors found.')
+
+        self._add_heading(doc, '10. Raw robots.txt (line-numbered view)', level=1)
+        raw = str(results.get('raw_content', '') or '')
+        if raw:
+            for idx, line in enumerate(raw.splitlines(), start=1):
+                p_line = doc.add_paragraph()
+                run_num = p_line.add_run(f"{idx:4} | ")
+                run_num.font.size = Pt(8)
+                run_num.font.color.rgb = RGBColor(120, 120, 120)
+                run_num.font.name = 'Consolas'
+                run_txt = p_line.add_run(line)
+                run_txt.font.size = Pt(9)
+                run_txt.font.name = 'Consolas'
+        else:
+            doc.add_paragraph('Raw robots.txt content is unavailable.')
+
+        self._add_heading(doc, '11. Additional Fields Snapshot', level=1)
+        covered = {
+            'robots_txt_found', 'status_code', 'quality_score', 'quality_grade', 'production_ready', 'quick_status',
+            'content_length', 'lines_count', 'user_agents', 'disallow_rules', 'allow_rules', 'sitemaps', 'hosts',
+            'crawl_delays', 'clean_params', 'severity_counts', 'critical_issues', 'issues', 'warning_issues',
+            'warnings', 'info_issues', 'top_fixes', 'sitemap_checks', 'groups_detail', 'syntax_errors', 'raw_content',
+        }
+        extra_rows = []
+        for key in sorted(results.keys()):
+            if key in covered:
+                continue
+            value = results.get(key)
+            if isinstance(value, (dict, list)):
+                rendered = json.dumps(value, ensure_ascii=False)
+            else:
+                rendered = str(value)
+            if len(rendered) > 500:
+                rendered = rendered[:500] + ' ...'
+            extra_rows.append([key, rendered])
+        if extra_rows:
+            self._add_table(doc, ['Field', 'Value'], extra_rows)
+        else:
+            doc.add_paragraph('No additional fields beyond core sections.')
+
+        self._add_heading(doc, '12. Official Documentation', level=1)
+        doc.add_paragraph('Google Search Central: https://developers.google.com/search/docs/crawling-indexing/robots/robots_txt')
+        doc.add_paragraph('Yandex Webmaster: https://yandex.com/support/webmaster/en/robot-workings/allow-disallow')
 
         doc.add_paragraph()
-        footer = doc.add_paragraph(f"РћС‚С‡РµС‚ СЃС„РѕСЂРјРёСЂРѕРІР°РЅ SEO РРЅСЃС‚СЂСѓРјРµРЅС‚С‹: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        footer = doc.add_paragraph(f"Generated by SEO Tools Platform at {generated_at}")
         footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        footer.runs[0].font.size = Pt(8)
-        footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
+        if footer.runs:
+            footer.runs[0].font.size = Pt(8)
+            footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)
         return filepath
-    
+
     def generate_sitemap_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Р“РµРЅРµСЂРёСЂСѓРµС‚ РєР»РёРµРЅС‚СЃРєРёР№ РѕС‚С‡РµС‚ по sitemap."""
         doc = Document()
