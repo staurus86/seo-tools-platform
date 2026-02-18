@@ -457,12 +457,15 @@ def build_param_merge_recommendations(result: ParseResult) -> List[str]:
             merged = "&".join(uniq[:8])
             if path_key == "*":
                 recs.append(
-                    f"Several global Clean-param rules can be merged into one: 'Clean-param: {merged}'."
+                    "Potential optimization (Yandex-only, requires validation): "
+                    f"if ALL these params never change page content, you may merge into one global rule: "
+                    f"'Clean-param: {merged}'. Otherwise keep path-specific rules."
                 )
             else:
                 recs.append(
-                    f"Several Clean-param rules for '{path_key}' can be merged into: "
-                    f"'Clean-param: {merged} {path_key}'."
+                    "Potential optimization (Yandex-only, requires validation): "
+                    f"for path '{path_key}', if these params do not affect document content, "
+                    f"you may merge into: 'Clean-param: {merged} {path_key}'."
                 )
 
     return dedupe_keep_order(recs)
