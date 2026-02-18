@@ -1529,6 +1529,9 @@ function generateSitemapHTMLV2(result) {
     const warnings = r.warnings || [];
     const errors = r.errors || [];
     const recommendations = r.recommendations || [];
+    const highlights = r.highlights || [];
+    const qualityScore = Number.isFinite(r.quality_score) ? r.quality_score : null;
+    const qualityGrade = r.quality_grade || '';
     const duplicateDetails = r.duplicate_details || [];
     const duplicateLines = duplicateDetails.map(d => `${d.url}\tпервый: ${d.first_sitemap || '-'}\tдубликат: ${d.duplicate_sitemap || '-'}`);
     const exportChunkSize = r.export_chunk_size || 25000;
@@ -1573,7 +1576,7 @@ function generateSitemapHTMLV2(result) {
                     <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${healthBadge}">
                         ${healthText}
                     </span>
-                    <span class="ml-3 text-sm text-gray-600">Errors: ${errors.length} | Warnings: ${warnings.length} | Recommendations: ${recommendations.length}</span>
+                    <span class="ml-3 text-sm text-gray-600">Errors: ${errors.length} | Warnings: ${warnings.length} | Recommendations: ${recommendations.length}${qualityScore !== null ? ` | Score: ${qualityScore}${qualityGrade ? ` (${qualityGrade})` : ''}` : ''}</span>
                 </div>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div><span class="text-gray-600">URL:</span> <span class="font-medium break-all">${result.url}</span></div>
@@ -1637,6 +1640,13 @@ function generateSitemapHTMLV2(result) {
                 </div>
             ` : ''}
 
+            ${highlights.length > 0 ? `
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold text-emerald-700 mb-2">Ключевые выводы</h4>
+                    ${highlights.map(item => `<div class="text-sm text-emerald-700 mb-1">- ${escapeHtml(item)}</div>`).join('')}
+                </div>
+            ` : ''}
+
             <div class="bg-white rounded-xl shadow-md p-6">
                 <h4 class="font-semibold text-gray-700 mb-3">Файлы Sitemap (${sitemapFiles.length})</h4>
                 <div class="space-y-3">
@@ -1650,7 +1660,7 @@ function generateSitemapHTMLV2(result) {
                             ${f.duplicate_count > 0 ? `<div class="text-xs text-rose-700 mb-2">дубликат в эт sitemap: ${f.duplicate_count}</div>` : ''}
                             ${(f.urls || []).length > 0 ? `
                                 <button onclick='downloadSitemapFilePreview(${idx}, "sitemap-${safeDomain}-${dateStamp}-${idx + 1}-urls-preview.txt")' class="text-xs text-green-700 hover:text-green-900 mb-2">
-                                    <i class="fas fa-file-download mr-1"></i>Экспорт URL эт sitemap
+                                    <i class="fas fa-file-download mr-1"></i>Экспорт URL этого sitemap
                                 </button>
                             ` : ''}
                             ${(f.urls_omitted || 0) > 0 ? `<div class="text-xs text-amber-700 mb-1">тол предпросмотр, пропущено: ${f.urls_omitted}</div>` : ''}

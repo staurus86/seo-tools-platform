@@ -1408,18 +1408,63 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
         if duplicate_details_truncated:
             warnings.append(f"Duplicate details were truncated to {max_duplicate_details} entries.")
 
-        recommendations = [
-            "Use only absolute HTTP/HTTPS URLs in <loc>.",
-            "Keep each sitemap under 50,000 URLs and 50 MiB uncompressed.",
-            "Use W3C date format for <lastmod>.",
-        ]
-        if duplicate_urls_count > 0:
-            recommendations.append("Remove duplicate URLs across sitemap files.")
-
         valid_files = sum(1 for item in sitemap_files if item.get("ok"))
         total_urls_discovered = sum(item.get("urls_count", 0) for item in sitemap_files if item.get("type") == "urlset")
         urls_export_truncated = total_urls_discovered > len(all_urls)
         export_parts_count = (len(all_urls) + export_chunk_size - 1) // export_chunk_size if all_urls else 0
+
+        recommendations: List[str] = []
+        highlights: List[str] = []
+        quality_score = 100
+
+        if len(sitemap_files) > 0 and len(errors) == 0 and len(warnings) == 0:
+            highlights.append("Sitemap structure is valid and parsed without errors.")
+        if total_urls_discovered > 0:
+            highlights.append(f"Discovered URLs: {total_urls_discovered}. Unique URLs: {len(seen_urls)}.")
+        if duplicate_urls_count == 0 and total_urls_discovered > 0:
+            highlights.append("No duplicate URLs detected across scanned sitemap files.")
+
+        if invalid_urls_count > 0:
+            recommendations.append("Fix invalid <loc> values and keep only absolute HTTP/HTTPS URLs.")
+            quality_score -= min(25, invalid_urls_count)
+        if invalid_lastmod_count > 0:
+            recommendations.append("Fix <lastmod> values to W3C date format (YYYY-MM-DD or full ISO-8601).")
+            quality_score -= min(20, invalid_lastmod_count)
+        if invalid_changefreq_count > 0:
+            recommendations.append("Use only valid <changefreq> values (always/hourly/daily/weekly/monthly/yearly/never).")
+            quality_score -= min(10, invalid_changefreq_count)
+        if invalid_priority_count > 0:
+            recommendations.append("Use <priority> values only in range 0.0..1.0.")
+            quality_score -= min(10, invalid_priority_count)
+        if duplicate_urls_count > 0:
+            recommendations.append("Remove duplicate URLs across sitemap files.")
+            quality_score -= min(20, duplicate_urls_count)
+        if queue:
+            recommendations.append(f"Sitemap traversal reached limit ({max_sitemaps} files). Consider splitting index or increasing crawl budget.")
+            quality_score -= 10
+        if urls_export_truncated:
+            recommendations.append(f"Export was truncated to {max_export_urls} URLs. Use parts export or reduce sitemap scope per file.")
+        if total_urls_discovered > max_urls_per_sitemap:
+            recommendations.append("At least one sitemap exceeds 50,000 URLs; split it into multiple files.")
+            quality_score -= 10
+        if any((item.get("size_bytes", 0) or 0) > max_file_size for item in sitemap_files):
+            recommendations.append("At least one sitemap file exceeds 50 MiB; split or compress sitemap files.")
+            quality_score -= 10
+
+        if not recommendations:
+            recommendations.append("No critical sitemap issues found. Maintain current structure and monitor in search engine webmaster tools.")
+
+        quality_score = max(0, min(100, quality_score))
+        if quality_score >= 90:
+            quality_grade = "A"
+        elif quality_score >= 80:
+            quality_grade = "B"
+        elif quality_score >= 70:
+            quality_grade = "C"
+        elif quality_score >= 60:
+            quality_grade = "D"
+        else:
+            quality_grade = "F"
 
         return {
             "task_type": "sitemap_validate",
@@ -1438,6 +1483,9 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                 "errors": dedupe_keep_order(errors),
                 "warnings": dedupe_keep_order(warnings),
                 "recommendations": recommendations,
+                "highlights": dedupe_keep_order(highlights),
+                "quality_score": quality_score,
+                "quality_grade": quality_grade,
                 "sitemap_files": sitemap_files,
                 "export_urls": all_urls,
                 "urls_export_truncated": urls_export_truncated,
