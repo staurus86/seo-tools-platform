@@ -368,7 +368,23 @@ class DOCXGenerator:
             for rec in param_recommendations:
                 doc.add_paragraph(str(rec), style='List Bullet')
 
-        self._add_heading(doc, '12. Raw robots.txt (line-numbered view)', level=1)
+        self._add_heading(doc, '12. Bots Coverage', level=1)
+        present_agents = results.get('present_agents', []) or []
+        missing_bots = results.get('missing_bots', []) or []
+        if present_agents:
+            doc.add_paragraph('Detected user-agent groups:')
+            for ua in present_agents:
+                doc.add_paragraph(str(ua), style='List Bullet')
+        else:
+            doc.add_paragraph('No explicit bot groups detected.')
+        if missing_bots:
+            doc.add_paragraph('Recommended bots to add explicit rules for:')
+            for bot in missing_bots:
+                doc.add_paragraph(str(bot), style='List Bullet')
+        else:
+            doc.add_paragraph('Key bots coverage looks complete.')
+
+        self._add_heading(doc, '13. Raw robots.txt (line-numbered view)', level=1)
         raw = str(results.get('raw_content', '') or '')
         if raw:
             for idx, line in enumerate(raw.splitlines(), start=1):
@@ -383,14 +399,15 @@ class DOCXGenerator:
         else:
             doc.add_paragraph('Raw robots.txt content is unavailable.')
 
-        self._add_heading(doc, '13. Additional Fields Snapshot', level=1)
+        self._add_heading(doc, '14. Additional Fields Snapshot', level=1)
         covered = {
             'robots_txt_found', 'status_code', 'quality_score', 'quality_grade', 'production_ready', 'quick_status',
             'content_length', 'lines_count', 'user_agents', 'disallow_rules', 'allow_rules', 'sitemaps', 'hosts',
             'crawl_delays', 'clean_params', 'severity_counts', 'critical_issues', 'issues', 'warning_issues',
             'warnings', 'info_issues', 'recommendations', 'top_fixes', 'sitemap_checks', 'groups_detail', 'syntax_errors', 'raw_content',
             'http_status_analysis', 'unsupported_directives', 'host_validation', 'directive_conflicts', 'longest_match_analysis',
-            'param_recommendations',
+            'param_recommendations', 'present_agents', 'missing_bots',
+            'machine_summary', 'error', 'can_continue',
         }
         extra_rows = []
         for key in sorted(results.keys()):
@@ -409,7 +426,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph('No additional fields beyond core sections.')
 
-        self._add_heading(doc, '14. Official Documentation', level=1)
+        self._add_heading(doc, '15. Official Documentation', level=1)
         doc.add_paragraph('Google Search Central: https://developers.google.com/search/docs/crawling-indexing/robots/robots_txt')
         doc.add_paragraph('Yandex Webmaster: https://yandex.com/support/webmaster/en/robot-workings/allow-disallow')
 
