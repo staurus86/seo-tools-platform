@@ -1002,6 +1002,8 @@ class XLSXGenerator:
             ("Blocked by robots", summary.get("robots_disallowed", 0)),
             ("Blocked by X-Robots", summary.get("x_robots_forbidden", 0)),
             ("Blocked by Meta Robots", summary.get("meta_forbidden", 0)),
+            ("AI policy mode", "intentional AI blocks" if results.get("ai_block_expected") else "strict availability"),
+            ("Expected AI blocked", summary.get("expected_ai_policy_blocked", 0)),
             ("Avg response time (ms)", summary.get("avg_response_time_ms", "")),
         ]
         row = 3

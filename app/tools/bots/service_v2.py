@@ -363,6 +363,7 @@ class BotAccessibilityServiceV2:
         criticality_profile: str = "balanced",
         sla_profile: str = "standard",
         baseline_enabled: bool = True,
+        ai_block_expected: bool = False,
     ):
         profile = RETRY_PROFILES.get(str(retry_profile or "standard").lower(), RETRY_PROFILES["standard"])
         self.retry_profile = str(retry_profile or "standard").lower()
@@ -375,6 +376,7 @@ class BotAccessibilityServiceV2:
         self.category_weights = dict(CRITICALITY_PROFILES.get(self.criticality_profile_name, CRITICALITY_PROFILES["balanced"]))
         self.category_sla = dict(SLA_PROFILES.get(self.sla_profile_name, SLA_PROFILES["standard"]))
         self.baseline_enabled = bool(baseline_enabled)
+        self.ai_block_expected = bool(ai_block_expected)
         self.trend_history_limit = 50
         self.session = self._build_session()
 
@@ -773,15 +775,23 @@ class BotAccessibilityServiceV2:
 
     def _build_issues(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         issues: List[Dict[str, Any]] = []
+        def is_expected_ai_policy(row: Dict[str, Any]) -> bool:
+            if not self.ai_block_expected:
+                return False
+            if str(row.get("category") or "") != "AI":
+                return False
+            return (not row.get("accessible")) or (row.get("robots_allowed") is False) or bool((row.get("waf_cdn_signal", {}) or {}).get("detected"))
+
         for row in rows:
             if row.get("accessible"):
                 continue
+            expected_policy = is_expected_ai_policy(row)
             issues.append({
-                "severity": "critical",
+                "severity": "info" if expected_policy else "critical",
                 "bot": row["bot_name"],
                 "category": row["category"],
-                "title": "Bot cannot access URL",
-                "details": row.get("error") or f"HTTP {row.get('status')}",
+                "title": "Expected policy block" if expected_policy else "Bot cannot access URL",
+                "details": ("Expected AI policy block: " + (row.get("error") or f"HTTP {row.get('status')}")) if expected_policy else (row.get("error") or f"HTTP {row.get('status')}"),
             })
         for row in rows:
             if row.get("accessible") and not row.get("has_content"):
@@ -795,13 +805,18 @@ class BotAccessibilityServiceV2:
         for row in rows:
             waf = row.get("waf_cdn_signal", {}) or {}
             if waf.get("detected"):
+                expected_policy = is_expected_ai_policy(row)
                 issues.append(
                     {
-                        "severity": "critical",
+                        "severity": "info" if expected_policy else "critical",
                         "bot": row["bot_name"],
                         "category": row["category"],
-                        "title": "WAF/CDN challenge detected",
-                        "details": f"{waf.get('provider', 'unknown')}: {waf.get('reason', 'access challenge')}",
+                        "title": "Expected WAF/CDN policy block" if expected_policy else "WAF/CDN challenge detected",
+                        "details": (
+                            f"Expected AI policy block via {waf.get('provider', 'unknown')}: {waf.get('reason', 'access challenge')}"
+                            if expected_policy
+                            else f"{waf.get('provider', 'unknown')}: {waf.get('reason', 'access challenge')}"
+                        ),
                     }
                 )
         for row in rows:
@@ -917,6 +932,17 @@ class BotAccessibilityServiceV2:
             bot_name = str(row.get("bot_name") or "")
             category = str(row.get("category") or "")
             weight = float(self.category_weights.get(category, 0.5))
+            expected_ai_policy = (
+                self.ai_block_expected
+                and category == "AI"
+                and (
+                    (not row.get("accessible"))
+                    or (row.get("robots_allowed") is False)
+                    or bool((row.get("waf_cdn_signal", {}) or {}).get("detected"))
+                )
+            )
+            if expected_ai_policy:
+                continue
 
             def add(code: str) -> None:
                 bucket = buckets[code]
@@ -1077,6 +1103,18 @@ class BotAccessibilityServiceV2:
         playbooks = self._build_playbooks(priority_blockers)
         domain = urlparse(url).netloc
         host_consistency = self._host_consistency_check(url)
+        expected_ai_blocked = 0
+        if self.ai_block_expected:
+            expected_ai_blocked = sum(
+                1
+                for r in rows
+                if str(r.get("category") or "") == "AI"
+                and (
+                    (not r.get("accessible"))
+                    or (r.get("robots_allowed") is False)
+                    or bool((r.get("waf_cdn_signal", {}) or {}).get("detected"))
+                )
+            )
 
         summary = {
             "total": total,
@@ -1094,6 +1132,7 @@ class BotAccessibilityServiceV2:
             "x_robots_forbidden": x_forbidden,
             "meta_forbidden": meta_forbidden,
             "waf_cdn_detected": waf_cdn_detected,
+            "expected_ai_policy_blocked": expected_ai_blocked,
             "avg_response_time_ms": round(avg_ms, 2),
         }
         summary["issues_total"] = len(issues)
@@ -1115,6 +1154,7 @@ class BotAccessibilityServiceV2:
                 "retry_profile": self.retry_profile,
                 "criticality_profile": self.criticality_profile_name,
                 "sla_profile": self.sla_profile_name,
+                "ai_block_expected": self.ai_block_expected,
                 "bots_checked": [b.name for b in bots_to_check],
                 "selected_bot_groups": bot_groups or [],
                 "bot_results": by_bot,

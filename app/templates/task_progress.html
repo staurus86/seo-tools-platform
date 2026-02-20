@@ -2512,6 +2512,8 @@ function generateBotHTML(result) {
                 ${summary.avg_response_time_ms ? `<div><span class="text-gray-600">Avg response:</span> <span class="font-medium">${summary.avg_response_time_ms} ms</span></div>` : ''}
                 <div><span class="text-gray-600">Retry profile:</span> <span class="font-medium">${r.retry_profile || 'standard'}</span></div>
                 <div><span class="text-gray-600">Criticality/SLA:</span> <span class="font-medium">${r.criticality_profile || 'balanced'} / ${r.sla_profile || 'standard'}</span></div>
+                <div><span class="text-gray-600">AI policy mode:</span> <span class="font-medium">${r.ai_block_expected ? 'intentional AI blocks' : 'strict availability'}</span></div>
+                ${r.ai_block_expected ? `<div><span class="text-gray-600">Expected AI blocked:</span> <span class="font-medium">${summary.expected_ai_policy_blocked || 0}</span></div>` : ''}
                 ${latestTrend ? `<div><span class="text-gray-600">Trend snapshots:</span> <span class="font-medium">${trendSnapshots.length}</span></div>` : ''}
                 ${previousTrend ? `<div><span class="text-gray-600">Delta indexable:</span> <span class="font-medium">${formatTrendDelta(latestTrend.indexable || 0, previousTrend.indexable || 0)}</span></div>` : ''}
                 ${previousTrend ? `<div><span class="text-gray-600">Delta critical issues:</span> <span class="font-medium">${formatTrendDelta(latestTrend.critical_issues || 0, previousTrend.critical_issues || 0)}</span></div>` : ''}

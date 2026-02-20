@@ -1532,6 +1532,7 @@ def check_bots_full(
     criticality_profile: str = "balanced",
     sla_profile: str = "standard",
     baseline_enabled: bool = True,
+    ai_block_expected: bool = False,
 ) -> Dict[str, Any]:
     """Bot accessibility check with feature-flagged v2 engine."""
     from app.config import settings
@@ -1551,6 +1552,7 @@ def check_bots_full(
                 criticality_profile=criticality_profile,
                 sla_profile=sla_profile,
                 baseline_enabled=baseline_enabled,
+                ai_block_expected=ai_block_expected,
             )
             return checker.run(url, selected_bots=selected_bots, bot_groups=bot_groups)
         except Exception as e:
@@ -1620,6 +1622,7 @@ class BotCheckRequest(BaseModel):
     criticality_profile: Optional[str] = "balanced"
     sla_profile: Optional[str] = "standard"
     baseline_enabled: bool = True
+    ai_block_expected: bool = False
 
     @field_validator("selected_bots", "bot_groups", mode="before")
     @classmethod
@@ -2337,6 +2340,7 @@ async def create_bot_check(data: BotCheckRequest):
         criticality_profile=(data.criticality_profile or "balanced"),
         sla_profile=(data.sla_profile or "standard"),
         baseline_enabled=bool(data.baseline_enabled),
+        ai_block_expected=bool(data.ai_block_expected),
     )
     task_id = f"bots-{datetime.now().timestamp()}"
     create_task_result(task_id, "bot_check", url, result)

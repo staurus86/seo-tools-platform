@@ -1059,6 +1059,10 @@ class DOCXGenerator:
             f"Criticality profile: {results.get('criticality_profile', 'balanced')} | "
             f"SLA profile: {results.get('sla_profile', 'standard')}"
         )
+        doc.add_paragraph(
+            f"AI policy mode: {'intentional AI blocks' if results.get('ai_block_expected') else 'strict availability'} "
+            f"(expected blocked: {summary.get('expected_ai_policy_blocked', 0)})"
+        )
 
         self._add_heading(doc, "1. Executive One-Page Summary", level=1)
         exec_rows = [
