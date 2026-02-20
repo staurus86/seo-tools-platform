@@ -36,6 +36,16 @@ class BotWafDetectionTests(unittest.TestCase):
         signal = svc._detect_waf_cdn(resp, html, None)
         self.assertFalse(signal.get("detected"))
 
+    def test_script_marker_only_on_200_is_not_detected(self):
+        svc = BotAccessibilityServiceV2()
+        resp = _Resp(status_code=200, headers={"content-type": "text/html"})
+        html = (
+            "<html><head><script>var t='verify you are human';</script></head>"
+            "<body>Каталог оборудования и услуги компании</body></html>"
+        )
+        signal = svc._detect_waf_cdn(resp, html, None)
+        self.assertFalse(signal.get("detected"))
+
 
 if __name__ == "__main__":
     unittest.main()

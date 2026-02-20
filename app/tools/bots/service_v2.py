@@ -215,6 +215,18 @@ def _extract_response_sample(html_head: str, limit: int = 380) -> str:
     return text[:limit] + "..."
 
 
+def _extract_visible_text(html_head: str) -> str:
+    if not html_head:
+        return ""
+    try:
+        soup = BeautifulSoup(html_head, "html.parser")
+        for tag in soup(["script", "style", "noscript"]):
+            tag.decompose()
+        return " ".join((soup.get_text(" ", strip=True) or "").split()).lower()
+    except Exception:
+        return " ".join(str(html_head).split()).lower()
+
+
 def _parse_robots_groups(robots_text: str) -> List[Dict[str, Any]]:
     groups: List[Dict[str, Any]] = []
     current_group: Optional[Dict[str, Any]] = None
@@ -553,7 +565,7 @@ class BotAccessibilityServiceV2:
 
     def _detect_waf_cdn(self, response: Optional[requests.Response], html_head: str, error: Optional[str]) -> Dict[str, Any]:
         headers = {k.lower(): v for k, v in ((response.headers if response is not None else {}) or {}).items()}
-        body = (html_head or "").lower()
+        body = _extract_visible_text(html_head)
         err = (error or "").lower()
         status_code = int(getattr(response, "status_code", 0) or 0) if response is not None else 0
 
@@ -767,7 +779,8 @@ class BotAccessibilityServiceV2:
             crawlable = bool(accessible and robots_allowed is not False)
             waf_cdn = self._detect_waf_cdn(response, html_head, None)
             response_sample = _extract_response_sample(html_head)
-            renderable = bool(crawlable and has_content and not waf_cdn.get("detected"))
+            waf_blocks_render = bool((waf_cdn.get("detected")) and float(waf_cdn.get("confidence", 0.0) or 0.0) >= 0.85)
+            renderable = bool(crawlable and has_content and not waf_blocks_render)
             indexable = bool(
                 crawlable
                 and has_content
