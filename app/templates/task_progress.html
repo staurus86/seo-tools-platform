@@ -269,7 +269,7 @@ let botData = null;
 let mobileData = null;
 let renderData = null;
 let siteAuditProData = null;
-let siteAuditProIssuesState = { issues: [], filtered: [], filter: 'all', query: '', limit: 20 };
+let siteAuditProIssuesState = { issues: [], filtered: [], filter: 'all', query: '', limit: 20, sort: 'severity' };
 let onpageData = null;
 let lastTaskResult = null;
 let sitemapExportUrls = [];
@@ -588,12 +588,25 @@ function renderSiteAuditProIssuesExplorer() {
     if (!wrapper) return;
 
     const filtered = filterSiteAuditProIssues();
-    siteAuditProIssuesState.filtered = filtered;
+    const sorted = [...filtered];
+    if (siteAuditProIssuesState.sort === 'url') {
+        sorted.sort((a, b) => String(a.url || '').localeCompare(String(b.url || '')));
+    } else {
+        const rank = { critical: 0, warning: 1, info: 2 };
+        sorted.sort((a, b) => {
+            const sa = String(a.severity || 'info').toLowerCase();
+            const sb = String(b.severity || 'info').toLowerCase();
+            const bySeverity = (rank[sa] ?? 3) - (rank[sb] ?? 3);
+            if (bySeverity !== 0) return bySeverity;
+            return String(a.code || '').localeCompare(String(b.code || ''));
+        });
+    }
+    siteAuditProIssuesState.filtered = sorted;
     const limit = Number(siteAuditProIssuesState.limit || 20);
-    const visible = filtered.slice(0, limit);
+    const visible = sorted.slice(0, limit);
 
     const counter = document.getElementById('sitepro-issues-count');
-    if (counter) counter.textContent = `${visible.length} / ${filtered.length}`;
+    if (counter) counter.textContent = `${visible.length} / ${sorted.length}`;
 
     const buttons = document.querySelectorAll('[data-sitepro-issues-filter]');
     buttons.forEach((btn) => {
@@ -647,6 +660,11 @@ function updateSiteAuditProIssuesLimit(value) {
     renderSiteAuditProIssuesExplorer();
 }
 
+function updateSiteAuditProIssuesSort(value) {
+    siteAuditProIssuesState.sort = String(value || 'severity');
+    renderSiteAuditProIssuesExplorer();
+}
+
 function initSiteAuditProIssuesExplorer(result) {
     const r = result.results || {};
     const issues = Array.isArray(r.issues) ? r.issues : [];
@@ -656,11 +674,14 @@ function initSiteAuditProIssuesExplorer(result) {
         filter: 'all',
         query: '',
         limit: 20,
+        sort: 'severity',
     };
     const queryInput = document.getElementById('sitepro-issues-search');
     if (queryInput) queryInput.value = '';
     const limitInput = document.getElementById('sitepro-issues-limit');
     if (limitInput) limitInput.value = '20';
+    const sortInput = document.getElementById('sitepro-issues-sort');
+    if (sortInput) sortInput.value = 'severity';
     renderSiteAuditProIssuesExplorer();
 }
 
@@ -3030,12 +3051,16 @@ function generateSiteAuditProHTML(result) {
                         <button type="button" data-sitepro-issues-filter="info" onclick="setSiteAuditProIssuesFilter('info')" class="px-2 py-1 rounded-md text-slate-700">Info</button>
                     </div>
                 </div>
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-2 mb-3">
+                <div class="grid grid-cols-1 md:grid-cols-5 gap-2 mb-3">
                     <input id="sitepro-issues-search" type="text" oninput="updateSiteAuditProIssuesQuery(this.value)" placeholder="Search code, title, URL..." class="md:col-span-3 px-3 py-2 border rounded-lg text-sm">
                     <select id="sitepro-issues-limit" onchange="updateSiteAuditProIssuesLimit(this.value)" class="px-3 py-2 border rounded-lg text-sm">
                         <option value="20" selected>20 rows</option>
                         <option value="50">50 rows</option>
                         <option value="100">100 rows</option>
+                    </select>
+                    <select id="sitepro-issues-sort" onchange="updateSiteAuditProIssuesSort(this.value)" class="px-3 py-2 border rounded-lg text-sm">
+                        <option value="severity" selected>Sort: severity</option>
+                        <option value="url">Sort: URL</option>
                     </select>
                 </div>
                 <div class="text-xs text-slate-500 mb-2">Shown: <span id="sitepro-issues-count">0 / 0</span></div>
