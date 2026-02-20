@@ -108,6 +108,16 @@ BOT_GROUPS: Dict[str, List[str]] = {
     "crawlers": ["SEO Crawler"],
 }
 
+BOT_CATEGORY_CRITICALITY: Dict[str, float] = {
+    "Google": 1.0,
+    "Yandex": 1.0,
+    "Bing": 0.9,
+    "Search": 0.8,
+    "AI": 0.7,
+    "SEO Crawler": 0.5,
+    "Social": 0.3,
+}
+
 
 def normalize_url(raw_url: str) -> str:
     cleaned = (raw_url or "").strip()
@@ -346,15 +356,110 @@ class BotAccessibilityServiceV2:
             total = len(items)
             accessible = sum(1 for x in items if x.get("accessible"))
             with_content = sum(1 for x in items if x.get("has_content"))
+            indexable = sum(
+                1
+                for x in items
+                if x.get("accessible")
+                and x.get("has_content")
+                and x.get("robots_allowed") is not False
+                and not x.get("x_robots_forbidden")
+                and not x.get("meta_forbidden")
+            )
             restrictive = sum(1 for x in items if x.get("x_robots_forbidden") or x.get("meta_forbidden"))
+            criticality_weight = float(BOT_CATEGORY_CRITICALITY.get(category, 0.5))
+            non_indexable = total - indexable
+            indexable_pct = round((indexable / max(1, total)) * 100.0, 1)
+            priority_risk_score = round((non_indexable / max(1, total)) * 100.0 * criticality_weight, 1)
             stats.append({
                 "category": category,
                 "total": total,
                 "accessible": accessible,
                 "with_content": with_content,
+                "indexable": indexable,
+                "non_indexable": non_indexable,
+                "indexable_pct": indexable_pct,
+                "criticality_weight": criticality_weight,
+                "priority_risk_score": priority_risk_score,
                 "restrictive_directives": restrictive,
             })
         return stats
+
+    def _build_priority_blockers(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        buckets: Dict[str, Dict[str, Any]] = {
+            "unreachable": {
+                "code": "unreachable",
+                "title": "Bots cannot reach URL",
+                "details": "HTTP/network failures or denied access.",
+                "count": 0,
+                "weighted": 0.0,
+                "bots": [],
+            },
+            "empty_content": {
+                "code": "empty_content",
+                "title": "Accessible but empty content",
+                "details": "Response body is empty or unusable for indexing.",
+                "count": 0,
+                "weighted": 0.0,
+                "bots": [],
+            },
+            "robots_disallow": {
+                "code": "robots_disallow",
+                "title": "Blocked by robots.txt",
+                "details": "Robots rules likely disallow crawling.",
+                "count": 0,
+                "weighted": 0.0,
+                "bots": [],
+            },
+            "indexing_directive": {
+                "code": "indexing_directive",
+                "title": "Restricted by robots directives",
+                "details": "X-Robots-Tag or meta robots prevents indexing.",
+                "count": 0,
+                "weighted": 0.0,
+                "bots": [],
+            },
+        }
+
+        for row in rows:
+            bot_name = str(row.get("bot_name") or "")
+            category = str(row.get("category") or "")
+            weight = float(BOT_CATEGORY_CRITICALITY.get(category, 0.5))
+
+            def add(code: str) -> None:
+                bucket = buckets[code]
+                bucket["count"] += 1
+                bucket["weighted"] += weight
+                if bot_name and bot_name not in bucket["bots"]:
+                    bucket["bots"].append(bot_name)
+
+            if not row.get("accessible"):
+                add("unreachable")
+                continue
+            if not row.get("has_content"):
+                add("empty_content")
+            if row.get("robots_allowed") is False:
+                add("robots_disallow")
+            if row.get("x_robots_forbidden") or row.get("meta_forbidden"):
+                add("indexing_directive")
+
+        blockers: List[Dict[str, Any]] = []
+        for bucket in buckets.values():
+            if bucket["count"] <= 0:
+                continue
+            blockers.append(
+                {
+                    "code": bucket["code"],
+                    "title": bucket["title"],
+                    "details": bucket["details"],
+                    "affected_bots": bucket["count"],
+                    "weighted_impact": round(bucket["weighted"], 2),
+                    "priority_score": round(bucket["weighted"] * 10.0, 1),
+                    "sample_bots": bucket["bots"][:8],
+                }
+            )
+
+        blockers.sort(key=lambda x: (float(x.get("priority_score", 0.0)), int(x.get("affected_bots", 0))), reverse=True)
+        return blockers
 
     def run(self, raw_url: str, selected_bots: Optional[List[str]] = None, bot_groups: Optional[List[str]] = None) -> Dict[str, Any]:
         url = normalize_url(raw_url)
@@ -389,6 +494,15 @@ class BotAccessibilityServiceV2:
         total = len(rows)
         accessible = sum(1 for r in rows if r.get("accessible"))
         with_content = sum(1 for r in rows if r.get("has_content"))
+        indexable = sum(
+            1
+            for r in rows
+            if r.get("accessible")
+            and r.get("has_content")
+            and r.get("robots_allowed") is not False
+            and not r.get("x_robots_forbidden")
+            and not r.get("meta_forbidden")
+        )
         robots_disallowed = sum(1 for r in rows if r.get("robots_allowed") is False)
         x_forbidden = sum(1 for r in rows if r.get("x_robots_forbidden"))
         meta_forbidden = sum(1 for r in rows if r.get("meta_forbidden"))
@@ -398,6 +512,7 @@ class BotAccessibilityServiceV2:
         issues = self._build_issues(rows)
         recommendations = self._build_recommendations(rows)
         category_stats = self._build_category_stats(rows)
+        priority_blockers = self._build_priority_blockers(rows)
         domain = urlparse(url).netloc
 
         return {
@@ -417,6 +532,8 @@ class BotAccessibilityServiceV2:
                     "unavailable": total - accessible,
                     "with_content": with_content,
                     "without_content": total - with_content,
+                    "indexable": indexable,
+                    "non_indexable": total - indexable,
                     "robots_disallowed": robots_disallowed,
                     "x_robots_forbidden": x_forbidden,
                     "meta_forbidden": meta_forbidden,
@@ -427,6 +544,7 @@ class BotAccessibilityServiceV2:
                     "status_code": robots_status,
                 },
                 "category_stats": category_stats,
+                "priority_blockers": priority_blockers,
                 "issues": issues,
                 "recommendations": recommendations,
             },

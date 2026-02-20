@@ -1776,6 +1776,49 @@ async def export_bot_xlsx(data: ExportRequest):
         return {"error": str(e)}
 
 
+@router.post("/export/bot-docx")
+async def export_bot_docx(data: ExportRequest):
+    """Export bot check report to DOCX."""
+    import os
+    import re
+    from fastapi.responses import Response
+    from app.reports.docx_generator import docx_generator
+
+    try:
+        task_id = data.task_id
+        task = get_task_result(task_id)
+        if not task:
+            return {"error": "Task not found", "task_id": task_id}
+
+        task_type = task.get("task_type")
+        if task_type != "bot_check":
+            return {"error": f"Unsupported task type for bot DOCX export: {task_type}"}
+
+        task_result = task.get("result", {})
+        url = task.get("url", "") or task_result.get("url", "")
+        report_payload = {
+            "url": url,
+            "results": task_result.get("results", task_result),
+        }
+        filepath = docx_generator.generate_bot_report(task_id, report_payload)
+        if not filepath or not os.path.exists(filepath):
+            return {"error": "Failed to generate report"}
+
+        with open(filepath, "rb") as f:
+            content = f.read()
+
+        domain = re.sub(r"[^a-zA-Z0-9._-]+", "_", (urlparse(url).netloc or "site"))
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+        filename = f"bot_report_{domain}_{timestamp}.docx"
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.post("/export/mobile-docx")
 async def export_mobile_docx(data: ExportRequest, request: Request):
     """Export mobile check report to DOCX."""
