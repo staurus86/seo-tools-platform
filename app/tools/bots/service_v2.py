@@ -227,6 +227,22 @@ def _extract_visible_text(html_head: str) -> str:
         return " ".join(str(html_head).split()).lower()
 
 
+def _normalize_batch_urls(raw_urls: Optional[List[str]], limit: int = 100) -> List[str]:
+    seen = set()
+    out: List[str] = []
+    for item in (raw_urls or []):
+        u = normalize_url(str(item or "").strip())
+        if not u:
+            continue
+        if u in seen:
+            continue
+        seen.add(u)
+        out.append(u)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def _parse_robots_groups(robots_text: str) -> List[Dict[str, Any]]:
     groups: List[Dict[str, Any]] = []
     current_group: Optional[Dict[str, Any]] = None
@@ -788,6 +804,21 @@ class BotAccessibilityServiceV2:
                 and not _is_forbidden_directive(x_robots or "")
                 and not _is_forbidden_directive(meta_robots or "")
             )
+            indexability_reasons: List[str] = []
+            if not accessible:
+                indexability_reasons.append(f"http_{response.status_code}")
+            if robots_allowed is False:
+                indexability_reasons.append("robots_disallow")
+            if _is_forbidden_directive(x_robots or ""):
+                indexability_reasons.append("x_robots_forbidden")
+            if _is_forbidden_directive(meta_robots or ""):
+                indexability_reasons.append("meta_robots_forbidden")
+            if not has_content:
+                indexability_reasons.append("empty_content")
+            if (waf_cdn.get("detected") and float(waf_cdn.get("confidence", 0.0) or 0.0) >= 0.85):
+                indexability_reasons.append("high_confidence_waf_challenge")
+            if not indexability_reasons:
+                indexability_reasons.append("indexable")
             blocked_reasons: List[str] = []
             if not accessible:
                 blocked_reasons.append("http_error_or_denied")
@@ -821,6 +852,8 @@ class BotAccessibilityServiceV2:
                 "indexable": indexable,
                 "waf_cdn_signal": waf_cdn,
                 "response_sample": response_sample,
+                "indexability_reasons": indexability_reasons,
+                "indexability_reason": " | ".join(indexability_reasons),
                 "blocked_reasons": blocked_reasons,
                 "bot_priority_weight": category_weight,
                 "sla_target_pct": sla_target_pct,
@@ -851,6 +884,8 @@ class BotAccessibilityServiceV2:
                 "indexable": False,
                 "waf_cdn_signal": waf_cdn,
                 "response_sample": "",
+                "indexability_reasons": ["request_failed"],
+                "indexability_reason": "request_failed",
                 "blocked_reasons": ["request_failed"],
                 "bot_priority_weight": float(self.category_weights.get(bot.category, 0.5)),
                 "sla_target_pct": float(self.category_sla.get(bot.category, 85.0)),
@@ -877,6 +912,16 @@ class BotAccessibilityServiceV2:
                 "title": "Expected policy block" if expected_policy else "Bot cannot access URL",
                 "details": ("Expected AI policy block: " + (row.get("error") or f"HTTP {row.get('status')}")) if expected_policy else (row.get("error") or f"HTTP {row.get('status')}"),
             })
+        for row in rows:
+            if row.get("accessible") and row.get("robots_allowed") is False:
+                expected_policy = is_expected_ai_policy(row)
+                issues.append({
+                    "severity": "info" if expected_policy else "warning",
+                    "bot": row["bot_name"],
+                    "category": row["category"],
+                    "title": "Blocked by robots.txt",
+                    "details": row.get("indexability_reason") or "robots disallow matched for this bot/path",
+                })
         for row in rows:
             if row.get("accessible") and not row.get("has_content"):
                 issues.append({
@@ -914,7 +959,7 @@ class BotAccessibilityServiceV2:
                 })
         return issues
 
-    def _build_recommendations(self, rows: List[Dict[str, Any]]) -> List[str]:
+    def _build_recommendations(self, rows: List[Dict[str, Any]], issues: Optional[List[Dict[str, Any]]] = None) -> List[str]:
         recs: List[str] = []
         total = len(rows)
         unavailable = sum(1 for r in rows if not r.get("accessible"))
@@ -933,7 +978,14 @@ class BotAccessibilityServiceV2:
         if waf_detected:
             recs.append(f"{waf_detected}/{total} bots hit WAF/CDN challenge signatures. Add verified bot allowlists and bypass rules.")
         if not recs:
-            recs.append("No critical accessibility findings detected for checked bot set.")
+            issues = issues or []
+            non_info_issues = sum(1 for item in issues if str(item.get("severity", "")).lower() in {"critical", "warning"})
+            if non_info_issues > 0:
+                recs.append(f"{non_info_issues} warning/critical findings detected. Review Top Issues and Priority Blockers.")
+            elif issues:
+                recs.append("Only informational policy findings detected. Review Top Issues for context.")
+            else:
+                recs.append("No accessibility findings detected for checked bot set.")
         return recs
 
     def _build_category_stats(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -1141,6 +1193,123 @@ class BotAccessibilityServiceV2:
             )
         return rows
 
+    def _build_robots_linter(self, robots_text: Optional[str]) -> Dict[str, Any]:
+        if not robots_text:
+            return {"findings": [{"severity": "warning", "code": "robots_missing", "message": "robots.txt is not reachable"}]}
+        findings: List[Dict[str, Any]] = []
+        groups = _parse_robots_groups(robots_text)
+        has_global_disallow_root = False
+        for g in groups:
+            uas = [str(x).lower() for x in (g.get("user_agents") or [])]
+            if "*" in uas:
+                for rule in (g.get("rules") or []):
+                    if rule.get("directive") == "disallow" and str(rule.get("pattern") or "").strip() == "/":
+                        has_global_disallow_root = True
+        if has_global_disallow_root:
+            findings.append({"severity": "critical", "code": "global_disallow_root", "message": "Disallow: / found for User-agent: *"})
+        if "crawl-delay" in (robots_text or "").lower():
+            findings.append({"severity": "info", "code": "crawl_delay_present", "message": "crawl-delay directives present; verify per-engine behavior."})
+        if "googlebot" not in (robots_text or "").lower():
+            findings.append({"severity": "info", "code": "no_explicit_googlebot", "message": "No explicit Googlebot group. Using wildcard behavior."})
+        if "yandex" not in (robots_text or "").lower():
+            findings.append({"severity": "info", "code": "no_explicit_yandex", "message": "No explicit Yandex group. Using wildcard behavior."})
+        return {"findings": findings}
+
+    def _build_allowlist_simulator(self, rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+        total = len(rows)
+        current_indexable = sum(1 for r in rows if r.get("indexable"))
+        current_renderable = sum(1 for r in rows if r.get("renderable"))
+
+        def simulate(category_filter: str) -> Dict[str, Any]:
+            projected_indexable = current_indexable
+            projected_renderable = current_renderable
+            affected = 0
+            for r in rows:
+                if str(r.get("category") or "") != category_filter:
+                    continue
+                blocked_by_transport = (not r.get("accessible")) or bool((r.get("waf_cdn_signal", {}) or {}).get("detected"))
+                blocked_by_policy = (r.get("robots_allowed") is False) or bool(r.get("x_robots_forbidden")) or bool(r.get("meta_forbidden"))
+                if blocked_by_transport or blocked_by_policy:
+                    affected += 1
+                    if not r.get("renderable"):
+                        projected_renderable += 1
+                    if not r.get("indexable"):
+                        projected_indexable += 1
+            return {
+                "scenario": f"allow_{category_filter.lower()}",
+                "category": category_filter,
+                "affected_bots": affected,
+                "projected_renderable": projected_renderable,
+                "projected_indexable": projected_indexable,
+                "delta_renderable": projected_renderable - current_renderable,
+                "delta_indexable": projected_indexable - current_indexable,
+                "projected_indexable_pct": round((projected_indexable / max(1, total)) * 100.0, 1),
+            }
+
+        return {"scenarios": [simulate("AI"), simulate("Search"), simulate("Google"), simulate("Yandex"), simulate("Bing")]}
+
+    def _build_action_center(self, playbooks: List[Dict[str, Any]]) -> Dict[str, Any]:
+        by_owner: Dict[str, List[Dict[str, Any]]] = {}
+        for p in playbooks:
+            owner = str(p.get("owner") or "Team")
+            by_owner.setdefault(owner, []).append(p)
+        for owner in by_owner:
+            by_owner[owner].sort(key=lambda x: float(x.get("priority_score", 0) or 0), reverse=True)
+        return {"by_owner": by_owner}
+
+    def _build_alerts(self, summary: Dict[str, Any], baseline_diff: Dict[str, Any], trend: Dict[str, Any]) -> List[Dict[str, Any]]:
+        alerts: List[Dict[str, Any]] = []
+        total = int(summary.get("total", 0) or 0)
+        idx = int(summary.get("indexable", 0) or 0)
+        if total > 0 and (idx / total) < 0.7:
+            alerts.append({"severity": "warning", "code": "low_indexable_rate", "message": f"Indexable rate is below 70% ({idx}/{total})."})
+        for m in (baseline_diff.get("metrics") or []):
+            if m.get("metric") == "indexable" and float(m.get("delta", 0) or 0) <= -3:
+                alerts.append({"severity": "critical", "code": "indexable_drop_vs_baseline", "message": f"Indexable dropped by {m.get('delta')} vs baseline."})
+            if m.get("metric") == "avg_response_time_ms" and float(m.get("delta", 0) or 0) >= 400:
+                alerts.append({"severity": "warning", "code": "latency_regression", "message": f"Avg response time increased by {m.get('delta')} ms vs baseline."})
+        delta = trend.get("delta_vs_previous") or {}
+        if float(delta.get("indexable", 0) or 0) <= -3:
+            alerts.append({"severity": "critical", "code": "indexable_drop_vs_previous", "message": f"Indexable dropped by {delta.get('indexable')} vs previous run."})
+        if float(delta.get("critical_issues", 0) or 0) >= 3:
+            alerts.append({"severity": "warning", "code": "critical_issues_growth", "message": f"Critical issues increased by {delta.get('critical_issues')} vs previous run."})
+        return alerts
+
+    def _build_evidence_pack(self, rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+        evidence_rows: List[Dict[str, Any]] = []
+        for r in rows:
+            if r.get("indexable"):
+                continue
+            evidence_rows.append(
+                {
+                    "bot": r.get("bot_name"),
+                    "category": r.get("category"),
+                    "status": r.get("status"),
+                    "indexability_reason": r.get("indexability_reason"),
+                    "waf_detected": bool((r.get("waf_cdn_signal", {}) or {}).get("detected")),
+                    "waf_confidence": (r.get("waf_cdn_signal", {}) or {}).get("confidence", 0),
+                    "waf_reason": (r.get("waf_cdn_signal", {}) or {}).get("reason", ""),
+                    "robots_explain": (r.get("robots_evaluation", {}) or {}).get("explain", ""),
+                    "response_sample": r.get("response_sample", ""),
+                }
+            )
+        return {"rows": evidence_rows[:100]}
+
+    def _build_sla_dashboard(self, category_stats: List[Dict[str, Any]]) -> Dict[str, Any]:
+        total_categories = len(category_stats)
+        met = sum(1 for c in category_stats if c.get("sla_met"))
+        missed_rows = sorted(
+            [c for c in category_stats if not c.get("sla_met")],
+            key=lambda x: float(x.get("priority_risk_score", 0) or 0),
+            reverse=True,
+        )
+        return {
+            "total_categories": total_categories,
+            "met_categories": met,
+            "missed_categories": total_categories - met,
+            "top_missed": missed_rows[:5],
+        }
+
     def run(self, raw_url: str, selected_bots: Optional[List[str]] = None, bot_groups: Optional[List[str]] = None) -> Dict[str, Any]:
         url = normalize_url(raw_url)
         completed_at = datetime.utcnow().isoformat()
@@ -1198,7 +1367,7 @@ class BotAccessibilityServiceV2:
         avg_ms = (sum(timing_rows) / len(timing_rows)) if timing_rows else 0.0
 
         issues = self._build_issues(rows)
-        recommendations = self._build_recommendations(rows)
+        recommendations = self._build_recommendations(rows, issues=issues)
         category_stats = self._build_category_stats(rows)
         priority_blockers = self._build_priority_blockers(rows)
         playbooks = self._build_playbooks(priority_blockers)
@@ -1245,6 +1414,12 @@ class BotAccessibilityServiceV2:
         baseline_diff = self._compute_baseline_diff(baseline, summary)
         self._save_baseline(domain, summary)
         trend = self._append_trend_snapshot(domain=domain, url=url, summary=summary, completed_at=completed_at)
+        robots_linter = self._build_robots_linter(robots_text)
+        allowlist_simulator = self._build_allowlist_simulator(rows)
+        action_center = self._build_action_center(playbooks)
+        evidence_pack = self._build_evidence_pack(rows)
+        sla_dashboard = self._build_sla_dashboard(category_stats)
+        alerts = self._build_alerts(summary=summary, baseline_diff=baseline_diff, trend=trend)
 
         return {
             "task_type": "bot_check",
@@ -1269,11 +1444,48 @@ class BotAccessibilityServiceV2:
                 "host_consistency": host_consistency,
                 "waf_bypass_probe": waf_bypass_probe,
                 "category_stats": category_stats,
+                "sla_dashboard": sla_dashboard,
                 "priority_blockers": priority_blockers,
                 "playbooks": playbooks,
+                "action_center": action_center,
+                "allowlist_simulator": allowlist_simulator,
+                "robots_linter": robots_linter,
+                "evidence_pack": evidence_pack,
                 "baseline_diff": baseline_diff,
                 "trend": trend,
+                "alerts": alerts,
                 "issues": issues,
                 "recommendations": recommendations,
             },
         }
+
+    def run_batch(self, raw_urls: List[str], selected_bots: Optional[List[str]] = None, bot_groups: Optional[List[str]] = None) -> Dict[str, Any]:
+        urls = _normalize_batch_urls(raw_urls, limit=100)
+        if not urls:
+            return self.run("")
+        runs = [self.run(u, selected_bots=selected_bots, bot_groups=bot_groups) for u in urls]
+        primary = runs[0]
+        batch_rows: List[Dict[str, Any]] = []
+        for run in runs:
+            rr = (run.get("results") or {})
+            ss = (rr.get("summary") or {})
+            batch_rows.append(
+                {
+                    "url": run.get("url"),
+                    "indexable": ss.get("indexable", 0),
+                    "total": ss.get("total", 0),
+                    "renderable": ss.get("renderable", 0),
+                    "crawlable": ss.get("crawlable", 0),
+                    "critical_issues": ss.get("critical_issues", 0),
+                    "warning_issues": ss.get("warning_issues", 0),
+                    "avg_response_time_ms": ss.get("avg_response_time_ms", 0),
+                    "alerts": rr.get("alerts", []),
+                }
+            )
+        merged = dict(primary)
+        results = dict((primary.get("results") or {}))
+        results["batch_mode"] = True
+        results["batch_urls_count"] = len(urls)
+        results["batch_runs"] = batch_rows
+        merged["results"] = results
+        return merged

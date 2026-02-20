@@ -1049,6 +1049,12 @@ class DOCXGenerator:
         trend = results.get("trend", {}) or {}
         host_consistency = results.get("host_consistency", {}) or {}
         category_stats = results.get("category_stats", []) or []
+        alerts = results.get("alerts", []) or []
+        robots_linter = ((results.get("robots_linter", {}) or {}).get("findings") or [])
+        allowlist_sim = ((results.get("allowlist_simulator", {}) or {}).get("scenarios") or [])
+        action_center = ((results.get("action_center", {}) or {}).get("by_owner") or {})
+        evidence_pack = ((results.get("evidence_pack", {}) or {}).get("rows") or [])
+        batch_runs = results.get("batch_runs", []) or []
 
         title = doc.add_heading("Bot Access Check Report", 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -1189,6 +1195,73 @@ class DOCXGenerator:
                 doc.add_paragraph(str(rec), style="List Bullet")
         else:
             doc.add_paragraph("No recommendations.")
+
+        self._add_heading(doc, "9. Alerts", level=1)
+        if alerts:
+            for a in alerts[:30]:
+                doc.add_paragraph(f"[{str(a.get('severity', 'info')).upper()}] {a.get('code', '')}: {a.get('message', '')}", style="List Bullet")
+        else:
+            doc.add_paragraph("No active alerts.")
+
+        self._add_heading(doc, "10. Robots Policy Linter", level=1)
+        if robots_linter:
+            rows = [[str(x.get("severity", "")).upper(), x.get("code", ""), x.get("message", "")] for x in robots_linter[:40]]
+            self._add_table(doc, ["Severity", "Code", "Message"], rows)
+        else:
+            doc.add_paragraph("No robots linter findings.")
+
+        self._add_heading(doc, "11. Allowlist Simulator", level=1)
+        if allowlist_sim:
+            rows = []
+            for s in allowlist_sim[:20]:
+                rows.append([
+                    s.get("category", ""),
+                    s.get("affected_bots", 0),
+                    s.get("delta_renderable", 0),
+                    s.get("delta_indexable", 0),
+                    s.get("projected_indexable_pct", 0),
+                ])
+            self._add_table(doc, ["Category", "Affected", "Delta Renderable", "Delta Indexable", "Projected %"], rows)
+        else:
+            doc.add_paragraph("No simulation data.")
+
+        self._add_heading(doc, "12. Action Center (by owner)", level=1)
+        if action_center:
+            for owner, rows in action_center.items():
+                doc.add_paragraph(str(owner))
+                for item in (rows or [])[:8]:
+                    doc.add_paragraph(f"{item.get('title', '')} (priority {item.get('priority_score', 0)})", style="List Bullet")
+        else:
+            doc.add_paragraph("No owner action groups.")
+
+        self._add_heading(doc, "13. Evidence Pack", level=1)
+        if evidence_pack:
+            rows = []
+            for e in evidence_pack[:40]:
+                rows.append([
+                    e.get("bot", ""),
+                    e.get("status", ""),
+                    e.get("indexability_reason", ""),
+                    f"{'Yes' if e.get('waf_detected') else 'No'} ({e.get('waf_confidence', 0)})",
+                    e.get("waf_reason", ""),
+                ])
+            self._add_table(doc, ["Bot", "HTTP", "Reason", "WAF", "WAF reason"], rows)
+        else:
+            doc.add_paragraph("No evidence rows.")
+
+        if batch_runs:
+            self._add_heading(doc, "14. Batch Runs", level=1)
+            rows = []
+            for b in batch_runs[:100]:
+                rows.append([
+                    b.get("url", ""),
+                    b.get("indexable", 0),
+                    b.get("total", 0),
+                    b.get("renderable", 0),
+                    b.get("critical_issues", 0),
+                    b.get("warning_issues", 0),
+                ])
+            self._add_table(doc, ["URL", "Indexable", "Total", "Renderable", "Critical", "Warnings"], rows)
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)

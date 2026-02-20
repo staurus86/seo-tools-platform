@@ -981,6 +981,12 @@ class XLSXGenerator:
         playbooks = results.get("playbooks", []) or []
         baseline_diff = results.get("baseline_diff", {}) or {}
         trend = results.get("trend", {}) or {}
+        alerts = results.get("alerts", []) or []
+        robots_linter = (results.get("robots_linter", {}) or {}).get("findings", []) or []
+        allowlist_sim = (results.get("allowlist_simulator", {}) or {}).get("scenarios", []) or []
+        action_center = (results.get("action_center", {}) or {}).get("by_owner", {}) or {}
+        evidence_pack = (results.get("evidence_pack", {}) or {}).get("rows", []) or []
+        batch_runs = results.get("batch_runs", []) or []
         issues = results.get("issues", []) or []
         recommendations = results.get("recommendations", []) or []
 
@@ -1367,6 +1373,133 @@ class XLSXGenerator:
         trend_ws.auto_filter.ref = "A1:L1"
         for col, width in enumerate([24, 10, 10, 10, 10, 14, 10, 10, 10, 14, 14, 12], 1):
             trend_ws.column_dimensions[get_column_letter(col)].width = width
+
+        alerts_ws = wb.create_sheet("Alerts")
+        for col, header in enumerate(["Severity", "Code", "Message"], 1):
+            self._apply_style(alerts_ws.cell(row=1, column=col, value=header), header_style)
+        if alerts:
+            for row_idx, a in enumerate(alerts, start=2):
+                sev = str(a.get("severity", "info")).lower()
+                values = [sev.upper(), a.get("code", ""), a.get("message", "")]
+                for col, value in enumerate(values, 1):
+                    self._apply_style(alerts_ws.cell(row=row_idx, column=col, value=value), cell_style)
+                self._apply_row_severity_fill(alerts_ws, row_idx, 1, 3, sev)
+                self._apply_severity_cell_style(alerts_ws.cell(row=row_idx, column=1), sev)
+        else:
+            self._apply_style(alerts_ws.cell(row=2, column=1, value="No alerts"), cell_style)
+        alerts_ws.freeze_panes = "A2"
+        alerts_ws.auto_filter.ref = "A1:C1"
+        for col, width in enumerate([12, 24, 110], 1):
+            alerts_ws.column_dimensions[get_column_letter(col)].width = width
+
+        linter_ws = wb.create_sheet("Robots Linter")
+        for col, header in enumerate(["Severity", "Code", "Message"], 1):
+            self._apply_style(linter_ws.cell(row=1, column=col, value=header), header_style)
+        if robots_linter:
+            for row_idx, a in enumerate(robots_linter, start=2):
+                sev = str(a.get("severity", "info")).lower()
+                values = [sev.upper(), a.get("code", ""), a.get("message", "")]
+                for col, value in enumerate(values, 1):
+                    self._apply_style(linter_ws.cell(row=row_idx, column=col, value=value), cell_style)
+                self._apply_row_severity_fill(linter_ws, row_idx, 1, 3, sev)
+                self._apply_severity_cell_style(linter_ws.cell(row=row_idx, column=1), sev)
+        else:
+            self._apply_style(linter_ws.cell(row=2, column=1, value="No linter findings"), cell_style)
+        linter_ws.freeze_panes = "A2"
+        linter_ws.auto_filter.ref = "A1:C1"
+        for col, width in enumerate([12, 24, 110], 1):
+            linter_ws.column_dimensions[get_column_letter(col)].width = width
+
+        sim_ws = wb.create_sheet("Allowlist Simulator")
+        sim_headers = ["Scenario", "Category", "Affected", "Delta Renderable", "Delta Indexable", "Projected Indexable", "Projected %"]
+        for col, header in enumerate(sim_headers, 1):
+            self._apply_style(sim_ws.cell(row=1, column=col, value=header), header_style)
+        if allowlist_sim:
+            for row_idx, s in enumerate(allowlist_sim, start=2):
+                values = [
+                    s.get("scenario", ""),
+                    s.get("category", ""),
+                    s.get("affected_bots", 0),
+                    s.get("delta_renderable", 0),
+                    s.get("delta_indexable", 0),
+                    s.get("projected_indexable", 0),
+                    s.get("projected_indexable_pct", 0),
+                ]
+                for col, value in enumerate(values, 1):
+                    self._apply_style(sim_ws.cell(row=row_idx, column=col, value=value), cell_style)
+        else:
+            self._apply_style(sim_ws.cell(row=2, column=1, value="No simulation data"), cell_style)
+        sim_ws.freeze_panes = "A2"
+        sim_ws.auto_filter.ref = "A1:G1"
+        for col, width in enumerate([22, 14, 10, 14, 14, 16, 12], 1):
+            sim_ws.column_dimensions[get_column_letter(col)].width = width
+
+        action_ws = wb.create_sheet("Action Center")
+        action_headers = ["Owner", "Title", "Priority", "Blocker code", "Actions"]
+        for col, header in enumerate(action_headers, 1):
+            self._apply_style(action_ws.cell(row=1, column=col, value=header), header_style)
+        row_idx = 2
+        for owner, rows in action_center.items():
+            for item in (rows or []):
+                values = [owner, item.get("title", ""), item.get("priority_score", 0), item.get("blocker_code", ""), " | ".join(item.get("actions", []) or [])]
+                for col, value in enumerate(values, 1):
+                    self._apply_style(action_ws.cell(row=row_idx, column=col, value=value), cell_style)
+                row_idx += 1
+        if row_idx == 2:
+            self._apply_style(action_ws.cell(row=2, column=1, value="No owner actions"), cell_style)
+        action_ws.freeze_panes = "A2"
+        action_ws.auto_filter.ref = "A1:E1"
+        for col, width in enumerate([20, 40, 10, 16, 110], 1):
+            action_ws.column_dimensions[get_column_letter(col)].width = width
+
+        evidence_ws = wb.create_sheet("Evidence Pack")
+        evidence_headers = ["Bot", "Category", "HTTP", "Indexability reason", "WAF detected", "WAF confidence", "WAF reason", "Robots explain", "Response sample"]
+        for col, header in enumerate(evidence_headers, 1):
+            self._apply_style(evidence_ws.cell(row=1, column=col, value=header), header_style)
+        if evidence_pack:
+            for row_idx, e in enumerate(evidence_pack, start=2):
+                values = [
+                    e.get("bot", ""),
+                    e.get("category", ""),
+                    e.get("status", ""),
+                    e.get("indexability_reason", ""),
+                    "Yes" if e.get("waf_detected") else "No",
+                    e.get("waf_confidence", 0),
+                    e.get("waf_reason", ""),
+                    e.get("robots_explain", ""),
+                    e.get("response_sample", ""),
+                ]
+                for col, value in enumerate(values, 1):
+                    self._apply_style(evidence_ws.cell(row=row_idx, column=col, value=value), cell_style)
+        else:
+            self._apply_style(evidence_ws.cell(row=2, column=1, value="No evidence rows"), cell_style)
+        evidence_ws.freeze_panes = "A2"
+        evidence_ws.auto_filter.ref = "A1:I1"
+        for col, width in enumerate([22, 14, 10, 34, 12, 12, 24, 40, 70], 1):
+            evidence_ws.column_dimensions[get_column_letter(col)].width = width
+
+        if batch_runs:
+            batch_ws = wb.create_sheet("Batch Runs")
+            batch_headers = ["URL", "Indexable", "Total", "Crawlable", "Renderable", "Critical", "Warnings", "Avg response ms"]
+            for col, header in enumerate(batch_headers, 1):
+                self._apply_style(batch_ws.cell(row=1, column=col, value=header), header_style)
+            for row_idx, b in enumerate(batch_runs, start=2):
+                values = [
+                    b.get("url", ""),
+                    b.get("indexable", 0),
+                    b.get("total", 0),
+                    b.get("crawlable", 0),
+                    b.get("renderable", 0),
+                    b.get("critical_issues", 0),
+                    b.get("warning_issues", 0),
+                    b.get("avg_response_time_ms", 0),
+                ]
+                for col, value in enumerate(values, 1):
+                    self._apply_style(batch_ws.cell(row=row_idx, column=col, value=value), cell_style)
+            batch_ws.freeze_panes = "A2"
+            batch_ws.auto_filter.ref = "A1:H1"
+            for col, width in enumerate([70, 10, 8, 10, 10, 10, 10, 14], 1):
+                batch_ws.column_dimensions[get_column_letter(col)].width = width
 
         issues_ws = wb.create_sheet("Issues")
         issue_headers = ["Severity", "Bot", "Category", "Title", "Details"]

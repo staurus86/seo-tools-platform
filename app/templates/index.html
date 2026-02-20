@@ -211,6 +211,22 @@
         <form class="space-y-3" onsubmit="startTask(event, 'bot-check')">
             <input type="url" name="url" placeholder="https://example.com" required
                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Scan mode</label>
+                <select name="scan_mode" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent js-bot-scan-mode">
+                    <option value="single" selected>Single URL</option>
+                    <option value="batch">Batch URL list (up to 100)</option>
+                </select>
+            </div>
+            <div class="hidden js-bot-batch-box">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Batch URLs (one per line)</label>
+                <textarea
+                    name="batch_urls_text"
+                    rows="5"
+                    placeholder="https://example.com/&#10;https://example.com/catalog&#10;https://example.com/contact"
+                    class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent font-mono text-sm"
+                ></textarea>
+            </div>
             <details class="rounded-lg border border-red-200 bg-red-50/40 p-3">
                 <summary class="cursor-pointer text-sm font-medium text-red-800">Bot selection</summary>
                 <div class="mt-3 space-y-3 text-sm">

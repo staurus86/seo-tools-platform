@@ -701,7 +701,7 @@ function copyToClipboard(text) {
             notification.classList.add('translate-y-20');
         }, 2000);
     }).catch(err => {
-        console.error('РћС€РёР±РєР° РєРѕРїРёСЂРѕРІР°РЅРёСЏ:', err);
+        console.error('Clipboard copy error:', err);
     });
 }
 
@@ -737,7 +737,7 @@ function formatRobotsRawWithLineNumbers(rawText) {
 
 function copyCurrentTaskJson() {
     if (!lastTaskResult) {
-        alert('РќРµС‚ РґР°РЅРЅС‹С… РґР»СЏ РєРѕРїРёСЂРѕРІР°РЅРёСЏ');
+        alert('No data available to copy');
         return;
     }
     copyToClipboard(JSON.stringify(lastTaskResult, null, 2));
@@ -745,13 +745,13 @@ function copyCurrentTaskJson() {
 
 function copyOnpageRecommendations() {
     if (!lastTaskResult || lastTaskResult.task_type !== 'onpage_audit') {
-        alert('РќРµС‚ РґР°РЅРЅС‹С… OnPage РґР»СЏ РєРѕРїРёСЂРѕРІР°РЅРёСЏ');
+        alert('No OnPage data available to copy');
         return;
     }
     const r = (lastTaskResult.results || {});
     const recs = (r.recommendations || []);
     if (!recs.length) {
-        alert('Р РµРєРѕРјРµРЅРґР°С†РёР№ РїРѕРєР° РЅРµС‚');
+        alert('No recommendations yet');
         return;
     }
     const lines = recs.map((item, idx) => `${idx + 1}. ${item}`);
@@ -760,7 +760,7 @@ function copyOnpageRecommendations() {
 
 function copyOnpageTopFixes() {
     if (!lastTaskResult || lastTaskResult.task_type !== 'onpage_audit') {
-        alert('РќРµС‚ РґР°РЅРЅС‹С… OnPage РґР»СЏ РєРѕРїРёСЂРѕРІР°РЅРёСЏ');
+        alert('No OnPage data available to copy');
         return;
     }
     const r = (lastTaskResult.results || {});
@@ -774,7 +774,7 @@ function copyOnpageTopFixes() {
             `${idx + 1}. [${String((f.priority || 'medium')).toUpperCase()}] ${f.title || 'Fix'}${f.action ? ` | Action: ${f.action}` : ''}`
         );
     if (!list.length) {
-        alert('Top fixes РїРѕРєР° РЅРµС‚');
+        alert('Top fixes are not available yet');
         return;
     }
     copyToClipboard(list.join('\n'));
@@ -869,7 +869,7 @@ function renderSiteAuditProIssuesExplorer() {
     });
 
     if (!visible.length) {
-        wrapper.innerHTML = '<div class="text-sm text-gray-500">РџСЂРѕР±Р»РµРјС‹ РЅРµ РЅР°Р№РґРµРЅС‹ РїРѕ С‚РµРєСѓС‰РёРј С„РёР»СЊС‚СЂР°Рј.</div>';
+        wrapper.innerHTML = '<div class="text-sm text-gray-500">No issues found for the selected filters.</div>';
         return;
     }
 
@@ -1015,7 +1015,7 @@ function downloadSitemapFilePreview(index, filename) {
 
 async function downloadSitemapXlsxReport() {
     if (!sitemapData) {
-        alert('РќРµС‚ РґР°РЅРЅС‹С… sitemap');
+        alert('No sitemap data available');
         return;
     }
     try {
@@ -1041,7 +1041,7 @@ async function downloadSitemapXlsxReport() {
         URL.revokeObjectURL(href);
     } catch (error) {
         console.error('Error downloading sitemap xlsx:', error);
-        alert('РќРµ СѓРґР°Р» СЃРєР°С‡Р°С‚СЊ XLSX-РѕС‚С‡РµС‚  sitemap');
+        alert('Failed to download sitemap XLSX report');
     }
 }
 
@@ -1181,6 +1181,25 @@ function copyBotPlaybooksAsJira() {
     copyToClipboard(jiraText);
 }
 
+function copyBotOwnerTasks(owner) {
+    if (!botData) {
+        alert('No bot check data available');
+        return;
+    }
+    const r = botData.results || botData;
+    const byOwner = ((r.action_center || {}).by_owner || {});
+    const rows = byOwner[owner] || [];
+    if (!rows.length) {
+        alert('No tasks for selected owner');
+        return;
+    }
+    const text = rows.map((p, idx) => {
+        const actions = (p.actions || []).map((a) => `- ${a}`).join('\n');
+        return `${idx + 1}. ${p.title || 'Action'} (priority ${p.priority_score || 0})\n${actions}`;
+    }).join('\n\n');
+    copyToClipboard(text);
+}
+
 function downloadBotTrendHistoryJson() {
     if (!botData) {
         alert('No bot check data available');
@@ -1211,7 +1230,7 @@ function downloadBotTrendHistoryJson() {
 
 async function downloadWordReport() {
     if (!robotsData) {
-        alert('РќРµС‚ РґР°РЅРЅС‹С… РґР»СЏ РѕС‚С‡РµС‚Р°');
+        alert('No report data available');
         return;
     }
     
@@ -1236,17 +1255,17 @@ async function downloadWordReport() {
             URL.revokeObjectURL(url);
         } else {
             const error = await response.json();
-            alert('РћС€РёР±РєР° РїСЂРё СЃРѕР·РґР°РЅРёРё РѕС‚С‡РµС‚Р°: ' + (error.error || response.statusText));
+            alert('Report generation error: ' + (error.error || response.statusText));
         }
     } catch (error) {
         console.error('Error downloading Word report:', error);
-        alert('РћС€РёР±РєР° РїСЂРё СЃРєР°С‡РёРІР°РЅРёРё РѕС‚С‡РµС‚Р°');
+        alert('Error downloading report');
     }
 }
 
 async function downloadMobileDocxReport() {
     if (!mobileData) {
-        alert('РќРµС‚ РґР°РЅРЅС‹С… РјРѕР±РёР»СЊРЅРѕР№ РїСЂРѕРІРµСЂРєРё');
+        alert('No mobile check data available');
         return;
     }
     try {
@@ -1276,14 +1295,14 @@ async function downloadMobileDocxReport() {
         document.body.removeChild(a);
         URL.revokeObjectURL(href);
     } catch (error) {
-        console.error('РћС€РёР±РєР° СЃРєР°С‡РёРІР°РЅРёСЏ РјРѕР±РёР» DOCX:', error);
-        alert('РќРµ СѓРґР°Р» СЃРєР°С‡Р°С‚СЊ DOCX-РѕС‚С‡РµС‚');
+        console.error('Error downloading mobile DOCX:', error);
+        alert('Failed to download DOCX report');
     }
 }
 
 async function downloadMobileXlsxReport() {
     if (!mobileData) {
-        alert('РќРµС‚ РґР°РЅРЅС‹С… РјРѕР±РёР»СЊРЅРѕР№ РїСЂРѕРІРµСЂРєРё');
+        alert('No mobile check data available');
         return;
     }
     try {
@@ -2374,6 +2393,12 @@ function generateBotHTML(result) {
     const issues = r.issues || [];
     const blockers = r.priority_blockers || [];
     const playbooks = r.playbooks || [];
+    const alerts = r.alerts || [];
+    const robotsLinter = (r.robots_linter || {}).findings || [];
+    const allowlistScenarios = (r.allowlist_simulator || {}).scenarios || [];
+    const actionCenter = (r.action_center || {}).by_owner || {};
+    const evidenceRows = (r.evidence_pack || {}).rows || [];
+    const batchRuns = r.batch_runs || [];
     const botRows = r.bot_rows || [];
     const serverTrend = r.trend || {};
     const serverTrendHistory = serverTrend.history || [];
@@ -2414,6 +2439,7 @@ function generateBotHTML(result) {
                 <td class="py-2 pr-2">${responseMs}</td>
                 <td class="py-2 pr-2 ${row.accessible ? 'text-green-700' : 'text-red-700'}">${reachableLabel}</td>
                 <td class="py-2 pr-2 ${indexable ? 'text-green-700' : 'text-amber-700'}">${indexableLabel}</td>
+                <td class="py-2 pr-2 text-xs text-gray-600">${escapeHtml(row.indexability_reason || '')}</td>
             </tr>
         `;
     }).join('');
@@ -2480,6 +2506,62 @@ function generateBotHTML(result) {
             <td class="py-2 pr-2">${s.warning_issues || 0}</td>
         </tr>
     `).join('');
+    const alertRows = alerts.map((a) => `
+        <div class="py-2 border-b text-sm">
+            <div class="font-medium ${(a.severity || 'info') === 'critical' ? 'text-red-700' : ((a.severity || 'info') === 'warning' ? 'text-amber-700' : 'text-blue-700')}">${(a.severity || 'info').toUpperCase()} - ${escapeHtml(a.code || 'alert')}</div>
+            <div class="text-gray-700">${escapeHtml(a.message || '')}</div>
+        </div>
+    `).join('');
+    const linterRows = robotsLinter.map((f) => `
+        <tr class="border-b">
+            <td class="py-2 pr-2 text-sm">${escapeHtml((f.severity || 'info').toUpperCase())}</td>
+            <td class="py-2 pr-2 text-sm">${escapeHtml(f.code || '')}</td>
+            <td class="py-2 pr-2 text-sm">${escapeHtml(f.message || '')}</td>
+        </tr>
+    `).join('');
+    const allowlistRows = allowlistScenarios.map((s) => `
+        <tr class="border-b">
+            <td class="py-2 pr-2 text-sm">${escapeHtml(s.category || '')}</td>
+            <td class="py-2 pr-2 text-sm">${s.affected_bots || 0}</td>
+            <td class="py-2 pr-2 text-sm">${(s.delta_renderable > 0 ? '+' : '') + (s.delta_renderable || 0)}</td>
+            <td class="py-2 pr-2 text-sm">${(s.delta_indexable > 0 ? '+' : '') + (s.delta_indexable || 0)}</td>
+            <td class="py-2 pr-2 text-sm">${s.projected_indexable || 0}/${summary.total || 0} (${s.projected_indexable_pct || 0}%)</td>
+        </tr>
+    `).join('');
+    const ownerBlocks = Object.keys(actionCenter).sort().map((owner) => {
+        const rows = actionCenter[owner] || [];
+        const top = rows.slice(0, 3).map((x) => `<li>${escapeHtml(x.title || 'Action')} (p${x.priority_score || 0})</li>`).join('');
+        return `
+            <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="font-semibold text-indigo-900">${escapeHtml(owner)}</div>
+                    <button onclick='copyBotOwnerTasks(${JSON.stringify(owner)})' class="text-indigo-700 hover:text-indigo-900 text-xs"><i class="fas fa-copy mr-1"></i>Copy</button>
+                </div>
+                <ul class="list-disc pl-5 text-indigo-900">${top || '<li>No actions</li>'}</ul>
+            </div>
+        `;
+    }).join('');
+    const evidenceTableRows = evidenceRows.slice(0, 20).map((e) => `
+        <tr class="border-b">
+            <td class="py-2 pr-2 text-sm">${escapeHtml(e.bot || '')}</td>
+            <td class="py-2 pr-2 text-sm">${e.status ?? 'n/a'}</td>
+            <td class="py-2 pr-2 text-sm">${escapeHtml(e.indexability_reason || '')}</td>
+            <td class="py-2 pr-2 text-sm">${e.waf_detected ? 'yes' : 'no'} (${e.waf_confidence ?? 0})</td>
+            <td class="py-2 pr-2 text-xs text-gray-600">${escapeHtml(e.response_sample || '')}</td>
+        </tr>
+    `).join('');
+    const batchRows = batchRuns.map((b, idx) => `
+        <tr class="border-b">
+            <td class="py-2 pr-2 text-sm">${idx + 1}</td>
+            <td class="py-2 pr-2 text-sm break-all">${escapeHtml(b.url || '')}</td>
+            <td class="py-2 pr-2 text-sm">${b.indexable || 0}/${b.total || 0}</td>
+            <td class="py-2 pr-2 text-sm">${b.crawlable || 0}/${b.total || 0}</td>
+            <td class="py-2 pr-2 text-sm">${b.renderable || 0}/${b.total || 0}</td>
+            <td class="py-2 pr-2 text-sm">${b.avg_response_time_ms || 0}</td>
+            <td class="py-2 pr-2 text-sm">${b.critical_issues || 0}</td>
+            <td class="py-2 pr-2 text-sm">${b.warning_issues || 0}</td>
+        </tr>
+    `).join('');
 
     return `
         <div class="bg-white rounded-xl shadow-md p-6">
@@ -2523,6 +2605,35 @@ function generateBotHTML(result) {
                 ${previousTrend ? `<div><span class="text-gray-600">Delta indexable:</span> <span class="font-medium">${formatTrendDelta(latestTrend.indexable || 0, previousTrend.indexable || 0)}</span></div>` : ''}
                 ${previousTrend ? `<div><span class="text-gray-600">Delta critical issues:</span> <span class="font-medium">${formatTrendDelta(latestTrend.critical_issues || 0, previousTrend.critical_issues || 0)}</span></div>` : ''}
                 ${previousTrend ? `<div><span class="text-gray-600">Delta avg response (ms):</span> <span class="font-medium">${formatTrendDelta(latestTrend.avg_response_time_ms || 0, previousTrend.avg_response_time_ms || 0)}</span></div>` : ''}
+            </div>
+
+            ${r.batch_mode ? `
+            <div class="border-t pt-4 mt-4">
+                <h4 class="font-semibold mb-2">Batch Runs</h4>
+                <div class="overflow-auto">
+                    <table class="w-full min-w-[980px]">
+                        <thead>
+                            <tr class="text-left text-xs text-slate-500 border-b">
+                                <th class="py-2 pr-2">#</th>
+                                <th class="py-2 pr-2">URL</th>
+                                <th class="py-2 pr-2">Indexable</th>
+                                <th class="py-2 pr-2">Crawlable</th>
+                                <th class="py-2 pr-2">Renderable</th>
+                                <th class="py-2 pr-2">Avg ms</th>
+                                <th class="py-2 pr-2">Critical</th>
+                                <th class="py-2 pr-2">Warnings</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${batchRows || '<tr><td colspan="8" class="py-3 text-gray-500">No batch rows available.</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
+            </div>` : ''}
+
+            <div class="border-t pt-4 mt-4">
+                <h4 class="font-semibold mb-2">Alerts</h4>
+                ${alertRows || '<div class="text-sm text-gray-500">No active alerts.</div>'}
             </div>
 
             <div class="border-t pt-4 mt-4">
@@ -2573,7 +2684,7 @@ function generateBotHTML(result) {
                     </div>
                 </div>
                 <div class="overflow-auto">
-                    <table class="w-full min-w-[760px] text-sm" id="bot-results-list">
+                    <table class="w-full min-w-[980px] text-sm" id="bot-results-list">
                         <thead>
                             <tr class="text-left text-xs text-slate-500 border-b">
                                 <th class="py-2 pr-2">Bot</th>
@@ -2582,10 +2693,11 @@ function generateBotHTML(result) {
                                 <th class="py-2 pr-2">Response</th>
                                 <th class="py-2 pr-2">Reachable</th>
                                 <th class="py-2 pr-2">Indexable</th>
+                                <th class="py-2 pr-2">Reason</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${botRowsHtml || '<tr><td colspan="6" class="py-3 text-gray-500">No bot rows available.</td></tr>'}
+                            ${botRowsHtml || '<tr><td colspan="7" class="py-3 text-gray-500">No bot rows available.</td></tr>'}
                         </tbody>
                     </table>
                 </div>
@@ -2628,6 +2740,33 @@ function generateBotHTML(result) {
             </div>
 
             <div class="border-t pt-4 mt-4">
+                <h4 class="font-semibold mb-2">Action Center (by owner)</h4>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    ${ownerBlocks || '<div class="text-sm text-gray-500">No owner actions.</div>'}
+                </div>
+            </div>
+
+            <div class="border-t pt-4 mt-4">
+                <h4 class="font-semibold mb-2">Robots Policy Linter</h4>
+                <div class="overflow-auto">
+                    <table class="w-full min-w-[760px]">
+                        <thead><tr class="text-left text-xs text-slate-500 border-b"><th class="py-2 pr-2">Severity</th><th class="py-2 pr-2">Code</th><th class="py-2 pr-2">Message</th></tr></thead>
+                        <tbody>${linterRows || '<tr><td colspan="3" class="py-3 text-gray-500">No linter findings.</td></tr>'}</tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="border-t pt-4 mt-4">
+                <h4 class="font-semibold mb-2">Allowlist Simulator</h4>
+                <div class="overflow-auto">
+                    <table class="w-full min-w-[760px]">
+                        <thead><tr class="text-left text-xs text-slate-500 border-b"><th class="py-2 pr-2">Category</th><th class="py-2 pr-2">Affected bots</th><th class="py-2 pr-2">Delta renderable</th><th class="py-2 pr-2">Delta indexable</th><th class="py-2 pr-2">Projected indexable</th></tr></thead>
+                        <tbody>${allowlistRows || '<tr><td colspan="5" class="py-3 text-gray-500">No simulation data.</td></tr>'}</tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="border-t pt-4 mt-4">
                 <h4 class="font-semibold mb-2">Top Issues</h4>
                 ${issueRows || '<div class="text-sm text-gray-500">No issues detected</div>'}
             </div>
@@ -2654,6 +2793,16 @@ function generateBotHTML(result) {
                     ${((r.host_consistency || {}).consistent === false) ? 'Inconsistencies detected across host variants.' : 'Host variants look consistent.'}
                 </div>
                 ${((r.host_consistency || {}).notes || []).length ? `<ul class="list-disc pl-5 text-sm text-gray-700 mt-2">${(r.host_consistency.notes || []).map(n => `<li>${n}</li>`).join('')}</ul>` : ''}
+            </div>
+
+            <div class="border-t pt-4 mt-4">
+                <h4 class="font-semibold mb-2">Evidence Pack (problem bots)</h4>
+                <div class="overflow-auto">
+                    <table class="w-full min-w-[980px]">
+                        <thead><tr class="text-left text-xs text-slate-500 border-b"><th class="py-2 pr-2">Bot</th><th class="py-2 pr-2">HTTP</th><th class="py-2 pr-2">Reason</th><th class="py-2 pr-2">WAF</th><th class="py-2 pr-2">Sample</th></tr></thead>
+                        <tbody>${evidenceTableRows || '<tr><td colspan="5" class="py-3 text-gray-500">No evidence rows.</td></tr>'}</tbody>
+                    </table>
+                </div>
             </div>
 
             <div class="border-t pt-4 mt-4">

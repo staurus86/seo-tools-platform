@@ -106,6 +106,34 @@ async function startTask(event, endpoint) {
         delete data.scan_mode;
         delete data.batch_urls_text;
     }
+    if (endpoint === 'bot-check') {
+        const scanMode = (data.scan_mode || 'single').toString();
+        const batchMode = scanMode === 'batch';
+        const rawBatch = (data.batch_urls_text || '').toString();
+        const parsedBatchUrls = rawBatch
+            .split(/\r?\n/)
+            .map((x) => x.trim())
+            .filter((x) => x.length > 0);
+        if (batchMode && parsedBatchUrls.length > 100) {
+            showToast('Batch bot check limit: maximum 100 URLs', 'warning');
+            return;
+        }
+        const batchUrls = parsedBatchUrls.slice(0, 100);
+        data.scan_mode = batchMode ? 'batch' : 'single';
+        if (batchMode) {
+            if (batchUrls.length === 0) {
+                showToast('Add at least one URL for batch bot check', 'warning');
+                return;
+            }
+            data.batch_urls = batchUrls;
+            if (!data.url || String(data.url).trim() === '') {
+                data.url = batchUrls[0];
+            }
+        } else {
+            delete data.batch_urls;
+        }
+        delete data.batch_urls_text;
+    }
     
     // Show loading state
     const button = form.querySelector('button[type="submit"]');
@@ -209,6 +237,27 @@ function initSiteAuditProBatchUI() {
     sync();
 }
 
+function initBotBatchUI() {
+    const form = document.querySelector("form[onsubmit*=\"bot-check\"]");
+    if (!form) return;
+    const modeSelect = form.querySelector('.js-bot-scan-mode');
+    const batchBox = form.querySelector('.js-bot-batch-box');
+    const rootUrlInput = form.querySelector('input[name="url"]');
+    if (!modeSelect || !batchBox || !rootUrlInput) return;
+
+    const sync = () => {
+        const isBatch = modeSelect.value === 'batch';
+        batchBox.classList.toggle('hidden', !isBatch);
+        if (isBatch) {
+            rootUrlInput.required = false;
+        } else {
+            rootUrlInput.required = true;
+        }
+    };
+    modeSelect.addEventListener('change', sync);
+    sync();
+}
+
 // Show rate limit modal
 function showRateLimitModal(detail) {
     const modal = document.getElementById('rate-limit-modal');
@@ -255,6 +304,7 @@ async function updateRateLimitBadge() {
 document.addEventListener('DOMContentLoaded', () => {
     updateRateLimitBadge();
     initSiteAuditProBatchUI();
+    initBotBatchUI();
     
     // Update badge every minute
     setInterval(updateRateLimitBadge, 60000);

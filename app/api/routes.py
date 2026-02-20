@@ -1533,6 +1533,8 @@ def check_bots_full(
     sla_profile: str = "standard",
     baseline_enabled: bool = True,
     ai_block_expected: bool = False,
+    batch_mode: bool = False,
+    batch_urls: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Bot accessibility check with feature-flagged v2 engine."""
     from app.config import settings
@@ -1554,6 +1556,8 @@ def check_bots_full(
                 baseline_enabled=baseline_enabled,
                 ai_block_expected=ai_block_expected,
             )
+            if batch_mode:
+                return checker.run_batch(batch_urls or [], selected_bots=selected_bots, bot_groups=bot_groups)
             return checker.run(url, selected_bots=selected_bots, bot_groups=bot_groups)
         except Exception as e:
             print(f"[API] bot v2 failed, fallback to legacy: {e}")
@@ -1623,6 +1627,8 @@ class BotCheckRequest(BaseModel):
     sla_profile: Optional[str] = "standard"
     baseline_enabled: bool = True
     ai_block_expected: bool = False
+    scan_mode: Optional[str] = "single"
+    batch_urls: Optional[List[str]] = None
 
     @field_validator("selected_bots", "bot_groups", mode="before")
     @classmethod
@@ -1632,6 +1638,18 @@ class BotCheckRequest(BaseModel):
         if isinstance(value, str):
             v = value.strip()
             return [v] if v else []
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return value
+
+    @field_validator("batch_urls", mode="before")
+    @classmethod
+    def _normalize_batch_urls(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            parts = [x.strip() for x in re.split(r"[\r\n,;]+", value) if x.strip()]
+            return parts
         if isinstance(value, list):
             return [str(item).strip() for item in value if str(item).strip()]
         return value
@@ -2341,6 +2359,8 @@ async def create_bot_check(data: BotCheckRequest):
         sla_profile=(data.sla_profile or "standard"),
         baseline_enabled=bool(data.baseline_enabled),
         ai_block_expected=bool(data.ai_block_expected),
+        batch_mode=(str(data.scan_mode or "single").lower() == "batch"),
+        batch_urls=(data.batch_urls or []),
     )
     task_id = f"bots-{datetime.now().timestamp()}"
     create_task_result(task_id, "bot_check", url, result)
