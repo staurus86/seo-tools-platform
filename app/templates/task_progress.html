@@ -249,6 +249,93 @@ function addTaskToLocalHistory(item) {
     }
 }
 
+const BOT_TREND_HISTORY_KEY = 'seo_bot_check_trends_v1';
+const BOT_TREND_HISTORY_LIMIT = 300;
+
+function getBotTrendHistory() {
+    try {
+        const raw = localStorage.getItem(BOT_TREND_HISTORY_KEY);
+        const rows = raw ? JSON.parse(raw) : [];
+        return Array.isArray(rows) ? rows : [];
+    } catch (e) {
+        console.error('Error reading bot trend history:', e);
+        return [];
+    }
+}
+
+function saveBotTrendHistory(rows) {
+    try {
+        localStorage.setItem(BOT_TREND_HISTORY_KEY, JSON.stringify(rows.slice(0, BOT_TREND_HISTORY_LIMIT)));
+    } catch (e) {
+        console.error('Error saving bot trend history:', e);
+    }
+}
+
+function extractDomain(value) {
+    try {
+        return new URL(String(value || '')).hostname.toLowerCase();
+    } catch (e) {
+        return '';
+    }
+}
+
+function saveBotTrendSnapshot(result) {
+    try {
+        const r = result.results || result;
+        const summary = r.summary || {};
+        const url = result.url || '';
+        const domain = extractDomain(url);
+        if (!domain) return null;
+
+        const snapshot = {
+            task_id: result.task_id || taskId,
+            timestamp: new Date().toISOString(),
+            url,
+            domain,
+            total: Number(summary.total || 0),
+            crawlable: Number(summary.crawlable || 0),
+            renderable: Number(summary.renderable || 0),
+            accessible: Number(summary.accessible || 0),
+            indexable: Number(summary.indexable || 0),
+            non_indexable: Number(summary.non_indexable || 0),
+            avg_response_time_ms: Number(summary.avg_response_time_ms || 0),
+            issues_total: Number(summary.issues_total || 0),
+            critical_issues: Number(summary.critical_issues || 0),
+            warning_issues: Number(summary.warning_issues || 0),
+            info_issues: Number(summary.info_issues || 0),
+            waf_cdn_detected: Number(summary.waf_cdn_detected || 0),
+            retry_profile: r.retry_profile || 'standard',
+            criticality_profile: r.criticality_profile || 'balanced',
+            sla_profile: r.sla_profile || 'standard',
+        };
+
+        const history = getBotTrendHistory();
+        const filtered = history.filter((x) => String(x.task_id || '') !== String(snapshot.task_id));
+        filtered.unshift(snapshot);
+        saveBotTrendHistory(filtered);
+        return snapshot;
+    } catch (e) {
+        console.error('Error saving bot snapshot:', e);
+        return null;
+    }
+}
+
+function getBotSnapshotsForUrl(url) {
+    const domain = extractDomain(url);
+    if (!domain) return [];
+    return getBotTrendHistory()
+        .filter((x) => String(x.domain || '') === domain)
+        .sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
+}
+
+function formatTrendDelta(current, prev) {
+    const c = Number(current || 0);
+    const p = Number(prev || 0);
+    if (!Number.isFinite(c) || !Number.isFinite(p)) return 'n/a';
+    const d = c - p;
+    return `${d > 0 ? '+' : ''}${d}`;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     checkTaskStatus();
     pollInterval = setInterval(checkTaskStatus, 1000);
@@ -392,6 +479,7 @@ function showResults(data) {
     } else if (result.task_type === 'sitemap_validate') {
         resultsContent.innerHTML = generateSitemapHTMLV2(result);
     } else if (result.task_type === 'bot_check') {
+        saveBotTrendSnapshot(result);
         resultsContent.innerHTML = generateBotHTML(result);
         setTimeout(() => applyBotTableControls(), 0);
     } else if (result.task_type === 'render_audit') {
@@ -1091,6 +1179,34 @@ function copyBotPlaybooksAsJira() {
 
     const jiraText = blocks.join('\n\n---\n\n');
     copyToClipboard(jiraText);
+}
+
+function downloadBotTrendHistoryJson() {
+    if (!botData) {
+        alert('No bot check data available');
+        return;
+    }
+    const url = botData.url || '';
+    const snapshots = getBotSnapshotsForUrl(url);
+    if (!snapshots.length) {
+        alert('No trend history available for this domain');
+        return;
+    }
+    const payload = {
+        url,
+        domain: extractDomain(url),
+        generated_at: new Date().toISOString(),
+        snapshots,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const href = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.download = `bot-trends-${payload.domain || 'domain'}-${new Date().toISOString().slice(0, 10)}.json`;
+    a.href = href;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(href);
 }
 
 async function downloadWordReport() {
@@ -2259,6 +2375,9 @@ function generateBotHTML(result) {
     const blockers = r.priority_blockers || [];
     const playbooks = r.playbooks || [];
     const botRows = r.bot_rows || [];
+    const trendSnapshots = getBotSnapshotsForUrl(result.url || '');
+    const latestTrend = trendSnapshots[0] || null;
+    const previousTrend = trendSnapshots.length > 1 ? trendSnapshots[1] : null;
     const criticalCategories = new Set(['Google', 'Yandex', 'Bing', 'Search']);
 
     const categorySet = new Set(botRows.map((x) => String(x.category || '').trim()).filter(Boolean));
@@ -2340,6 +2459,19 @@ function generateBotHTML(result) {
         </div>
     `).join('');
 
+    const trendRows = trendSnapshots.slice(0, 8).map((s, idx) => `
+        <tr class="border-b">
+            <td class="py-2 pr-2">${idx + 1}</td>
+            <td class="py-2 pr-2">${new Date(s.timestamp).toLocaleString()}</td>
+            <td class="py-2 pr-2">${s.indexable || 0}/${s.total || 0}</td>
+            <td class="py-2 pr-2">${s.crawlable || 0}/${s.total || 0}</td>
+            <td class="py-2 pr-2">${s.renderable || 0}/${s.total || 0}</td>
+            <td class="py-2 pr-2">${s.avg_response_time_ms || 0}</td>
+            <td class="py-2 pr-2">${s.critical_issues || 0}</td>
+            <td class="py-2 pr-2">${s.warning_issues || 0}</td>
+        </tr>
+    `).join('');
+
     return `
         <div class="bg-white rounded-xl shadow-md p-6">
             <div class="flex justify-between items-center mb-4">
@@ -2353,6 +2485,9 @@ function generateBotHTML(result) {
                     </button>
                     <button onclick="copyBotPlaybooksAsJira()" class="text-sky-600 hover:text-sky-800 text-sm">
                         <i class="fas fa-list-check mr-1"></i>Copy Jira Tasks
+                    </button>
+                    <button onclick="downloadBotTrendHistoryJson()" class="text-emerald-600 hover:text-emerald-800 text-sm">
+                        <i class="fas fa-chart-line mr-1"></i>Export Trends JSON
                     </button>
                     <button onclick="copyToClipboard('${result.url}')" class="text-blue-600 hover:text-blue-800 text-sm">
                         <i class="fas fa-copy mr-1"></i>Copy URL
@@ -2373,6 +2508,33 @@ function generateBotHTML(result) {
                 ${summary.avg_response_time_ms ? `<div><span class="text-gray-600">Avg response:</span> <span class="font-medium">${summary.avg_response_time_ms} ms</span></div>` : ''}
                 <div><span class="text-gray-600">Retry profile:</span> <span class="font-medium">${r.retry_profile || 'standard'}</span></div>
                 <div><span class="text-gray-600">Criticality/SLA:</span> <span class="font-medium">${r.criticality_profile || 'balanced'} / ${r.sla_profile || 'standard'}</span></div>
+                ${latestTrend ? `<div><span class="text-gray-600">Trend snapshots:</span> <span class="font-medium">${trendSnapshots.length}</span></div>` : ''}
+                ${previousTrend ? `<div><span class="text-gray-600">Delta indexable:</span> <span class="font-medium">${formatTrendDelta(latestTrend.indexable || 0, previousTrend.indexable || 0)}</span></div>` : ''}
+                ${previousTrend ? `<div><span class="text-gray-600">Delta critical issues:</span> <span class="font-medium">${formatTrendDelta(latestTrend.critical_issues || 0, previousTrend.critical_issues || 0)}</span></div>` : ''}
+                ${previousTrend ? `<div><span class="text-gray-600">Delta avg response (ms):</span> <span class="font-medium">${formatTrendDelta(latestTrend.avg_response_time_ms || 0, previousTrend.avg_response_time_ms || 0)}</span></div>` : ''}
+            </div>
+
+            <div class="border-t pt-4 mt-4">
+                <h4 class="font-semibold mb-2">Run History (domain trend)</h4>
+                <div class="overflow-auto">
+                    <table class="w-full min-w-[920px] text-sm">
+                        <thead>
+                            <tr class="text-left text-xs text-slate-500 border-b">
+                                <th class="py-2 pr-2">#</th>
+                                <th class="py-2 pr-2">Run time</th>
+                                <th class="py-2 pr-2">Indexable</th>
+                                <th class="py-2 pr-2">Crawlable</th>
+                                <th class="py-2 pr-2">Renderable</th>
+                                <th class="py-2 pr-2">Avg ms</th>
+                                <th class="py-2 pr-2">Critical</th>
+                                <th class="py-2 pr-2">Warnings</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${trendRows || '<tr><td colspan="8" class="py-3 text-gray-500">No history for this domain yet.</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             <div class="border-t pt-4">
