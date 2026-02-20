@@ -1050,6 +1050,49 @@ async function downloadBotDocxReport() {
     }
 }
 
+function copyBotPlaybooksAsJira() {
+    if (!botData) {
+        alert('No bot check data available');
+        return;
+    }
+    const r = botData.results || botData;
+    const playbooks = r.playbooks || [];
+    if (playbooks.length === 0) {
+        alert('No playbooks available for Jira export');
+        return;
+    }
+
+    const bucketName = (score) => {
+        const n = Number(score || 0);
+        if (n >= 20) return 'Now';
+        if (n >= 12) return 'Next';
+        return 'Later';
+    };
+
+    const blocks = playbooks.slice(0, 20).map((p, idx) => {
+        const actions = (p.actions || []).slice(0, 6).map((a) => `- ${a}`).join('\n') || '- Define implementation steps';
+        const priority = Number(p.priority_score || 0);
+        const owner = p.owner || 'Team';
+        const blockerCode = p.blocker_code || 'general';
+        const title = p.title || `Bot accessibility fix ${idx + 1}`;
+        return [
+            `Summary: [Bot Access Check] ${title}`,
+            `Labels: bot-check,${String(blockerCode).toLowerCase().replace(/[^a-z0-9_-]+/g, '-')},${bucketName(priority).toLowerCase()}`,
+            `Priority Score: ${priority}`,
+            `Owner: ${owner}`,
+            'Description:',
+            `- Source: Bot Access Check`,
+            `- Blocker code: ${blockerCode}`,
+            `- Sprint bucket: ${bucketName(priority)}`,
+            '- Action plan:',
+            actions,
+        ].join('\n');
+    });
+
+    const jiraText = blocks.join('\n\n---\n\n');
+    copyToClipboard(jiraText);
+}
+
 async function downloadWordReport() {
     if (!robotsData) {
         alert('РќРµС‚ РґР°РЅРЅС‹С… РґР»СЏ РѕС‚С‡РµС‚Р°');
@@ -2307,6 +2350,9 @@ function generateBotHTML(result) {
                     </button>
                     <button onclick="downloadBotXlsxReport()" class="text-green-600 hover:text-green-800 text-sm">
                         <i class="fas fa-file-excel mr-1"></i>Download XLSX
+                    </button>
+                    <button onclick="copyBotPlaybooksAsJira()" class="text-sky-600 hover:text-sky-800 text-sm">
+                        <i class="fas fa-list-check mr-1"></i>Copy Jira Tasks
                     </button>
                     <button onclick="copyToClipboard('${result.url}')" class="text-blue-600 hover:text-blue-800 text-sm">
                         <i class="fas fa-copy mr-1"></i>Copy URL

@@ -1011,6 +1011,99 @@ class XLSXGenerator:
         ws.column_dimensions["A"].width = 30
         ws.column_dimensions["B"].width = 90
 
+        exec_ws = wb.create_sheet("Executive Summary", 1)
+        exec_ws["A1"] = "Bot Access Check - Executive Summary"
+        exec_ws["A1"].font = Font(bold=True, size=16)
+        exec_ws.merge_cells("A1:G1")
+
+        total_bots = int(summary.get("total", 0) or len(bot_rows) or 0)
+        indexable_bots = int(summary.get("indexable", 0) or 0)
+        indexable_pct = round((indexable_bots / total_bots) * 100, 1) if total_bots > 0 else 0.0
+        sla_breaches = sum(1 for c in category_stats if not bool(c.get("sla_met")))
+        waf_detected = int(summary.get("waf_cdn_detected", 0) or 0)
+
+        executive_kpis = [
+            ("URL", report_url, "Scope"),
+            ("Bots checked", total_bots, "Total tested user-agents"),
+            ("Indexable bots", indexable_bots, "Bots that can index content"),
+            ("Indexable rate", f"{indexable_pct}%", "Target depends on SLA profile"),
+            ("SLA-breached categories", sla_breaches, "Categories below SLA target"),
+            ("WAF/CDN detections", waf_detected, "Potential challenge/anti-bot friction"),
+        ]
+        for row_idx, (metric, value, note) in enumerate(executive_kpis, start=3):
+            self._apply_style(exec_ws.cell(row=row_idx, column=1, value=metric), header_style)
+            self._apply_style(exec_ws.cell(row=row_idx, column=2, value=value), cell_style)
+            self._apply_style(exec_ws.cell(row=row_idx, column=3, value=note), cell_style)
+
+        playbook_by_code = {}
+        for item in playbooks:
+            code = str(item.get("blocker_code", "") or "").strip()
+            if code and code not in playbook_by_code:
+                playbook_by_code[code] = item
+
+        top_blockers = sorted(
+            (priority_blockers or []),
+            key=lambda x: float(x.get("priority_score", 0) or 0),
+            reverse=True,
+        )[:5]
+        blocker_header_row = 11
+        blocker_headers = ["Rank", "Code", "Title", "Priority", "Affected bots", "Owner", "Top actions"]
+        for col, header in enumerate(blocker_headers, 1):
+            self._apply_style(exec_ws.cell(row=blocker_header_row, column=col, value=header), header_style)
+
+        for idx, blocker in enumerate(top_blockers, start=1):
+            code = str(blocker.get("code", "") or "")
+            pb = playbook_by_code.get(code, {})
+            actions = pb.get("actions", []) or []
+            action_preview = " | ".join(actions[:2]) if actions else "-"
+            priority = float(blocker.get("priority_score", 0) or 0)
+            values = [
+                idx,
+                code,
+                blocker.get("title", ""),
+                priority,
+                int(blocker.get("affected_bots", 0) or 0),
+                pb.get("owner", ""),
+                action_preview,
+            ]
+            row_idx = blocker_header_row + idx
+            for col, value in enumerate(values, 1):
+                self._apply_style(exec_ws.cell(row=row_idx, column=col, value=value), cell_style)
+
+            severity = "critical" if priority >= 20 else ("warning" if priority >= 10 else "info")
+            self._apply_row_severity_fill(exec_ws, row_idx, 1, len(blocker_headers), severity)
+            self._apply_severity_cell_style(exec_ws.cell(row=row_idx, column=4), severity)
+
+        bucket_headers = ["Sprint bucket", "Owner", "Action title", "Priority", "Actions"]
+        bucket_start = blocker_header_row + max(2, len(top_blockers) + 3)
+        for col, header in enumerate(bucket_headers, 1):
+            self._apply_style(exec_ws.cell(row=bucket_start, column=col, value=header), header_style)
+
+        def _bucket_name(priority_score: float) -> str:
+            if priority_score >= 20:
+                return "Now"
+            if priority_score >= 12:
+                return "Next"
+            return "Later"
+
+        for idx, pb in enumerate(playbooks[:15], start=1):
+            score = float(pb.get("priority_score", 0) or 0)
+            row_idx = bucket_start + idx
+            values = [
+                _bucket_name(score),
+                pb.get("owner", ""),
+                pb.get("title", ""),
+                score,
+                " | ".join(pb.get("actions", []) or []),
+            ]
+            for col, value in enumerate(values, 1):
+                self._apply_style(exec_ws.cell(row=row_idx, column=col, value=value), cell_style)
+
+        for col, width in enumerate([16, 20, 40, 12, 16, 18, 72], 1):
+            exec_ws.column_dimensions[get_column_letter(col)].width = width
+        exec_ws.freeze_panes = "A12"
+        exec_ws.auto_filter.ref = "A11:G11"
+
         results_ws = wb.create_sheet("Bot Results")
         result_headers = [
             "Bot",
