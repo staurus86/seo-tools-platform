@@ -2537,23 +2537,104 @@ function generateRenderAuditHTML(result) {
         const n = Number(value ?? 0);
         return Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0;
     };
-    const contentDiffRowsHtml = variants.map((v) => {
+    const deltaBadge = (delta) => {
+        if (delta > 0) return `<span class="inline-flex text-[11px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">+${escapeHtml(delta)}</span>`;
+        if (delta < 0) return `<span class="inline-flex text-[11px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700">${escapeHtml(delta)}</span>`;
+        return `<span class="inline-flex text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">0</span>`;
+    };
+    const lenDeltaCell = (rawValue, renderedValue) => {
+        const rawText = normalizeText(rawValue);
+        const renderedText = normalizeText(renderedValue);
+        const delta = renderedText.length - rawText.length;
+        return deltaBadge(delta);
+    };
+    const countDeltaCell = (rawValue, renderedValue) => {
+        const delta = toCount(renderedValue) - toCount(rawValue);
+        return deltaBadge(delta);
+    };
+    const impactBadge = (impactScore) => {
+        if (impactScore >= 4) return '<span class="px-2 py-0.5 rounded-full text-xs bg-rose-100 text-rose-700">high</span>';
+        if (impactScore >= 2) return '<span class="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700">medium</span>';
+        if (impactScore >= 1) return '<span class="px-2 py-0.5 rounded-full text-xs bg-sky-100 text-sky-700">low</span>';
+        return '<span class="px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-700">none</span>';
+    };
+    const contentDiffRowsData = variants.map((v) => {
         const raw = v.raw || {};
         const rendered = v.rendered || {};
+        const titleChanged = normalizeText(raw.title) !== normalizeText(rendered.title);
+        const descChanged = normalizeText(raw.meta_description) !== normalizeText(rendered.meta_description);
+        const h1Changed = toCount(raw.h1_count) !== toCount(rendered.h1_count);
+        const imagesChanged = toCount(raw.images_count) !== toCount(rendered.images_count);
+        const linksChanged = toCount(raw.links_count) !== toCount(rendered.links_count);
+        const impactScore = [titleChanged, descChanged, h1Changed, imagesChanged, linksChanged].filter(Boolean).length;
+        const rowClass = impactScore >= 4 ? 'bg-rose-50/40' : impactScore >= 2 ? 'bg-amber-50/40' : '';
+        return {
+            variantLabel: v.variant_label || v.variant_id || '-',
+            profile: v.profile_type || (v.mobile ? 'mobile' : 'desktop'),
+            raw,
+            rendered,
+            impactScore,
+            rowClass,
+            titleChanged,
+            descChanged,
+            h1Changed,
+            imagesChanged,
+            linksChanged,
+        };
+    }).sort((a, b) => b.impactScore - a.impactScore || String(a.variantLabel).localeCompare(String(b.variantLabel)));
+    const diffSummary = contentDiffRowsData.reduce((acc, row) => {
+        acc.titleChanged += row.titleChanged ? 1 : 0;
+        acc.descChanged += row.descChanged ? 1 : 0;
+        acc.h1Changed += row.h1Changed ? 1 : 0;
+        acc.imagesChanged += row.imagesChanged ? 1 : 0;
+        acc.linksChanged += row.linksChanged ? 1 : 0;
+        acc.highImpact += row.impactScore >= 4 ? 1 : 0;
+        return acc;
+    }, { titleChanged: 0, descChanged: 0, h1Changed: 0, imagesChanged: 0, linksChanged: 0, highImpact: 0 });
+    const totalDiffRows = contentDiffRowsData.length || 1;
+    const summaryRatio = (value) => `${Math.round((value / totalDiffRows) * 100)}%`;
+    const topDivergencesHtml = contentDiffRowsData
+        .filter((row) => row.impactScore > 0)
+        .slice(0, 3)
+        .map((row) => {
+            const changedFields = [];
+            if (row.titleChanged) changedFields.push('title');
+            if (row.descChanged) changedFields.push('description');
+            if (row.h1Changed) changedFields.push('h1');
+            if (row.imagesChanged) changedFields.push('images');
+            if (row.linksChanged) changedFields.push('links');
+            return `
+                <div class="rounded-lg border border-slate-200 bg-slate-50 p-2">
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="text-sm font-medium text-slate-800 truncate">${escapeHtml(row.variantLabel)}</div>
+                        ${impactBadge(row.impactScore)}
+                    </div>
+                    <div class="text-xs text-slate-500 mt-1">${escapeHtml(row.profile)}</div>
+                    <div class="text-xs text-slate-700 mt-1">Changed: ${escapeHtml(changedFields.join(', ') || '-')}</div>
+                </div>
+            `;
+        }).join('');
+    const contentDiffRowsHtml = contentDiffRowsData.map((row) => {
         return `
-            <tr class="border-b border-slate-100 text-sm align-top">
-                <td class="py-2 pr-2 font-medium">${escapeHtml(v.variant_label || v.variant_id || '-')}</td>
-                <td class="py-2 pr-2 text-slate-600">${escapeHtml(v.profile_type || (v.mobile ? 'mobile' : 'desktop'))}</td>
-                <td class="py-2 pr-2">${metricTextCell(raw.title)}</td>
-                <td class="py-2 pr-2">${metricTextCell(rendered.title)}</td>
-                <td class="py-2 pr-2">${metricTextCell(raw.meta_description)}</td>
-                <td class="py-2 pr-2">${metricTextCell(rendered.meta_description)}</td>
-                <td class="py-2 pr-2 font-medium">${escapeHtml(toCount(raw.h1_count))}</td>
-                <td class="py-2 pr-2 font-medium">${escapeHtml(toCount(rendered.h1_count))}</td>
-                <td class="py-2 pr-2 font-medium">${escapeHtml(toCount(raw.images_count))}</td>
-                <td class="py-2 pr-2 font-medium">${escapeHtml(toCount(rendered.images_count))}</td>
-                <td class="py-2 pr-2 font-medium">${escapeHtml(toCount(raw.links_count))}</td>
-                <td class="py-2 pr-2 font-medium">${escapeHtml(toCount(rendered.links_count))}</td>
+            <tr class="border-b border-slate-100 text-sm align-top ${row.rowClass}">
+                <td class="py-2 pr-2 font-medium">${escapeHtml(row.variantLabel)}</td>
+                <td class="py-2 pr-2 text-slate-600">${escapeHtml(row.profile)}</td>
+                <td class="py-2 pr-2">${impactBadge(row.impactScore)}</td>
+                <td class="py-2 pr-2">${metricTextCell(row.raw.title)}</td>
+                <td class="py-2 pr-2">${metricTextCell(row.rendered.title)}</td>
+                <td class="py-2 pr-2">${lenDeltaCell(row.raw.title, row.rendered.title)}</td>
+                <td class="py-2 pr-2">${metricTextCell(row.raw.meta_description)}</td>
+                <td class="py-2 pr-2">${metricTextCell(row.rendered.meta_description)}</td>
+                <td class="py-2 pr-2">${lenDeltaCell(row.raw.meta_description, row.rendered.meta_description)}</td>
+                <td class="py-2 pr-2 font-medium">${escapeHtml(toCount(row.raw.h1_count))}</td>
+                <td class="py-2 pr-2 font-medium">${escapeHtml(toCount(row.rendered.h1_count))}</td>
+                <td class="py-2 pr-2">${countDeltaCell(row.raw.h1_count, row.rendered.h1_count)}</td>
+                <td class="py-2 pr-2 font-medium">${escapeHtml(toCount(row.raw.images_count))}</td>
+                <td class="py-2 pr-2 font-medium">${escapeHtml(toCount(row.rendered.images_count))}</td>
+                <td class="py-2 pr-2">${countDeltaCell(row.raw.images_count, row.rendered.images_count)}</td>
+                <td class="py-2 pr-2 font-medium">${escapeHtml(toCount(row.raw.links_count))}</td>
+                <td class="py-2 pr-2 font-medium">${escapeHtml(toCount(row.rendered.links_count))}</td>
+                <td class="py-2 pr-2">${countDeltaCell(row.raw.links_count, row.rendered.links_count)}</td>
             </tr>
         `;
     }).join('');
@@ -2759,25 +2840,72 @@ function generateRenderAuditHTML(result) {
 
             <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
                 <h4 class="font-semibold mb-3">JS vs no-JS Content Diff</h4>
-                <table class="w-full min-w-[1480px]">
+                <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 mb-4">
+                    <div class="rounded-lg border bg-slate-50 p-2">
+                        <div class="text-[11px] uppercase tracking-wide text-slate-500">Title changed</div>
+                        <div class="text-base font-semibold text-slate-900">${escapeHtml(diffSummary.titleChanged)}</div>
+                        <div class="text-[11px] text-slate-500">${escapeHtml(summaryRatio(diffSummary.titleChanged))} variants</div>
+                    </div>
+                    <div class="rounded-lg border bg-slate-50 p-2">
+                        <div class="text-[11px] uppercase tracking-wide text-slate-500">Description changed</div>
+                        <div class="text-base font-semibold text-slate-900">${escapeHtml(diffSummary.descChanged)}</div>
+                        <div class="text-[11px] text-slate-500">${escapeHtml(summaryRatio(diffSummary.descChanged))} variants</div>
+                    </div>
+                    <div class="rounded-lg border bg-slate-50 p-2">
+                        <div class="text-[11px] uppercase tracking-wide text-slate-500">H1 changed</div>
+                        <div class="text-base font-semibold text-slate-900">${escapeHtml(diffSummary.h1Changed)}</div>
+                        <div class="text-[11px] text-slate-500">${escapeHtml(summaryRatio(diffSummary.h1Changed))} variants</div>
+                    </div>
+                    <div class="rounded-lg border bg-slate-50 p-2">
+                        <div class="text-[11px] uppercase tracking-wide text-slate-500">Images changed</div>
+                        <div class="text-base font-semibold text-slate-900">${escapeHtml(diffSummary.imagesChanged)}</div>
+                        <div class="text-[11px] text-slate-500">${escapeHtml(summaryRatio(diffSummary.imagesChanged))} variants</div>
+                    </div>
+                    <div class="rounded-lg border bg-slate-50 p-2">
+                        <div class="text-[11px] uppercase tracking-wide text-slate-500">Links changed</div>
+                        <div class="text-base font-semibold text-slate-900">${escapeHtml(diffSummary.linksChanged)}</div>
+                        <div class="text-[11px] text-slate-500">${escapeHtml(summaryRatio(diffSummary.linksChanged))} variants</div>
+                    </div>
+                    <div class="rounded-lg border bg-rose-50 border-rose-200 p-2">
+                        <div class="text-[11px] uppercase tracking-wide text-rose-600">High impact</div>
+                        <div class="text-base font-semibold text-rose-800">${escapeHtml(diffSummary.highImpact)}</div>
+                        <div class="text-[11px] text-rose-600">>=4 changed metrics</div>
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Top divergence variants</div>
+                        <div class="text-[11px] text-slate-500">Delta: positive means JS adds content, negative means JS loses content</div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                        ${topDivergencesHtml || '<div class="text-sm text-slate-500">No meaningful JS/no-JS divergences.</div>'}
+                    </div>
+                </div>
+                <table class="w-full min-w-[1900px]">
                     <thead>
                         <tr class="text-left text-xs text-slate-500 border-b">
                             <th class="py-2 pr-2">Variant</th>
                             <th class="py-2 pr-2">Profile</th>
+                            <th class="py-2 pr-2">Impact</th>
                             <th class="py-2 pr-2">Title (no-JS)</th>
                             <th class="py-2 pr-2">Title (JS)</th>
+                            <th class="py-2 pr-2">Delta</th>
                             <th class="py-2 pr-2">Description (no-JS)</th>
                             <th class="py-2 pr-2">Description (JS)</th>
+                            <th class="py-2 pr-2">Delta</th>
                             <th class="py-2 pr-2">H1 (no-JS)</th>
                             <th class="py-2 pr-2">H1 (JS)</th>
+                            <th class="py-2 pr-2">Delta</th>
                             <th class="py-2 pr-2">Images (no-JS)</th>
                             <th class="py-2 pr-2">Images (JS)</th>
+                            <th class="py-2 pr-2">Delta</th>
                             <th class="py-2 pr-2">Links (no-JS)</th>
                             <th class="py-2 pr-2">Links (JS)</th>
+                            <th class="py-2 pr-2">Delta</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${contentDiffRowsHtml || '<tr><td colspan="12" class="py-3 text-sm text-slate-500">No raw/rendered content stats in payload.</td></tr>'}
+                        ${contentDiffRowsHtml || '<tr><td colspan="18" class="py-3 text-sm text-slate-500">No raw/rendered content stats in payload.</td></tr>'}
                     </tbody>
                 </table>
             </div>
