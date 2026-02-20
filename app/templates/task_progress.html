@@ -247,6 +247,7 @@ function showResults(data) {
         resultsContent.innerHTML = generateMobileCheckHTML(result);
     } else if (result.task_type === 'site_audit_pro') {
         resultsContent.innerHTML = generateSiteAuditProHTML(result);
+        initSiteAuditProIssuesExplorer(result);
     } else if (result.task_type === 'onpage_audit') {
         resultsContent.innerHTML = generateOnPageAuditHTML(result);
         filterOnpageIssues('all');
@@ -268,6 +269,7 @@ let botData = null;
 let mobileData = null;
 let renderData = null;
 let siteAuditProData = null;
+let siteAuditProIssuesState = { issues: [], filtered: [], filter: 'all', query: '', limit: 20 };
 let onpageData = null;
 let lastTaskResult = null;
 let sitemapExportUrls = [];
@@ -466,7 +468,22 @@ function escapeHtml(text) {
     return String(text || '')
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function sanitizeHttpUrl(rawUrl) {
+    if (!rawUrl) return '';
+    try {
+        const parsed = new URL(rawUrl, window.location.origin);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            return '';
+        }
+        return parsed.href;
+    } catch (_) {
+        return '';
+    }
 }
 
 function formatRobotsRawWithLineNumbers(rawText) {
@@ -545,6 +562,106 @@ function filterOnpageIssues(mode) {
         btn.classList.toggle('bg-white', !isActive);
         btn.classList.toggle('text-slate-700', !isActive);
     });
+}
+
+function filterSiteAuditProIssues() {
+    const source = Array.isArray(siteAuditProIssuesState.issues) ? siteAuditProIssuesState.issues : [];
+    const query = String(siteAuditProIssuesState.query || '').trim().toLowerCase();
+    const mode = String(siteAuditProIssuesState.filter || 'all').toLowerCase();
+    return source.filter((issue) => {
+        const severity = String(issue.severity || 'info').toLowerCase();
+        if (mode !== 'all' && severity !== mode) return false;
+        if (!query) return true;
+        const haystack = [
+            issue.code,
+            issue.title,
+            issue.details,
+            issue.url,
+            issue.severity,
+        ].map(v => String(v || '').toLowerCase()).join(' ');
+        return haystack.includes(query);
+    });
+}
+
+function renderSiteAuditProIssuesExplorer() {
+    const wrapper = document.getElementById('sitepro-issues-list');
+    if (!wrapper) return;
+
+    const filtered = filterSiteAuditProIssues();
+    siteAuditProIssuesState.filtered = filtered;
+    const limit = Number(siteAuditProIssuesState.limit || 20);
+    const visible = filtered.slice(0, limit);
+
+    const counter = document.getElementById('sitepro-issues-count');
+    if (counter) counter.textContent = `${visible.length} / ${filtered.length}`;
+
+    const buttons = document.querySelectorAll('[data-sitepro-issues-filter]');
+    buttons.forEach((btn) => {
+        const btnMode = btn.getAttribute('data-sitepro-issues-filter') || 'all';
+        const isActive = btnMode === siteAuditProIssuesState.filter;
+        btn.classList.toggle('bg-slate-900', isActive);
+        btn.classList.toggle('text-white', isActive);
+        btn.classList.toggle('bg-white', !isActive);
+        btn.classList.toggle('text-slate-700', !isActive);
+    });
+
+    if (!visible.length) {
+        wrapper.innerHTML = '<div class="text-sm text-gray-500">Проблемы не найдены по текущим фильтрам.</div>';
+        return;
+    }
+
+    wrapper.innerHTML = visible.map((issue) => {
+        const severity = String(issue.severity || 'info').toLowerCase();
+        const classes = severity === 'critical'
+            ? { card: 'border-red-500 bg-red-50', badge: 'bg-red-100 text-red-700' }
+            : severity === 'warning'
+                ? { card: 'border-yellow-500 bg-yellow-50', badge: 'bg-yellow-100 text-yellow-700' }
+                : { card: 'border-blue-500 bg-blue-50', badge: 'bg-blue-100 text-blue-700' };
+        return `
+            <div class="text-sm border-l-4 ${classes.card} p-3 rounded-r mb-2">
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="px-2 py-0.5 rounded-full text-xs font-semibold ${classes.badge}">${escapeHtml(severity.toUpperCase())}</span>
+                    <span class="font-semibold">${escapeHtml(issue.code || 'issue')}</span>
+                </div>
+                <div class="mt-1">${escapeHtml(issue.title || '')}</div>
+                ${issue.details ? `<div class="text-gray-700 mt-1">${escapeHtml(issue.details)}</div>` : ''}
+                ${issue.url ? `<div class="text-gray-600 mt-1 break-all">${escapeHtml(issue.url)}</div>` : ''}
+            </div>
+        `;
+    }).join('');
+}
+
+function setSiteAuditProIssuesFilter(mode) {
+    siteAuditProIssuesState.filter = String(mode || 'all').toLowerCase();
+    renderSiteAuditProIssuesExplorer();
+}
+
+function updateSiteAuditProIssuesQuery(value) {
+    siteAuditProIssuesState.query = String(value || '');
+    renderSiteAuditProIssuesExplorer();
+}
+
+function updateSiteAuditProIssuesLimit(value) {
+    const parsed = Number(value || 20);
+    siteAuditProIssuesState.limit = Number.isFinite(parsed) ? parsed : 20;
+    renderSiteAuditProIssuesExplorer();
+}
+
+function initSiteAuditProIssuesExplorer(result) {
+    const r = result.results || {};
+    const issues = Array.isArray(r.issues) ? r.issues : [];
+    siteAuditProIssuesState = {
+        issues,
+        filtered: issues,
+        filter: 'all',
+        query: '',
+        limit: 20,
+    };
+    const queryInput = document.getElementById('sitepro-issues-search');
+    if (queryInput) queryInput.value = '';
+    const limitInput = document.getElementById('sitepro-issues-limit');
+    if (limitInput) limitInput.value = '20';
+    renderSiteAuditProIssuesExplorer();
 }
 
 function downloadTextReport() {
@@ -2805,40 +2922,56 @@ function generateSiteAuditProHTML(result) {
     const topPagerank = (pipeline.pagerank || []).slice(0, 5);
     const clusters = pipeline.topic_clusters || [];
     const topRecommendations = pages.map(p => p.recommendation).filter(Boolean).slice(0, 6);
+    const topFixPages = pages
+        .map((p) => ({
+            url: p.url || '',
+            health: Number(p.health_score ?? 0),
+            issues: Array.isArray(p.all_issues) ? p.all_issues.length : 0,
+            recommendation: p.recommendation || '',
+        }))
+        .sort((a, b) => (b.issues - a.issues) || (a.health - b.health))
+        .slice(0, 10);
     const pagesCount = Number(summary.total_pages ?? pages.length ?? 0);
     const totalIssues = Number(summary.issues_total ?? issues.length ?? 0);
     const score = Number(summary.score ?? 0);
     const scorePct = Math.max(0, Math.min(100, Math.round(score)));
     const issueLoadPct = pagesCount > 0 ? Math.min(100, Math.round((totalIssues / pagesCount) * 10)) : 0;
 
-    const issuesHtml = issues.slice(0, 20).map(i => `
-        <div class="text-sm border-l-4 ${i.severity === 'critical' ? 'border-red-500 bg-red-50' : i.severity === 'warning' ? 'border-yellow-500 bg-yellow-50' : 'border-blue-500 bg-blue-50'} p-3 rounded-r mb-2">
-            <div class="font-semibold">${(i.severity || 'info').toUpperCase()} | ${i.code || 'issue'}</div>
-            <div>${i.title || ''}</div>
-            <div class="text-gray-600">${i.url || ''}</div>
-        </div>
-    `).join('');
     const pagerankHtml = topPagerank.map(p => `
         <div class="flex items-center justify-between text-sm py-1 border-b border-gray-100">
-            <span class="truncate max-w-[70%]">${p.url || ''}</span>
-            <span class="font-semibold">${p.score ?? 0}</span>
+            <span class="truncate max-w-[70%]">${escapeHtml(p.url || '')}</span>
+            <span class="font-semibold">${escapeHtml(p.score ?? 0)}</span>
         </div>
     `).join('');
     const clusterHtml = clusters.slice(0, 8).map(c => `
         <span class="inline-flex items-center bg-indigo-100 text-indigo-700 rounded-full px-3 py-1 text-xs mr-2 mb-2">
-            ${c.topic || 'misc'} <span class="ml-1 bg-indigo-200 px-1.5 rounded-full">${c.count || 0}</span>
+            ${escapeHtml(c.topic || 'misc')} <span class="ml-1 bg-indigo-200 px-1.5 rounded-full">${escapeHtml(c.count || 0)}</span>
         </span>
     `).join('');
     const downloadsHtml = (chunkManifest.chunks || []).flatMap(chunk =>
-        (chunk.files || []).map(f => `
-            <a class="text-sm text-blue-700 hover:text-blue-900 underline"
-               href="${f.download_url || '#'}"
-               target="_blank"
-               rel="noopener">
-                ${f.filename || 'artifact.jsonl'} (${f.records || 0} rows)
-            </a>
-        `)
+        (chunk.files || []).map(f => {
+            const safeUrl = sanitizeHttpUrl(f.download_url || '');
+            if (!safeUrl) {
+                return `<span class="text-sm text-gray-500">${escapeHtml(f.filename || 'artifact.jsonl')} (invalid download URL)</span>`;
+            }
+            return `
+                <a class="text-sm text-blue-700 hover:text-blue-900 underline"
+                   href="${escapeHtml(safeUrl)}"
+                   target="_blank"
+                   rel="noopener">
+                    ${escapeHtml(f.filename || 'artifact.jsonl')} (${escapeHtml(f.records || 0)} rows)
+                </a>
+            `;
+        })
     ).join('<br>');
+    const topFixRowsHtml = topFixPages.map((row) => `
+        <tr class="border-b border-slate-100 align-top">
+            <td class="py-2 pr-2 text-sm break-all">${escapeHtml(row.url)}</td>
+            <td class="py-2 pr-2 text-sm font-medium">${escapeHtml(row.health.toFixed(1))}</td>
+            <td class="py-2 pr-2 text-sm font-medium">${escapeHtml(row.issues)}</td>
+            <td class="py-2 pr-2 text-xs text-slate-700">${escapeHtml(row.recommendation || '-')}</td>
+        </tr>
+    `).join('');
 
     return `
         <div class="space-y-6">
@@ -2847,11 +2980,11 @@ function generateSiteAuditProHTML(result) {
                     <div>
                         <h3 class="text-lg font-semibold">Site Audit Pro</h3>
                         <div class="mt-2 flex flex-wrap gap-2 text-xs">
-                            <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700">mode: ${mode}</span>
+                            <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700">mode: ${escapeHtml(mode)}</span>
                             <span class="inline-flex items-center px-2.5 py-1 rounded-full ${isBatchMode ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'}">
                                 ${isBatchMode ? 'batch mode' : 'crawl mode'}
                             </span>
-                            ${isBatchMode ? `<span class="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">URLs: ${batchUrlsCount}</span>` : ''}
+                            ${isBatchMode ? `<span class="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">URLs: ${escapeHtml(batchUrlsCount)}</span>` : ''}
                         </div>
                     </div>
                     <div class="flex gap-3">
@@ -2863,35 +2996,50 @@ function generateSiteAuditProHTML(result) {
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
                     <div class="rounded-xl border bg-slate-50 p-3">
                         <div class="text-xs text-slate-500">Pages</div>
-                        <div class="text-xl font-semibold text-slate-900">${pagesCount}</div>
+                        <div class="text-xl font-semibold text-slate-900">${escapeHtml(pagesCount)}</div>
                     </div>
                     <div class="rounded-xl border bg-slate-50 p-3">
                         <div class="text-xs text-slate-500">Score</div>
-                        <div class="text-xl font-semibold ${score >= 80 ? 'text-emerald-700' : score >= 60 ? 'text-amber-700' : 'text-rose-700'}">${summary.score ?? 'n/a'}</div>
+                        <div class="text-xl font-semibold ${score >= 80 ? 'text-emerald-700' : score >= 60 ? 'text-amber-700' : 'text-rose-700'}">${escapeHtml(summary.score ?? 'n/a')}</div>
                         <div class="mt-1 h-1.5 bg-slate-200 rounded-full overflow-hidden"><div class="h-full ${score >= 80 ? 'bg-emerald-500' : score >= 60 ? 'bg-amber-500' : 'bg-rose-500'}" style="width:${scorePct}%"></div></div>
                     </div>
                     <div class="rounded-xl border bg-slate-50 p-3">
                         <div class="text-xs text-slate-500">Issues</div>
-                        <div class="text-xl font-semibold text-slate-900">${totalIssues}</div>
+                        <div class="text-xl font-semibold text-slate-900">${escapeHtml(totalIssues)}</div>
                         <div class="mt-1 h-1.5 bg-slate-200 rounded-full overflow-hidden"><div class="h-full bg-indigo-500" style="width:${issueLoadPct}%"></div></div>
                     </div>
                     <div class="rounded-xl border bg-slate-50 p-3">
                         <div class="text-xs text-slate-500">URL</div>
-                        <div class="font-medium break-all">${result.url || ''}</div>
+                        <div class="font-medium break-all">${escapeHtml(result.url || '')}</div>
                     </div>
                 </div>
                 <div class="grid grid-cols-3 gap-2 mt-3 text-sm">
-                    <div class="rounded-lg border border-red-200 bg-red-50 p-2 text-center"><span class="text-red-700">Critical</span><div class="font-semibold text-red-800">${summary.critical_issues || 0}</div></div>
-                    <div class="rounded-lg border border-amber-200 bg-amber-50 p-2 text-center"><span class="text-amber-700">Warning</span><div class="font-semibold text-amber-800">${summary.warning_issues || 0}</div></div>
-                    <div class="rounded-lg border border-blue-200 bg-blue-50 p-2 text-center"><span class="text-blue-700">Info</span><div class="font-semibold text-blue-800">${summary.info_issues || 0}</div></div>
+                    <div class="rounded-lg border border-red-200 bg-red-50 p-2 text-center"><span class="text-red-700">Critical</span><div class="font-semibold text-red-800">${escapeHtml(summary.critical_issues || 0)}</div></div>
+                    <div class="rounded-lg border border-amber-200 bg-amber-50 p-2 text-center"><span class="text-amber-700">Warning</span><div class="font-semibold text-amber-800">${escapeHtml(summary.warning_issues || 0)}</div></div>
+                    <div class="rounded-lg border border-blue-200 bg-blue-50 p-2 text-center"><span class="text-blue-700">Info</span><div class="font-semibold text-blue-800">${escapeHtml(summary.info_issues || 0)}</div></div>
                 </div>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-2">Top issues</h4>
-                <div class="max-h-[420px] overflow-auto pr-1">
-                    ${issuesHtml || '<div class="text-sm text-gray-500">No issues found.</div>'}
+                <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+                    <h4 class="font-semibold">Issues explorer</h4>
+                    <div class="inline-flex rounded-lg border border-slate-200 p-1 bg-slate-50 text-xs">
+                        <button type="button" data-sitepro-issues-filter="all" onclick="setSiteAuditProIssuesFilter('all')" class="px-2 py-1 rounded-md bg-slate-900 text-white">All</button>
+                        <button type="button" data-sitepro-issues-filter="critical" onclick="setSiteAuditProIssuesFilter('critical')" class="px-2 py-1 rounded-md text-slate-700">Critical</button>
+                        <button type="button" data-sitepro-issues-filter="warning" onclick="setSiteAuditProIssuesFilter('warning')" class="px-2 py-1 rounded-md text-slate-700">Warning</button>
+                        <button type="button" data-sitepro-issues-filter="info" onclick="setSiteAuditProIssuesFilter('info')" class="px-2 py-1 rounded-md text-slate-700">Info</button>
+                    </div>
                 </div>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-2 mb-3">
+                    <input id="sitepro-issues-search" type="text" oninput="updateSiteAuditProIssuesQuery(this.value)" placeholder="Search code, title, URL..." class="md:col-span-3 px-3 py-2 border rounded-lg text-sm">
+                    <select id="sitepro-issues-limit" onchange="updateSiteAuditProIssuesLimit(this.value)" class="px-3 py-2 border rounded-lg text-sm">
+                        <option value="20" selected>20 rows</option>
+                        <option value="50">50 rows</option>
+                        <option value="100">100 rows</option>
+                    </select>
+                </div>
+                <div class="text-xs text-slate-500 mb-2">Shown: <span id="sitepro-issues-count">0 / 0</span></div>
+                <div id="sitepro-issues-list" class="max-h-[420px] overflow-auto pr-1"></div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -2908,20 +3056,37 @@ function generateSiteAuditProHTML(result) {
             <div class="bg-white rounded-xl shadow-md p-6">
                 <h4 class="font-semibold mb-3">Pipeline Metrics</h4>
                 <div class="grid grid-cols-2 md:grid-cols-7 gap-3 text-sm">
-                    <div><span class="text-gray-600">Avg response:</span> <span class="font-medium">${metrics.avg_response_time_ms ?? 0} ms</span></div>
-                    <div><span class="text-gray-600">Avg readability:</span> <span class="font-medium">${metrics.avg_readability_score ?? 0}</span></div>
-                    <div><span class="text-gray-600">Avg link quality:</span> <span class="font-medium">${metrics.avg_link_quality_score ?? 0}</span></div>
-                    <div><span class="text-gray-600">Orphans:</span> <span class="font-medium">${metrics.orphan_pages ?? 0}</span></div>
-                    <div><span class="text-gray-600">Topic hubs:</span> <span class="font-medium">${metrics.topic_hubs ?? 0}</span></div>
-                    <div><span class="text-gray-600">No HTTPS:</span> <span class="font-medium">${metrics.non_https_pages ?? 0}</span></div>
-                    <div><span class="text-gray-600">No ALT pages:</span> <span class="font-medium">${metrics.pages_without_alt ?? 0}</span></div>
+                    <div><span class="text-gray-600">Avg response:</span> <span class="font-medium">${escapeHtml(metrics.avg_response_time_ms ?? 0)} ms</span></div>
+                    <div><span class="text-gray-600">Avg readability:</span> <span class="font-medium">${escapeHtml(metrics.avg_readability_score ?? 0)}</span></div>
+                    <div><span class="text-gray-600">Avg link quality:</span> <span class="font-medium">${escapeHtml(metrics.avg_link_quality_score ?? 0)}</span></div>
+                    <div><span class="text-gray-600">Orphans:</span> <span class="font-medium">${escapeHtml(metrics.orphan_pages ?? 0)}</span></div>
+                    <div><span class="text-gray-600">Topic hubs:</span> <span class="font-medium">${escapeHtml(metrics.topic_hubs ?? 0)}</span></div>
+                    <div><span class="text-gray-600">No HTTPS:</span> <span class="font-medium">${escapeHtml(metrics.non_https_pages ?? 0)}</span></div>
+                    <div><span class="text-gray-600">No ALT pages:</span> <span class="font-medium">${escapeHtml(metrics.pages_without_alt ?? 0)}</span></div>
                 </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
+                <h4 class="font-semibold mb-3">Top pages to fix</h4>
+                <table class="w-full min-w-[720px]">
+                    <thead>
+                        <tr class="text-left text-xs text-slate-500 border-b">
+                            <th class="py-2 pr-2">URL</th>
+                            <th class="py-2 pr-2">Health</th>
+                            <th class="py-2 pr-2">Issues</th>
+                            <th class="py-2 pr-2">Recommendation</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${topFixRowsHtml || '<tr><td colspan="4" class="py-3 text-sm text-slate-500">No page-level rows available.</td></tr>'}
+                    </tbody>
+                </table>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
                 <h4 class="font-semibold mb-2">Top Recommendations</h4>
                 <ul class="list-disc pl-5 text-sm text-gray-700">
-                    ${(topRecommendations.map(x => `<li>${x}</li>`).join('')) || '<li>Рекомендаций нет.</li>'}
+                    ${(topRecommendations.map(x => `<li>${escapeHtml(x)}</li>`).join('')) || '<li>Рекомендаций нет.</li>'}
                 </ul>
             </div>
 
@@ -2933,9 +3098,9 @@ function generateSiteAuditProHTML(result) {
                     </div>
                     <div class="text-xs text-gray-600 mb-3">
                         Omitted from inline payload:
-                        issues=${(artifactsMeta.omitted_counts || {}).issues ?? 0},
-                        semantic=${(artifactsMeta.omitted_counts || {}).semantic_linking_map ?? 0},
-                        pages=${(artifactsMeta.omitted_counts || {}).pages ?? 0}
+                        issues=${escapeHtml((artifactsMeta.omitted_counts || {}).issues ?? 0)},
+                        semantic=${escapeHtml((artifactsMeta.omitted_counts || {}).semantic_linking_map ?? 0)},
+                        pages=${escapeHtml((artifactsMeta.omitted_counts || {}).pages ?? 0)}
                     </div>
                 ` : ''}
                 ${downloadsHtml || '<div class="text-sm text-gray-500">Chunk artifacts are not available for this run.</div>'}
