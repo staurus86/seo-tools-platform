@@ -1046,6 +1046,7 @@ class DOCXGenerator:
         blockers = results.get("priority_blockers", []) or []
         playbooks = results.get("playbooks", []) or []
         baseline_diff = results.get("baseline_diff", {}) or {}
+        trend = results.get("trend", {}) or {}
         host_consistency = results.get("host_consistency", {}) or {}
         category_stats = results.get("category_stats", []) or []
 
@@ -1140,7 +1141,44 @@ class DOCXGenerator:
         else:
             doc.add_paragraph(baseline_diff.get("message", "No baseline found."))
 
-        self._add_heading(doc, "7. Recommendations", level=1)
+        self._add_heading(doc, "7. Trend History", level=1)
+        trend_history = trend.get("history", []) or []
+        trend_delta = trend.get("delta_vs_previous", {}) or {}
+        if trend_history:
+            latest = trend.get("latest") or trend_history[0]
+            previous = trend.get("previous")
+            doc.add_paragraph(
+                f"Runs stored for domain: {trend.get('history_count', len(trend_history))}. "
+                f"Latest run: {latest.get('timestamp', 'n/a')}."
+            )
+            if previous:
+                doc.add_paragraph(f"Previous run: {previous.get('timestamp', 'n/a')}.")
+                doc.add_paragraph(
+                    "Delta vs previous: "
+                    f"indexable {trend_delta.get('indexable', 0)}, "
+                    f"critical {trend_delta.get('critical_issues', 0)}, "
+                    f"avg response ms {trend_delta.get('avg_response_time_ms', 0)}."
+                )
+            rows = []
+            for item in trend_history[:10]:
+                rows.append([
+                    item.get("timestamp", ""),
+                    item.get("indexable", 0),
+                    item.get("crawlable", 0),
+                    item.get("renderable", 0),
+                    item.get("avg_response_time_ms", 0),
+                    item.get("critical_issues", 0),
+                    item.get("warning_issues", 0),
+                ])
+            self._add_table(
+                doc,
+                ["Run time", "Indexable", "Crawlable", "Renderable", "Avg ms", "Critical", "Warnings"],
+                rows,
+            )
+        else:
+            doc.add_paragraph("No trend history available.")
+
+        self._add_heading(doc, "8. Recommendations", level=1)
         recs = results.get("recommendations", []) or []
         if recs:
             for rec in recs[:30]:
@@ -1486,4 +1524,3 @@ class DOCXGenerator:
 
 # Singleton
 docx_generator = DOCXGenerator()
-
