@@ -75,6 +75,84 @@
 </div>
 {% endblock %}
 
+{% block extra_css %}
+<style>
+    .sitepro-results {
+        --sp-bg-soft: linear-gradient(180deg, #f8fbff 0%, #f6f8fc 100%);
+        --sp-card-border: #dbe4f0;
+        --sp-card-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+        --sp-card-shadow-hover: 0 14px 32px rgba(15, 23, 42, 0.1);
+        --sp-title: #0f172a;
+        --sp-muted: #475569;
+        --sp-accent: #1d4ed8;
+    }
+    .sitepro-results {
+        background: var(--sp-bg-soft);
+        border: 1px solid #e2e8f0;
+        border-radius: 1rem;
+        padding: 1rem;
+    }
+    .sitepro-results > div.bg-white.rounded-xl.shadow-md.p-6 {
+        border: 1px solid var(--sp-card-border);
+        box-shadow: var(--sp-card-shadow);
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+        animation: sitepro-fade-in 0.35s ease both;
+    }
+    .sitepro-results > div.bg-white.rounded-xl.shadow-md.p-6:hover {
+        transform: translateY(-2px);
+        border-color: #bfdbfe;
+        box-shadow: var(--sp-card-shadow-hover);
+    }
+    .sitepro-results h3,
+    .sitepro-results h4 {
+        color: var(--sp-title);
+        letter-spacing: -0.01em;
+    }
+    .sitepro-results h3 {
+        font-weight: 700;
+        font-size: 1.125rem;
+    }
+    .sitepro-results h4 {
+        font-weight: 650;
+        font-size: 1rem;
+    }
+    .sitepro-results .text-gray-600,
+    .sitepro-results .text-slate-500 {
+        color: var(--sp-muted) !important;
+    }
+    .sitepro-results table thead th {
+        position: sticky;
+        top: 0;
+        background: #f8fafc;
+        z-index: 2;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+    .sitepro-results table tbody tr:hover {
+        background: #f8fbff;
+    }
+    .sitepro-chip {
+        border: 1px solid #cbd5e1;
+        background: #f8fafc;
+        color: #0f172a;
+        border-radius: 999px;
+        padding: 0.2rem 0.6rem;
+        font-size: 0.72rem;
+        font-weight: 600;
+    }
+    @keyframes sitepro-fade-in {
+        from {
+            opacity: 0;
+            transform: translateY(8px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+</style>
+{% endblock %}
+
 {% block extra_js %}
 <script>
 const taskId = "{{ task_id }}";
@@ -3112,7 +3190,6 @@ function generateSiteAuditProHTML(result) {
     const crawlRiskHigh = Number(metrics.crawl_budget_high_risk ?? 0);
     const crawlRiskMedium = Number(metrics.crawl_budget_medium_risk ?? 0);
     const boolLabel = (value) => value === true ? 'Yes' : value === false ? 'No' : 'n/a';
-
     const avgPerfLightFromPages = pages.length
         ? Number((pages.reduce((sum, p) => sum + Number(p.perf_light_score || 0), 0) / pages.length).toFixed(1))
         : 0;
@@ -3161,6 +3238,25 @@ function generateSiteAuditProHTML(result) {
         highFiller: pages.filter((p) => Number(p.filler_ratio || 0) >= 0.08).length,
         toxicContent: pages.filter((p) => Number(p.toxicity_score || 0) >= 1.5).length,
     };
+    const contentHygieneScore = Math.max(0, 100 - Math.min(100, Math.round(((contentSignals.highBoilerplate + contentSignals.keywordStuffing + contentSignals.hiddenContent) / totalPagesBase) * 100)));
+    const aiTrustScore = Math.max(0, 100 - Math.min(100, Math.round((aiTotals.highRiskPages / totalPagesBase) * 100)));
+    const indexingStabilityScore = Math.max(0, 100 - Math.min(100, Math.round(((crawlRiskHigh + Number(metrics.non_https_pages || 0)) / totalPagesBase) * 100)));
+    const accessibilityScore = Math.max(0, 100 - Math.min(100, Math.round((Number(metrics.pages_without_alt || 0) / totalPagesBase) * 100)));
+    const insightPillars = [
+        { label: 'Content hygiene', value: contentHygieneScore, tone: contentHygieneScore >= 75 ? 'text-emerald-700' : contentHygieneScore >= 55 ? 'text-amber-700' : 'text-rose-700' },
+        { label: 'AI trust', value: aiTrustScore, tone: aiTrustScore >= 75 ? 'text-emerald-700' : aiTrustScore >= 55 ? 'text-amber-700' : 'text-rose-700' },
+        { label: 'Indexing stability', value: indexingStabilityScore, tone: indexingStabilityScore >= 75 ? 'text-emerald-700' : indexingStabilityScore >= 55 ? 'text-amber-700' : 'text-rose-700' },
+        { label: 'Accessibility baseline', value: accessibilityScore, tone: accessibilityScore >= 75 ? 'text-emerald-700' : accessibilityScore >= 55 ? 'text-amber-700' : 'text-rose-700' },
+    ];
+    const insightPillarsHtml = insightPillars.map((item) => `
+        <div class="rounded-xl border border-slate-200 bg-white p-3">
+            <div class="text-xs text-slate-500">${escapeHtml(item.label)}</div>
+            <div class="mt-1 text-xl font-semibold ${item.tone}">${escapeHtml(item.value)}</div>
+            <div class="mt-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                <div class="h-full ${item.value >= 75 ? 'bg-emerald-500' : item.value >= 55 ? 'bg-amber-500' : 'bg-rose-500'}" style="width:${escapeHtml(item.value)}%"></div>
+            </div>
+        </div>
+    `).join('');
     const metricTone = (state) => state === 'good'
         ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
         : state === 'warn'
@@ -3385,7 +3481,7 @@ function generateSiteAuditProHTML(result) {
         : `<li class="text-slate-500">${escapeHtml(emptyText)}</li>`;
 
     return `
-        <div class="space-y-6">
+        <div class="space-y-6 sitepro-results">
             <div class="bg-white rounded-xl shadow-md p-6">
                 <div class="flex justify-between items-center mb-4">
                     <div>
@@ -3396,6 +3492,8 @@ function generateSiteAuditProHTML(result) {
                                 ${isBatchMode ? 'batch mode' : 'crawl mode'}
                             </span>
                             ${isBatchMode ? `<span class="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">URLs: ${escapeHtml(batchUrlsCount)}</span>` : ''}
+                            <span class="sitepro-chip">AI + Content Lens</span>
+                            <span class="sitepro-chip">Actionable Plan</span>
                         </div>
                     </div>
                     <div class="flex gap-3">
@@ -3428,6 +3526,13 @@ function generateSiteAuditProHTML(result) {
                     <div class="rounded-lg border border-red-200 bg-red-50 p-2 text-center"><span class="text-red-700">Critical</span><div class="font-semibold text-red-800">${escapeHtml(summary.critical_issues || 0)}</div></div>
                     <div class="rounded-lg border border-amber-200 bg-amber-50 p-2 text-center"><span class="text-amber-700">Warning</span><div class="font-semibold text-amber-800">${escapeHtml(summary.warning_issues || 0)}</div></div>
                     <div class="rounded-lg border border-blue-200 bg-blue-50 p-2 text-center"><span class="text-blue-700">Info</span><div class="font-semibold text-blue-800">${escapeHtml(summary.info_issues || 0)}</div></div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h4 class="font-semibold mb-3">Quality Pillars</h4>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    ${insightPillarsHtml}
                 </div>
             </div>
 
