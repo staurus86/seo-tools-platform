@@ -200,6 +200,21 @@ def _extract_meta_robots(html: str) -> Optional[str]:
     return (meta.get("content") or "").strip() or None
 
 
+def _extract_response_sample(html_head: str, limit: int = 380) -> str:
+    if not html_head:
+        return ""
+    try:
+        soup = BeautifulSoup(html_head, "html.parser")
+        for tag in soup(["script", "style", "noscript"]):
+            tag.decompose()
+        text = " ".join((soup.get_text(" ", strip=True) or "").split())
+    except Exception:
+        text = " ".join(str(html_head).split())
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "..."
+
+
 def _parse_robots_groups(robots_text: str) -> List[Dict[str, Any]]:
     groups: List[Dict[str, Any]] = []
     current_group: Optional[Dict[str, Any]] = None
@@ -644,6 +659,41 @@ class BotAccessibilityServiceV2:
             notes.append("some host variants are protected or denied")
         return {"variants": variants, "consistent": consistent, "notes": notes}
 
+    def _run_waf_bypass_probe(self, url: str) -> Dict[str, Any]:
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+        }
+        try:
+            resp = self.session.get(url, headers=headers, timeout=max(3, min(self.timeout, 10)), allow_redirects=True)
+            content_type = resp.headers.get("content-type", "")
+            is_html = "text/html" in content_type.lower()
+            html_head = (resp.text or "")[:120000] if is_html else ""
+            return {
+                "ok": True,
+                "status": resp.status_code,
+                "final_url": resp.url,
+                "content_type": content_type,
+                "sample": _extract_response_sample(html_head),
+                "waf_cdn_signal": self._detect_waf_cdn(resp, html_head, None),
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "status": None,
+                "final_url": None,
+                "content_type": None,
+                "sample": "",
+                "waf_cdn_signal": self._detect_waf_cdn(None, "", str(exc)),
+                "error": str(exc),
+            }
+
     def _load_robots(self, url: str) -> Tuple[Optional[str], Optional[int]]:
         robots_url = url.rstrip("/") + "/robots.txt"
         try:
@@ -699,6 +749,7 @@ class BotAccessibilityServiceV2:
             accessible = 200 <= response.status_code < 400
             crawlable = bool(accessible and robots_allowed is not False)
             waf_cdn = self._detect_waf_cdn(response, html_head, None)
+            response_sample = _extract_response_sample(html_head)
             renderable = bool(crawlable and has_content and not waf_cdn.get("detected"))
             indexable = bool(
                 renderable
@@ -738,6 +789,7 @@ class BotAccessibilityServiceV2:
                 "renderable": renderable,
                 "indexable": indexable,
                 "waf_cdn_signal": waf_cdn,
+                "response_sample": response_sample,
                 "blocked_reasons": blocked_reasons,
                 "bot_priority_weight": category_weight,
                 "sla_target_pct": sla_target_pct,
@@ -767,6 +819,7 @@ class BotAccessibilityServiceV2:
                 "renderable": False,
                 "indexable": False,
                 "waf_cdn_signal": waf_cdn,
+                "response_sample": "",
                 "blocked_reasons": ["request_failed"],
                 "bot_priority_weight": float(self.category_weights.get(bot.category, 0.5)),
                 "sla_target_pct": float(self.category_sla.get(bot.category, 85.0)),
@@ -1103,6 +1156,7 @@ class BotAccessibilityServiceV2:
         playbooks = self._build_playbooks(priority_blockers)
         domain = urlparse(url).netloc
         host_consistency = self._host_consistency_check(url)
+        waf_bypass_probe = self._run_waf_bypass_probe(url)
         expected_ai_blocked = 0
         if self.ai_block_expected:
             expected_ai_blocked = sum(
@@ -1165,6 +1219,7 @@ class BotAccessibilityServiceV2:
                     "status_code": robots_status,
                 },
                 "host_consistency": host_consistency,
+                "waf_bypass_probe": waf_bypass_probe,
                 "category_stats": category_stats,
                 "priority_blockers": priority_blockers,
                 "playbooks": playbooks,
