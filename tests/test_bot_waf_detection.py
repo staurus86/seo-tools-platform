@@ -29,6 +29,13 @@ class BotWafDetectionTests(unittest.TestCase):
         self.assertTrue(signal.get("detected"))
         self.assertGreaterEqual(float(signal.get("confidence", 0.0) or 0.0), 0.7)
 
+    def test_provider_header_only_on_200_is_not_detected(self):
+        svc = BotAccessibilityServiceV2()
+        resp = _Resp(status_code=200, headers={"server": "cloudflare", "cf-ray": "abc"})
+        html = "<html><body>Normal business content page</body></html>"
+        signal = svc._detect_waf_cdn(resp, html, None)
+        self.assertFalse(signal.get("detected"))
+
 
 if __name__ == "__main__":
     unittest.main()

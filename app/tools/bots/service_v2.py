@@ -563,16 +563,16 @@ class BotAccessibilityServiceV2:
 
         if "cf-ray" in headers or "cloudflare" in str(headers.get("server", "")).lower():
             provider = "Cloudflare"
-            confidence = max(confidence, 0.8)
+            confidence = max(confidence, 0.25)
         if any(k in headers for k in ("x-akamai-transformed", "akamai-cache-status")) or "akamai" in str(headers.get("server", "")).lower():
             provider = provider or "Akamai"
-            confidence = max(confidence, 0.75)
+            confidence = max(confidence, 0.25)
         if "x-sucuri-id" in headers or "sucuri" in str(headers.get("server", "")).lower():
             provider = provider or "Sucuri"
-            confidence = max(confidence, 0.75)
+            confidence = max(confidence, 0.25)
         if "x-ddos-protection" in headers:
             provider = provider or "DDoS protection"
-            confidence = max(confidence, 0.7)
+            confidence = max(confidence, 0.3)
 
         strong_body_markers = [
             "attention required",
