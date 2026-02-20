@@ -113,6 +113,24 @@ class BotXlsxReportTests(unittest.TestCase):
                     }
                 ],
                 "baseline_diff": {"has_baseline": False, "message": "No baseline found"},
+                "trend": {
+                    "history": [
+                        {
+                            "timestamp": "2026-02-20T10:00:00",
+                            "indexable": 1,
+                            "crawlable": 1,
+                            "renderable": 1,
+                            "accessible": 1,
+                            "avg_response_time_ms": 250,
+                            "critical_issues": 1,
+                            "warning_issues": 0,
+                            "waf_cdn_detected": 1,
+                            "retry_profile": "standard",
+                            "criticality_profile": "balanced",
+                            "sla_profile": "standard",
+                        }
+                    ]
+                },
                 "issues": [],
                 "recommendations": [],
             },
@@ -131,6 +149,7 @@ class BotXlsxReportTests(unittest.TestCase):
             self.assertIn("Summary", wb.sheetnames)
             self.assertIn("Executive Summary", wb.sheetnames)
             self.assertIn("Playbooks", wb.sheetnames)
+            self.assertIn("Trend History", wb.sheetnames)
 
             exec_ws = wb["Executive Summary"]
             self.assertEqual(exec_ws["A1"].value, "Bot Access Check - Executive Summary")
@@ -143,6 +162,11 @@ class BotXlsxReportTests(unittest.TestCase):
             self.assertEqual(playbooks_ws["A1"].value, "Blocker code")
             self.assertEqual(playbooks_ws["A2"].value, "status_403")
             self.assertIn("Whitelist verified bot ASN/IP ranges", str(playbooks_ws["E2"].value))
+
+            trend_ws = wb["Trend History"]
+            self.assertEqual(trend_ws["A1"].value, "Run time")
+            self.assertEqual(trend_ws["B2"].value, 1)
+            self.assertEqual(trend_ws["F2"].value, 250)
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 

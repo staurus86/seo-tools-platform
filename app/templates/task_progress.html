@@ -2375,9 +2375,11 @@ function generateBotHTML(result) {
     const blockers = r.priority_blockers || [];
     const playbooks = r.playbooks || [];
     const botRows = r.bot_rows || [];
-    const trendSnapshots = getBotSnapshotsForUrl(result.url || '');
-    const latestTrend = trendSnapshots[0] || null;
-    const previousTrend = trendSnapshots.length > 1 ? trendSnapshots[1] : null;
+    const serverTrend = r.trend || {};
+    const serverTrendHistory = serverTrend.history || [];
+    const trendSnapshots = serverTrendHistory.length ? serverTrendHistory : getBotSnapshotsForUrl(result.url || '');
+    const latestTrend = serverTrend.latest || trendSnapshots[0] || null;
+    const previousTrend = serverTrend.previous || (trendSnapshots.length > 1 ? trendSnapshots[1] : null);
     const criticalCategories = new Set(['Google', 'Yandex', 'Bing', 'Search']);
 
     const categorySet = new Set(botRows.map((x) => String(x.category || '').trim()).filter(Boolean));

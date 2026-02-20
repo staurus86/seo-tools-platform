@@ -375,6 +375,7 @@ class BotAccessibilityServiceV2:
         self.category_weights = dict(CRITICALITY_PROFILES.get(self.criticality_profile_name, CRITICALITY_PROFILES["balanced"]))
         self.category_sla = dict(SLA_PROFILES.get(self.sla_profile_name, SLA_PROFILES["standard"]))
         self.baseline_enabled = bool(baseline_enabled)
+        self.trend_history_limit = 50
         self.session = self._build_session()
 
     def _build_session(self) -> requests.Session:
@@ -447,6 +448,90 @@ class BotAccessibilityServiceV2:
             "has_baseline": True,
             "baseline_updated_at": baseline.get("updated_at"),
             "metrics": rows,
+        }
+
+    def _trend_file_path(self, domain: str) -> str:
+        safe = re.sub(r"[^a-z0-9._-]+", "_", (domain or "site").lower())
+        base_dir = os.path.join("reports_output", "bot_trends")
+        os.makedirs(base_dir, exist_ok=True)
+        return os.path.join(base_dir, f"{safe}.json")
+
+    def _load_trend_history(self, domain: str) -> List[Dict[str, Any]]:
+        path = self._trend_file_path(domain)
+        if not os.path.exists(path):
+            return []
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            if isinstance(payload, dict):
+                rows = payload.get("history", [])
+            else:
+                rows = payload
+            return rows if isinstance(rows, list) else []
+        except Exception:
+            return []
+
+    def _save_trend_history(self, domain: str, rows: List[Dict[str, Any]]) -> None:
+        path = self._trend_file_path(domain)
+        payload = {
+            "updated_at": datetime.utcnow().isoformat(),
+            "history": rows[: self.trend_history_limit],
+        }
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _append_trend_snapshot(
+        self,
+        domain: str,
+        url: str,
+        summary: Dict[str, Any],
+        completed_at: str,
+    ) -> Dict[str, Any]:
+        history = self._load_trend_history(domain)
+        snapshot = {
+            "timestamp": completed_at,
+            "url": url,
+            "total": int(summary.get("total", 0) or 0),
+            "crawlable": int(summary.get("crawlable", 0) or 0),
+            "renderable": int(summary.get("renderable", 0) or 0),
+            "accessible": int(summary.get("accessible", 0) or 0),
+            "indexable": int(summary.get("indexable", 0) or 0),
+            "non_indexable": int(summary.get("non_indexable", 0) or 0),
+            "avg_response_time_ms": float(summary.get("avg_response_time_ms", 0) or 0),
+            "critical_issues": int(summary.get("critical_issues", 0) or 0),
+            "warning_issues": int(summary.get("warning_issues", 0) or 0),
+            "info_issues": int(summary.get("info_issues", 0) or 0),
+            "waf_cdn_detected": int(summary.get("waf_cdn_detected", 0) or 0),
+            "retry_profile": self.retry_profile,
+            "criticality_profile": self.criticality_profile_name,
+            "sla_profile": self.sla_profile_name,
+        }
+        history = [x for x in history if str(x.get("timestamp", "")) != str(snapshot["timestamp"])]
+        history.insert(0, snapshot)
+        history = history[: self.trend_history_limit]
+        self._save_trend_history(domain, history)
+
+        previous = history[1] if len(history) > 1 else None
+        if previous:
+            delta = {
+                "indexable": int(snapshot.get("indexable", 0)) - int(previous.get("indexable", 0) or 0),
+                "critical_issues": int(snapshot.get("critical_issues", 0)) - int(previous.get("critical_issues", 0) or 0),
+                "avg_response_time_ms": round(
+                    float(snapshot.get("avg_response_time_ms", 0)) - float(previous.get("avg_response_time_ms", 0) or 0),
+                    2,
+                ),
+            }
+        else:
+            delta = None
+        return {
+            "history_count": len(history),
+            "latest": snapshot,
+            "previous": previous,
+            "delta_vs_previous": delta,
+            "history": history[:10],
         }
 
     def _detect_waf_cdn(self, response: Optional[requests.Response], html_head: str, error: Optional[str]) -> Dict[str, Any]:
@@ -931,6 +1016,7 @@ class BotAccessibilityServiceV2:
 
     def run(self, raw_url: str, selected_bots: Optional[List[str]] = None, bot_groups: Optional[List[str]] = None) -> Dict[str, Any]:
         url = normalize_url(raw_url)
+        completed_at = datetime.utcnow().isoformat()
         robots_text, robots_status = self._load_robots(url)
         bots_to_check = self._resolve_bots(selected_bots, bot_groups)
 
@@ -1010,14 +1096,19 @@ class BotAccessibilityServiceV2:
             "waf_cdn_detected": waf_cdn_detected,
             "avg_response_time_ms": round(avg_ms, 2),
         }
+        summary["issues_total"] = len(issues)
+        summary["critical_issues"] = sum(1 for x in issues if (x.get("severity") or "").lower() == "critical")
+        summary["warning_issues"] = sum(1 for x in issues if (x.get("severity") or "").lower() == "warning")
+        summary["info_issues"] = sum(1 for x in issues if (x.get("severity") or "").lower() == "info")
         baseline = self._load_baseline(domain)
         baseline_diff = self._compute_baseline_diff(baseline, summary)
         self._save_baseline(domain, summary)
+        trend = self._append_trend_snapshot(domain=domain, url=url, summary=summary, completed_at=completed_at)
 
         return {
             "task_type": "bot_check",
             "url": url,
-            "completed_at": datetime.utcnow().isoformat(),
+            "completed_at": completed_at,
             "results": {
                 "engine": "v2",
                 "domain": domain,
@@ -1038,6 +1129,7 @@ class BotAccessibilityServiceV2:
                 "priority_blockers": priority_blockers,
                 "playbooks": playbooks,
                 "baseline_diff": baseline_diff,
+                "trend": trend,
                 "issues": issues,
                 "recommendations": recommendations,
             },

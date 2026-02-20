@@ -980,6 +980,7 @@ class XLSXGenerator:
         priority_blockers = results.get("priority_blockers", []) or []
         playbooks = results.get("playbooks", []) or []
         baseline_diff = results.get("baseline_diff", {}) or {}
+        trend = results.get("trend", {}) or {}
         issues = results.get("issues", []) or []
         recommendations = results.get("recommendations", []) or []
 
@@ -1321,6 +1322,49 @@ class XLSXGenerator:
         diff_ws.column_dimensions["B"].width = 14
         diff_ws.column_dimensions["C"].width = 14
         diff_ws.column_dimensions["D"].width = 14
+
+        trend_ws = wb.create_sheet("Trend History")
+        trend_headers = [
+            "Run time",
+            "Indexable",
+            "Crawlable",
+            "Renderable",
+            "Accessible",
+            "Avg response ms",
+            "Critical",
+            "Warnings",
+            "WAF/CDN",
+            "Retry profile",
+            "Criticality",
+            "SLA profile",
+        ]
+        for col, header in enumerate(trend_headers, 1):
+            self._apply_style(trend_ws.cell(row=1, column=col, value=header), header_style)
+        trend_rows = trend.get("history", []) or []
+        if trend_rows:
+            for row_idx, item in enumerate(trend_rows, start=2):
+                values = [
+                    item.get("timestamp", ""),
+                    item.get("indexable", 0),
+                    item.get("crawlable", 0),
+                    item.get("renderable", 0),
+                    item.get("accessible", 0),
+                    item.get("avg_response_time_ms", 0),
+                    item.get("critical_issues", 0),
+                    item.get("warning_issues", 0),
+                    item.get("waf_cdn_detected", 0),
+                    item.get("retry_profile", ""),
+                    item.get("criticality_profile", ""),
+                    item.get("sla_profile", ""),
+                ]
+                for col, value in enumerate(values, 1):
+                    self._apply_style(trend_ws.cell(row=row_idx, column=col, value=value), cell_style)
+        else:
+            self._apply_style(trend_ws.cell(row=2, column=1, value="No trend history available"), cell_style)
+        trend_ws.freeze_panes = "A2"
+        trend_ws.auto_filter.ref = "A1:L1"
+        for col, width in enumerate([24, 10, 10, 10, 10, 14, 10, 10, 10, 14, 14, 12], 1):
+            trend_ws.column_dimensions[get_column_letter(col)].width = width
 
         issues_ws = wb.create_sheet("Issues")
         issue_headers = ["Severity", "Bot", "Category", "Title", "Details"]
