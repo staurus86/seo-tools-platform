@@ -977,6 +977,9 @@ class XLSXGenerator:
         bot_rows = results.get("bot_rows", []) or []
         bot_results = results.get("bot_results", {}) or {}
         category_stats = results.get("category_stats", []) or []
+        priority_blockers = results.get("priority_blockers", []) or []
+        playbooks = results.get("playbooks", []) or []
+        baseline_diff = results.get("baseline_diff", {}) or {}
         issues = results.get("issues", []) or []
         recommendations = results.get("recommendations", []) or []
 
@@ -1107,6 +1110,124 @@ class XLSXGenerator:
         categories_ws.auto_filter.ref = "A1:F1"
         for col, width in enumerate([24, 10, 12, 14, 22, 12], 1):
             categories_ws.column_dimensions[get_column_letter(col)].width = width
+
+        matrix_ws = wb.create_sheet("Matrix")
+        matrix_headers = ["Category", "Total", "Crawlable", "Renderable", "Indexable", "Non-indexable", "Indexable %", "SLA target %", "SLA met", "Risk score"]
+        for col, header in enumerate(matrix_headers, 1):
+            self._apply_style(matrix_ws.cell(row=1, column=col, value=header), header_style)
+        for row_idx, item in enumerate(category_stats, start=2):
+            values = [
+                item.get("category", ""),
+                item.get("total", 0),
+                item.get("crawlable", 0),
+                item.get("renderable", 0),
+                item.get("indexable", 0),
+                item.get("non_indexable", 0),
+                item.get("indexable_pct", 0),
+                item.get("sla_target_pct", 0),
+                "Yes" if item.get("sla_met") else "No",
+                item.get("priority_risk_score", 0),
+            ]
+            for col, value in enumerate(values, 1):
+                self._apply_style(matrix_ws.cell(row=row_idx, column=col, value=value), cell_style)
+        matrix_ws.freeze_panes = "A2"
+        matrix_ws.auto_filter.ref = "A1:J1"
+        for col, width in enumerate([20, 10, 12, 12, 12, 14, 12, 12, 10, 12], 1):
+            matrix_ws.column_dimensions[get_column_letter(col)].width = width
+
+        blockers_ws = wb.create_sheet("Priority Blockers")
+        blocker_headers = ["Code", "Title", "Affected bots", "Weighted impact", "Priority score", "Sample bots", "Details"]
+        for col, header in enumerate(blocker_headers, 1):
+            self._apply_style(blockers_ws.cell(row=1, column=col, value=header), header_style)
+        for row_idx, item in enumerate(priority_blockers, start=2):
+            values = [
+                item.get("code", ""),
+                item.get("title", ""),
+                item.get("affected_bots", 0),
+                item.get("weighted_impact", 0),
+                item.get("priority_score", 0),
+                ", ".join(item.get("sample_bots", []) or []),
+                item.get("details", ""),
+            ]
+            for col, value in enumerate(values, 1):
+                self._apply_style(blockers_ws.cell(row=row_idx, column=col, value=value), cell_style)
+        blockers_ws.freeze_panes = "A2"
+        blockers_ws.auto_filter.ref = "A1:G1"
+        for col, width in enumerate([20, 30, 14, 14, 14, 48, 62], 1):
+            blockers_ws.column_dimensions[get_column_letter(col)].width = width
+
+        playbooks_ws = wb.create_sheet("Playbooks")
+        playbook_headers = ["Blocker code", "Owner", "Title", "Priority score", "Actions"]
+        for col, header in enumerate(playbook_headers, 1):
+            self._apply_style(playbooks_ws.cell(row=1, column=col, value=header), header_style)
+        for row_idx, item in enumerate(playbooks, start=2):
+            values = [
+                item.get("blocker_code", ""),
+                item.get("owner", ""),
+                item.get("title", ""),
+                item.get("priority_score", 0),
+                " | ".join(item.get("actions", []) or []),
+            ]
+            for col, value in enumerate(values, 1):
+                self._apply_style(playbooks_ws.cell(row=row_idx, column=col, value=value), cell_style)
+        playbooks_ws.freeze_panes = "A2"
+        playbooks_ws.auto_filter.ref = "A1:E1"
+        for col, width in enumerate([20, 16, 32, 14, 120], 1):
+            playbooks_ws.column_dimensions[get_column_letter(col)].width = width
+
+        raw_ws = wb.create_sheet("Raw Bot Rows")
+        raw_headers = [
+            "Bot", "Category", "HTTP", "Crawlable", "Renderable", "Indexable", "Robots allowed",
+            "Matched UA", "Matched rule", "Matched pattern", "WAF detected", "WAF provider", "WAF reason",
+            "Response time ms", "Final URL", "Blocked reasons", "Error",
+        ]
+        for col, header in enumerate(raw_headers, 1):
+            self._apply_style(raw_ws.cell(row=1, column=col, value=header), header_style)
+        for row_idx, item in enumerate(bot_rows, start=2):
+            robots_eval = item.get("robots_evaluation", {}) or {}
+            waf = item.get("waf_cdn_signal", {}) or {}
+            values = [
+                item.get("bot_name", ""),
+                item.get("category", ""),
+                item.get("status", ""),
+                "Yes" if item.get("crawlable") else "No",
+                "Yes" if item.get("renderable") else "No",
+                "Yes" if item.get("indexable") else "No",
+                "Yes" if item.get("robots_allowed") is True else ("No" if item.get("robots_allowed") is False else "n/a"),
+                robots_eval.get("matched_user_agent", ""),
+                robots_eval.get("matched_rule", ""),
+                robots_eval.get("matched_pattern", ""),
+                "Yes" if waf.get("detected") else "No",
+                waf.get("provider", ""),
+                waf.get("reason", ""),
+                item.get("response_time_ms", ""),
+                item.get("final_url", ""),
+                ", ".join(item.get("blocked_reasons", []) or []),
+                item.get("error", ""),
+            ]
+            for col, value in enumerate(values, 1):
+                self._apply_style(raw_ws.cell(row=row_idx, column=col, value=value), cell_style)
+        raw_ws.freeze_panes = "A2"
+        raw_ws.auto_filter.ref = "A1:Q1"
+        for col, width in enumerate([24, 14, 10, 10, 10, 10, 12, 16, 12, 24, 12, 14, 28, 14, 42, 34, 46], 1):
+            raw_ws.column_dimensions[get_column_letter(col)].width = width
+
+        diff_ws = wb.create_sheet("Diff vs Baseline")
+        diff_headers = ["Metric", "Current", "Baseline", "Delta"]
+        for col, header in enumerate(diff_headers, 1):
+            self._apply_style(diff_ws.cell(row=1, column=col, value=header), header_style)
+        diff_rows = baseline_diff.get("metrics", []) or []
+        if diff_rows:
+            for row_idx, item in enumerate(diff_rows, start=2):
+                values = [item.get("metric", ""), item.get("current", ""), item.get("baseline", ""), item.get("delta", "")]
+                for col, value in enumerate(values, 1):
+                    self._apply_style(diff_ws.cell(row=row_idx, column=col, value=value), cell_style)
+        else:
+            self._apply_style(diff_ws.cell(row=2, column=1, value=baseline_diff.get("message", "No baseline data")), cell_style)
+        diff_ws.column_dimensions["A"].width = 28
+        diff_ws.column_dimensions["B"].width = 14
+        diff_ws.column_dimensions["C"].width = 14
+        diff_ws.column_dimensions["D"].width = 14
 
         issues_ws = wb.create_sheet("Issues")
         issue_headers = ["Severity", "Bot", "Category", "Title", "Details"]

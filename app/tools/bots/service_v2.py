@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import re
 import time
+import os
+import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
@@ -108,6 +110,8 @@ BOT_GROUPS: Dict[str, List[str]] = {
     "crawlers": ["SEO Crawler"],
 }
 
+UA_DESKTOP_FALLBACK = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+
 BOT_CATEGORY_CRITICALITY: Dict[str, float] = {
     "Google": 1.0,
     "Yandex": 1.0,
@@ -116,6 +120,55 @@ BOT_CATEGORY_CRITICALITY: Dict[str, float] = {
     "AI": 0.7,
     "SEO Crawler": 0.5,
     "Social": 0.3,
+}
+
+CRITICALITY_PROFILES: Dict[str, Dict[str, float]] = {
+    "balanced": BOT_CATEGORY_CRITICALITY,
+    "search_first": {
+        "Google": 1.0,
+        "Yandex": 1.0,
+        "Bing": 1.0,
+        "Search": 0.9,
+        "AI": 0.5,
+        "SEO Crawler": 0.4,
+        "Social": 0.2,
+    },
+    "ai_first": {
+        "Google": 0.9,
+        "Yandex": 0.8,
+        "Bing": 0.8,
+        "Search": 0.7,
+        "AI": 1.0,
+        "SEO Crawler": 0.4,
+        "Social": 0.2,
+    },
+}
+
+SLA_PROFILES: Dict[str, Dict[str, float]] = {
+    "standard": {
+        "Google": 98.0,
+        "Yandex": 98.0,
+        "Bing": 95.0,
+        "Search": 92.0,
+        "AI": 90.0,
+        "SEO Crawler": 85.0,
+        "Social": 80.0,
+    },
+    "strict": {
+        "Google": 99.0,
+        "Yandex": 99.0,
+        "Bing": 98.0,
+        "Search": 95.0,
+        "AI": 93.0,
+        "SEO Crawler": 88.0,
+        "Social": 82.0,
+    },
+}
+
+RETRY_PROFILES: Dict[str, Dict[str, Any]] = {
+    "strict": {"retries": 1, "backoff": 0.2, "timeout": 10},
+    "standard": {"retries": 2, "backoff": 0.4, "timeout": 15},
+    "aggressive": {"retries": 4, "backoff": 0.6, "timeout": 22},
 }
 
 
@@ -147,62 +200,188 @@ def _extract_meta_robots(html: str) -> Optional[str]:
     return (meta.get("content") or "").strip() or None
 
 
-def _parse_robots_groups(robots_text: str) -> List[Tuple[str, List[str]]]:
-    groups: List[Tuple[str, List[str]]] = []
-    current_ua = ""
-    current_rules: List[str] = []
+def _parse_robots_groups(robots_text: str) -> List[Dict[str, Any]]:
+    groups: List[Dict[str, Any]] = []
+    current_group: Optional[Dict[str, Any]] = None
     for raw in (robots_text or "").splitlines():
         line = raw.split("#", 1)[0].strip()
         if not line or ":" not in line:
             continue
         key, value = [x.strip() for x in line.split(":", 1)]
-        key = key.lower()
-        if key == "user-agent":
-            if current_ua:
-                groups.append((current_ua, current_rules))
-            current_ua = value.lower()
-            current_rules = []
-        elif key in ("allow", "disallow"):
-            current_rules.append(f"{key}:{value}")
-    if current_ua:
-        groups.append((current_ua, current_rules))
+        key_l = key.lower()
+        if key_l == "user-agent":
+            ua = value.lower()
+            if current_group is None or current_group.get("rules"):
+                current_group = {"user_agents": [], "rules": []}
+                groups.append(current_group)
+            current_group["user_agents"].append(ua)
+            continue
+        if key_l in ("allow", "disallow"):
+            if current_group is None:
+                continue
+            current_group["rules"].append({"directive": key_l, "pattern": value})
     return groups
 
 
-def _robots_allows_bot(bot_name: str, user_agent: str, robots_text: Optional[str]) -> Optional[bool]:
+def _bot_tokens(bot_name: str, user_agent: str) -> List[str]:
+    tokens: List[str] = []
+    raw = [bot_name or "", user_agent or ""]
+    for value in raw:
+        val = value.lower()
+        parts = re.split(r"[^a-z0-9]+", val)
+        for part in parts:
+            if len(part) >= 3 and part not in tokens:
+                tokens.append(part)
+        agent = val.split("/", 1)[0].strip()
+        if agent and agent not in tokens:
+            tokens.append(agent)
+    return tokens
+
+
+def _ua_group_match_score(group_ua: str, tokens: List[str]) -> int:
+    ua = (group_ua or "").lower().strip()
+    if not ua:
+        return -1
+    if ua == "*":
+        return 1
+    if ua in tokens:
+        return 100 + len(ua)
+    for token in tokens:
+        if token and ua in token:
+            return 60 + len(ua)
+        if token and token in ua:
+            return 40 + len(token)
+    return -1
+
+
+def _robots_pattern_to_regex(pattern: str) -> str:
+    p = (pattern or "").strip()
+    if not p:
+        return r"^"
+    escaped = re.escape(p)
+    escaped = escaped.replace(r"\*", ".*")
+    if escaped.endswith(r"\$"):
+        escaped = escaped[:-2] + "$"
+    else:
+        escaped = escaped + ".*"
+    return r"^" + escaped
+
+
+def _robots_rule_matches(path: str, pattern: str) -> bool:
+    p = (pattern or "").strip()
+    if p == "":
+        return True
+    try:
+        return re.match(_robots_pattern_to_regex(p), path or "/") is not None
+    except Exception:
+        return False
+
+
+def _evaluate_robots_for_path(bot_name: str, user_agent: str, robots_text: Optional[str], path: str) -> Dict[str, Any]:
     if not robots_text:
-        return None
+        return {
+            "allowed": None,
+            "matched_user_agent": None,
+            "matched_rule": None,
+            "matched_pattern": None,
+            "explain": "robots.txt not found",
+        }
+
     groups = _parse_robots_groups(robots_text)
-    targets = {
-        bot_name.lower(),
-        user_agent.lower().split("/", 1)[0].strip().lower(),
+    tokens = _bot_tokens(bot_name, user_agent)
+    scored_groups: List[Tuple[int, Dict[str, Any]]] = []
+    for group in groups:
+        uas = group.get("user_agents", []) or []
+        score = max((_ua_group_match_score(ua, tokens) for ua in uas), default=-1)
+        if score >= 0:
+            scored_groups.append((score, group))
+    if not scored_groups:
+        return {
+            "allowed": None,
+            "matched_user_agent": None,
+            "matched_rule": None,
+            "matched_pattern": None,
+            "explain": "no matching user-agent group in robots.txt",
+        }
+
+    scored_groups.sort(key=lambda x: x[0], reverse=True)
+    selected_group = scored_groups[0][1]
+    selected_uas = selected_group.get("user_agents", []) or []
+    selected_ua = selected_uas[0] if selected_uas else "*"
+
+    matched_rule: Optional[Dict[str, Any]] = None
+    matched_len = -1
+    for rule in (selected_group.get("rules", []) or []):
+        directive = str(rule.get("directive") or "").lower()
+        pattern = str(rule.get("pattern") or "")
+        if directive not in ("allow", "disallow"):
+            continue
+        if not _robots_rule_matches(path, pattern):
+            continue
+        plen = len(pattern.replace("*", ""))
+        if plen > matched_len:
+            matched_len = plen
+            matched_rule = {"directive": directive, "pattern": pattern}
+        elif plen == matched_len and matched_rule is not None:
+            # Tie-break: Allow wins over Disallow.
+            if matched_rule.get("directive") == "disallow" and directive == "allow":
+                matched_rule = {"directive": directive, "pattern": pattern}
+
+    if matched_rule is None:
+        return {
+            "allowed": True,
+            "matched_user_agent": selected_ua,
+            "matched_rule": "none",
+            "matched_pattern": "",
+            "explain": f"default allow (no matching allow/disallow rule for path '{path}')",
+        }
+
+    directive = matched_rule.get("directive")
+    allowed = directive != "disallow"
+    return {
+        "allowed": allowed,
+        "matched_user_agent": selected_ua,
+        "matched_rule": directive,
+        "matched_pattern": matched_rule.get("pattern", ""),
+        "explain": (
+            f"matched {directive} rule '{matched_rule.get('pattern', '')}' "
+            f"for UA group '{selected_ua}' and path '{path}'"
+        ),
     }
-    matched_rules: List[str] = []
-    for ua, rules in groups:
-        if ua == "*" or ua in targets or any(t in ua for t in targets):
-            matched_rules = rules
-            break
-    if not matched_rules:
-        return None
-    for rule in matched_rules:
-        if rule.startswith("disallow:"):
-            path = rule.split(":", 1)[1].strip()
-            if path in ("/", "/*"):
-                return False
-    return True
+
+
+def _robots_allows_bot(bot_name: str, user_agent: str, robots_text: Optional[str], path: str = "/") -> Optional[bool]:
+    return _evaluate_robots_for_path(bot_name, user_agent, robots_text, path).get("allowed")
 
 
 class BotAccessibilityServiceV2:
-    def __init__(self, timeout: int = 15, max_workers: int = 10):
-        self.timeout = timeout
-        self.max_workers = max_workers
+    def __init__(
+        self,
+        timeout: int = 15,
+        max_workers: int = 10,
+        retry_profile: str = "standard",
+        criticality_profile: str = "balanced",
+        sla_profile: str = "standard",
+        baseline_enabled: bool = True,
+    ):
+        profile = RETRY_PROFILES.get(str(retry_profile or "standard").lower(), RETRY_PROFILES["standard"])
+        self.retry_profile = str(retry_profile or "standard").lower()
+        self.timeout = max(3, int(timeout or profile["timeout"] or 15))
+        self.max_workers = max(1, int(max_workers or 10))
+        self.retries = max(0, int(profile["retries"]))
+        self.backoff = float(profile["backoff"])
+        self.criticality_profile_name = str(criticality_profile or "balanced").lower()
+        self.sla_profile_name = str(sla_profile or "standard").lower()
+        self.category_weights = dict(CRITICALITY_PROFILES.get(self.criticality_profile_name, CRITICALITY_PROFILES["balanced"]))
+        self.category_sla = dict(SLA_PROFILES.get(self.sla_profile_name, SLA_PROFILES["standard"]))
+        self.baseline_enabled = bool(baseline_enabled)
         self.session = self._build_session()
 
     def _build_session(self) -> requests.Session:
         session = requests.Session()
         retry = Retry(
-            total=2,
-            backoff_factor=0.4,
+            total=self.retries,
+            backoff_factor=self.backoff,
             status_forcelist=[429, 500, 502, 503, 504],
             allowed_methods=["GET", "HEAD", "OPTIONS"],
         )
@@ -210,6 +389,173 @@ class BotAccessibilityServiceV2:
         session.mount("http://", adapter)
         session.mount("https://", adapter)
         return session
+
+    def _baseline_file_path(self, domain: str) -> str:
+        safe = re.sub(r"[^a-z0-9._-]+", "_", (domain or "site").lower())
+        base_dir = os.path.join("reports_output", "bot_baselines")
+        os.makedirs(base_dir, exist_ok=True)
+        return os.path.join(base_dir, f"{safe}.json")
+
+    def _load_baseline(self, domain: str) -> Optional[Dict[str, Any]]:
+        path = self._baseline_file_path(domain)
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            return payload if isinstance(payload, dict) else None
+        except Exception:
+            return None
+
+    def _save_baseline(self, domain: str, summary: Dict[str, Any]) -> None:
+        if not self.baseline_enabled:
+            return
+        path = self._baseline_file_path(domain)
+        payload = {
+            "updated_at": datetime.utcnow().isoformat(),
+            "summary": summary or {},
+        }
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _compute_baseline_diff(self, baseline: Optional[Dict[str, Any]], current_summary: Dict[str, Any]) -> Dict[str, Any]:
+        if not baseline:
+            return {"has_baseline": False, "message": "No baseline found for this domain.", "metrics": []}
+        base_summary = (baseline.get("summary") or {}) if isinstance(baseline, dict) else {}
+        metrics_to_compare = [
+            "accessible",
+            "indexable",
+            "non_indexable",
+            "robots_disallowed",
+            "x_robots_forbidden",
+            "meta_forbidden",
+            "avg_response_time_ms",
+        ]
+        rows: List[Dict[str, Any]] = []
+        for key in metrics_to_compare:
+            cur = current_summary.get(key, 0)
+            prev = base_summary.get(key, 0)
+            try:
+                delta = float(cur) - float(prev)
+            except Exception:
+                delta = 0.0
+            rows.append({"metric": key, "current": cur, "baseline": prev, "delta": round(delta, 2)})
+        return {
+            "has_baseline": True,
+            "baseline_updated_at": baseline.get("updated_at"),
+            "metrics": rows,
+        }
+
+    def _detect_waf_cdn(self, response: Optional[requests.Response], html_head: str, error: Optional[str]) -> Dict[str, Any]:
+        headers = {k.lower(): v for k, v in ((response.headers if response is not None else {}) or {}).items()}
+        body = (html_head or "").lower()
+        err = (error or "").lower()
+
+        provider = ""
+        reason = ""
+        confidence = 0.0
+
+        if "cf-ray" in headers or "cloudflare" in str(headers.get("server", "")).lower():
+            provider = "Cloudflare"
+            confidence = max(confidence, 0.8)
+        if any(k in headers for k in ("x-akamai-transformed", "akamai-cache-status")) or "akamai" in str(headers.get("server", "")).lower():
+            provider = provider or "Akamai"
+            confidence = max(confidence, 0.75)
+        if "x-sucuri-id" in headers or "sucuri" in str(headers.get("server", "")).lower():
+            provider = provider or "Sucuri"
+            confidence = max(confidence, 0.75)
+        if "x-ddos-protection" in headers:
+            provider = provider or "DDoS protection"
+            confidence = max(confidence, 0.7)
+
+        body_markers = [
+            "access denied",
+            "request blocked",
+            "captcha",
+            "attention required",
+            "security check",
+            "verify you are human",
+            "automated queries",
+            "forbidden",
+        ]
+        if any(m in body for m in body_markers):
+            reason = "challenge/block page signature in response body"
+            confidence = max(confidence, 0.85)
+        if "ssl" in err and "handshake" in err:
+            reason = reason or "tls handshake blocked"
+            confidence = max(confidence, 0.65)
+        if "429" in err or (response is not None and response.status_code == 429):
+            reason = reason or "rate limiting"
+            confidence = max(confidence, 0.7)
+        if response is not None and response.status_code in (401, 403):
+            reason = reason or f"http {response.status_code} access restriction"
+            confidence = max(confidence, 0.8)
+
+        detected = confidence >= 0.7
+        return {
+            "detected": detected,
+            "provider": provider or "unknown",
+            "reason": reason or "",
+            "confidence": round(confidence, 2),
+        }
+
+    def _host_consistency_check(self, url: str) -> Dict[str, Any]:
+        parsed = urlparse(url)
+        host = parsed.netloc
+        if not host:
+            return {"variants": [], "consistent": True, "notes": ["invalid host"]}
+
+        hostname = parsed.hostname or host
+        path = parsed.path or "/"
+        if parsed.query:
+            path = f"{path}?{parsed.query}"
+
+        host_variants = {hostname}
+        if hostname.startswith("www."):
+            host_variants.add(hostname[4:])
+        else:
+            host_variants.add(f"www.{hostname}")
+        schemes = {"http", "https"}
+
+        variants: List[Dict[str, Any]] = []
+        for scheme in schemes:
+            for hv in host_variants:
+                target = f"{scheme}://{hv}{path}"
+                try:
+                    resp = self.session.get(target, timeout=max(3, min(self.timeout, 8)), allow_redirects=False, headers={"User-Agent": UA_DESKTOP_FALLBACK})
+                    variants.append(
+                        {
+                            "url": target,
+                            "status": resp.status_code,
+                            "location": resp.headers.get("Location"),
+                            "reachable": 200 <= resp.status_code < 500,
+                        }
+                    )
+                except Exception as exc:
+                    variants.append({"url": target, "status": None, "location": None, "reachable": False, "error": str(exc)})
+
+        status_set = {v.get("status") for v in variants if v.get("status") is not None}
+        redirect_hosts = set()
+        for v in variants:
+            loc = v.get("location")
+            if not loc:
+                continue
+            try:
+                lp = urlparse(loc)
+                if lp.netloc:
+                    redirect_hosts.add(lp.netloc.lower())
+            except Exception:
+                pass
+        consistent = len(status_set) <= 2 and len(redirect_hosts) <= 2
+        notes: List[str] = []
+        if not consistent:
+            notes.append("host variants return inconsistent status/redirect behavior")
+        if any((v.get("status") in (401, 403)) for v in variants):
+            notes.append("some host variants are protected or denied")
+        return {"variants": variants, "consistent": consistent, "notes": notes}
 
     def _load_robots(self, url: str) -> Tuple[Optional[str], Optional[int]]:
         robots_url = url.rstrip("/") + "/robots.txt"
@@ -253,11 +599,37 @@ class BotAccessibilityServiceV2:
 
             content_type = response.headers.get("content-type", "")
             is_html = "text/html" in content_type.lower()
-            meta_robots = _extract_meta_robots(response.text[:100000]) if is_html else None
+            html_head = (response.text or "")[:120000] if is_html else ""
+            meta_robots = _extract_meta_robots(html_head) if is_html else None
             x_robots = response.headers.get("X-Robots-Tag") or response.headers.get("X-Robots")
-            robots_allowed = _robots_allows_bot(bot.name, bot.user_agent, robots_text)
+            final_parsed = urlparse(response.url or url)
+            path = final_parsed.path or "/"
+            if final_parsed.query:
+                path = f"{path}?{final_parsed.query}"
+            robots_eval = _evaluate_robots_for_path(bot.name, bot.user_agent, robots_text, path)
+            robots_allowed = robots_eval.get("allowed")
             has_content = len(response.content or b"") > 0
             accessible = 200 <= response.status_code < 400
+            crawlable = bool(accessible and robots_allowed is not False)
+            waf_cdn = self._detect_waf_cdn(response, html_head, None)
+            renderable = bool(crawlable and has_content and not waf_cdn.get("detected"))
+            indexable = bool(
+                renderable
+                and robots_allowed is not False
+                and not _is_forbidden_directive(x_robots or "")
+                and not _is_forbidden_directive(meta_robots or "")
+            )
+            blocked_reasons: List[str] = []
+            if not accessible:
+                blocked_reasons.append("http_error_or_denied")
+            if robots_allowed is False:
+                blocked_reasons.append("robots_disallow")
+            if waf_cdn.get("detected"):
+                blocked_reasons.append("waf_or_cdn_challenge")
+            if _is_forbidden_directive(x_robots or "") or _is_forbidden_directive(meta_robots or ""):
+                blocked_reasons.append("indexing_directive")
+            category_weight = float(self.category_weights.get(bot.category, 0.5))
+            sla_target_pct = float(self.category_sla.get(bot.category, 85.0))
 
             return {
                 "bot_name": bot.name,
@@ -272,12 +644,22 @@ class BotAccessibilityServiceV2:
                 "meta_robots": meta_robots,
                 "meta_forbidden": _is_forbidden_directive(meta_robots or ""),
                 "robots_allowed": robots_allowed,
+                "robots_evaluation": robots_eval,
                 "content_type": content_type,
                 "final_url": response.url,
+                "crawlable": crawlable,
+                "renderable": renderable,
+                "indexable": indexable,
+                "waf_cdn_signal": waf_cdn,
+                "blocked_reasons": blocked_reasons,
+                "bot_priority_weight": category_weight,
+                "sla_target_pct": sla_target_pct,
                 "error": None,
             }
         except Exception as exc:
             elapsed_ms = int((time.perf_counter() - started) * 1000)
+            robots_eval = _evaluate_robots_for_path(bot.name, bot.user_agent, robots_text, "/")
+            waf_cdn = self._detect_waf_cdn(None, "", str(exc))
             return {
                 "bot_name": bot.name,
                 "category": bot.category,
@@ -290,9 +672,17 @@ class BotAccessibilityServiceV2:
                 "x_robots_forbidden": False,
                 "meta_robots": None,
                 "meta_forbidden": False,
-                "robots_allowed": _robots_allows_bot(bot.name, bot.user_agent, robots_text),
+                "robots_allowed": robots_eval.get("allowed"),
+                "robots_evaluation": robots_eval,
                 "content_type": None,
                 "final_url": None,
+                "crawlable": False,
+                "renderable": False,
+                "indexable": False,
+                "waf_cdn_signal": waf_cdn,
+                "blocked_reasons": ["request_failed"],
+                "bot_priority_weight": float(self.category_weights.get(bot.category, 0.5)),
+                "sla_target_pct": float(self.category_sla.get(bot.category, 85.0)),
                 "error": str(exc),
             }
 
@@ -318,6 +708,18 @@ class BotAccessibilityServiceV2:
                     "details": "HTTP is reachable but response body appears empty.",
                 })
         for row in rows:
+            waf = row.get("waf_cdn_signal", {}) or {}
+            if waf.get("detected"):
+                issues.append(
+                    {
+                        "severity": "critical",
+                        "bot": row["bot_name"],
+                        "category": row["category"],
+                        "title": "WAF/CDN challenge detected",
+                        "details": f"{waf.get('provider', 'unknown')}: {waf.get('reason', 'access challenge')}",
+                    }
+                )
+        for row in rows:
             if row.get("x_robots_forbidden") or row.get("meta_forbidden"):
                 issues.append({
                     "severity": "info",
@@ -335,6 +737,7 @@ class BotAccessibilityServiceV2:
         empty = sum(1 for r in rows if r.get("accessible") and not r.get("has_content"))
         robots_disallow = sum(1 for r in rows if r.get("robots_allowed") is False)
         restrictive = sum(1 for r in rows if r.get("x_robots_forbidden") or r.get("meta_forbidden"))
+        waf_detected = sum(1 for r in rows if (r.get("waf_cdn_signal", {}) or {}).get("detected"))
         if unavailable:
             recs.append(f"{unavailable}/{total} bots cannot access the URL. Review WAF, CDN, and rate-limit rules for bot traffic.")
         if empty:
@@ -343,6 +746,8 @@ class BotAccessibilityServiceV2:
             recs.append(f"{robots_disallow}/{total} bots look blocked by robots.txt rules. Validate User-agent groups and Disallow paths.")
         if restrictive:
             recs.append(f"{restrictive}/{total} bots receive restrictive indexing directives. Confirm this is intentional for the audited URL.")
+        if waf_detected:
+            recs.append(f"{waf_detected}/{total} bots hit WAF/CDN challenge signatures. Add verified bot allowlists and bypass rules.")
         if not recs:
             recs.append("No critical accessibility findings detected for checked bot set.")
         return recs
@@ -356,17 +761,16 @@ class BotAccessibilityServiceV2:
             total = len(items)
             accessible = sum(1 for x in items if x.get("accessible"))
             with_content = sum(1 for x in items if x.get("has_content"))
+            crawlable = sum(1 for x in items if x.get("crawlable"))
+            renderable = sum(1 for x in items if x.get("renderable"))
             indexable = sum(
                 1
                 for x in items
-                if x.get("accessible")
-                and x.get("has_content")
-                and x.get("robots_allowed") is not False
-                and not x.get("x_robots_forbidden")
-                and not x.get("meta_forbidden")
+                if x.get("indexable")
             )
             restrictive = sum(1 for x in items if x.get("x_robots_forbidden") or x.get("meta_forbidden"))
-            criticality_weight = float(BOT_CATEGORY_CRITICALITY.get(category, 0.5))
+            criticality_weight = float(self.category_weights.get(category, 0.5))
+            sla_target_pct = float(self.category_sla.get(category, 85.0))
             non_indexable = total - indexable
             indexable_pct = round((indexable / max(1, total)) * 100.0, 1)
             priority_risk_score = round((non_indexable / max(1, total)) * 100.0 * criticality_weight, 1)
@@ -375,10 +779,14 @@ class BotAccessibilityServiceV2:
                 "total": total,
                 "accessible": accessible,
                 "with_content": with_content,
+                "crawlable": crawlable,
+                "renderable": renderable,
                 "indexable": indexable,
                 "non_indexable": non_indexable,
                 "indexable_pct": indexable_pct,
                 "criticality_weight": criticality_weight,
+                "sla_target_pct": sla_target_pct,
+                "sla_met": indexable_pct >= sla_target_pct,
                 "priority_risk_score": priority_risk_score,
                 "restrictive_directives": restrictive,
             })
@@ -423,7 +831,7 @@ class BotAccessibilityServiceV2:
         for row in rows:
             bot_name = str(row.get("bot_name") or "")
             category = str(row.get("category") or "")
-            weight = float(BOT_CATEGORY_CRITICALITY.get(category, 0.5))
+            weight = float(self.category_weights.get(category, 0.5))
 
             def add(code: str) -> None:
                 bucket = buckets[code]
@@ -435,12 +843,16 @@ class BotAccessibilityServiceV2:
             if not row.get("accessible"):
                 add("unreachable")
                 continue
+            if not row.get("crawlable"):
+                add("robots_disallow")
             if not row.get("has_content"):
                 add("empty_content")
             if row.get("robots_allowed") is False:
                 add("robots_disallow")
             if row.get("x_robots_forbidden") or row.get("meta_forbidden"):
                 add("indexing_directive")
+            if (row.get("waf_cdn_signal", {}) or {}).get("detected"):
+                add("unreachable")
 
         blockers: List[Dict[str, Any]] = []
         for bucket in buckets.values():
@@ -460,6 +872,62 @@ class BotAccessibilityServiceV2:
 
         blockers.sort(key=lambda x: (float(x.get("priority_score", 0.0)), int(x.get("affected_bots", 0))), reverse=True)
         return blockers
+
+    def _build_playbooks(self, blockers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        templates: Dict[str, Dict[str, Any]] = {
+            "unreachable": {
+                "owner": "DevOps",
+                "title": "Unblock bot transport access",
+                "actions": [
+                    "Validate WAF/CDN/firewall policies for known bot user-agents and ASN ranges.",
+                    "Reduce false positives in anti-bot challenge policies for crawl traffic.",
+                    "Check 403/429 logs and create explicit allow policies for critical bots.",
+                ],
+            },
+            "empty_content": {
+                "owner": "Frontend/Platform",
+                "title": "Fix empty bot responses",
+                "actions": [
+                    "Ensure SSR or pre-render returns meaningful HTML for bots.",
+                    "Disable bot-facing challenge pages for verified crawlers.",
+                    "Verify edge functions do not strip response body for bot traffic.",
+                ],
+            },
+            "robots_disallow": {
+                "owner": "SEO",
+                "title": "Correct robots.txt blocking rules",
+                "actions": [
+                    "Review Disallow directives for critical bot groups.",
+                    "Use Allow exceptions for important paths blocked by broad rules.",
+                    "Validate final rules with robots tester against target paths.",
+                ],
+            },
+            "indexing_directive": {
+                "owner": "SEO/Dev",
+                "title": "Align indexing directives",
+                "actions": [
+                    "Audit X-Robots-Tag/meta robots for unintended noindex/nofollow.",
+                    "Align directive behavior between templates and middleware.",
+                    "Re-test indexability after deploy and confirm in search consoles.",
+                ],
+            },
+        }
+        rows: List[Dict[str, Any]] = []
+        for blocker in blockers:
+            code = str(blocker.get("code") or "")
+            tpl = templates.get(code)
+            if not tpl:
+                continue
+            rows.append(
+                {
+                    "blocker_code": code,
+                    "priority_score": blocker.get("priority_score", 0),
+                    "owner": tpl["owner"],
+                    "title": tpl["title"],
+                    "actions": tpl["actions"],
+                }
+            )
+        return rows
 
     def run(self, raw_url: str, selected_bots: Optional[List[str]] = None, bot_groups: Optional[List[str]] = None) -> Dict[str, Any]:
         url = normalize_url(raw_url)
@@ -487,25 +955,32 @@ class BotAccessibilityServiceV2:
                 "meta_robots": row.get("meta_robots"),
                 "meta_forbidden": row.get("meta_forbidden"),
                 "robots_allowed": row.get("robots_allowed"),
+                "robots_evaluation": row.get("robots_evaluation", {}),
                 "error": row.get("error"),
                 "final_url": row.get("final_url"),
+                "crawlable": row.get("crawlable"),
+                "renderable": row.get("renderable"),
+                "indexable": row.get("indexable"),
+                "waf_cdn_signal": row.get("waf_cdn_signal", {}),
+                "blocked_reasons": row.get("blocked_reasons", []),
+                "bot_priority_weight": row.get("bot_priority_weight"),
+                "sla_target_pct": row.get("sla_target_pct"),
             }
 
         total = len(rows)
         accessible = sum(1 for r in rows if r.get("accessible"))
         with_content = sum(1 for r in rows if r.get("has_content"))
+        crawlable = sum(1 for r in rows if r.get("crawlable"))
+        renderable = sum(1 for r in rows if r.get("renderable"))
         indexable = sum(
             1
             for r in rows
-            if r.get("accessible")
-            and r.get("has_content")
-            and r.get("robots_allowed") is not False
-            and not r.get("x_robots_forbidden")
-            and not r.get("meta_forbidden")
+            if r.get("indexable")
         )
         robots_disallowed = sum(1 for r in rows if r.get("robots_allowed") is False)
         x_forbidden = sum(1 for r in rows if r.get("x_robots_forbidden"))
         meta_forbidden = sum(1 for r in rows if r.get("meta_forbidden"))
+        waf_cdn_detected = sum(1 for r in rows if (r.get("waf_cdn_signal", {}) or {}).get("detected"))
         timing_rows = [r["response_time_ms"] for r in rows if r.get("response_time_ms") is not None]
         avg_ms = (sum(timing_rows) / len(timing_rows)) if timing_rows else 0.0
 
@@ -513,7 +988,31 @@ class BotAccessibilityServiceV2:
         recommendations = self._build_recommendations(rows)
         category_stats = self._build_category_stats(rows)
         priority_blockers = self._build_priority_blockers(rows)
+        playbooks = self._build_playbooks(priority_blockers)
         domain = urlparse(url).netloc
+        host_consistency = self._host_consistency_check(url)
+
+        summary = {
+            "total": total,
+            "accessible": accessible,
+            "unavailable": total - accessible,
+            "with_content": with_content,
+            "without_content": total - with_content,
+            "crawlable": crawlable,
+            "non_crawlable": total - crawlable,
+            "renderable": renderable,
+            "non_renderable": total - renderable,
+            "indexable": indexable,
+            "non_indexable": total - indexable,
+            "robots_disallowed": robots_disallowed,
+            "x_robots_forbidden": x_forbidden,
+            "meta_forbidden": meta_forbidden,
+            "waf_cdn_detected": waf_cdn_detected,
+            "avg_response_time_ms": round(avg_ms, 2),
+        }
+        baseline = self._load_baseline(domain)
+        baseline_diff = self._compute_baseline_diff(baseline, summary)
+        self._save_baseline(domain, summary)
 
         return {
             "task_type": "bot_check",
@@ -522,29 +1021,23 @@ class BotAccessibilityServiceV2:
             "results": {
                 "engine": "v2",
                 "domain": domain,
+                "retry_profile": self.retry_profile,
+                "criticality_profile": self.criticality_profile_name,
+                "sla_profile": self.sla_profile_name,
                 "bots_checked": [b.name for b in bots_to_check],
                 "selected_bot_groups": bot_groups or [],
                 "bot_results": by_bot,
                 "bot_rows": rows,
-                "summary": {
-                    "total": total,
-                    "accessible": accessible,
-                    "unavailable": total - accessible,
-                    "with_content": with_content,
-                    "without_content": total - with_content,
-                    "indexable": indexable,
-                    "non_indexable": total - indexable,
-                    "robots_disallowed": robots_disallowed,
-                    "x_robots_forbidden": x_forbidden,
-                    "meta_forbidden": meta_forbidden,
-                    "avg_response_time_ms": round(avg_ms, 2),
-                },
+                "summary": summary,
                 "robots": {
                     "found": robots_text is not None,
                     "status_code": robots_status,
                 },
+                "host_consistency": host_consistency,
                 "category_stats": category_stats,
                 "priority_blockers": priority_blockers,
+                "playbooks": playbooks,
+                "baseline_diff": baseline_diff,
                 "issues": issues,
                 "recommendations": recommendations,
             },

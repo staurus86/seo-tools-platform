@@ -1528,6 +1528,10 @@ def check_bots_full(
     url: str,
     selected_bots: Optional[List[str]] = None,
     bot_groups: Optional[List[str]] = None,
+    retry_profile: str = "standard",
+    criticality_profile: str = "balanced",
+    sla_profile: str = "standard",
+    baseline_enabled: bool = True,
 ) -> Dict[str, Any]:
     """Bot accessibility check with feature-flagged v2 engine."""
     from app.config import settings
@@ -1543,6 +1547,10 @@ def check_bots_full(
             checker = BotAccessibilityServiceV2(
                 timeout=getattr(settings, "BOT_CHECK_TIMEOUT", 15),
                 max_workers=getattr(settings, "BOT_CHECK_MAX_WORKERS", 10),
+                retry_profile=retry_profile,
+                criticality_profile=criticality_profile,
+                sla_profile=sla_profile,
+                baseline_enabled=baseline_enabled,
             )
             return checker.run(url, selected_bots=selected_bots, bot_groups=bot_groups)
         except Exception as e:
@@ -1608,6 +1616,10 @@ class BotCheckRequest(BaseModel):
     url: str
     selected_bots: Optional[List[str]] = None
     bot_groups: Optional[List[str]] = None
+    retry_profile: Optional[str] = "standard"
+    criticality_profile: Optional[str] = "balanced"
+    sla_profile: Optional[str] = "standard"
+    baseline_enabled: bool = True
 
     @field_validator("selected_bots", "bot_groups", mode="before")
     @classmethod
@@ -2317,7 +2329,15 @@ async def create_bot_check(data: BotCheckRequest):
     
     print(f"[API] Full bot check for: {url}")
     
-    result = check_bots_full(url, selected_bots=data.selected_bots, bot_groups=data.bot_groups)
+    result = check_bots_full(
+        url,
+        selected_bots=data.selected_bots,
+        bot_groups=data.bot_groups,
+        retry_profile=(data.retry_profile or "standard"),
+        criticality_profile=(data.criticality_profile or "balanced"),
+        sla_profile=(data.sla_profile or "standard"),
+        baseline_enabled=bool(data.baseline_enabled),
+    )
     task_id = f"bots-{datetime.now().timestamp()}"
     create_task_result(task_id, "bot_check", url, result)
     

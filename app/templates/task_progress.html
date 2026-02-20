@@ -1,24 +1,24 @@
 ﻿{% extends "base.html" %}
 
-{% block title %}Р РµР·СѓР»СЊС‚Р°С‚С‹ Р°РЅР°Р»РёР·Р° - SEO РРЅСЃС‚СЂСѓРјРµРЅС‚С‹{% endblock %}
+{% block title %}Analysis Results - SEO Tools{% endblock %}
 
 {% block content %}
 <div class="max-w-6xl mx-auto">
     <!-- Header -->
     <div class="mb-6">
         <a href="/" class="text-blue-600 hover:text-blue-800 mb-2 inline-block">
-            <i class="fas fa-arrow-left mr-1"></i>РќР°Р·Р°Рґ Рє РёРЅСЃС‚СЂСѓРјРµРЅС‚Р°Рј
+            <i class="fas fa-arrow-left mr-1"></i>Back to tools
         </a>
-        <h2 class="text-2xl font-bold text-gray-800">Р РµР·СѓР»СЊС‚Р°С‚С‹ Р°РЅР°Р»РёР·Р°</h2>
-        <p class="text-gray-600">ID Р·Р°РґР°С‡Рё: <span id="task-id">{{ task_id }}</span></p>
+        <h2 class="text-2xl font-bold text-gray-800">Analysis Results</h2>
+        <p class="text-gray-600">Task ID: <span id="task-id">{{ task_id }}</span></p>
     </div>
 
     <!-- Progress Section -->
     <div id="progress-section" class="bg-white rounded-xl shadow-md p-6 mb-6">
         <div class="flex items-center justify-between mb-4">
             <div>
-                <h3 class="text-lg font-semibold" id="status-title">Р’С‹РїРѕР»РЅРµРЅРёРµ...</h3>
-                <p class="text-gray-600" id="status-message">РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ...</p>
+                <h3 class="text-lg font-semibold" id="status-title">Running...</h3>
+                <p class="text-gray-600" id="status-message">Initializing...</p>
             </div>
             <div id="status-icon" class="text-4xl">
                 <i class="fas fa-spinner fa-spin text-blue-500"></i>
@@ -62,7 +62,7 @@
         <div class="flex items-start">
             <i class="fas fa-exclamation-triangle text-red-500 text-xl mr-3 mt-1"></i>
             <div>
-                <h3 class="text-red-800 font-semibold mb-2">РћС€РёР±РєР° РІС‹РїРѕР»РЅРµРЅРёСЏ</h3>
+                <h3 class="text-red-800 font-semibold mb-2">Execution Error</h3>
                 <p id="error-message" class="text-red-700"></p>
             </div>
         </div>
@@ -70,7 +70,7 @@
 
     <!-- Copy Notification -->
     <div id="copy-notification" class="fixed bottom-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg transform translate-y-20 transition-transform duration-300 z-50">
-        <i class="fas fa-check mr-2"></i>РЎРєРѕРїРёСЂРѕРІР°РЅРѕ РІ Р±СѓС„РµСЂ РѕР±РјРµРЅР°
+        <i class="fas fa-check mr-2"></i>Copied to clipboard
     </div>
 </div>
 {% endblock %}
@@ -286,8 +286,8 @@ function updateProgress(data) {
     const progressMeta = data.progress_meta || {};
 
     if (data.status === 'SUCCESS') {
-        statusTitle.textContent = 'Р—Р°РІРµСЂС€РµРЅРѕ';
-        statusMessage.textContent = data.status_message || 'РђРЅР°Р»РёР· СѓСЃРїРµС€РЅРѕ РІС‹РїРѕР»РЅРµРЅ';
+        statusTitle.textContent = 'Completed';
+        statusMessage.textContent = data.status_message || 'Analysis completed successfully';
         progressBar.style.width = '100%';
         progressBar.classList.remove('bg-blue-500');
         progressBar.classList.add('bg-green-500');
@@ -297,8 +297,8 @@ function updateProgress(data) {
     }
 
     if (data.status === 'FAILURE') {
-        statusTitle.textContent = 'РћС€РёР±РєР°';
-        statusMessage.textContent = data.error || data.status_message || 'РђРЅР°Р»РёР· Р·Р°РІРµСЂС€РёР» СЃ РѕС€РёР±РєРѕР№';
+        statusTitle.textContent = 'Error';
+        statusMessage.textContent = data.error || data.status_message || 'Analysis finished with an error';
         progressBar.style.width = `${data.progress || 100}%`;
         progressBar.classList.remove('bg-blue-500');
         progressBar.classList.add('bg-red-500');
@@ -308,8 +308,8 @@ function updateProgress(data) {
     }
 
     const p = Number.isFinite(Number(data.progress)) ? Number(data.progress) : 10;
-    statusTitle.textContent = data.status === 'RUNNING' ? 'Р’С‹РїРѕР»РЅРµРЅРёРµ...' : 'РћР¶РёРґР°РЅРёРµ...';
-    statusMessage.textContent = data.status_message || (data.status === 'RUNNING' ? 'РРґРµС‚ РїСЂРѕРІРµСЂРєР° СѓСЃС‚СЂРѕР№СЃС‚РІ' : 'Р—Р°РґР°С‡Р° РІ РѕС‡РµСЂРµРґРё');
+    statusTitle.textContent = data.status === 'RUNNING' ? 'Running...' : 'Queued...';
+    statusMessage.textContent = data.status_message || (data.status === 'RUNNING' ? 'Analysis in progress' : 'Task is waiting in queue');
     progressBar.style.width = `${Math.max(5, Math.min(95, p))}%`;
     progressBar.classList.remove('bg-green-500', 'bg-red-500');
     progressBar.classList.add('bg-blue-500');
@@ -2306,10 +2306,14 @@ function generateBotHTML(result) {
             <div class="grid grid-cols-2 gap-4 text-sm mb-4">
                 <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
                 <div><span class="text-gray-600">Bots checked:</span> <span class="font-medium">${(r.bots_checked || []).length}</span></div>
+                ${summary.total ? `<div><span class="text-gray-600">Crawlable:</span> <span class="font-medium">${summary.crawlable || 0}/${summary.total}</span></div>` : ''}
+                ${summary.total ? `<div><span class="text-gray-600">Renderable:</span> <span class="font-medium">${summary.renderable || 0}/${summary.total}</span></div>` : ''}
                 ${summary.total ? `<div><span class="text-gray-600">Available:</span> <span class="font-medium">${summary.accessible || 0}/${summary.total}</span></div>` : ''}
                 ${summary.total ? `<div><span class="text-gray-600">Indexable:</span> <span class="font-medium">${summary.indexable || 0}/${summary.total}</span></div>` : ''}
                 ${summary.total ? `<div><span class="text-gray-600">Non-indexable:</span> <span class="font-medium">${summary.non_indexable || 0}</span></div>` : ''}
                 ${summary.avg_response_time_ms ? `<div><span class="text-gray-600">Avg response:</span> <span class="font-medium">${summary.avg_response_time_ms} ms</span></div>` : ''}
+                <div><span class="text-gray-600">Retry profile:</span> <span class="font-medium">${r.retry_profile || 'standard'}</span></div>
+                <div><span class="text-gray-600">Criticality/SLA:</span> <span class="font-medium">${r.criticality_profile || 'balanced'} / ${r.sla_profile || 'standard'}</span></div>
             </div>
 
             <div class="border-t pt-4">
@@ -2387,6 +2391,23 @@ function generateBotHTML(result) {
             <div class="border-t pt-4 mt-4">
                 <h4 class="font-semibold mb-2">Top Issues</h4>
                 ${issueRows || '<div class="text-sm text-gray-500">No issues detected</div>'}
+            </div>
+
+            <div class="border-t pt-4 mt-4">
+                <h4 class="font-semibold mb-2">Host Consistency</h4>
+                <div class="text-sm ${((r.host_consistency || {}).consistent === false) ? 'text-amber-700' : 'text-green-700'}">
+                    ${((r.host_consistency || {}).consistent === false) ? 'Inconsistencies detected across host variants.' : 'Host variants look consistent.'}
+                </div>
+                ${((r.host_consistency || {}).notes || []).length ? `<ul class="list-disc pl-5 text-sm text-gray-700 mt-2">${(r.host_consistency.notes || []).map(n => `<li>${n}</li>`).join('')}</ul>` : ''}
+            </div>
+
+            <div class="border-t pt-4 mt-4">
+                <h4 class="font-semibold mb-2">Diff vs Baseline</h4>
+                ${
+                    (r.baseline_diff || {}).has_baseline
+                        ? `<div class="overflow-auto"><table class="w-full min-w-[520px] text-sm"><thead><tr class="text-left text-xs text-slate-500 border-b"><th class="py-2 pr-2">Metric</th><th class="py-2 pr-2">Current</th><th class="py-2 pr-2">Baseline</th><th class="py-2 pr-2">Delta</th></tr></thead><tbody>${((r.baseline_diff.metrics || []).map(m => `<tr class="border-b"><td class="py-2 pr-2">${m.metric || ''}</td><td class="py-2 pr-2">${m.current ?? ''}</td><td class="py-2 pr-2">${m.baseline ?? ''}</td><td class="py-2 pr-2">${m.delta ?? ''}</td></tr>`).join('') || '<tr><td colspan=\"4\" class=\"py-2 text-gray-500\">No metrics.</td></tr>')}</tbody></table></div>`
+                        : `<div class="text-sm text-gray-500">${(r.baseline_diff || {}).message || 'No baseline found.'}</div>`
+                }
             </div>
         </div>
     `;
@@ -4487,4 +4508,3 @@ function generateSiteAuditProHTML(result) {
 window.copyToClipboard = copyToClipboard;
 </script>
 {% endblock %}
-
