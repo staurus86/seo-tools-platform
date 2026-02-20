@@ -269,7 +269,7 @@ let botData = null;
 let mobileData = null;
 let renderData = null;
 let siteAuditProData = null;
-let siteAuditProIssuesState = { issues: [], filtered: [], filter: 'all', query: '', limit: 20, sort: 'severity' };
+let siteAuditProIssuesState = { issues: [], filtered: [], filter: 'all', query: '', limit: 20, sort: 'severity', owner: 'all' };
 let onpageData = null;
 let lastTaskResult = null;
 let sitemapExportUrls = [];
@@ -568,9 +568,18 @@ function filterSiteAuditProIssues() {
     const source = Array.isArray(siteAuditProIssuesState.issues) ? siteAuditProIssuesState.issues : [];
     const query = String(siteAuditProIssuesState.query || '').trim().toLowerCase();
     const mode = String(siteAuditProIssuesState.filter || 'all').toLowerCase();
+    const owner = String(siteAuditProIssuesState.owner || 'all');
+    const ownerHintByCode = (code) => {
+        const codeL = String(code || '').toLowerCase();
+        if (/(title|meta|h1|keyword|content|ai_|duplicate_)/.test(codeL)) return 'Content+SEO';
+        if (/(schema|structured|hreflang|canonical|index|http_status)/.test(codeL)) return 'SEO+Dev';
+        if (/(security|cache|compression|https|crawl_budget|redirect)/.test(codeL)) return 'Dev+Infra';
+        return 'SEO';
+    };
     return source.filter((issue) => {
         const severity = String(issue.severity || 'info').toLowerCase();
         if (mode !== 'all' && severity !== mode) return false;
+        if (owner !== 'all' && ownerHintByCode(issue.code) !== owner) return false;
         if (!query) return true;
         const haystack = [
             issue.code,
@@ -665,6 +674,11 @@ function updateSiteAuditProIssuesSort(value) {
     renderSiteAuditProIssuesExplorer();
 }
 
+function updateSiteAuditProIssuesOwner(value) {
+    siteAuditProIssuesState.owner = String(value || 'all');
+    renderSiteAuditProIssuesExplorer();
+}
+
 function applySiteProIssuePreset(query, mode = 'all') {
     siteAuditProIssuesState.filter = String(mode || 'all').toLowerCase();
     siteAuditProIssuesState.query = String(query || '');
@@ -683,6 +697,7 @@ function initSiteAuditProIssuesExplorer(result) {
         query: '',
         limit: 20,
         sort: 'severity',
+        owner: 'all',
     };
     const queryInput = document.getElementById('sitepro-issues-search');
     if (queryInput) queryInput.value = '';
@@ -690,6 +705,8 @@ function initSiteAuditProIssuesExplorer(result) {
     if (limitInput) limitInput.value = '20';
     const sortInput = document.getElementById('sitepro-issues-sort');
     if (sortInput) sortInput.value = 'severity';
+    const ownerInput = document.getElementById('sitepro-issues-owner');
+    if (ownerInput) ownerInput.value = 'all';
     renderSiteAuditProIssuesExplorer();
 }
 
@@ -3189,6 +3206,18 @@ function generateSiteAuditProHTML(result) {
             <div class="mt-2 text-xs text-slate-500">${row.urlsPreview.map((u) => `<div class="break-all">${escapeHtml(u)}</div>`).join('') || '<div>-</div>'}</div>
         </div>
     `).join('');
+    const nowRoadmap = actionableRecommendations
+        .filter((row) => row.critical > 0)
+        .slice(0, 5);
+    const nextRoadmap = actionableRecommendations
+        .filter((row) => row.critical === 0 && row.warning > 0)
+        .slice(0, 5);
+    const laterRoadmap = actionableRecommendations
+        .filter((row) => row.critical === 0 && row.warning === 0)
+        .slice(0, 5);
+    const roadmapList = (rows, emptyText) => rows.length
+        ? rows.map((row) => `<li class="mb-2"><div class="font-medium">${escapeHtml(row.action)}</div><div class="text-xs text-slate-500">Coverage: ${escapeHtml(row.affectedCount)} pages</div></li>`).join('')
+        : `<li class="text-slate-500">${escapeHtml(emptyText)}</li>`;
 
     return `
         <div class="space-y-6">
@@ -3247,7 +3276,7 @@ function generateSiteAuditProHTML(result) {
                         <button type="button" data-sitepro-issues-filter="info" onclick="setSiteAuditProIssuesFilter('info')" class="px-2 py-1 rounded-md text-slate-700">Info</button>
                     </div>
                 </div>
-                <div class="grid grid-cols-1 md:grid-cols-5 gap-2 mb-3">
+                <div class="grid grid-cols-1 md:grid-cols-6 gap-2 mb-3">
                     <input id="sitepro-issues-search" type="text" oninput="updateSiteAuditProIssuesQuery(this.value)" placeholder="Search code, title, URL..." class="md:col-span-3 px-3 py-2 border rounded-lg text-sm">
                     <select id="sitepro-issues-limit" onchange="updateSiteAuditProIssuesLimit(this.value)" class="px-3 py-2 border rounded-lg text-sm">
                         <option value="20" selected>20 rows</option>
@@ -3257,6 +3286,13 @@ function generateSiteAuditProHTML(result) {
                     <select id="sitepro-issues-sort" onchange="updateSiteAuditProIssuesSort(this.value)" class="px-3 py-2 border rounded-lg text-sm">
                         <option value="severity" selected>Sort: severity</option>
                         <option value="url">Sort: URL</option>
+                    </select>
+                    <select id="sitepro-issues-owner" onchange="updateSiteAuditProIssuesOwner(this.value)" class="px-3 py-2 border rounded-lg text-sm">
+                        <option value="all" selected>Owner: all</option>
+                        <option value="SEO">Owner: SEO</option>
+                        <option value="Content+SEO">Owner: Content+SEO</option>
+                        <option value="SEO+Dev">Owner: SEO+Dev</option>
+                        <option value="Dev+Infra">Owner: Dev+Infra</option>
                     </select>
                 </div>
                 <div class="text-xs text-slate-500 mb-2">Shown: <span id="sitepro-issues-count">0 / 0</span></div>
@@ -3404,6 +3440,24 @@ function generateSiteAuditProHTML(result) {
                         ${semanticRowsHtml || '<tr><td colspan="3" class="py-3 text-sm text-slate-500">No semantic linking rows in payload.</td></tr>'}
                     </tbody>
                 </table>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h4 class="font-semibold mb-3">Roadmap: Now / Next / Later</h4>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                    <div class="rounded-lg border border-rose-200 bg-rose-50 p-3">
+                        <div class="font-semibold text-rose-800 mb-2">Now</div>
+                        <ul class="list-disc pl-4">${roadmapList(nowRoadmap, 'No critical actions queued.')}</ul>
+                    </div>
+                    <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                        <div class="font-semibold text-amber-800 mb-2">Next</div>
+                        <ul class="list-disc pl-4">${roadmapList(nextRoadmap, 'No warning actions queued.')}</ul>
+                    </div>
+                    <div class="rounded-lg border border-sky-200 bg-sky-50 p-3">
+                        <div class="font-semibold text-sky-800 mb-2">Later</div>
+                        <ul class="list-disc pl-4">${roadmapList(laterRoadmap, 'No backlog actions queued.')}</ul>
+                    </div>
+                </div>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
