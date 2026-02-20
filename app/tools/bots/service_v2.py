@@ -769,7 +769,8 @@ class BotAccessibilityServiceV2:
             response_sample = _extract_response_sample(html_head)
             renderable = bool(crawlable and has_content and not waf_cdn.get("detected"))
             indexable = bool(
-                renderable
+                crawlable
+                and has_content
                 and robots_allowed is not False
                 and not _is_forbidden_directive(x_robots or "")
                 and not _is_forbidden_directive(meta_robots or "")
