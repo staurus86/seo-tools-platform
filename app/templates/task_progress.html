@@ -2389,7 +2389,9 @@ function generateBotHTML(result) {
         const statusText = row.status || row.error || 'n/a';
         const responseMs = row.response_time_ms ? `${row.response_time_ms} ms` : 'n/a';
         const reachableLabel = row.accessible ? 'yes' : 'no';
-        const indexable = row.accessible && row.has_content && row.robots_allowed !== false && !row.x_robots_forbidden && !row.meta_forbidden;
+        const indexable = (typeof row.indexable === 'boolean')
+            ? row.indexable
+            : (row.accessible && row.has_content && row.robots_allowed !== false && !row.x_robots_forbidden && !row.meta_forbidden);
         const indexableLabel = indexable ? 'yes' : 'no';
         const category = String(row.category || '');
         const isAi = category === 'AI';
