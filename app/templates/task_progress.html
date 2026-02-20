@@ -665,6 +665,14 @@ function updateSiteAuditProIssuesSort(value) {
     renderSiteAuditProIssuesExplorer();
 }
 
+function applySiteProIssuePreset(query, mode = 'all') {
+    siteAuditProIssuesState.filter = String(mode || 'all').toLowerCase();
+    siteAuditProIssuesState.query = String(query || '');
+    const queryInput = document.getElementById('sitepro-issues-search');
+    if (queryInput) queryInput.value = siteAuditProIssuesState.query;
+    renderSiteAuditProIssuesExplorer();
+}
+
 function initSiteAuditProIssuesExplorer(result) {
     const r = result.results || {};
     const issues = Array.isArray(r.issues) ? r.issues : [];
@@ -2946,7 +2954,133 @@ function generateSiteAuditProHTML(result) {
     const duplicateTitleGroups = Array.isArray(duplicates.title_groups) ? duplicates.title_groups : [];
     const duplicateDescriptionGroups = Array.isArray(duplicates.description_groups) ? duplicates.description_groups : [];
     const semanticMap = Array.isArray(pipeline.semantic_linking_map) ? pipeline.semantic_linking_map : [];
-    const topRecommendations = pages.map(p => p.recommendation).filter(Boolean).slice(0, 6);
+    const normalizeRecommendationText = (text) => String(text || '')
+        .toLowerCase()
+        .replace(/[^\w\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const ownerHintByCode = (code) => {
+        const codeL = String(code || '').toLowerCase();
+        if (/(title|meta|h1|keyword|content|ai_|duplicate_)/.test(codeL)) return 'Content+SEO';
+        if (/(schema|structured|hreflang|canonical|index|http_status)/.test(codeL)) return 'SEO+Dev';
+        if (/(security|cache|compression|https|crawl_budget|redirect)/.test(codeL)) return 'Dev+Infra';
+        return 'SEO';
+    };
+    const rootCauseCluster = (code) => {
+        const codeL = String(code || '').toLowerCase();
+        if (/(title|meta|h1|keyword|content|duplicate|ai_)/.test(codeL)) return 'Content model';
+        if (/(canonical|index|robots|http_status|redirect|crawl_budget)/.test(codeL)) return 'Indexing flow';
+        if (/(schema|structured|hreflang)/.test(codeL)) return 'Structured data';
+        if (/(security|https|cache|compression|mixed_content)/.test(codeL)) return 'Platform infra';
+        if (/(image|alt|webp|avif)/.test(codeL)) return 'Media pipeline';
+        return 'General SEO';
+    };
+    const issueActionByCode = (code) => {
+        const codeL = String(code || '').toLowerCase();
+        if (codeL.includes('title')) return 'Fix title tags: uniqueness and optimal length.';
+        if (codeL.includes('meta')) return 'Improve meta description quality and uniqueness.';
+        if (codeL.includes('h1') || codeL.includes('hierarchy')) return 'Normalize heading hierarchy (single H1, valid H2/H3 tree).';
+        if (codeL.includes('canonical')) return 'Resolve canonical conflicts and align canonical targets.';
+        if (codeL.includes('crawl_budget') || codeL.includes('redirect')) return 'Reduce crawl waste: redirects, parameter traps, non-indexable branches.';
+        if (codeL.includes('schema') || codeL.includes('structured')) return 'Fix structured data coverage and schema errors.';
+        if (codeL.includes('image') || codeL.includes('alt')) return 'Fix image optimization issues: ALT, lazy-load, dimensions.';
+        if (codeL.includes('anchor') || codeL.includes('link') || codeL.includes('orphan')) return 'Improve internal linking and anchor quality.';
+        if (codeL.includes('security') || codeL.includes('https')) return 'Close technical security/header issues.';
+        return 'Prioritize this issue type and apply template-level fixes.';
+    };
+    const issuesByUrl = {};
+    issues.forEach((issue) => {
+        const url = String(issue.url || '');
+        if (!url) return;
+        if (!issuesByUrl[url]) issuesByUrl[url] = [];
+        issuesByUrl[url].push(issue);
+    });
+
+    const recommendationMap = new Map();
+    pages.forEach((page) => {
+        const rec = String(page.recommendation || '').trim();
+        if (!rec) return;
+        const key = normalizeRecommendationText(rec);
+        if (!key) return;
+        const url = String(page.url || '');
+        const pageIssues = issuesByUrl[url] || [];
+        const critical = pageIssues.filter(i => String(i.severity || '').toLowerCase() === 'critical').length;
+        const warning = pageIssues.filter(i => String(i.severity || '').toLowerCase() === 'warning').length;
+        const info = pageIssues.filter(i => String(i.severity || '').toLowerCase() === 'info').length;
+        if (!recommendationMap.has(key)) {
+            recommendationMap.set(key, { action: rec, affectedUrls: new Set(), critical: 0, warning: 0, info: 0 });
+        }
+        const bucket = recommendationMap.get(key);
+        if (url) bucket.affectedUrls.add(url);
+        bucket.critical += critical;
+        bucket.warning += warning;
+        bucket.info += info;
+    });
+
+    const issueCodeStatsMap = new Map();
+    const clusterStatsMap = new Map();
+    const ownerStatsMap = new Map();
+    issues.forEach((issue) => {
+        const code = String(issue.code || 'unknown');
+        const severity = String(issue.severity || 'info').toLowerCase();
+        const cluster = rootCauseCluster(code);
+        const owner = ownerHintByCode(code);
+        if (!issueCodeStatsMap.has(code)) issueCodeStatsMap.set(code, { code, count: 0, critical: 0, warning: 0, info: 0 });
+        const codeRow = issueCodeStatsMap.get(code);
+        codeRow.count += 1;
+        codeRow[severity] = (codeRow[severity] || 0) + 1;
+        if (!clusterStatsMap.has(cluster)) clusterStatsMap.set(cluster, { cluster, count: 0 });
+        clusterStatsMap.get(cluster).count += 1;
+        if (!ownerStatsMap.has(owner)) ownerStatsMap.set(owner, { owner, count: 0 });
+        ownerStatsMap.get(owner).count += 1;
+    });
+
+    issueCodeStatsMap.forEach((row) => {
+        const key = normalizeRecommendationText(issueActionByCode(row.code));
+        if (!recommendationMap.has(key)) {
+            recommendationMap.set(key, {
+                action: issueActionByCode(row.code),
+                affectedUrls: new Set(),
+                critical: row.critical || 0,
+                warning: row.warning || 0,
+                info: row.info || 0,
+            });
+        }
+    });
+
+    const actionableRecommendations = Array.from(recommendationMap.values())
+        .map((row) => ({
+            ...row,
+            affectedCount: row.affectedUrls.size,
+            urlsPreview: Array.from(row.affectedUrls).slice(0, 3),
+        }))
+        .sort((a, b) =>
+            (b.critical - a.critical) ||
+            (b.warning - a.warning) ||
+            (b.affectedCount - a.affectedCount)
+        )
+        .slice(0, 10);
+
+    const issueCodeStats = Array.from(issueCodeStatsMap.values())
+        .sort((a, b) => (b.count - a.count))
+        .slice(0, 8);
+    const clusterStats = Array.from(clusterStatsMap.values())
+        .sort((a, b) => (b.count - a.count))
+        .slice(0, 6);
+    const ownerStats = Array.from(ownerStatsMap.values())
+        .sort((a, b) => (b.count - a.count))
+        .slice(0, 6);
+    const criticalPages = pages
+        .map((page) => {
+            const url = String(page.url || '');
+            const pageIssues = issuesByUrl[url] || [];
+            const critical = pageIssues.filter(i => String(i.severity || '').toLowerCase() === 'critical').length;
+            const warning = pageIssues.filter(i => String(i.severity || '').toLowerCase() === 'warning').length;
+            return { url, critical, warning };
+        })
+        .filter((row) => row.critical > 0 || row.warning > 0)
+        .sort((a, b) => (b.critical - a.critical) || (b.warning - a.warning))
+        .slice(0, 8);
     const topFixPages = pages
         .map((p) => ({
             url: p.url || '',
@@ -3017,6 +3151,43 @@ function generateSiteAuditProHTML(result) {
             <td class="py-2 pr-2 text-xs break-all">${escapeHtml(row.target_url || row.target || '-')}</td>
             <td class="py-2 pr-2 text-xs">${escapeHtml(row.anchor || row.term || '-')}</td>
         </tr>
+    `).join('');
+    const issueTypeRowsHtml = issueCodeStats.map((row) => `
+        <tr class="border-b border-slate-100 align-top">
+            <td class="py-2 pr-2 text-xs">
+                <button type="button" onclick="applySiteProIssuePreset('${escapeHtml(String(row.code || '').replace(/'/g, '\\\''))}')" class="text-indigo-700 hover:text-indigo-900 underline">${escapeHtml(row.code)}</button>
+            </td>
+            <td class="py-2 pr-2 text-xs font-medium">${escapeHtml(row.count)}</td>
+            <td class="py-2 pr-2 text-xs text-red-700">${escapeHtml(row.critical || 0)}</td>
+            <td class="py-2 pr-2 text-xs text-amber-700">${escapeHtml(row.warning || 0)}</td>
+            <td class="py-2 pr-2 text-xs text-blue-700">${escapeHtml(row.info || 0)}</td>
+        </tr>
+    `).join('');
+    const clusterRowsHtml = clusterStats.map((row) => `
+        <div class="flex items-center justify-between py-1.5 border-b border-slate-100 text-sm">
+            <button type="button" onclick="applySiteProIssuePreset('${escapeHtml(String(row.cluster || '').replace(/'/g, '\\\''))}')" class="text-indigo-700 hover:text-indigo-900 underline text-left">${escapeHtml(row.cluster)}</button>
+            <span class="font-semibold">${escapeHtml(row.count)}</span>
+        </div>
+    `).join('');
+    const ownerRowsHtml = ownerStats.map((row) => `
+        <div class="flex items-center justify-between py-1.5 border-b border-slate-100 text-sm">
+            <span>${escapeHtml(row.owner)}</span>
+            <span class="font-semibold">${escapeHtml(row.count)}</span>
+        </div>
+    `).join('');
+    const criticalPagesRowsHtml = criticalPages.map((row) => `
+        <tr class="border-b border-slate-100 align-top">
+            <td class="py-2 pr-2 text-xs break-all">${escapeHtml(row.url)}</td>
+            <td class="py-2 pr-2 text-xs text-red-700 font-medium">${escapeHtml(row.critical)}</td>
+            <td class="py-2 pr-2 text-xs text-amber-700 font-medium">${escapeHtml(row.warning)}</td>
+        </tr>
+    `).join('');
+    const recommendationCardsHtml = actionableRecommendations.map((row) => `
+        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div class="text-sm font-medium text-slate-900">${escapeHtml(row.action)}</div>
+            <div class="mt-1 text-xs text-slate-600">Affected pages: ${escapeHtml(row.affectedCount)} | C:${escapeHtml(row.critical)} W:${escapeHtml(row.warning)} I:${escapeHtml(row.info)}</div>
+            <div class="mt-2 text-xs text-slate-500">${row.urlsPreview.map((u) => `<div class="break-all">${escapeHtml(u)}</div>`).join('') || '<div>-</div>'}</div>
+        </div>
     `).join('');
 
     return `
@@ -3116,6 +3287,52 @@ function generateSiteAuditProHTML(result) {
                 </div>
             </div>
 
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
+                    <h4 class="font-semibold mb-3">Issue Types Overview</h4>
+                    <table class="w-full min-w-[560px]">
+                        <thead>
+                            <tr class="text-left text-xs text-slate-500 border-b">
+                                <th class="py-2 pr-2">Code</th>
+                                <th class="py-2 pr-2">Total</th>
+                                <th class="py-2 pr-2">Critical</th>
+                                <th class="py-2 pr-2">Warning</th>
+                                <th class="py-2 pr-2">Info</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${issueTypeRowsHtml || '<tr><td colspan="5" class="py-3 text-sm text-slate-500">No issue codes in payload.</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="space-y-6">
+                    <div class="bg-white rounded-xl shadow-md p-6">
+                        <h4 class="font-semibold mb-3">Root Cause Clusters</h4>
+                        ${clusterRowsHtml || '<div class="text-sm text-slate-500">No clusters available.</div>'}
+                    </div>
+                    <div class="bg-white rounded-xl shadow-md p-6">
+                        <h4 class="font-semibold mb-3">Owner Distribution</h4>
+                        ${ownerRowsHtml || '<div class="text-sm text-slate-500">No owner breakdown available.</div>'}
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
+                <h4 class="font-semibold mb-3">Top Critical Pages</h4>
+                <table class="w-full min-w-[680px]">
+                    <thead>
+                        <tr class="text-left text-xs text-slate-500 border-b">
+                            <th class="py-2 pr-2">URL</th>
+                            <th class="py-2 pr-2">Critical</th>
+                            <th class="py-2 pr-2">Warning</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${criticalPagesRowsHtml || '<tr><td colspan="3" class="py-3 text-sm text-slate-500">No critical/warning pages found.</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+
             <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
                 <h4 class="font-semibold mb-3">Top pages to fix</h4>
                 <table class="w-full min-w-[720px]">
@@ -3190,10 +3407,10 @@ function generateSiteAuditProHTML(result) {
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-2">Top Recommendations</h4>
-                <ul class="list-disc pl-5 text-sm text-gray-700">
-                    ${(topRecommendations.map(x => `<li>${escapeHtml(x)}</li>`).join('')) || '<li>Рекомендаций нет.</li>'}
-                </ul>
+                <h4 class="font-semibold mb-2">Actionable Recommendations</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    ${recommendationCardsHtml || '<div class="text-sm text-slate-500">No recommendations available.</div>'}
+                </div>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
