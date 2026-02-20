@@ -3187,9 +3187,9 @@ function generateSiteAuditProHTML(result) {
         },
         {
             metric: 'Avg perf light score',
-            value: Number(metrics.avg_perf_light_score ?? avgPerfLightFromPages || 0).toFixed(1),
+            value: Number((metrics.avg_perf_light_score ?? avgPerfLightFromPages) || 0).toFixed(1),
             target: '>= 70',
-            state: Number(metrics.avg_perf_light_score ?? avgPerfLightFromPages || 0) >= 70 ? 'good' : Number(metrics.avg_perf_light_score ?? avgPerfLightFromPages || 0) >= 50 ? 'warn' : 'bad',
+            state: Number((metrics.avg_perf_light_score ?? avgPerfLightFromPages) || 0) >= 70 ? 'good' : Number((metrics.avg_perf_light_score ?? avgPerfLightFromPages) || 0) >= 50 ? 'warn' : 'bad',
         },
         {
             metric: 'Orphan pages',
