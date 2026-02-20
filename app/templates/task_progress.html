@@ -2942,6 +2942,10 @@ function generateSiteAuditProHTML(result) {
     const batchUrlsCount = Number(result.batch_urls_count || artifactsMeta.batch_urls_requested || 0);
     const topPagerank = (pipeline.pagerank || []).slice(0, 5);
     const clusters = pipeline.topic_clusters || [];
+    const duplicates = pipeline.duplicates || {};
+    const duplicateTitleGroups = Array.isArray(duplicates.title_groups) ? duplicates.title_groups : [];
+    const duplicateDescriptionGroups = Array.isArray(duplicates.description_groups) ? duplicates.description_groups : [];
+    const semanticMap = Array.isArray(pipeline.semantic_linking_map) ? pipeline.semantic_linking_map : [];
     const topRecommendations = pages.map(p => p.recommendation).filter(Boolean).slice(0, 6);
     const topFixPages = pages
         .map((p) => ({
@@ -2957,6 +2961,8 @@ function generateSiteAuditProHTML(result) {
     const score = Number(summary.score ?? 0);
     const scorePct = Math.max(0, Math.min(100, Math.round(score)));
     const issueLoadPct = pagesCount > 0 ? Math.min(100, Math.round((totalIssues / pagesCount) * 10)) : 0;
+    const crawlRiskHigh = Number(metrics.crawl_budget_high_risk ?? 0);
+    const crawlRiskMedium = Number(metrics.crawl_budget_medium_risk ?? 0);
 
     const pagerankHtml = topPagerank.map(p => `
         <div class="flex items-center justify-between text-sm py-1 border-b border-gray-100">
@@ -2991,6 +2997,25 @@ function generateSiteAuditProHTML(result) {
             <td class="py-2 pr-2 text-sm font-medium">${escapeHtml(row.health.toFixed(1))}</td>
             <td class="py-2 pr-2 text-sm font-medium">${escapeHtml(row.issues)}</td>
             <td class="py-2 pr-2 text-xs text-slate-700">${escapeHtml(row.recommendation || '-')}</td>
+        </tr>
+    `).join('');
+    const duplicateTitleHtml = duplicateTitleGroups.slice(0, 5).map((g) => `
+        <div class="text-sm py-2 border-b border-slate-100">
+            <div class="font-medium truncate">${escapeHtml(g.value || '')}</div>
+            <div class="text-xs text-slate-500">URLs: ${escapeHtml((g.urls || []).length)}</div>
+        </div>
+    `).join('');
+    const duplicateDescriptionHtml = duplicateDescriptionGroups.slice(0, 5).map((g) => `
+        <div class="text-sm py-2 border-b border-slate-100">
+            <div class="font-medium truncate">${escapeHtml(g.value || '')}</div>
+            <div class="text-xs text-slate-500">URLs: ${escapeHtml((g.urls || []).length)}</div>
+        </div>
+    `).join('');
+    const semanticRowsHtml = semanticMap.slice(0, 8).map((row) => `
+        <tr class="border-b border-slate-100 align-top">
+            <td class="py-2 pr-2 text-xs break-all">${escapeHtml(row.source_url || row.source || '-')}</td>
+            <td class="py-2 pr-2 text-xs break-all">${escapeHtml(row.target_url || row.target || '-')}</td>
+            <td class="py-2 pr-2 text-xs">${escapeHtml(row.anchor || row.term || '-')}</td>
         </tr>
     `).join('');
 
@@ -3104,6 +3129,62 @@ function generateSiteAuditProHTML(result) {
                     </thead>
                     <tbody>
                         ${topFixRowsHtml || '<tr><td colspan="4" class="py-3 text-sm text-slate-500">No page-level rows available.</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Crawl Budget Risk</h4>
+                    <div class="grid grid-cols-2 gap-3 text-sm">
+                        <div class="rounded-lg border border-rose-200 bg-rose-50 p-3">
+                            <div class="text-rose-700">High risk pages</div>
+                            <div class="text-xl font-semibold text-rose-800">${escapeHtml(crawlRiskHigh)}</div>
+                        </div>
+                        <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                            <div class="text-amber-700">Medium risk pages</div>
+                            <div class="text-xl font-semibold text-amber-800">${escapeHtml(crawlRiskMedium)}</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Duplicate Groups</h4>
+                    <div class="grid grid-cols-2 gap-3 text-sm">
+                        <div class="rounded-lg border bg-slate-50 p-3 text-center">
+                            <div class="text-slate-500 text-xs">Title groups</div>
+                            <div class="text-lg font-semibold">${escapeHtml(duplicateTitleGroups.length)}</div>
+                        </div>
+                        <div class="rounded-lg border bg-slate-50 p-3 text-center">
+                            <div class="text-slate-500 text-xs">Description groups</div>
+                            <div class="text-lg font-semibold">${escapeHtml(duplicateDescriptionGroups.length)}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Top Duplicate Titles</h4>
+                    ${duplicateTitleHtml || '<div class="text-sm text-slate-500">No duplicate title groups.</div>'}
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Top Duplicate Descriptions</h4>
+                    ${duplicateDescriptionHtml || '<div class="text-sm text-slate-500">No duplicate description groups.</div>'}
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
+                <h4 class="font-semibold mb-3">Semantic Linking Opportunities</h4>
+                <table class="w-full min-w-[760px]">
+                    <thead>
+                        <tr class="text-left text-xs text-slate-500 border-b">
+                            <th class="py-2 pr-2">Source</th>
+                            <th class="py-2 pr-2">Target</th>
+                            <th class="py-2 pr-2">Anchor</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${semanticRowsHtml || '<tr><td colspan="3" class="py-3 text-sm text-slate-500">No semantic linking rows in payload.</td></tr>'}
                     </tbody>
                 </table>
             </div>
