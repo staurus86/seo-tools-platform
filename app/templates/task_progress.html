@@ -679,6 +679,13 @@ function updateSiteAuditProIssuesOwner(value) {
     renderSiteAuditProIssuesExplorer();
 }
 
+function applySiteProOwnerPreset(owner) {
+    siteAuditProIssuesState.owner = String(owner || 'all');
+    const ownerInput = document.getElementById('sitepro-issues-owner');
+    if (ownerInput) ownerInput.value = siteAuditProIssuesState.owner;
+    renderSiteAuditProIssuesExplorer();
+}
+
 function applySiteProIssuePreset(query, mode = 'all') {
     siteAuditProIssuesState.filter = String(mode || 'all').toLowerCase();
     siteAuditProIssuesState.query = String(query || '');
@@ -2962,6 +2969,8 @@ function generateSiteAuditProHTML(result) {
     const metrics = pipeline.metrics || {};
     const chunkManifest = (r.artifacts || {}).chunk_manifest || {};
     const artifactsMeta = r.artifacts || {};
+    const crawlBudgetSummary = artifactsMeta.crawl_budget_summary || {};
+    const homepageSecurity = artifactsMeta.homepage_security || {};
     const mode = r.mode || result.mode || 'quick';
     const isBatchMode = Boolean(result.batch_mode || artifactsMeta.batch_mode);
     const batchUrlsCount = Number(result.batch_urls_count || artifactsMeta.batch_urls_requested || 0);
@@ -2971,11 +2980,25 @@ function generateSiteAuditProHTML(result) {
     const duplicateTitleGroups = Array.isArray(duplicates.title_groups) ? duplicates.title_groups : [];
     const duplicateDescriptionGroups = Array.isArray(duplicates.description_groups) ? duplicates.description_groups : [];
     const semanticMap = Array.isArray(pipeline.semantic_linking_map) ? pipeline.semantic_linking_map : [];
+    const pagesCount = Number(summary.total_pages ?? pages.length ?? 0);
+    const totalPagesBase = Math.max(1, pagesCount);
+    const totalIssuesBase = Math.max(1, issues.length);
     const normalizeRecommendationText = (text) => String(text || '')
         .toLowerCase()
         .replace(/[^\w\s]/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
+    const issueFamilyByCode = (code) => {
+        const codeL = String(code || '').toLowerCase();
+        if (/(title|meta|h1|canonical|robots|viewport|charset|schema|structured)/.test(codeL)) return 'OnPage+Structured';
+        if (/(http_status|https|cache|compression|security|mixed_content|crawl_budget|redirect)/.test(codeL)) return 'Technical';
+        if (/(thin_content|duplicate_content|ai_|hidden_content|cloaking|cta|list|table|content)/.test(codeL)) return 'Content+AI';
+        if (/(anchor|link|orphan|pagerank)/.test(codeL)) return 'LinkGraph';
+        if (/(image|alt|webp|avif|external)/.test(codeL)) return 'Images+External';
+        if (/(hierarchy|heading|h1_hierarchy)/.test(codeL)) return 'Hierarchy';
+        if (/(keyword|tf_idf|intent|cannibal)/.test(codeL)) return 'Keywords';
+        return 'Other';
+    };
     const ownerHintByCode = (code) => {
         const codeL = String(code || '').toLowerCase();
         if (/(title|meta|h1|keyword|content|ai_|duplicate_)/.test(codeL)) return 'Content+SEO';
@@ -3005,6 +3028,19 @@ function generateSiteAuditProHTML(result) {
         if (codeL.includes('security') || codeL.includes('https')) return 'Close technical security/header issues.';
         return 'Prioritize this issue type and apply template-level fixes.';
     };
+    const recommendationThemeFromText = (text) => {
+        const t = normalizeRecommendationText(text);
+        if (!t) return { key: 'general', label: 'General SEO', action: 'Prioritize fixes by impact and severity.' };
+        if (/(title|meta)/.test(t)) return { key: 'metadata', label: 'Metadata quality', action: 'Improve title/meta uniqueness and quality across templates.' };
+        if (/(h1|heading|hierarchy)/.test(t)) return { key: 'heading_structure', label: 'Heading structure', action: 'Normalize heading hierarchy and enforce one clear H1.' };
+        if (/(canonical|index|robots|crawl|redirect|http status)/.test(t)) return { key: 'indexing_flow', label: 'Indexing flow', action: 'Fix indexing signals and reduce crawl waste.' };
+        if (/(schema|structured)/.test(t)) return { key: 'structured_data', label: 'Structured data', action: 'Fix schema coverage/validation on key templates.' };
+        if (/(image|alt|lazy|webp|avif)/.test(t)) return { key: 'image_pipeline', label: 'Image pipeline', action: 'Fix ALT coverage and image optimization issues.' };
+        if (/(anchor|link|orphan)/.test(t)) return { key: 'internal_links', label: 'Internal links', action: 'Improve internal links and anchor relevance for hubs.' };
+        if (/(security|https|header|cache|compression)/.test(t)) return { key: 'platform_infra', label: 'Platform infra', action: 'Close infrastructure and security-level SEO issues.' };
+        if (/(duplicate|thin|content|keyword|ai)/.test(t)) return { key: 'content_model', label: 'Content model', action: 'Improve content uniqueness, depth and intent coverage.' };
+        return { key: `custom:${t.slice(0, 80)}`, label: 'General SEO', action: String(text || '').trim() || 'General SEO improvements.' };
+    };
     const issuesByUrl = {};
     issues.forEach((issue) => {
         const url = String(issue.url || '');
@@ -3013,35 +3049,18 @@ function generateSiteAuditProHTML(result) {
         issuesByUrl[url].push(issue);
     });
 
-    const recommendationMap = new Map();
-    pages.forEach((page) => {
-        const rec = String(page.recommendation || '').trim();
-        if (!rec) return;
-        const key = normalizeRecommendationText(rec);
-        if (!key) return;
-        const url = String(page.url || '');
-        const pageIssues = issuesByUrl[url] || [];
-        const critical = pageIssues.filter(i => String(i.severity || '').toLowerCase() === 'critical').length;
-        const warning = pageIssues.filter(i => String(i.severity || '').toLowerCase() === 'warning').length;
-        const info = pageIssues.filter(i => String(i.severity || '').toLowerCase() === 'info').length;
-        if (!recommendationMap.has(key)) {
-            recommendationMap.set(key, { action: rec, affectedUrls: new Set(), critical: 0, warning: 0, info: 0 });
-        }
-        const bucket = recommendationMap.get(key);
-        if (url) bucket.affectedUrls.add(url);
-        bucket.critical += critical;
-        bucket.warning += warning;
-        bucket.info += info;
-    });
-
     const issueCodeStatsMap = new Map();
     const clusterStatsMap = new Map();
     const ownerStatsMap = new Map();
+    const issueFamilyStatsMap = new Map();
+    const groupedIssuesByCode = new Map();
     issues.forEach((issue) => {
         const code = String(issue.code || 'unknown');
         const severity = String(issue.severity || 'info').toLowerCase();
         const cluster = rootCauseCluster(code);
         const owner = ownerHintByCode(code);
+        const family = issueFamilyByCode(code);
+        const url = String(issue.url || '');
         if (!issueCodeStatsMap.has(code)) issueCodeStatsMap.set(code, { code, count: 0, critical: 0, warning: 0, info: 0 });
         const codeRow = issueCodeStatsMap.get(code);
         codeRow.count += 1;
@@ -3050,19 +3069,99 @@ function generateSiteAuditProHTML(result) {
         clusterStatsMap.get(cluster).count += 1;
         if (!ownerStatsMap.has(owner)) ownerStatsMap.set(owner, { owner, count: 0 });
         ownerStatsMap.get(owner).count += 1;
+        if (!issueFamilyStatsMap.has(family)) issueFamilyStatsMap.set(family, { family, count: 0 });
+        issueFamilyStatsMap.get(family).count += 1;
+        if (!groupedIssuesByCode.has(code)) {
+            groupedIssuesByCode.set(code, { code, critical: 0, warning: 0, info: 0, urls: new Set() });
+        }
+        const grouped = groupedIssuesByCode.get(code);
+        grouped[severity] = (grouped[severity] || 0) + 1;
+        if (url) grouped.urls.add(url);
     });
 
-    issueCodeStatsMap.forEach((row) => {
-        const key = normalizeRecommendationText(issueActionByCode(row.code));
-        if (!recommendationMap.has(key)) {
-            recommendationMap.set(key, {
-                action: issueActionByCode(row.code),
+    const issueActionPlan = Array.from(groupedIssuesByCode.values()).map((row) => {
+        const critical = Number(row.critical || 0);
+        const warning = Number(row.warning || 0);
+        const info = Number(row.info || 0);
+        const topSeverity = critical > 0 ? 'critical' : warning > 0 ? 'warning' : 'info';
+        const affectedPages = row.urls.size;
+        const sharePct = Number(((affectedPages / totalPagesBase) * 100).toFixed(1));
+        const impactScore = Number(((critical * 3.0) + (warning * 2.0) + info + (sharePct / 10.0)).toFixed(1));
+        const effort = topSeverity === 'critical' ? 'M' : 'S';
+        const roiScore = Number((impactScore / (effort === 'M' ? 1.3 : 1.0)).toFixed(1));
+        const sprintBucket = roiScore >= 25 ? 'Now' : roiScore >= 10 ? 'Next' : 'Later';
+        const action = issueActionByCode(row.code);
+        const theme = recommendationThemeFromText(action);
+        return {
+            code: row.code,
+            topSeverity,
+            affectedPages,
+            sharePct,
+            critical,
+            warning,
+            info,
+            impactScore,
+            effort,
+            roiScore,
+            sprintBucket,
+            owner: ownerHintByCode(row.code),
+            rootCause: rootCauseCluster(row.code),
+            recommendation: action,
+            representativeUrls: Array.from(row.urls).slice(0, 5),
+            themeKey: theme.key,
+            themeLabel: theme.label,
+            themeAction: theme.action,
+        };
+    }).sort((a, b) =>
+        (b.impactScore - a.impactScore) ||
+        (b.critical - a.critical) ||
+        (b.warning - a.warning)
+    );
+
+    const recommendationMap = new Map();
+    issueActionPlan.forEach((row) => {
+        if (!recommendationMap.has(row.themeKey)) {
+            recommendationMap.set(row.themeKey, {
+                action: row.themeAction,
+                theme: row.themeLabel,
                 affectedUrls: new Set(),
-                critical: row.critical || 0,
-                warning: row.warning || 0,
-                info: row.info || 0,
+                critical: 0,
+                warning: 0,
+                info: 0,
+                sourceCodes: new Set(),
             });
         }
+        const bucket = recommendationMap.get(row.themeKey);
+        row.representativeUrls.forEach((u) => bucket.affectedUrls.add(u));
+        bucket.critical += row.critical;
+        bucket.warning += row.warning;
+        bucket.info += row.info;
+        bucket.sourceCodes.add(row.code);
+    });
+
+    pages.forEach((page) => {
+        const rec = String(page.recommendation || '').trim();
+        if (!rec) return;
+        const theme = recommendationThemeFromText(rec);
+        const url = String(page.url || '');
+        const pageIssues = issuesByUrl[url] || [];
+        if (!recommendationMap.has(theme.key)) {
+            recommendationMap.set(theme.key, {
+                action: theme.action,
+                theme: theme.label,
+                affectedUrls: new Set(),
+                critical: 0,
+                warning: 0,
+                info: 0,
+                sourceCodes: new Set(),
+            });
+        }
+        const bucket = recommendationMap.get(theme.key);
+        if (url) bucket.affectedUrls.add(url);
+        pageIssues.forEach((i) => {
+            const code = String(i.code || '').trim();
+            if (code) bucket.sourceCodes.add(code);
+        });
     });
 
     const actionableRecommendations = Array.from(recommendationMap.values())
@@ -3070,6 +3169,7 @@ function generateSiteAuditProHTML(result) {
             ...row,
             affectedCount: row.affectedUrls.size,
             urlsPreview: Array.from(row.affectedUrls).slice(0, 3),
+            codesPreview: Array.from(row.sourceCodes).slice(0, 4),
         }))
         .sort((a, b) =>
             (b.critical - a.critical) ||
@@ -3079,6 +3179,7 @@ function generateSiteAuditProHTML(result) {
         .slice(0, 10);
 
     const issueCodeStats = Array.from(issueCodeStatsMap.values())
+        .map((row) => ({ ...row, sharePct: Number(((row.count / totalIssuesBase) * 100).toFixed(1)) }))
         .sort((a, b) => (b.count - a.count))
         .slice(0, 8);
     const clusterStats = Array.from(clusterStatsMap.values())
@@ -3087,6 +3188,10 @@ function generateSiteAuditProHTML(result) {
     const ownerStats = Array.from(ownerStatsMap.values())
         .sort((a, b) => (b.count - a.count))
         .slice(0, 6);
+    const issueFamilyStats = Array.from(issueFamilyStatsMap.values())
+        .map((row) => ({ ...row, sharePct: Number(((row.count / totalIssuesBase) * 100).toFixed(1)) }))
+        .sort((a, b) => (b.count - a.count))
+        .slice(0, 7);
     const criticalPages = pages
         .map((page) => {
             const url = String(page.url || '');
@@ -3098,6 +3203,12 @@ function generateSiteAuditProHTML(result) {
         .filter((row) => row.critical > 0 || row.warning > 0)
         .sort((a, b) => (b.critical - a.critical) || (b.warning - a.warning))
         .slice(0, 8);
+    const criticalPagesAllCount = pages.filter((page) => {
+        const url = String(page.url || '');
+        const pageIssues = issuesByUrl[url] || [];
+        return pageIssues.some((i) => String(i.severity || '').toLowerCase() === 'critical');
+    }).length;
+    const criticalPagesPct = Number(((criticalPagesAllCount / totalPagesBase) * 100).toFixed(1));
     const topFixPages = pages
         .map((p) => ({
             url: p.url || '',
@@ -3107,13 +3218,13 @@ function generateSiteAuditProHTML(result) {
         }))
         .sort((a, b) => (b.issues - a.issues) || (a.health - b.health))
         .slice(0, 10);
-    const pagesCount = Number(summary.total_pages ?? pages.length ?? 0);
     const totalIssues = Number(summary.issues_total ?? issues.length ?? 0);
     const score = Number(summary.score ?? 0);
     const scorePct = Math.max(0, Math.min(100, Math.round(score)));
     const issueLoadPct = pagesCount > 0 ? Math.min(100, Math.round((totalIssues / pagesCount) * 10)) : 0;
     const crawlRiskHigh = Number(metrics.crawl_budget_high_risk ?? 0);
     const crawlRiskMedium = Number(metrics.crawl_budget_medium_risk ?? 0);
+    const boolLabel = (value) => value === true ? 'Yes' : value === false ? 'No' : 'n/a';
 
     const pagerankHtml = topPagerank.map(p => `
         <div class="flex items-center justify-between text-sm py-1 border-b border-gray-100">
@@ -3175,6 +3286,7 @@ function generateSiteAuditProHTML(result) {
                 <button type="button" onclick="applySiteProIssuePreset('${escapeHtml(String(row.code || '').replace(/'/g, '\\\''))}')" class="text-indigo-700 hover:text-indigo-900 underline">${escapeHtml(row.code)}</button>
             </td>
             <td class="py-2 pr-2 text-xs font-medium">${escapeHtml(row.count)}</td>
+            <td class="py-2 pr-2 text-xs text-slate-600">${escapeHtml(row.sharePct)}%</td>
             <td class="py-2 pr-2 text-xs text-red-700">${escapeHtml(row.critical || 0)}</td>
             <td class="py-2 pr-2 text-xs text-amber-700">${escapeHtml(row.warning || 0)}</td>
             <td class="py-2 pr-2 text-xs text-blue-700">${escapeHtml(row.info || 0)}</td>
@@ -3188,8 +3300,15 @@ function generateSiteAuditProHTML(result) {
     `).join('');
     const ownerRowsHtml = ownerStats.map((row) => `
         <div class="flex items-center justify-between py-1.5 border-b border-slate-100 text-sm">
-            <span>${escapeHtml(row.owner)}</span>
+            <button type="button" onclick="applySiteProOwnerPreset('${escapeHtml(String(row.owner || '').replace(/'/g, '\\\''))}')" class="text-indigo-700 hover:text-indigo-900 underline text-left">${escapeHtml(row.owner)}</button>
             <span class="font-semibold">${escapeHtml(row.count)}</span>
+        </div>
+    `).join('');
+    const issueFamilyCardsHtml = issueFamilyStats.map((row) => `
+        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div class="text-xs uppercase tracking-wide text-slate-500">${escapeHtml(row.family)}</div>
+            <div class="mt-1 text-lg font-semibold text-slate-900">${escapeHtml(row.count)}</div>
+            <div class="text-xs text-slate-600">${escapeHtml(row.sharePct)}% of all issues</div>
         </div>
     `).join('');
     const criticalPagesRowsHtml = criticalPages.map((row) => `
@@ -3201,10 +3320,28 @@ function generateSiteAuditProHTML(result) {
     `).join('');
     const recommendationCardsHtml = actionableRecommendations.map((row) => `
         <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div class="inline-flex items-center px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[11px] mb-1">${escapeHtml(row.theme || 'General SEO')}</div>
             <div class="text-sm font-medium text-slate-900">${escapeHtml(row.action)}</div>
             <div class="mt-1 text-xs text-slate-600">Affected pages: ${escapeHtml(row.affectedCount)} | C:${escapeHtml(row.critical)} W:${escapeHtml(row.warning)} I:${escapeHtml(row.info)}</div>
+            <div class="mt-1 text-xs text-slate-500">Issue types: ${escapeHtml(row.codesPreview.join(', ') || '-')}</div>
             <div class="mt-2 text-xs text-slate-500">${row.urlsPreview.map((u) => `<div class="break-all">${escapeHtml(u)}</div>`).join('') || '<div>-</div>'}</div>
         </div>
+    `).join('');
+    const actionPlanRowsHtml = issueActionPlan.slice(0, 12).map((row, idx) => `
+        <tr class="border-b border-slate-100 align-top">
+            <td class="py-2 pr-2 text-xs font-semibold">${escapeHtml(idx + 1)}</td>
+            <td class="py-2 pr-2 text-xs">
+                <button type="button" onclick="applySiteProIssuePreset('${escapeHtml(String(row.code || '').replace(/'/g, '\\\''))}')" class="text-indigo-700 hover:text-indigo-900 underline">${escapeHtml(row.code)}</button>
+            </td>
+            <td class="py-2 pr-2 text-xs">
+                <span class="px-2 py-0.5 rounded-full ${row.topSeverity === 'critical' ? 'bg-rose-100 text-rose-700' : row.topSeverity === 'warning' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}">${escapeHtml(row.topSeverity)}</span>
+            </td>
+            <td class="py-2 pr-2 text-xs">${escapeHtml(row.affectedPages)} (${escapeHtml(row.sharePct)}%)</td>
+            <td class="py-2 pr-2 text-xs font-medium">${escapeHtml(row.impactScore)}</td>
+            <td class="py-2 pr-2 text-xs">${escapeHtml(row.owner)}</td>
+            <td class="py-2 pr-2 text-xs">${escapeHtml(row.sprintBucket)}</td>
+            <td class="py-2 pr-2 text-xs text-slate-700">${escapeHtml(row.recommendation)}</td>
+        </tr>
     `).join('');
     const nowRoadmap = actionableRecommendations
         .filter((row) => row.critical > 0)
@@ -3324,20 +3461,62 @@ function generateSiteAuditProHTML(result) {
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Executive Risk Snapshot</h4>
+                    <div class="grid grid-cols-2 gap-3 text-sm">
+                        <div class="rounded-lg border border-rose-200 bg-rose-50 p-3">
+                            <div class="text-rose-700">Critical pages</div>
+                            <div class="text-xl font-semibold text-rose-800">${escapeHtml(criticalPagesAllCount)}</div>
+                            <div class="text-xs text-rose-700">${escapeHtml(criticalPagesPct)}% of scanned pages</div>
+                        </div>
+                        <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                            <div class="text-amber-700">Parameterized URLs</div>
+                            <div class="text-xl font-semibold text-amber-800">${escapeHtml(crawlBudgetSummary.parameterized_urls ?? 0)}</div>
+                            <div class="text-xs text-amber-700">Potential crawl waste</div>
+                        </div>
+                        <div class="rounded-lg border border-sky-200 bg-sky-50 p-3">
+                            <div class="text-sky-700">Deep path URLs</div>
+                            <div class="text-xl font-semibold text-sky-800">${escapeHtml(crawlBudgetSummary.deep_path_urls ?? 0)}</div>
+                            <div class="text-xs text-sky-700">Depth >= 4</div>
+                        </div>
+                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                            <div class="text-slate-700">High / Medium crawl risk</div>
+                            <div class="text-xl font-semibold text-slate-900">${escapeHtml(crawlBudgetSummary.high_risk_urls ?? 0)} / ${escapeHtml(crawlBudgetSummary.medium_risk_urls ?? 0)}</div>
+                            <div class="text-xs text-slate-600">From crawl budget model</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Homepage Security Snapshot</h4>
+                    <div class="grid grid-cols-2 gap-3 text-sm">
+                        <div><span class="text-gray-600">Headers score:</span> <span class="font-medium">${escapeHtml(homepageSecurity.security_headers_score ?? 'n/a')}</span></div>
+                        <div><span class="text-gray-600">Mixed content:</span> <span class="font-medium">${escapeHtml(homepageSecurity.mixed_content_count ?? 0)}</span></div>
+                        <div><span class="text-gray-600">CSP:</span> <span class="font-medium">${boolLabel(homepageSecurity.csp_present)}</span></div>
+                        <div><span class="text-gray-600">HSTS:</span> <span class="font-medium">${boolLabel(homepageSecurity.hsts_present)}</span></div>
+                        <div><span class="text-gray-600">X-Frame-Options:</span> <span class="font-medium">${boolLabel(homepageSecurity.x_frame_options_present)}</span></div>
+                        <div><span class="text-gray-600">Referrer-Policy:</span> <span class="font-medium">${boolLabel(homepageSecurity.referrer_policy_present)}</span></div>
+                        <div><span class="text-gray-600">Permissions-Policy:</span> <span class="font-medium">${boolLabel(homepageSecurity.permissions_policy_present)}</span></div>
+                        <div><span class="text-gray-600">URL:</span> <span class="font-medium break-all">${escapeHtml(homepageSecurity.url || result.url || '-')}</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
                     <h4 class="font-semibold mb-3">Issue Types Overview</h4>
-                    <table class="w-full min-w-[560px]">
+                    <table class="w-full min-w-[620px]">
                         <thead>
                             <tr class="text-left text-xs text-slate-500 border-b">
                                 <th class="py-2 pr-2">Code</th>
                                 <th class="py-2 pr-2">Total</th>
+                                <th class="py-2 pr-2">Share</th>
                                 <th class="py-2 pr-2">Critical</th>
                                 <th class="py-2 pr-2">Warning</th>
                                 <th class="py-2 pr-2">Info</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${issueTypeRowsHtml || '<tr><td colspan="5" class="py-3 text-sm text-slate-500">No issue codes in payload.</td></tr>'}
+                            ${issueTypeRowsHtml || '<tr><td colspan="6" class="py-3 text-sm text-slate-500">No issue codes in payload.</td></tr>'}
                         </tbody>
                     </table>
                 </div>
@@ -3351,6 +3530,34 @@ function generateSiteAuditProHTML(result) {
                         ${ownerRowsHtml || '<div class="text-sm text-slate-500">No owner breakdown available.</div>'}
                     </div>
                 </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h4 class="font-semibold mb-3">Issue Family Distribution</h4>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    ${issueFamilyCardsHtml || '<div class="text-sm text-slate-500">No issue family stats available.</div>'}
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
+                <h4 class="font-semibold mb-3">Action Plan by Issue Type</h4>
+                <table class="w-full min-w-[980px]">
+                    <thead>
+                        <tr class="text-left text-xs text-slate-500 border-b">
+                            <th class="py-2 pr-2">#</th>
+                            <th class="py-2 pr-2">Issue code</th>
+                            <th class="py-2 pr-2">Severity</th>
+                            <th class="py-2 pr-2">Affected pages</th>
+                            <th class="py-2 pr-2">Impact</th>
+                            <th class="py-2 pr-2">Owner</th>
+                            <th class="py-2 pr-2">Sprint</th>
+                            <th class="py-2 pr-2">Recommendation</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${actionPlanRowsHtml || '<tr><td colspan="8" class="py-3 text-sm text-slate-500">No action plan rows available.</td></tr>'}
+                    </tbody>
+                </table>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
