@@ -2214,6 +2214,7 @@ function generateBotHTML(result) {
     const categoryStats = r.category_stats || [];
     const issues = r.issues || [];
     const blockers = r.priority_blockers || [];
+    const playbooks = r.playbooks || [];
     const botRows = r.bot_rows || [];
     const criticalCategories = new Set(['Google', 'Yandex', 'Bing', 'Search']);
 
@@ -2273,6 +2274,18 @@ function generateBotHTML(result) {
             </div>
         `).join('')
         : '<div class="text-sm text-gray-500">No prioritized blockers found.</div>';
+
+    const playbooksHtml = playbooks.length > 0
+        ? playbooks.slice(0, 12).map((p) => `
+            <div class="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm">
+                <div class="font-semibold text-sky-900">${p.title || 'Action plan'}</div>
+                <div class="text-sky-800">Owner: ${p.owner || 'team'} | Type: ${p.type || 'general'}</div>
+                <ul class="list-disc pl-5 mt-2 text-sky-900">
+                    ${(p.actions || []).slice(0, 5).map((a) => `<li>${a}</li>`).join('') || '<li>No actions listed.</li>'}
+                </ul>
+            </div>
+        `).join('')
+        : '<div class="text-sm text-gray-500">No playbooks generated.</div>';
 
     const issueRows = issues.slice(0, 20).map(i => `
         <div class="py-2 border-b text-sm">
@@ -2385,6 +2398,13 @@ function generateBotHTML(result) {
                 <h4 class="font-semibold mb-2">Priority Blockers (by bot criticality)</h4>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     ${blockersHtml}
+                </div>
+            </div>
+
+            <div class="border-t pt-4 mt-4">
+                <h4 class="font-semibold mb-2">Playbooks</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    ${playbooksHtml}
                 </div>
             </div>
 

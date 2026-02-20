@@ -33,9 +33,9 @@ try:
     from fastapi.templating import Jinja2Templates
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import HTMLResponse
-    logger.info("✓ FastAPI imported successfully")
+    logger.info("[OK] FastAPI imported successfully")
 except Exception as e:
-    logger.error(f"✗ FastAPI import failed: {e}")
+    logger.error(f"[ERROR] FastAPI import failed: {e}")
     import traceback
     traceback.print_exc()
     raise
@@ -44,9 +44,9 @@ except Exception as e:
 try:
     logger.info("Importing app.config...")
     from app.config import settings
-    logger.info(f"✓ Config loaded: PORT={settings.PORT}, HOST={settings.HOST}")
+    logger.info(f"[OK] Config loaded: PORT={settings.PORT}, HOST={settings.HOST}")
 except Exception as e:
-    logger.error(f"✗ Config import failed: {e}")
+    logger.error(f"[ERROR] Config import failed: {e}")
     import traceback
     traceback.print_exc()
     raise
@@ -55,9 +55,9 @@ except Exception as e:
 try:
     logger.info("Importing app.api.routes...")
     from app.api.routes import router as api_router
-    logger.info("✓ Routes imported successfully")
+    logger.info("[OK] Routes imported successfully")
 except Exception as e:
-    logger.error(f"✗ Routes import failed: {e}")
+    logger.error(f"[ERROR] Routes import failed: {e}")
     import traceback
     traceback.print_exc()
     raise
@@ -90,7 +90,7 @@ for path in static_paths:
         logger.info(f"Trying static path: {path}")
         if os.path.exists(path):
             app.mount("/static", StaticFiles(directory=path), name="static")
-            logger.info(f"✓ Static files mounted from: {path}")
+            logger.info(f"[OK] Static files mounted from: {path}")
             static_mounted = True
             break
         else:
@@ -99,7 +99,7 @@ for path in static_paths:
         logger.warning(f"Failed to mount static from {path}: {e}")
 
 if not static_mounted:
-    logger.error("✗ Could not mount static files from any path")
+    logger.error("[ERROR] Could not mount static files from any path")
 
 # Templates - try multiple paths for different environments
 templates = None
@@ -110,7 +110,7 @@ for path in template_paths:
         logger.info(f"Trying templates path: {path}")
         if os.path.exists(path):
             templates = Jinja2Templates(directory=path)
-            logger.info(f"✓ Templates configured from: {path}")
+            logger.info(f"[OK] Templates configured from: {path}")
             break
         else:
             logger.warning(f"Path does not exist: {path}")
@@ -118,14 +118,14 @@ for path in template_paths:
         logger.warning(f"Failed to load templates from {path}: {e}")
 
 if templates is None:
-    logger.error("✗ Could not load templates from any path")
+    logger.error("[ERROR] Could not load templates from any path")
 
 # API routes
 app.include_router(api_router)
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    """Главная страница с инструментами"""
+    """Main page with tools."""
     if templates:
         return templates.TemplateResponse("index.html", {"request": request})
     return HTMLResponse("<h1>SEO Tools Platform</h1><p>Templates not loaded</p>")
@@ -133,7 +133,7 @@ async def index(request: Request):
 
 @app.get("/results/{task_id}", response_class=HTMLResponse)
 async def results_page(request: Request, task_id: str):
-    """Страница результатов"""
+    """Results page."""
     if templates:
         return templates.TemplateResponse(
             "task_progress.html", 
@@ -198,3 +198,4 @@ if __name__ == "__main__":
         port=settings.PORT,
         reload=settings.DEBUG
     )
+
