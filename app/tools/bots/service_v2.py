@@ -555,6 +555,7 @@ class BotAccessibilityServiceV2:
         headers = {k.lower(): v for k, v in ((response.headers if response is not None else {}) or {}).items()}
         body = (html_head or "").lower()
         err = (error or "").lower()
+        status_code = int(getattr(response, "status_code", 0) or 0) if response is not None else 0
 
         provider = ""
         reason = ""
@@ -573,19 +574,35 @@ class BotAccessibilityServiceV2:
             provider = provider or "DDoS protection"
             confidence = max(confidence, 0.7)
 
-        body_markers = [
+        strong_body_markers = [
+            "attention required",
+            "verify you are human",
+            "captcha",
+            "cf-chl",
+            "cloudflare ray id",
+            "ddos protection by",
+            "access denied | sucuri website firewall",
+        ]
+        weak_body_markers = [
             "access denied",
             "request blocked",
-            "captcha",
-            "attention required",
             "security check",
-            "verify you are human",
             "automated queries",
             "forbidden",
         ]
-        if any(m in body for m in body_markers):
-            reason = "challenge/block page signature in response body"
-            confidence = max(confidence, 0.85)
+        has_strong_marker = any(m in body for m in strong_body_markers)
+        weak_hits = sum(1 for m in weak_body_markers if m in body)
+        if has_strong_marker:
+            reason = "strong challenge signature in response body"
+            confidence = max(confidence, 0.9)
+        elif weak_hits > 0:
+            # Weak markers alone are not enough on successful pages.
+            if status_code in (401, 403, 429, 503):
+                reason = "challenge/block hints in response body with restrictive status"
+                confidence = max(confidence, 0.75)
+            elif provider:
+                reason = "weak challenge hints in response body"
+                confidence = max(confidence, 0.45)
         if "ssl" in err and "handshake" in err:
             reason = reason or "tls handshake blocked"
             confidence = max(confidence, 0.65)
@@ -979,6 +996,14 @@ class BotAccessibilityServiceV2:
                 "weighted": 0.0,
                 "bots": [],
             },
+            "waf_challenge": {
+                "code": "waf_challenge",
+                "title": "WAF/CDN challenge for bots",
+                "details": "Challenge pages or anti-bot checks affect crawler rendering/indexing.",
+                "count": 0,
+                "weighted": 0.0,
+                "bots": [],
+            },
         }
 
         for row in rows:
@@ -1016,7 +1041,7 @@ class BotAccessibilityServiceV2:
             if row.get("x_robots_forbidden") or row.get("meta_forbidden"):
                 add("indexing_directive")
             if (row.get("waf_cdn_signal", {}) or {}).get("detected"):
-                add("unreachable")
+                add("waf_challenge")
 
         blockers: List[Dict[str, Any]] = []
         for bucket in buckets.values():
@@ -1073,6 +1098,15 @@ class BotAccessibilityServiceV2:
                     "Audit X-Robots-Tag/meta robots for unintended noindex/nofollow.",
                     "Align directive behavior between templates and middleware.",
                     "Re-test indexability after deploy and confirm in search consoles.",
+                ],
+            },
+            "waf_challenge": {
+                "owner": "DevOps/Platform",
+                "title": "Reduce anti-bot challenge impact",
+                "actions": [
+                    "Exclude verified crawler traffic from JS/captcha challenge flows.",
+                    "Tune WAF rules for bot user-agent + ASN/IP verification.",
+                    "Monitor 403/429/challenge signatures by bot category after rollout.",
                 ],
             },
         }
