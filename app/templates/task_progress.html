@@ -2377,142 +2377,271 @@ function generateSiteAnalysisHTML(result) {
 function generateRenderAuditHTML(result) {
     const r = result.results || result;
     const summary = r.summary || {};
-    const variants = r.variants || [];
-    const issues = r.issues || [];
+    const variants = Array.isArray(r.variants) ? r.variants : [];
+    const issues = Array.isArray(r.issues) ? r.issues : [];
     const mobileVariant = variants.find(v => (v?.profile_type === 'mobile') || v?.mobile === true || v?.variant_id === 'googlebot_mobile');
     const desktopVariant = variants.find(v => (v?.profile_type === 'desktop') || v?.mobile === false || v?.variant_id === 'googlebot_desktop');
+    const score = Number(summary.score ?? 0);
+    const scorePct = Math.max(0, Math.min(100, Math.round(score)));
 
-    const variantDiagnostics = variants.map(v => ({
-        variant_id: v?.variant_id,
-        variant_label: v?.variant_label,
-        profile_type: v?.profile_type,
-        mobile: v?.mobile,
-        issues: (v?.issues || []).length,
-        screenshots: Object.keys(v?.screenshots || {}),
-    }));
-    console.log('[RenderUI] variants diagnostics:', variantDiagnostics);
+    const severityRank = { critical: 0, warning: 1, info: 2 };
+    const severityLabel = (sev) => {
+        const s = String(sev || 'info').toLowerCase();
+        if (s === 'critical') return 'CRITICAL';
+        if (s === 'warning') return 'WARNING';
+        return 'INFO';
+    };
+    const severityBadge = (sev) => {
+        const s = String(sev || 'info').toLowerCase();
+        if (s === 'critical') return 'bg-rose-100 text-rose-700';
+        if (s === 'warning') return 'bg-amber-100 text-amber-700';
+        return 'bg-sky-100 text-sky-700';
+    };
+    const scoreBadgeClass = (value) => value >= 80 ? 'bg-emerald-100 text-emerald-700' : value >= 60 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700';
 
     const screenshotItems = [];
     variants.forEach(v => {
         const shots = v.screenshots || {};
         Object.entries(shots).forEach(([key, shot]) => {
-            if (shot && shot.url) {
-                screenshotItems.push({ src: shot.url, caption: `${v.variant_label || v.variant_id} | ${key}` });
-            }
+            if (shot && shot.url) screenshotItems.push({ src: shot.url, caption: `${v.variant_label || v.variant_id} | ${key}` });
         });
     });
     mobileLightboxItems = screenshotItems;
 
-    const scoreBadgeClass = (score) => score >= 80 ? 'bg-emerald-100 text-emerald-700' : score >= 60 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700';
-    const severityLabel = (sev) => {
-        const s = String(sev || 'info').toLowerCase();
-        if (s === 'critical') return 'КРИТИЧ';
-        if (s === 'warning') return 'ПРЕДУПРЕЖДЕНИЕ';
-        return 'ИНФО';
-    };
-    const profileTypeLabel = (v) => {
-        const profile = String(v?.profile_type || '').toLowerCase();
-        if (profile === 'mobile' || v?.mobile === true) return 'мобильный';
-        if (profile === 'desktop' || v?.mobile === false) return '';
-        return 'неизвестно';
-    };
-    const previewIssues = (arr) => (arr || []).slice(0, 5).map(i => `
-        <li><span class="font-medium ${(i.severity || '') === 'critical' ? 'text-rose-700' : 'text-amber-700'}">${severityLabel(i.severity)}</span> - ${i.title || ''}</li>
+    const issueCodeMap = new Map();
+    issues.forEach((item) => {
+        const code = String(item.code || 'unknown');
+        const sev = String(item.severity || 'info').toLowerCase();
+        if (!issueCodeMap.has(code)) issueCodeMap.set(code, { code, total: 0, critical: 0, warning: 0, info: 0 });
+        const row = issueCodeMap.get(code);
+        row.total += 1;
+        row[sev] = (row[sev] || 0) + 1;
+    });
+    const issueCodeRows = Array.from(issueCodeMap.values())
+        .sort((a, b) => (b.total - a.total))
+        .slice(0, 10);
+
+    const variantRows = variants.map((v) => {
+        const m = v.metrics || {};
+        const seoReq = v.seo_required || {};
+        const shots = Object.keys(v.screenshots || {});
+        return {
+            label: v.variant_label || v.variant_id || '-',
+            profile: v.profile_type || (v.mobile ? 'mobile' : 'desktop'),
+            score: Number(m.score ?? 0),
+            missingTotal: Number(m.total_missing ?? 0),
+            missingPct: Number(m.missing_pct ?? 0),
+            renderMs: Number(v.timings?.rendered_s ?? 0) * 1000,
+            seoFail: Number(seoReq.fail ?? 0),
+            seoWarn: Number(seoReq.warn ?? 0),
+            shots: shots.length,
+        };
+    }).sort((a, b) => (a.score - b.score) || (b.missingPct - a.missingPct));
+
+    const renderGapRowsHtml = variantRows.map((row) => `
+        <tr class="border-b border-slate-100 text-sm">
+            <td class="py-2 pr-2">${escapeHtml(row.label)}</td>
+            <td class="py-2 pr-2">${escapeHtml(row.profile)}</td>
+            <td class="py-2 pr-2"><span class="px-2 py-0.5 rounded-full text-xs ${scoreBadgeClass(row.score)}">${escapeHtml(row.score.toFixed(1))}</span></td>
+            <td class="py-2 pr-2">${escapeHtml(Math.round(row.missingTotal))}</td>
+            <td class="py-2 pr-2">${escapeHtml(row.missingPct.toFixed(1))}%</td>
+            <td class="py-2 pr-2">${escapeHtml(Math.round(row.renderMs))} ms</td>
+            <td class="py-2 pr-2 text-rose-700 font-medium">${escapeHtml(row.seoFail)}</td>
+            <td class="py-2 pr-2 text-amber-700 font-medium">${escapeHtml(row.seoWarn)}</td>
+            <td class="py-2 pr-2">${escapeHtml(row.shots)}</td>
+        </tr>
     `).join('');
+
+    const recommendations = [];
+    const recSeen = new Set();
+    (r.recommendations || []).forEach((rec) => {
+        const text = String(rec || '').trim();
+        const key = text.toLowerCase();
+        if (text && !recSeen.has(key)) {
+            recSeen.add(key);
+            recommendations.push({ text, source: 'summary' });
+        }
+    });
+    issues
+        .slice()
+        .sort((a, b) => (severityRank[String(a.severity || 'info').toLowerCase()] ?? 3) - (severityRank[String(b.severity || 'info').toLowerCase()] ?? 3))
+        .slice(0, 8)
+        .forEach((issue) => {
+            const action = `${issue.title || issue.code || 'Issue'}${issue.variant ? ` (${issue.variant})` : ''}`;
+            const key = action.toLowerCase();
+            if (!recSeen.has(key)) {
+                recSeen.add(key);
+                recommendations.push({ text: action, source: 'issue' });
+            }
+        });
+    const recommendationCardsHtml = recommendations.slice(0, 10).map((row) => `
+        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div class="text-xs text-slate-500 uppercase tracking-wide">${escapeHtml(row.source)}</div>
+            <div class="text-sm font-medium text-slate-900 mt-1">${escapeHtml(row.text)}</div>
+        </div>
+    `).join('');
+
+    const topIssuesHtml = issues
+        .slice()
+        .sort((a, b) => {
+            const sa = String(a.severity || 'info').toLowerCase();
+            const sb = String(b.severity || 'info').toLowerCase();
+            const bySev = (severityRank[sa] ?? 3) - (severityRank[sb] ?? 3);
+            if (bySev !== 0) return bySev;
+            return String(a.code || '').localeCompare(String(b.code || ''));
+        })
+        .slice(0, 20)
+        .map((i) => `
+            <div class="py-2 border-b border-slate-100 text-sm">
+                <div class="flex flex-wrap items-center gap-2 mb-1">
+                    <span class="px-2 py-0.5 rounded-full text-xs ${severityBadge(i.severity)}">${severityLabel(i.severity)}</span>
+                    <span class="font-medium text-slate-800">${escapeHtml(i.code || 'issue')}</span>
+                    <span class="text-xs text-slate-500">${escapeHtml(i.variant || 'profile')}</span>
+                </div>
+                <div class="text-slate-800">${escapeHtml(i.title || '')}</div>
+                <div class="text-slate-600">${escapeHtml(i.details || '')}</div>
+                ${(i.examples || []).length ? `<ul class="list-disc pl-5 text-xs text-slate-600 mt-1">${(i.examples || []).slice(0, 3).map(ex => `<li class="break-all">${escapeHtml(ex)}</li>`).join('')}</ul>` : ''}
+            </div>
+        `).join('');
 
     const renderProfileCard = (v, accent = 'blue') => {
         if (!v) {
             return `
                 <div class="bg-white rounded-2xl shadow-lg border border-rose-200 p-6">
-                    <h4 class="font-semibold text-rose-700 mb-2">Профиль недоступен</h4>
-                    <div class="text-sm text-rose-700">Данные профиля отсутствуют в результате.</div>
+                    <h4 class="font-semibold text-rose-700 mb-2">Profile unavailable</h4>
+                    <div class="text-sm text-rose-700">Variant payload is missing in the render result.</div>
                 </div>
             `;
         }
-        const score = Number(v.metrics?.score ?? 0);
-        const miss = Math.round(v.metrics?.total_missing || 0);
-        const missPct = Number(v.metrics?.missing_pct ?? 0).toFixed(1);
+        const metrics = v.metrics || {};
+        const seoReq = v.seo_required || {};
+        const scoreValue = Number(metrics.score ?? 0);
+        const miss = Math.round(Number(metrics.total_missing ?? 0));
+        const missPctVal = Number(metrics.missing_pct ?? 0).toFixed(1);
+        const renderedMs = Math.round(Number(v.timings?.rendered_s ?? 0) * 1000);
         const emulation = v.emulation || {};
         const shots = v.screenshots || {};
-        const firstShot = shots.js?.url || shots.nojs?.url || '';
+        const shotList = Object.entries(shots).filter(([, shot]) => shot && shot.url);
+        const firstShot = shotList[0]?.[1]?.url || '';
         const shotIndex = firstShot ? screenshotItems.findIndex(i => i.src === firstShot) : -1;
-        const issuesHtml = previewIssues(v.issues || []);
         const accentBox = accent === 'blue' ? 'from-sky-50 to-blue-100 border-blue-200' : 'from-slate-50 to-gray-100 border-gray-200';
-        const typePill = v.profile_type === 'mobile' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-700';
+        const profilePill = String(v.profile_type || (v.mobile ? 'mobile' : 'desktop')).toLowerCase() === 'mobile'
+            ? 'bg-blue-100 text-blue-700'
+            : 'bg-slate-200 text-slate-700';
+        const variantIssues = Array.isArray(v.issues) ? v.issues : [];
+        const issuePreview = variantIssues.slice(0, 4).map((it) => `
+            <li><span class="font-medium ${String(it.severity || '').toLowerCase() === 'critical' ? 'text-rose-700' : 'text-amber-700'}">${severityLabel(it.severity)}</span> - ${escapeHtml(it.title || it.code || 'Issue')}</li>
+        `).join('');
         return `
             <div class="bg-gradient-to-br ${accentBox} rounded-2xl shadow-lg border p-6">
                 <div class="flex items-start justify-between mb-3">
                     <div>
-                        <h4 class="text-lg font-semibold text-gray-800">${v.variant_label || v.variant_id}</h4>
-                        <div class="mt-1 inline-flex text-[11px] px-2 py-1 rounded-full ${typePill}">${(v.profile_type || (v.mobile ? 'mobile' : 'desktop')) === 'mobile' ? 'МОБИЛЬНЫЙ' : ''}</div>
+                        <h4 class="text-lg font-semibold text-slate-800">${escapeHtml(v.variant_label || v.variant_id || 'Variant')}</h4>
+                        <div class="mt-1 inline-flex text-[11px] px-2 py-1 rounded-full ${profilePill}">${escapeHtml(v.profile_type || (v.mobile ? 'mobile' : 'desktop'))}</div>
                     </div>
-                    <span class="text-xs px-2 py-1 rounded-full ${scoreBadgeClass(score)}">Оценка ${score.toFixed(1)}</span>
+                    <span class="text-xs px-2 py-1 rounded-full ${scoreBadgeClass(scoreValue)}">Score ${escapeHtml(scoreValue.toFixed(1))}</span>
                 </div>
                 <div class="grid grid-cols-2 gap-2 text-sm mb-3">
-                    <div class="bg-white/70 rounded-lg p-2"><span class="text-gray-600">Потери:</span> <span class="font-medium">${miss}</span></div>
-                    <div class="bg-white/70 rounded-lg p-2"><span class="text-gray-600">Потери %:</span> <span class="font-medium">${missPct}%</span></div>
-                    <div class="bg-white/70 rounded-lg p-2"><span class="text-gray-600">Скриншоты:</span> <span class="font-medium">${Object.keys(shots).join(', ') || 'нет'}</span></div>
-                    <div class="bg-white/70 rounded-lg p-2"><span class="text-gray-600">Вьюпорт:</span> <span class="font-medium">${emulation.viewport ? `${emulation.viewport.width}x${emulation.viewport.height}` : '-'}</span></div>
+                    <div class="bg-white/70 rounded-lg p-2"><span class="text-slate-600">Missing:</span> <span class="font-medium">${escapeHtml(miss)}</span></div>
+                    <div class="bg-white/70 rounded-lg p-2"><span class="text-slate-600">Missing %:</span> <span class="font-medium">${escapeHtml(missPctVal)}%</span></div>
+                    <div class="bg-white/70 rounded-lg p-2"><span class="text-slate-600">JS render:</span> <span class="font-medium">${escapeHtml(renderedMs)} ms</span></div>
+                    <div class="bg-white/70 rounded-lg p-2"><span class="text-slate-600">SEO fail/warn:</span> <span class="font-medium">${escapeHtml(seoReq.fail || 0)}/${escapeHtml(seoReq.warn || 0)}</span></div>
+                    <div class="bg-white/70 rounded-lg p-2"><span class="text-slate-600">Screenshots:</span> <span class="font-medium">${escapeHtml(shotList.length)}</span></div>
+                    <div class="bg-white/70 rounded-lg p-2"><span class="text-slate-600">Viewport:</span> <span class="font-medium">${escapeHtml(emulation.viewport ? `${emulation.viewport.width}x${emulation.viewport.height}` : '-')}</span></div>
                 </div>
                 ${firstShot ? `
                     <div class="rounded-xl overflow-hidden border border-white/70 shadow cursor-zoom-in mb-3" onclick="openMobileLightbox(${Math.max(0, shotIndex)})">
-                        <img src="${firstShot}" alt="${v.variant_label || v.variant_id}" class="w-full h-44 object-cover">
+                        <img src="${escapeHtml(firstShot)}" alt="${escapeHtml(v.variant_label || v.variant_id || 'Variant')}" class="w-full h-44 object-cover">
                     </div>
-                ` : '<div class="text-sm text-gray-500 mb-3">Скриншоты отсутствуют</div>'}
-                ${issuesHtml ? `
+                ` : '<div class="text-sm text-slate-500 mb-3">No screenshots available.</div>'}
+                ${issuePreview ? `
                     <div class="text-sm">
-                        <div class="font-medium mb-1">Ключевые проблемы:</div>
-                        <ul class="list-disc pl-5 text-gray-700">${issuesHtml}</ul>
+                        <div class="font-medium mb-1">Top variant issues</div>
+                        <ul class="list-disc pl-5 text-slate-700">${issuePreview}</ul>
                     </div>
-                ` : '<div class="text-sm text-emerald-700">Проблем не обнаружено.</div>'}
+                ` : '<div class="text-sm text-emerald-700">No issues in this variant.</div>'}
             </div>
         `;
     };
 
-    const topIssuesHtml = (issues || []).slice(0, 20).map(i => `
-        <div class="py-2 border-b text-sm">
-            <div class="font-medium ${(i.severity || '') === 'critical' ? 'text-red-700' : (i.severity || '') === 'warning' ? 'text-amber-700' : 'text-blue-700'}">
-                ${severityLabel(i.severity)} | ${i.variant || 'Профиль'}
-            </div>
-            <div class="text-gray-700">${i.title || ''}</div>
-            <div class="text-gray-500">${i.details || ''}</div>
-            ${(i.examples || []).length ? `<ul class="list-disc pl-5 text-xs text-gray-600 mt-1">${(i.examples || []).map(ex => `<li class="break-all">${ex}</li>`).join('')}</ul>` : ''}
-        </div>
+    const issueCodeRowsHtml = issueCodeRows.map((row) => `
+        <tr class="border-b border-slate-100 text-sm">
+            <td class="py-2 pr-2">${escapeHtml(row.code)}</td>
+            <td class="py-2 pr-2 font-medium">${escapeHtml(row.total)}</td>
+            <td class="py-2 pr-2 text-rose-700">${escapeHtml(row.critical)}</td>
+            <td class="py-2 pr-2 text-amber-700">${escapeHtml(row.warning)}</td>
+            <td class="py-2 pr-2 text-sky-700">${escapeHtml(row.info)}</td>
+        </tr>
     `).join('');
 
-    const recommendationsHtml = (r.recommendations || []).map(rec => `<li>${rec}</li>`).join('');
-    const diagnosticsHtml = variantDiagnostics.length
-        ? `<ul class="list-disc pl-5 text-xs text-gray-700">${variantDiagnostics.map(d =>
-            `<li>${d.variant_id || '-'} | ${d.variant_label || '-'} | профиль=${profileTypeLabel(d)} | мобильный=${d.mobile === true ? 'да' : (d.mobile === false ? 'нет' : 'н/д')} | проблем=${d.issues} | скриншоты=${d.screenshots.join(',') || '-'}</li>`
-        ).join('')}</ul>`
-        : '<div class="text-xs text-gray-500">Профили отсутствуют в JSON результата.</div>';
+    const diagnosticsHtml = variants.length
+        ? `<ul class="list-disc pl-5 text-xs text-slate-700">${variants.map(v => {
+            const dShots = Object.keys(v.screenshots || {});
+            const pType = String(v.profile_type || (v.mobile ? 'mobile' : 'desktop'));
+            return `<li>${escapeHtml(v.variant_id || '-')} | ${escapeHtml(v.variant_label || '-')} | profile=${escapeHtml(pType)} | issues=${escapeHtml((v.issues || []).length)} | screenshots=${escapeHtml(dShots.join(',') || '-')}</li>`;
+        }).join('')}</ul>`
+        : '<div class="text-xs text-slate-500">No variant diagnostics in payload.</div>';
 
     return `
         <div class="space-y-6">
             <div class="bg-white rounded-xl shadow-md p-6">
                 <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-lg font-semibold">Аудит рендеринга</h3>
+                    <h3 class="text-lg font-semibold">Render Audit</h3>
                     <div class="flex gap-3">
-                        <button onclick="downloadRenderDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>Скачать DOCX</button>
-                        <button onclick="downloadRenderXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>Скачать XLSX (ошибки)</button>
-                        <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
+                        <button onclick="downloadRenderDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>Download DOCX</button>
+                        <button onclick="downloadRenderXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>Download XLSX</button>
+                        <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Copy JSON</button>
                     </div>
                 </div>
-                <p class="text-sm text-gray-600 mb-4">
-                    Отчет показывает, какие SEO-элементы и контент видны тол после JavaScript и могут быть недоступны для поисковых робот при первич обходе.
-                </p>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
-                    <div><span class="text-gray-600">Движ:</span> <span class="font-medium">${r.engine || 'legacy'}</span></div>
-                    <div><span class="text-gray-600">Профилей:</span> <span class="font-medium">${summary.variants_total || variants.length || 0}</span></div>
-                    <div><span class="text-gray-600">Оценка:</span> <span class="font-medium">${summary.score ?? 'н/д'}</span></div>
-                    <div><span class="text-gray-600">Критичных:</span> <span class="font-medium text-red-700">${summary.critical_issues || 0}</span></div>
-                    <div><span class="text-gray-600">Предупреждений:</span> <span class="font-medium text-amber-700">${summary.warning_issues || 0}</span></div>
-                    <div><span class="text-gray-600">Поте:</span> <span class="font-medium">${summary.missing_total || 0}</span></div>
-                    <div><span class="text-gray-600">Потери %:</span> <span class="font-medium">${summary.avg_missing_pct || 0}%</span></div>
-                    <div><span class="text-gray-600">SEO критичных:</span> <span class="font-medium text-red-700">${summary.seo_required_failures || 0}</span></div>
-                    <div><span class="text-gray-600">SEO предупреждений:</span> <span class="font-medium text-amber-700">${summary.seo_required_warnings || 0}</span></div>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
+                    <div class="rounded-xl border bg-slate-50 p-3">
+                        <div class="text-xs text-slate-500">Variants</div>
+                        <div class="text-xl font-semibold text-slate-900">${escapeHtml(summary.variants_total || variants.length || 0)}</div>
+                    </div>
+                    <div class="rounded-xl border bg-slate-50 p-3">
+                        <div class="text-xs text-slate-500">Render score</div>
+                        <div class="text-xl font-semibold ${score >= 80 ? 'text-emerald-700' : score >= 60 ? 'text-amber-700' : 'text-rose-700'}">${escapeHtml(summary.score ?? 'n/a')}</div>
+                        <div class="mt-1 h-1.5 bg-slate-200 rounded-full overflow-hidden"><div class="h-full ${score >= 80 ? 'bg-emerald-500' : score >= 60 ? 'bg-amber-500' : 'bg-rose-500'}" style="width:${scorePct}%"></div></div>
+                    </div>
+                    <div class="rounded-xl border bg-slate-50 p-3">
+                        <div class="text-xs text-slate-500">Missing content</div>
+                        <div class="text-xl font-semibold text-slate-900">${escapeHtml(summary.missing_total || 0)}</div>
+                        <div class="mt-1 text-xs text-slate-600">${escapeHtml(summary.avg_missing_pct || 0)}% avg</div>
+                    </div>
+                    <div class="rounded-xl border bg-slate-50 p-3">
+                        <div class="text-xs text-slate-500">Avg JS render</div>
+                        <div class="text-xl font-semibold text-slate-900">${escapeHtml(Math.round(Number(summary.avg_js_load_ms || 0)))} ms</div>
+                        <div class="mt-1 text-xs text-slate-600">Engine: ${escapeHtml(r.engine || 'legacy')}</div>
+                    </div>
                 </div>
+                <div class="grid grid-cols-3 gap-2 mt-3 text-sm">
+                    <div class="rounded-lg border border-rose-200 bg-rose-50 p-2 text-center"><span class="text-rose-700">Critical</span><div class="font-semibold text-rose-800">${escapeHtml(summary.critical_issues || 0)}</div></div>
+                    <div class="rounded-lg border border-amber-200 bg-amber-50 p-2 text-center"><span class="text-amber-700">Warning</span><div class="font-semibold text-amber-800">${escapeHtml(summary.warning_issues || 0)}</div></div>
+                    <div class="rounded-lg border border-blue-200 bg-blue-50 p-2 text-center"><span class="text-blue-700">Info</span><div class="font-semibold text-blue-800">${escapeHtml(summary.info_issues || 0)}</div></div>
+                </div>
+                <div class="mt-3 text-xs text-slate-500 break-all">URL: ${escapeHtml(result.url || '')}</div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
+                <h4 class="font-semibold mb-3">Render Gap Matrix (JS vs no-JS)</h4>
+                <table class="w-full min-w-[940px]">
+                    <thead>
+                        <tr class="text-left text-xs text-slate-500 border-b">
+                            <th class="py-2 pr-2">Variant</th>
+                            <th class="py-2 pr-2">Profile</th>
+                            <th class="py-2 pr-2">Score</th>
+                            <th class="py-2 pr-2">Missing</th>
+                            <th class="py-2 pr-2">Missing %</th>
+                            <th class="py-2 pr-2">JS render</th>
+                            <th class="py-2 pr-2">SEO fail</th>
+                            <th class="py-2 pr-2">SEO warn</th>
+                            <th class="py-2 pr-2">Shots</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${renderGapRowsHtml || '<tr><td colspan="9" class="py-3 text-sm text-slate-500">No variant rows in payload.</td></tr>'}
+                    </tbody>
+                </table>
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -2520,18 +2649,39 @@ function generateRenderAuditHTML(result) {
                 ${renderProfileCard(mobileVariant, 'blue')}
             </div>
 
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-2">Найденные проблемы</h4>
-                ${topIssuesHtml || '<div class="text-sm text-gray-500">Проблем не обнаружено.</div>'}
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
+                    <h4 class="font-semibold mb-3">Issue Type Overview</h4>
+                    <table class="w-full min-w-[520px]">
+                        <thead>
+                            <tr class="text-left text-xs text-slate-500 border-b">
+                                <th class="py-2 pr-2">Code</th>
+                                <th class="py-2 pr-2">Total</th>
+                                <th class="py-2 pr-2">Critical</th>
+                                <th class="py-2 pr-2">Warning</th>
+                                <th class="py-2 pr-2">Info</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${issueCodeRowsHtml || '<tr><td colspan="5" class="py-3 text-sm text-slate-500">No issue code stats.</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Actionable Recommendations</h4>
+                    <div class="grid grid-cols-1 gap-3">
+                        ${recommendationCardsHtml || '<div class="text-sm text-slate-500">No recommendations available.</div>'}
+                    </div>
+                </div>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-2">Рекомендации</h4>
-                <ul class="list-disc pl-5 text-sm text-gray-700">${recommendationsHtml || '<li>Рекомендаций нет.</li>'}</ul>
+                <h4 class="font-semibold mb-2">Priority Issues</h4>
+                ${topIssuesHtml || '<div class="text-sm text-slate-500">No issues found.</div>'}
             </div>
 
             <details class="bg-white rounded-xl shadow-md p-4 border border-gray-100">
-                <summary class="cursor-pointer text-sm font-medium">Диагностика профилей (отладка)</summary>
+                <summary class="cursor-pointer text-sm font-medium">Variant diagnostics (debug)</summary>
                 <div class="mt-3">${diagnosticsHtml}</div>
             </details>
         </div>
@@ -3879,6 +4029,7 @@ function generateSiteAuditProHTML(result) {
 window.copyToClipboard = copyToClipboard;
 </script>
 {% endblock %}
+
 
 
 
