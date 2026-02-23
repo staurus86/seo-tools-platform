@@ -1916,13 +1916,16 @@ function renderSimpleTable(rows, emptyText = 'Нет данных') {
     `;
 }
 
-function renderTableGroup(group, fallback = 'Нет данных') {
+function renderTableGroup(group, fallback = 'Нет данных', maxRows = 100) {
     const title = group && group.title ? String(group.title) : '';
     const rows = group && Array.isArray(group.rows) ? group.rows : [];
+    const limitedRows = Number.isFinite(maxRows) && maxRows > 0 ? rows.slice(0, maxRows) : rows;
+    const isTruncated = limitedRows.length < rows.length;
     return `
         <div class="bg-white rounded-xl shadow-md p-6">
             ${title ? `<h4 class="font-semibold mb-3">${escapeHtml(title)}</h4>` : ''}
-            ${renderSimpleTable(rows, fallback)}
+            ${renderSimpleTable(limitedRows, fallback)}
+            ${isTruncated ? `<div class="mt-2 text-xs text-slate-500">Показаны первые ${limitedRows.length} строк. Все данные в выгрузке XLSX, где обрабатываются строки по лимиту.</div>` : ''}
         </div>
     `;
 }

@@ -1803,6 +1803,10 @@ class DOCXGenerator:
 
         doc.add_paragraph(f"Домен: {data.get('url', summary.get('our_domain', 'н/д'))}")
         doc.add_paragraph(f"Сформирован: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        doc.add_paragraph("Показаны первые 100 строк на таблицу. Все данные в выгрузке XLSX, где обрабатываются строки по лимиту.")
+
+        def _lim(rows: List[Dict[str, Any]], limit: int = 100) -> List[Dict[str, Any]]:
+            return (rows or [])[:limit]
 
         self._add_heading(doc, "1. Сводка", level=1)
         summary_rows = [
@@ -1825,12 +1829,12 @@ class DOCXGenerator:
         top_comp = tables.get("competitor_analysis", []) or []
         if top_comp:
             self._add_heading(doc, "2.1 Конкуренты (топ)", level=2)
-            rows = [[x.get("competitor_domain", ""), x.get("links", 0), x.get("shared_with_our_site", 0)] for x in top_comp[:20]]
+            rows = [[x.get("competitor_domain", ""), x.get("links", 0), x.get("shared_with_our_site", 0)] for x in _lim(top_comp)]
             self._add_table(doc, ["Домен", "Ссылки", "Общие доноры"], rows)
         comp_rank = tables.get("competitor_ranking", []) or []
         if comp_rank:
             self._add_heading(doc, "2.2 Рейтинг конкурентов", level=2)
-            rows = [[x.get("rank", ""), x.get("competitor_domain", ""), x.get("batch_dr", ""), x.get("batch_backlinks_all", ""), x.get("batch_backlinks_followed_pct", ""), x.get("rank_score", "")] for x in comp_rank[:30]]
+            rows = [[x.get("rank", ""), x.get("competitor_domain", ""), x.get("batch_dr", ""), x.get("batch_backlinks_all", ""), x.get("batch_backlinks_followed_pct", ""), x.get("rank_score", "")] for x in _lim(comp_rank)]
             self._add_table(doc, ["#","Домен","DR","Backlinks","Follow %","Rank score"], rows)
         comp_quality = tables.get("competitor_quality", []) or []
         if comp_quality:
@@ -1842,14 +1846,14 @@ class DOCXGenerator:
                     x.get("follow_pct", ""),
                     x.get("lost_pct", ""),
                 ]
-                for x in comp_quality[:30]
+                for x in _lim(comp_quality)
             ]
             self._add_table(doc, ["Домен", "Quality score", "Follow %", "Lost %"], rows)
 
         top_prio = tables.get("priority_domains", []) or []
         if top_prio:
             self._add_heading(doc, "2.4 Priority domains", level=2)
-            rows = [[x.get("domain", ""), x.get("targets_count", 0), x.get("competitors_count", 0)] for x in top_prio[:30]]
+            rows = [[x.get("domain", ""), x.get("targets_count", 0), x.get("competitors_count", 0)] for x in _lim(top_prio)]
             self._add_table(doc, ["Донор", "Targets", "Конкуренты"], rows)
         comparison = tables.get("comparison_overview", []) or []
         if comparison:
@@ -1862,14 +1866,14 @@ class DOCXGenerator:
                     x.get("follow_gap_pp", 0),
                     x.get("lost_gap_pp", 0),
                 ]
-                for x in comparison[:30]
+                for x in _lim(comparison)
             ]
             self._add_table(doc, ["Домен", "Общие доноры", "Donor gap %", "Follow gap п.п.", "Lost gap п.п."], rows)
         dr_matrix = tables.get("dr_distribution_matrix", []) or []
         if dr_matrix:
             self._add_heading(doc, "2.6 DR распределение доноров по доменам (%)", level=2)
             cols = ["Домен", "DR 0-9", "DR 10-19", "DR 20-29", "DR 30-39", "DR 40-49", "DR 50-59", "DR 60-69", "DR 70-79", "DR 80-89", "DR 90-100"]
-            rows = [[x.get(c, "") for c in cols] for x in dr_matrix[:30]]
+            rows = [[x.get(c, "") for c in cols] for x in _lim(dr_matrix)]
             self._add_table(doc, cols, rows)
         opportunities = tables.get("opportunity_domains", []) or []
         if opportunities:
@@ -1882,13 +1886,13 @@ class DOCXGenerator:
                     x.get("avg_dr", 0),
                     x.get("opportunity_score", 0),
                 ]
-                for x in opportunities[:40]
+                for x in _lim(opportunities)
             ]
             self._add_table(doc, ["Донор", "Покрытие конкурентов", "Покрытие %", "Avg DR", "Opportunity score"], rows)
         ready_buy = tables.get("ready_buy_domains", []) or []
         if ready_buy:
             self._add_heading(doc, "2.8 Ready-to-buy доноры (GGL/Miralinks)", level=2)
-            rows = [[x.get("domain",""), x.get("avg_dr",""), x.get("avg_traffic",""), x.get("follow_pct",""), x.get("opportunity_score","")] for x in ready_buy[:40]]
+            rows = [[x.get("domain",""), x.get("avg_dr",""), x.get("avg_traffic",""), x.get("follow_pct",""), x.get("opportunity_score","")] for x in _lim(ready_buy)]
             self._add_table(doc, ["Домен","Avg DR","Traffic","Follow %","Opportunity"], rows)
 
         self._add_heading(doc, "3. Анкоры", level=1)
@@ -1899,32 +1903,32 @@ class DOCXGenerator:
         top_anchors = tables.get("anchor_analysis", []) or []
         if top_anchors:
             self._add_heading(doc, "3.1 Топ анкоров", level=2)
-            rows = [[x.get("anchor", ""), x.get("count", 0)] for x in top_anchors[:30]]
+            rows = [[x.get("anchor", ""), x.get("count", 0)] for x in _lim(top_anchors)]
             self._add_table(doc, ["Анкор", "Количество"], rows)
         anchor_mix = tables.get("anchor_mix_pct", []) or []
         if anchor_mix:
             self._add_heading(doc, "3.2 Anchor mix (%)", level=2)
-            rows = [[x.get("anchor_type",""), x.get("count",0), x.get("pct",0)] for x in anchor_mix[:20]]
+            rows = [[x.get("anchor_type",""), x.get("count",0), x.get("pct",0)] for x in _lim(anchor_mix)]
             self._add_table(doc, ["Тип", "Кол-во", "%"], rows)
         follow_mix = tables.get("follow_mix_pct", []) or []
         if follow_mix:
             self._add_heading(doc, "3.3 Follow/Nofollow mix (%)", level=2)
-            rows = [[x.get("type", ""), x.get("count", 0), x.get("pct", 0)] for x in follow_mix[:10]]
+            rows = [[x.get("type", ""), x.get("count", 0), x.get("pct", 0)] for x in _lim(follow_mix)]
             self._add_table(doc, ["Тип", "Кол-во", "%"], rows)
         lost_mix = tables.get("lost_status_mix", []) or []
         if lost_mix:
             self._add_heading(doc, "3.4 Потерянные ссылки по статусам", level=2)
-            rows = [[x.get("lost_status", ""), x.get("count", 0), x.get("pct", 0)] for x in lost_mix[:20]]
+            rows = [[x.get("lost_status", ""), x.get("count", 0), x.get("pct", 0)] for x in _lim(lost_mix)]
             self._add_table(doc, ["Статус", "Кол-во", "%"], rows)
 
         self._add_heading(doc, "4. Рекомендации и предупреждения", level=1)
         if errors:
             self._add_heading(doc, "4.1 Ошибки", level=2)
-            for item in errors[:50]:
+            for item in errors[:100]:
                 doc.add_paragraph(str(item), style="List Bullet")
         if warnings:
             self._add_heading(doc, "4.2 Предупреждения", level=2)
-            for item in warnings[:50]:
+            for item in warnings[:100]:
                 doc.add_paragraph(str(item), style="List Bullet")
 
         self._add_heading(doc, "5. План действий", level=1)
@@ -1936,7 +1940,7 @@ class DOCXGenerator:
         derived = keywords.get("derivedBrandKeywords", []) or []
         if derived:
             self._add_heading(doc, "6. Авто-брендовые ключи", level=1)
-            doc.add_paragraph(", ".join(map(str, derived[:50])))
+            doc.add_paragraph(", ".join(map(str, derived[:100])))
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)
