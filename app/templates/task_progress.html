@@ -2459,6 +2459,7 @@ function generateSitemapHTMLV2(result) {
                             <div class="border rounded-lg p-3 text-sm transition hover:shadow-sm ${item.indexable ? 'border-emerald-200 bg-emerald-50/40' : 'border-rose-200 bg-rose-50/40'}">
                                 <div class="font-medium break-all">${escapeHtml(item.url || '')}</div>
                                 <div class="text-xs text-gray-600 mt-1">HTTP: ${item.status_code ?? 'n/a'} | Indexable: <span class="${item.indexable ? 'text-emerald-700' : 'text-rose-700'} font-medium">${item.indexable ? 'Yes' : 'No'}</span> | ${item.response_ms ?? 0} ms</div>
+                                <div class="text-xs text-gray-600 mt-1">Canonical: <span class="font-medium">${escapeHtml(item.canonical_status || 'n/a')}</span>${item.canonical_url ? ` | <span class="break-all">${escapeHtml(item.canonical_url)}</span>` : ''}</div>
                                 ${(item.reasons || []).length > 0 ? `<div class="text-xs text-rose-700 mt-1">${escapeHtml((item.reasons || []).join(' | '))}</div>` : ''}
                             </div>
                         `).join('')}

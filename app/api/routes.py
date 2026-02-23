@@ -8,6 +8,7 @@ from datetime import datetime
 import re
 import json
 import time
+import random
 import requests
 from urllib.parse import urljoin, urlparse
 
@@ -1631,12 +1632,24 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
         live_indexability_checks: List[Dict[str, Any]] = []
         live_non_indexable_count = 0
         live_check_errors_count = 0
-        sampled_urls = sample_spread(list(seen_urls), live_check_sample_size)
+        sampled_urls = random.sample(list(seen_urls), min(live_check_sample_size, len(seen_urls))) if seen_urls else []
+        canonical_checked_count = 0
+        canonical_missing_count = 0
+        canonical_invalid_count = 0
+        canonical_non_self_count = 0
         if sampled_urls:
             live_session = requests.Session()
             live_session.headers.update({"User-Agent": "Mozilla/5.0"})
             for sample_url in sampled_urls:
-                item = {"url": sample_url, "status_code": None, "indexable": None, "reasons": [], "response_ms": None}
+                item = {
+                    "url": sample_url,
+                    "status_code": None,
+                    "indexable": None,
+                    "reasons": [],
+                    "response_ms": None,
+                    "canonical_status": "n/a",
+                    "canonical_url": "",
+                }
                 started = time.time()
                 try:
                     live_response = live_session.get(sample_url, timeout=live_check_timeout, allow_redirects=True)
@@ -1658,6 +1671,30 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                             m = re.search(r'<meta[^>]+name=["\']robots["\'][^>]*content=["\']([^"\']+)["\']', body, flags=re.IGNORECASE)
                             if m and re.search(r"\b(noindex|none)\b", m.group(1), flags=re.IGNORECASE):
                                 reasons.append(f"meta robots: {m.group(1)}")
+                            canonical_checked_count += 1
+                            c = re.search(r'<link[^>]+rel=["\'][^"\']*\bcanonical\b[^"\']*["\'][^>]*href=["\']([^"\']+)["\']', body, flags=re.IGNORECASE)
+                            if not c:
+                                c = re.search(r'<link[^>]+href=["\']([^"\']+)["\'][^>]*rel=["\'][^"\']*\bcanonical\b[^"\']*["\']', body, flags=re.IGNORECASE)
+                            if not c:
+                                item["canonical_status"] = "missing"
+                                canonical_missing_count += 1
+                            else:
+                                canonical_raw = str(c.group(1) or "").strip()
+                                canonical_abs = urljoin(sample_url, canonical_raw)
+                                item["canonical_url"] = canonical_abs
+                                if not is_http_url(canonical_abs):
+                                    item["canonical_status"] = "invalid"
+                                    canonical_invalid_count += 1
+                                    reasons.append("canonical: invalid URL")
+                                else:
+                                    norm_src = sample_url.rstrip("/")
+                                    norm_can = canonical_abs.rstrip("/")
+                                    if norm_src == norm_can:
+                                        item["canonical_status"] = "self"
+                                    else:
+                                        item["canonical_status"] = "other"
+                                        canonical_non_self_count += 1
+                                        reasons.append("canonical points to different URL")
                     item["reasons"] = reasons
                     item["indexable"] = (200 <= int(live_response.status_code) < 300) and len(reasons) == 0
                     if item["indexable"] is False:
@@ -1669,6 +1706,13 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                     live_non_indexable_count += 1
                     live_check_errors_count += 1
                 live_indexability_checks.append(item)
+
+        if canonical_checked_count > 0 and (canonical_missing_count + canonical_invalid_count + canonical_non_self_count) > 0:
+            warnings.append(
+                "Canonical check on random sample: "
+                f"missing={canonical_missing_count}, invalid={canonical_invalid_count}, non-self={canonical_non_self_count} "
+                f"(sample={canonical_checked_count})."
+            )
 
         recommendations: List[str] = []
         highlights: List[str] = []
@@ -1738,6 +1782,9 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
         if live_non_indexable_count > 0:
             recommendations.append("Review non-indexable URLs from live sample (HTTP errors or noindex directives).")
             quality_score -= min(15, live_non_indexable_count)
+        if canonical_checked_count > 0 and (canonical_missing_count + canonical_invalid_count + canonical_non_self_count) > 0:
+            recommendations.append("Review canonical tags on sampled URLs (missing/invalid/non-self canonicals).")
+            quality_score -= min(8, canonical_missing_count + canonical_invalid_count + canonical_non_self_count)
 
         if not recommendations:
             recommendations.append("No critical sitemap issues found. Maintain current structure and monitor in search engine webmaster tools.")
@@ -1804,6 +1851,15 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                 "Live sample contains non-indexable URLs",
                 f"{live_non_indexable_count} of {len(live_indexability_checks)} sampled URLs look non-indexable.",
                 "Fix noindex/HTTP issues on sampled pages and re-run validation.",
+                "SEO/Dev",
+            ))
+        if canonical_checked_count > 0 and (canonical_missing_count + canonical_invalid_count + canonical_non_self_count) > 0:
+            issues.append(build_issue(
+                "warning",
+                "canonical_sample_issues",
+                "Canonical issues in random sample",
+                f"Sample={canonical_checked_count}, missing={canonical_missing_count}, invalid={canonical_invalid_count}, non-self={canonical_non_self_count}.",
+                "Fix missing/invalid canonicals and validate canonical targets for sampled URLs.",
                 "SEO/Dev",
             ))
 
@@ -1913,6 +1969,12 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                 "live_check_sample_size": len(live_indexability_checks),
                 "live_non_indexable_count": live_non_indexable_count,
                 "live_check_errors_count": live_check_errors_count,
+                "canonical_sample": {
+                    "sample_size": canonical_checked_count,
+                    "missing_count": canonical_missing_count,
+                    "invalid_count": canonical_invalid_count,
+                    "non_self_count": canonical_non_self_count,
+                },
                 "issues": issues_sorted,
                 "severity_counts": severity_counts,
                 "top_fixes": top_fixes,

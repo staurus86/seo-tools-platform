@@ -605,9 +605,10 @@ class DOCXGenerator:
                     item.get("url", ""),
                     item.get("status_code", ""),
                     "Yes" if item.get("indexable") else "No",
+                    f"{item.get('canonical_status', 'n/a')}: {item.get('canonical_url', '')}",
                     "; ".join(item.get("reasons", [])[:2]),
                 ])
-            self._add_table(doc, ["URL", "HTTP", "Indexable", "Reasons"], rows)
+            self._add_table(doc, ["URL", "HTTP", "Indexable", "Canonical", "Reasons"], rows)
         else:
             doc.add_paragraph("Live sample is empty.")
 
