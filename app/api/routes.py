@@ -1227,7 +1227,53 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
         date_only = re.fullmatch(r"\d{4}-\d{2}-\d{2}", value)
         dt_utc = re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", value)
         dt_tz = re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\+|-)\d{2}:\d{2}", value)
-        return bool(date_only or dt_utc or dt_tz)
+        dt_frac_utc = re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z", value)
+        dt_frac_tz = re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+(?:\+|-)\d{2}:\d{2}", value)
+        return bool(date_only or dt_utc or dt_tz or dt_frac_utc or dt_frac_tz)
+
+    def parse_lastmod_dt(value: str) -> Optional[datetime]:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if dt.tzinfo is not None:
+                return dt.astimezone().replace(tzinfo=None)
+            return dt
+        except Exception:
+            try:
+                return datetime.strptime(raw, "%Y-%m-%d")
+            except Exception:
+                return None
+
+    def is_valid_hreflang_code(value: str) -> bool:
+        v = str(value or "").strip().lower()
+        if not v:
+            return False
+        if v == "x-default":
+            return True
+        return bool(re.fullmatch(r"[a-z]{2,3}(?:-[a-z0-9]{2,8})*", v))
+
+    def sample_spread(items: List[str], size: int) -> List[str]:
+        if size <= 0 or not items:
+            return []
+        if len(items) <= size:
+            return items
+        if size == 1:
+            return [items[0]]
+        step = (len(items) - 1) / float(size - 1)
+        picks = sorted({int(round(i * step)) for i in range(size)})
+        return [items[idx] for idx in picks if 0 <= idx < len(items)]
+
+    def build_issue(severity: str, code: str, title: str, details: str, action: str, owner: str = "SEO") -> Dict[str, Any]:
+        return {
+            "severity": severity,
+            "code": code,
+            "title": title,
+            "details": details,
+            "action": action,
+            "owner": owner,
+        }
 
     max_sitemaps = max(10, min(2000, int(getattr(settings, "SITEMAP_MAX_FILES", 500) or 500)))
     max_export_urls = max(1000, int(getattr(settings, "SITEMAP_MAX_EXPORT_URLS", 100000) or 100000))
@@ -1235,6 +1281,9 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
     max_urls_preview_per_sitemap = 2000
     max_file_size = 52428800
     max_urls_per_sitemap = 50000
+    stale_days = max(30, min(3650, int(getattr(settings, "SITEMAP_STALE_DAYS", 180) or 180)))
+    live_check_sample_size = max(10, min(20, int(getattr(settings, "SITEMAP_LIVE_CHECK_SAMPLE", 15) or 15)))
+    live_check_timeout = max(2, min(15, int(getattr(settings, "SITEMAP_LIVE_CHECK_TIMEOUT", 6) or 6)))
     queue: List[str] = [url]
     visited: set = set()
     sitemap_files: List[Dict[str, Any]] = []
@@ -1249,10 +1298,35 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
     invalid_lastmod_count = 0
     invalid_changefreq_count = 0
     invalid_priority_count = 0
+    # Freshness metrics
+    lastmod_present_count = 0
+    lastmod_missing_count = 0
+    lastmod_future_count = 0
+    stale_lastmod_count = 0
+    uniform_lastmod_files = 0
+    # Hreflang metrics
+    hreflang_links_count = 0
+    hreflang_urls_count = 0
+    hreflang_invalid_code_count = 0
+    hreflang_invalid_href_count = 0
+    hreflang_duplicate_lang_count = 0
+    hreflang_has_x_default = False
+    # Media extensions metrics
+    image_tags_count = 0
+    image_missing_loc_count = 0
+    video_tags_count = 0
+    video_missing_required_count = 0
+    news_tags_count = 0
+    news_missing_required_count = 0
+    # Structure metrics
+    repeated_child_refs = 0
+    self_child_refs = 0
+    max_depth_seen = 0
     warnings: List[str] = []
     errors: List[str] = []
     allowed_changefreq = {"always", "hourly", "daily", "weekly", "monthly", "yearly", "never"}
     root_status_code = None
+    now_utc = datetime.utcnow()
 
     try:
         session = requests.Session()
@@ -1263,6 +1337,8 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
             if not sitemap_url or sitemap_url in visited:
                 continue
             visited.add(sitemap_url)
+            parsed_depth = max(0, str(urlparse(sitemap_url).path or "").count("/") - 1)
+            max_depth_seen = max(max_depth_seen, parsed_depth)
 
             file_report: Dict[str, Any] = {
                 "sitemap_url": sitemap_url,
@@ -1316,8 +1392,16 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                         if not is_http_url(loc):
                             file_report["warnings"].append(f"Invalid child sitemap URL: {loc}")
                             continue
+                        if loc == sitemap_url:
+                            self_child_refs += 1
+                            file_report["warnings"].append(f"Self reference in sitemap index: {loc}")
+                            continue
                         child_count += 1
-                        if loc not in visited and loc not in queue and (len(visited) + len(queue) < max_sitemaps):
+                        if loc in visited or loc in queue:
+                            repeated_child_refs += 1
+                            file_report["warnings"].append(f"Child sitemap referenced multiple times: {loc}")
+                            continue
+                        if (len(visited) + len(queue) < max_sitemaps):
                             queue.append(loc)
                     if child_count == 0:
                         file_report["warnings"].append("Sitemap index has no child sitemaps.")
@@ -1327,6 +1411,7 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                     file_urls: List[str] = []
                     file_duplicate_urls: List[str] = []
                     file_duplicate_occurrences = 0
+                    file_lastmods: List[str] = []
                     for url_node in root.iter():
                         if local_name(url_node.tag).lower() != "url":
                             continue
@@ -1340,8 +1425,19 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                             continue
 
                         lastmod = find_child_text(url_node, "lastmod")
-                        if lastmod and not is_valid_lastmod(lastmod):
-                            invalid_lastmod_count += 1
+                        if lastmod:
+                            parsed_lastmod = parse_lastmod_dt(lastmod)
+                            if not is_valid_lastmod(lastmod) or parsed_lastmod is None:
+                                invalid_lastmod_count += 1
+                            else:
+                                lastmod_present_count += 1
+                                file_lastmods.append(parsed_lastmod.date().isoformat())
+                                if parsed_lastmod > now_utc:
+                                    lastmod_future_count += 1
+                                if (now_utc - parsed_lastmod).days > stale_days:
+                                    stale_lastmod_count += 1
+                        else:
+                            lastmod_missing_count += 1
 
                         changefreq = find_child_text(url_node, "changefreq").lower()
                         if changefreq and changefreq not in allowed_changefreq:
@@ -1355,6 +1451,55 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                                     invalid_priority_count += 1
                             except Exception:
                                 invalid_priority_count += 1
+
+                        # Minimal hreflang validation in sitemap (only when present)
+                        local_hreflang_seen = set()
+                        local_hreflang_count = 0
+                        for child in list(url_node):
+                            if local_name(child.tag).lower() != "link":
+                                continue
+                            rel = str(child.attrib.get("rel", "")).strip().lower()
+                            href = str(child.attrib.get("href", "")).strip()
+                            hreflang = str(child.attrib.get("hreflang", "")).strip().lower()
+                            if rel != "alternate" or not (href or hreflang):
+                                continue
+                            hreflang_links_count += 1
+                            local_hreflang_count += 1
+                            if hreflang == "x-default":
+                                hreflang_has_x_default = True
+                            if not is_valid_hreflang_code(hreflang):
+                                hreflang_invalid_code_count += 1
+                            if not href or not is_http_url(href):
+                                hreflang_invalid_href_count += 1
+                            if hreflang in local_hreflang_seen:
+                                hreflang_duplicate_lang_count += 1
+                            local_hreflang_seen.add(hreflang)
+                        if local_hreflang_count > 0:
+                            hreflang_urls_count += 1
+
+                        # Media extensions (minimal validation)
+                        image_nodes = find_children(url_node, "image")
+                        image_tags_count += len(image_nodes)
+                        for image_node in image_nodes:
+                            image_loc = find_child_text(image_node, "loc")
+                            if not image_loc or not is_http_url(image_loc):
+                                image_missing_loc_count += 1
+
+                        video_nodes = find_children(url_node, "video")
+                        video_tags_count += len(video_nodes)
+                        for video_node in video_nodes:
+                            has_thumb = bool(find_child_text(video_node, "thumbnail_loc"))
+                            has_title = bool(find_child_text(video_node, "title"))
+                            has_desc = bool(find_child_text(video_node, "description"))
+                            has_content = bool(find_child_text(video_node, "content_loc") or find_child_text(video_node, "player_loc"))
+                            if not (has_thumb and has_title and has_desc and has_content):
+                                video_missing_required_count += 1
+
+                        news_nodes = find_children(url_node, "news")
+                        news_tags_count += len(news_nodes)
+                        for news_node in news_nodes:
+                            if not find_child_text(news_node, "publication_date") or not find_child_text(news_node, "title"):
+                                news_missing_required_count += 1
 
                         file_urls.append(loc)
                         if loc in seen_urls:
@@ -1387,6 +1532,14 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                         file_report["warnings"].append(
                             f"URLs preview truncated: {file_report['urls_omitted']} omitted in API response."
                         )
+                    if len(file_lastmods) >= 20:
+                        histogram: Dict[str, int] = {}
+                        for d in file_lastmods:
+                            histogram[d] = histogram.get(d, 0) + 1
+                        dominant = max(histogram.values()) if histogram else 0
+                        if dominant / max(1, len(file_lastmods)) >= 0.9:
+                            uniform_lastmod_files += 1
+                            file_report["warnings"].append("Suspiciously uniform lastmod values in this sitemap file.")
                     file_report["ok"] = len(file_report["errors"]) == 0
 
                 else:
@@ -1414,11 +1567,76 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
             warnings.append(f"Invalid URLs found in sitemap: {invalid_urls_count}.")
         if duplicate_details_truncated:
             warnings.append(f"Duplicate details were truncated to {max_duplicate_details} entries.")
+        if self_child_refs > 0:
+            warnings.append(f"Sitemap index self-references detected: {self_child_refs}.")
+        if repeated_child_refs > 0:
+            warnings.append(f"Repeated sitemap index references detected: {repeated_child_refs}.")
+        if lastmod_future_count > 0:
+            warnings.append(f"Future lastmod values detected: {lastmod_future_count}.")
+        if stale_lastmod_count > 0:
+            warnings.append(f"Stale pages by lastmod (> {stale_days} days): {stale_lastmod_count}.")
+        if uniform_lastmod_files > 0:
+            warnings.append(f"Sitemap files with suspiciously uniform lastmod values: {uniform_lastmod_files}.")
+        if hreflang_links_count > 0 and hreflang_invalid_code_count > 0:
+            warnings.append(f"Invalid hreflang codes in sitemap links: {hreflang_invalid_code_count}.")
+        if hreflang_links_count > 0 and hreflang_invalid_href_count > 0:
+            warnings.append(f"Invalid hreflang href URLs: {hreflang_invalid_href_count}.")
+        if hreflang_links_count > 0 and hreflang_duplicate_lang_count > 0:
+            warnings.append(f"Duplicate hreflang language entries in same URL nodes: {hreflang_duplicate_lang_count}.")
+        if image_tags_count > 0 and image_missing_loc_count > 0:
+            warnings.append(f"Image sitemap tags missing valid <image:loc>: {image_missing_loc_count}.")
+        if video_tags_count > 0 and video_missing_required_count > 0:
+            warnings.append(f"Video sitemap tags missing required fields: {video_missing_required_count}.")
+        if news_tags_count > 0 and news_missing_required_count > 0:
+            warnings.append(f"News sitemap tags missing required fields: {news_missing_required_count}.")
 
         valid_files = sum(1 for item in sitemap_files if item.get("ok"))
         total_urls_discovered = sum(item.get("urls_count", 0) for item in sitemap_files if item.get("type") == "urlset")
         urls_export_truncated = total_urls_discovered > len(all_urls)
         export_parts_count = (len(all_urls) + export_chunk_size - 1) // export_chunk_size if all_urls else 0
+
+        # Lightweight live check (sampled 10..20 URLs only)
+        live_indexability_checks: List[Dict[str, Any]] = []
+        live_non_indexable_count = 0
+        live_check_errors_count = 0
+        sampled_urls = sample_spread(list(seen_urls), live_check_sample_size)
+        if sampled_urls:
+            live_session = requests.Session()
+            live_session.headers.update({"User-Agent": "Mozilla/5.0"})
+            for sample_url in sampled_urls:
+                item = {"url": sample_url, "status_code": None, "indexable": None, "reasons": [], "response_ms": None}
+                started = time.time()
+                try:
+                    live_response = live_session.get(sample_url, timeout=live_check_timeout, allow_redirects=True)
+                    item["status_code"] = live_response.status_code
+                    item["response_ms"] = int((time.time() - started) * 1000)
+                    reasons: List[str] = []
+                    if live_response.status_code >= 400:
+                        reasons.append(f"HTTP {live_response.status_code}")
+                    x_robots = str(live_response.headers.get("X-Robots-Tag", "") or "")
+                    if x_robots and re.search(r"\b(noindex|none)\b", x_robots, flags=re.IGNORECASE):
+                        reasons.append(f"X-Robots-Tag: {x_robots}")
+                    content_type = str(live_response.headers.get("Content-Type", "") or "").lower()
+                    if "html" in content_type:
+                        try:
+                            body = live_response.text[:200000]
+                        except Exception:
+                            body = ""
+                        if body:
+                            m = re.search(r'<meta[^>]+name=["\']robots["\'][^>]*content=["\']([^"\']+)["\']', body, flags=re.IGNORECASE)
+                            if m and re.search(r"\b(noindex|none)\b", m.group(1), flags=re.IGNORECASE):
+                                reasons.append(f"meta robots: {m.group(1)}")
+                    item["reasons"] = reasons
+                    item["indexable"] = (200 <= int(live_response.status_code) < 300) and len(reasons) == 0
+                    if item["indexable"] is False:
+                        live_non_indexable_count += 1
+                except Exception as live_err:
+                    item["indexable"] = False
+                    item["reasons"] = [str(live_err)]
+                    item["response_ms"] = int((time.time() - started) * 1000)
+                    live_non_indexable_count += 1
+                    live_check_errors_count += 1
+                live_indexability_checks.append(item)
 
         recommendations: List[str] = []
         highlights: List[str] = []
@@ -1430,6 +1648,12 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
             highlights.append(f"Discovered URLs: {total_urls_discovered}. Unique URLs: {len(seen_urls)}.")
         if duplicate_urls_count == 0 and total_urls_discovered > 0:
             highlights.append("No duplicate URLs detected across scanned sitemap files.")
+        if hreflang_links_count > 0:
+            highlights.append(f"Hreflang links detected in sitemap: {hreflang_links_count}.")
+        if image_tags_count + video_tags_count + news_tags_count > 0:
+            highlights.append(f"Media extensions detected (image/video/news): {image_tags_count}/{video_tags_count}/{news_tags_count}.")
+        if live_indexability_checks:
+            highlights.append(f"Live indexability sample checked: {len(live_indexability_checks)} URLs, non-indexable: {live_non_indexable_count}.")
 
         if invalid_urls_count > 0:
             recommendations.append("Fix invalid <loc> values and keep only absolute HTTP/HTTPS URLs.")
@@ -1437,6 +1661,14 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
         if invalid_lastmod_count > 0:
             recommendations.append("Fix <lastmod> values to W3C date format (YYYY-MM-DD or full ISO-8601).")
             quality_score -= min(20, invalid_lastmod_count)
+        if stale_lastmod_count > 0:
+            recommendations.append(
+                f"Refresh stale URLs (older than {stale_days} days by <lastmod>) and keep content update signals accurate."
+            )
+            quality_score -= min(10, stale_lastmod_count)
+        if lastmod_future_count > 0:
+            recommendations.append("Fix future-dated <lastmod> values; search engines may treat them as unreliable signals.")
+            quality_score -= min(10, lastmod_future_count)
         if invalid_changefreq_count > 0:
             recommendations.append("Use only valid <changefreq> values (always/hourly/daily/weekly/monthly/yearly/never).")
             quality_score -= min(10, invalid_changefreq_count)
@@ -1446,6 +1678,9 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
         if duplicate_urls_count > 0:
             recommendations.append("Remove duplicate URLs across sitemap files.")
             quality_score -= min(20, duplicate_urls_count)
+        if self_child_refs > 0 or repeated_child_refs > 0:
+            recommendations.append("Fix sitemap index structure (remove self-references and repeated child sitemap links).")
+            quality_score -= min(10, self_child_refs + repeated_child_refs)
         if queue:
             recommendations.append(f"Sitemap traversal reached limit ({max_sitemaps} files). Consider splitting index or increasing crawl budget.")
             quality_score -= 10
@@ -1457,9 +1692,125 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
         if any((item.get("size_bytes", 0) or 0) > max_file_size for item in sitemap_files):
             recommendations.append("At least one sitemap file exceeds 50 MiB; split or compress sitemap files.")
             quality_score -= 10
+        if hreflang_links_count > 0 and (hreflang_invalid_code_count + hreflang_invalid_href_count + hreflang_duplicate_lang_count) > 0:
+            recommendations.append("Fix hreflang entries in sitemap (valid code, absolute href, no duplicate language per URL).")
+            quality_score -= min(10, hreflang_invalid_code_count + hreflang_invalid_href_count + hreflang_duplicate_lang_count)
+        if image_tags_count > 0 and image_missing_loc_count > 0:
+            recommendations.append("Ensure each <image:image> entry contains a valid <image:loc> URL.")
+            quality_score -= min(8, image_missing_loc_count)
+        if video_tags_count > 0 and video_missing_required_count > 0:
+            recommendations.append("Fix required video sitemap fields (thumbnail_loc, title, description, content_loc/player_loc).")
+            quality_score -= min(8, video_missing_required_count)
+        if news_tags_count > 0 and news_missing_required_count > 0:
+            recommendations.append("Fix required news sitemap fields (publication_date and title).")
+            quality_score -= min(8, news_missing_required_count)
+        if live_non_indexable_count > 0:
+            recommendations.append("Review non-indexable URLs from live sample (HTTP errors or noindex directives).")
+            quality_score -= min(15, live_non_indexable_count)
 
         if not recommendations:
             recommendations.append("No critical sitemap issues found. Maintain current structure and monitor in search engine webmaster tools.")
+
+        issues: List[Dict[str, Any]] = []
+        if invalid_urls_count > 0:
+            issues.append(build_issue(
+                "critical",
+                "invalid_loc_urls",
+                "Invalid URLs in <loc>",
+                f"Found {invalid_urls_count} invalid sitemap URLs.",
+                "Fix broken <loc> values and keep only absolute HTTP/HTTPS URLs.",
+                "SEO/Dev",
+            ))
+        if duplicate_urls_count > 0:
+            issues.append(build_issue(
+                "warning",
+                "duplicate_urls",
+                "Duplicate URLs across sitemap files",
+                f"Found {duplicate_urls_count} duplicate URL occurrences.",
+                "Deduplicate URL entries across all sitemap files.",
+                "SEO",
+            ))
+        if self_child_refs > 0 or repeated_child_refs > 0:
+            issues.append(build_issue(
+                "warning",
+                "sitemap_index_structure",
+                "Sitemap index structure issues",
+                f"Self refs: {self_child_refs}, repeated refs: {repeated_child_refs}.",
+                "Remove self-references and repeated child sitemap references.",
+                "Dev",
+            ))
+        if invalid_lastmod_count + stale_lastmod_count + lastmod_future_count > 0:
+            issues.append(build_issue(
+                "warning",
+                "lastmod_quality",
+                "Lastmod freshness issues",
+                f"Invalid: {invalid_lastmod_count}, stale: {stale_lastmod_count}, future: {lastmod_future_count}.",
+                "Normalize lastmod format and keep timestamps realistic and updated.",
+                "SEO/Content",
+            ))
+        if hreflang_links_count > 0 and (hreflang_invalid_code_count + hreflang_invalid_href_count + hreflang_duplicate_lang_count) > 0:
+            issues.append(build_issue(
+                "warning",
+                "hreflang_sitemap_issues",
+                "Hreflang issues in sitemap",
+                f"Invalid codes: {hreflang_invalid_code_count}, invalid href: {hreflang_invalid_href_count}, duplicate langs: {hreflang_duplicate_lang_count}.",
+                "Fix hreflang values and href URLs in sitemap alternate links.",
+                "SEO",
+            ))
+        if (image_tags_count > 0 and image_missing_loc_count > 0) or (video_tags_count > 0 and video_missing_required_count > 0) or (news_tags_count > 0 and news_missing_required_count > 0):
+            issues.append(build_issue(
+                "warning",
+                "media_extension_issues",
+                "Media/news sitemap extension issues",
+                f"Image missing loc: {image_missing_loc_count}, video missing required: {video_missing_required_count}, news missing required: {news_missing_required_count}.",
+                "Fix required fields in image/video/news sitemap extensions.",
+                "SEO/Dev",
+            ))
+        if live_non_indexable_count > 0:
+            issues.append(build_issue(
+                "critical",
+                "live_non_indexable_sample",
+                "Live sample contains non-indexable URLs",
+                f"{live_non_indexable_count} of {len(live_indexability_checks)} sampled URLs look non-indexable.",
+                "Fix noindex/HTTP issues on sampled pages and re-run validation.",
+                "SEO/Dev",
+            ))
+        if queue:
+            issues.append(build_issue(
+                "warning",
+                "traversal_limit_reached",
+                "Traversal limit reached",
+                f"Reached scan cap of {max_sitemaps}; remaining queued files: {len(queue)}.",
+                "Split sitemap index or increase scan limit.",
+                "DevOps/SEO",
+            ))
+
+        severity_counts = {
+            "critical": sum(1 for it in issues if it.get("severity") == "critical"),
+            "warning": sum(1 for it in issues if it.get("severity") == "warning"),
+            "info": sum(1 for it in issues if it.get("severity") == "info"),
+        }
+        severity_weight = {"critical": 0, "warning": 1, "info": 2}
+        issues_sorted = sorted(issues, key=lambda x: severity_weight.get(str(x.get("severity")), 9))
+        top_fixes = dedupe_keep_order([it.get("action", "") for it in issues_sorted if it.get("action")])[:10]
+        action_plan: List[Dict[str, Any]] = []
+        for issue in issues_sorted[:12]:
+            sev = str(issue.get("severity", "warning"))
+            action_plan.append({
+                "priority": "P0" if sev == "critical" else ("P1" if sev == "warning" else "P2"),
+                "owner": issue.get("owner", "SEO"),
+                "issue": issue.get("title", ""),
+                "action": issue.get("action", ""),
+                "sla": "24h" if sev == "critical" else ("3d" if sev == "warning" else "7d"),
+            })
+        if not action_plan and recommendations:
+            action_plan.append({
+                "priority": "P2",
+                "owner": "SEO",
+                "issue": "No critical blockers",
+                "action": recommendations[0],
+                "sla": "7d",
+            })
 
         quality_score = max(0, min(100, quality_score))
         if quality_score >= 90:
@@ -1507,6 +1858,42 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                 "invalid_priority_count": invalid_priority_count,
                 "invalid_urls_count": invalid_urls_count,
                 "size": sum(item.get("size_bytes", 0) for item in sitemap_files),
+                "max_depth_seen": max_depth_seen,
+                "self_child_refs": self_child_refs,
+                "repeated_child_refs": repeated_child_refs,
+                "freshness": {
+                    "lastmod_present_count": lastmod_present_count,
+                    "lastmod_missing_count": lastmod_missing_count,
+                    "lastmod_future_count": lastmod_future_count,
+                    "stale_lastmod_count": stale_lastmod_count,
+                    "uniform_lastmod_files": uniform_lastmod_files,
+                    "stale_threshold_days": stale_days,
+                },
+                "hreflang": {
+                    "detected": hreflang_links_count > 0,
+                    "links_count": hreflang_links_count,
+                    "urls_count": hreflang_urls_count,
+                    "invalid_code_count": hreflang_invalid_code_count,
+                    "invalid_href_count": hreflang_invalid_href_count,
+                    "duplicate_lang_count": hreflang_duplicate_lang_count,
+                    "has_x_default": hreflang_has_x_default,
+                },
+                "media_extensions": {
+                    "image_tags_count": image_tags_count,
+                    "image_missing_loc_count": image_missing_loc_count,
+                    "video_tags_count": video_tags_count,
+                    "video_missing_required_count": video_missing_required_count,
+                    "news_tags_count": news_tags_count,
+                    "news_missing_required_count": news_missing_required_count,
+                },
+                "live_indexability_checks": live_indexability_checks,
+                "live_check_sample_size": len(live_indexability_checks),
+                "live_non_indexable_count": live_non_indexable_count,
+                "live_check_errors_count": live_check_errors_count,
+                "issues": issues_sorted,
+                "severity_counts": severity_counts,
+                "top_fixes": top_fixes,
+                "action_plan": action_plan,
             }
         }
     except Exception as e:
@@ -1761,6 +2148,49 @@ async def export_sitemap_xlsx(data: ExportRequest):
             content=content,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.post("/export/sitemap-docx")
+async def export_sitemap_docx(data: ExportRequest):
+    """Export sitemap validation report to DOCX."""
+    import os
+    import re
+    from fastapi.responses import Response
+    from app.reports.docx_generator import docx_generator
+
+    try:
+        task_id = data.task_id
+        task = get_task_result(task_id)
+        if not task:
+            return {"error": "Задача не найдена", "task_id": task_id}
+
+        task_type = task.get("task_type")
+        if task_type != "sitemap_validate":
+            return {"error": f"Неподдерживаемый тип задачи для экспорта sitemap DOCX: {task_type}"}
+
+        task_result = task.get("result", {})
+        url = task.get("url", "") or task_result.get("url", "")
+        report_payload = {
+            "url": url,
+            "results": task_result.get("results", task_result),
+        }
+        filepath = docx_generator.generate_sitemap_report(task_id, report_payload)
+        if not filepath or not os.path.exists(filepath):
+            return {"error": "Не удалось сформировать отчет"}
+
+        with open(filepath, "rb") as f:
+            content = f.read()
+
+        domain = re.sub(r"[^a-zA-Z0-9._-]+", "_", (urlparse(url).netloc or "site"))
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+        filename = f"sitemap_report_{domain}_{timestamp}.docx"
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
     except Exception as e:
         return {"error": str(e)}

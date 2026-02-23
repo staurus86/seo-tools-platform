@@ -479,28 +479,115 @@ class DOCXGenerator:
         return filepath
 
     def generate_sitemap_report(self, task_id: str, data: Dict[str, Any]) -> str:
-        """Р вЂњР ВµР Р…Р ВµРЎР‚Р С‘РЎР‚РЎС“Р Вµт Р С”Р В»Р С‘Р ВµР Р…РЎвЂљРЎРѓР С”Р С‘Р в„– Р С•РЎвЂљРЎвЂЎР Вµт по sitemap."""
+        """Generate extended sitemap validation DOCX report."""
         doc = Document()
+        results = data.get('results', {}) or {}
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-        title = doc.add_heading('Р С›РЎвЂљРЎвЂЎР Вµт по Р Р†Р В°Р В»Р С‘Р Т‘Р В°РЎвЂ Р С‘Р ё sitemap', 0)
+        title = doc.add_heading('Sitemap Validation Report', 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        doc.add_paragraph(f"URL: {data.get('url', 'n/a')}")
+        doc.add_paragraph(f"Generated: {now_str}")
 
-        doc.add_paragraph(f"URL: {data.get('url', 'н/д')}")
-        results = data.get('results', {})
-        doc.add_paragraph(f"Р вЂ™Р В°Р В»Р С‘Р Т‘Р ВµР Ѕ: {'Р вЂќР В°' if results.get('valid') else 'Р СњР Вµт'}")
-        doc.add_paragraph(f"Р С™Р С•Р В»Р С‘РЎвЂЎР ВµСЃС‚во URL: {results.get('urls_count', 0)}")
-        doc.add_paragraph(
-            "Р С›Р С—Р С‘РЎРѓР В°Р Р…Р С‘Р Вµ: sitemap Р С—Р С•Р СР С•Р С–Р В°Р Вµт Р С—Р С•Р С‘РЎРѓР С”Р С•Р Р†РЎвЂ№Р С РЎРѓР С‘РЎРѓРЎвЂљР ВµР СР В°Р С Р В±РЎвЂ№РЎРѓРЎвЂљРЎР‚Р ВµР Вµ Р Р…Р В°РЎвЂ¦Р С•Р Т‘Р ёть Р ё Р С—Р ВµРЎР‚Р ВµР С•Р В±РЎвЂ¦Р С•Р Т‘Р ёть РЎРѓРЎвЂљРЎР‚Р В°Р Р…Р С‘РЎвЂ ы. "
-            "Р С›РЎв‚¬Р С‘Р В±Р С”Р ё РЎРѓРЎвЂљРЎР‚РЎС“Р єтуры Р ё Р Т‘РЎС“Р В±Р В»Р ВµР в„– Р СР С•Р іут РЎС“РЎвЂ¦РЎС“Р Т‘РЎв‚¬Р В°РЎвЂљРЎРЉ Р С”Р В°РЎвЂЎР ВµСЃС‚во Р С‘Р Р…Р Т‘Р ВµР С”РЎРѓР В°РЎвЂ Р С‘Р ё."
+        summary_rows = [
+            ["Valid", "Yes" if results.get("valid") else "No"],
+            ["HTTP status", results.get("status_code", "n/a")],
+            ["Sitemaps scanned", results.get("sitemaps_scanned", 0)],
+            ["Sitemaps valid", results.get("sitemaps_valid", 0)],
+            ["Total URLs", results.get("urls_count", 0)],
+            ["Unique URLs", results.get("unique_urls_count", 0)],
+            ["Duplicate URLs", results.get("duplicate_urls_count", 0)],
+            ["Quality score", f"{results.get('quality_score', 'n/a')} ({results.get('quality_grade', 'n/a')})"],
+        ]
+        self._add_heading(doc, "1. Summary", level=1)
+        self._add_table(doc, ["Metric", "Value"], summary_rows)
+
+        severity = results.get("severity_counts", {}) or {}
+        self._add_heading(doc, "2. Severity Breakdown", level=1)
+        self._add_table(
+            doc,
+            ["Critical", "Warning", "Info"],
+            [[severity.get("critical", 0), severity.get("warning", 0), severity.get("info", 0)]],
         )
-        recs = results.get("recommendations", [])
+
+        issues = results.get("issues", []) or []
+        self._add_heading(doc, "3. Prioritized Issues", level=1)
+        if issues:
+            rows = []
+            for it in issues[:40]:
+                rows.append([
+                    it.get("severity", ""),
+                    it.get("title", ""),
+                    it.get("details", ""),
+                    it.get("action", ""),
+                ])
+            self._add_table(doc, ["Severity", "Issue", "Details", "Action"], rows)
+        else:
+            doc.add_paragraph("No prioritized issues.")
+
+        action_plan = results.get("action_plan", []) or []
+        self._add_heading(doc, "4. Action Plan", level=1)
+        if action_plan:
+            rows = []
+            for item in action_plan[:30]:
+                rows.append([
+                    item.get("priority", ""),
+                    item.get("owner", ""),
+                    item.get("issue", ""),
+                    item.get("action", ""),
+                    item.get("sla", ""),
+                ])
+            self._add_table(doc, ["Priority", "Owner", "Issue", "Action", "SLA"], rows)
+        else:
+            doc.add_paragraph("No action plan items.")
+
+        hreflang = results.get("hreflang", {}) or {}
+        freshness = results.get("freshness", {}) or {}
+        media = results.get("media_extensions", {}) or {}
+        self._add_heading(doc, "5. Advanced Validation", level=1)
+        self._add_table(
+            doc,
+            ["Check", "Value"],
+            [
+                ["Hreflang detected", "Yes" if hreflang.get("detected") else "No"],
+                ["Hreflang links", hreflang.get("links_count", 0)],
+                ["Hreflang invalid code", hreflang.get("invalid_code_count", 0)],
+                ["Hreflang invalid href", hreflang.get("invalid_href_count", 0)],
+                ["Hreflang duplicate lang", hreflang.get("duplicate_lang_count", 0)],
+                ["Lastmod missing", freshness.get("lastmod_missing_count", 0)],
+                ["Lastmod stale", freshness.get("stale_lastmod_count", 0)],
+                ["Lastmod future", freshness.get("lastmod_future_count", 0)],
+                ["Image tags / missing loc", f"{media.get('image_tags_count', 0)} / {media.get('image_missing_loc_count', 0)}"],
+                ["Video tags / missing req", f"{media.get('video_tags_count', 0)} / {media.get('video_missing_required_count', 0)}"],
+                ["News tags / missing req", f"{media.get('news_tags_count', 0)} / {media.get('news_missing_required_count', 0)}"],
+            ],
+        )
+
+        checks = results.get("live_indexability_checks", []) or []
+        self._add_heading(doc, "6. Live Indexability Sample", level=1)
+        if checks:
+            rows = []
+            for item in checks[:20]:
+                rows.append([
+                    item.get("url", ""),
+                    item.get("status_code", ""),
+                    "Yes" if item.get("indexable") else "No",
+                    "; ".join(item.get("reasons", [])[:2]),
+                ])
+            self._add_table(doc, ["URL", "HTTP", "Indexable", "Reasons"], rows)
+        else:
+            doc.add_paragraph("Live sample is empty.")
+
+        recs = results.get("recommendations", []) or []
+        self._add_heading(doc, "7. Recommendations", level=1)
         if recs:
-            self._add_heading(doc, 'Р В Р ВµР С”Р С•Р СР ВµР Р…Р Т‘Р В°РЎвЂ Р С‘Р ё', level=1)
-            for rec in recs[:30]:
+            for rec in recs[:40]:
                 doc.add_paragraph(str(rec), style='List Bullet')
+        else:
+            doc.add_paragraph("No recommendations.")
 
         doc.add_paragraph()
-        footer = doc.add_paragraph(f"Р С›РЎвЂљРЎвЂЎР Вµт РЎРѓРЎвЂћР С•РЎР‚Р СР С‘РЎР‚Р С•Р Р†Р В°Р Ѕ SEO Р ВР Р…РЎРѓРЎвЂљРЎР‚РЎС“Р СР ВµР Ѕты: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        footer = doc.add_paragraph(f"Generated by SEO Tools Platform: {now_str}")
         footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
         footer.runs[0].font.size = Pt(8)
         footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
