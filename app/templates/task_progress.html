@@ -702,16 +702,16 @@ function generateTextReport() {
 
     const recommendations = r.recommendations || [];
     if (recommendations.length > 0) {
-        report += 'RECOMMENDATIONS\n' + '-'.repeat(30) + '\n';
+        report += 'РЕКОМЕНДАЦИИ\n' + '-'.repeat(30) + '\n';
         recommendations.forEach(rec => report += '- ' + rec + '\n');
         report += '\n';
     }
 
     const topFixes = r.top_fixes || [];
     if (topFixes.length > 0) {
-        report += 'TOP FIXES\n' + '-'.repeat(30) + '\n';
+        report += 'ТОП ИСПРАВЛЕНИЙ\n' + '-'.repeat(30) + '\n';
         topFixes.forEach(fix => {
-            report += '[' + String((fix.priority || 'medium')).toUpperCase() + '] ' + (fix.title || 'Fix') + '\n';
+            report += '[' + String((fix.priority || 'medium')).toUpperCase() + '] ' + (fix.title || 'Исправление') + '\n';
             if (fix.why) report += '  Почему: ' + fix.why + '\n';
             if (fix.action) report += '  Действие: ' + fix.action + '\n';
         });
@@ -721,7 +721,7 @@ function generateTextReport() {
     const httpStatusAnalysis = r.http_status_analysis || {};
     const httpNotes = httpStatusAnalysis.notes || [];
     if (httpNotes.length > 0) {
-        report += 'HTTP STATUS ANALYSIS\n' + '-'.repeat(30) + '\n';
+        report += 'АНАЛИЗ HTTP-СТАТУСА\n' + '-'.repeat(30) + '\n';
         report += 'Статус: ' + (httpStatusAnalysis.status_code ?? r.status_code ?? 'н/д') + '\n';
         httpNotes.forEach(note => report += '- ' + note + '\n');
         report += '\n';
@@ -856,7 +856,7 @@ function copyOnpageTopFixes() {
     const fallbackFixes = (r.top_fixes || []);
     const list = queue.length > 0
         ? queue.slice(0, 10).map((q, idx) =>
-            `${idx + 1}. [${(q.bucket || 'Later').toUpperCase()}] ${(q.title || q.code || 'Issue')} | Критичность: ${(q.severity || 'info').toUpperCase()} | Приоритет: ${q.priority_score ?? 0} | Трудозатраты: ${q.effort ?? 0}`
+            `${idx + 1}. [${(q.bucket || 'Позже').toUpperCase()}] ${(q.title || q.code || 'Проблема')} | Критичность: ${(q.severity || 'info').toUpperCase()} | Приоритет: ${q.priority_score ?? 0} | Трудозатраты: ${q.effort ?? 0}`
         )
         : fallbackFixes.slice(0, 10).map((f, idx) =>
             `${idx + 1}. [${String((f.priority || 'medium')).toUpperCase()}] ${f.title || 'Исправление'}${f.action ? ` | Действие: ${f.action}` : ''}`
@@ -902,7 +902,7 @@ function filterSiteAuditProIssues() {
         const codeL = String(code || '').toLowerCase();
         if (/(title|meta|h1|keyword|content|ai_|duplicate_)/.test(codeL)) return 'Content+SEO';
         if (/(schema|structured|hreflang|canonical|index|http_status)/.test(codeL)) return 'SEO+Dev';
-        if (/(security|cache|compression|https|crawl_budget|redirect)/.test(codeL)) return 'Dev+Infra';
+        if (/(security|cache|compression|https|crawl_budget|redirect)/.test(codeL)) return 'Разработка/Инфра';
         return 'SEO';
     };
     return source.filter((issue) => {
@@ -2714,7 +2714,7 @@ function generateBotHTML(result) {
         ? blockers.slice(0, 8).map((b) => `
             <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
                 <div class="font-semibold text-amber-900">${b.title}</div>
-                <div class="text-amber-800">Priority: ${b.priority_score} | Affected bots: ${b.affected_bots}</div>
+                <div class="text-amber-800">Приоритет: ${b.priority_score} | Затронуто ботов: ${b.affected_bots}</div>
                 <div class="text-amber-700">${b.details}</div>
                 <div class="text-amber-700">Sample bots: ${(b.sample_bots || []).join(', ') || '-'}</div>
             </div>
@@ -2870,9 +2870,9 @@ function generateBotHTML(result) {
                             <tr class="text-left text-xs text-slate-500 border-b">
                                 <th class="py-2 pr-2">#</th>
                                 <th class="py-2 pr-2">URL</th>
-                                <th class="py-2 pr-2">Indexable</th>
-                                <th class="py-2 pr-2">Crawlable</th>
-                                <th class="py-2 pr-2">Renderable</th>
+                                <th class="py-2 pr-2">Индексируемо</th>
+                                <th class="py-2 pr-2">Сканируемо</th>
+                                <th class="py-2 pr-2">Рендерится</th>
                                 <th class="py-2 pr-2">Среднее, мс</th>
                                 <th class="py-2 pr-2">Критично</th>
                                 <th class="py-2 pr-2">Предупреждения</th>
@@ -2898,9 +2898,9 @@ function generateBotHTML(result) {
                             <tr class="text-left text-xs text-slate-500 border-b">
                                 <th class="py-2 pr-2">#</th>
                                 <th class="py-2 pr-2">Время запуска</th>
-                                <th class="py-2 pr-2">Indexable</th>
-                                <th class="py-2 pr-2">Crawlable</th>
-                                <th class="py-2 pr-2">Renderable</th>
+                                <th class="py-2 pr-2">Индексируемо</th>
+                                <th class="py-2 pr-2">Сканируемо</th>
+                                <th class="py-2 pr-2">Рендерится</th>
                                 <th class="py-2 pr-2">Среднее, мс</th>
                                 <th class="py-2 pr-2">Критично</th>
                                 <th class="py-2 pr-2">Предупреждения</th>
@@ -3525,7 +3525,7 @@ function generateRenderAuditHTML(result) {
         .sort((a, b) => (severityRank[String(a.severity || 'info').toLowerCase()] ?? 3) - (severityRank[String(b.severity || 'info').toLowerCase()] ?? 3))
         .slice(0, 8)
         .forEach((issue) => {
-            const action = `${issue.title || issue.code || 'Issue'}${issue.variant ? ` (${issue.variant})` : ''}`;
+            const action = `${issue.title || issue.code || 'Проблема'}${issue.variant ? ` (${issue.variant})` : ''}`;
             const key = action.toLowerCase();
             if (!recSeen.has(key)) {
                 recSeen.add(key);
@@ -3588,7 +3588,7 @@ function generateRenderAuditHTML(result) {
             : 'bg-slate-200 text-slate-700';
         const variantIssues = Array.isArray(v.issues) ? v.issues : [];
         const issuePreview = variantIssues.slice(0, 4).map((it) => `
-            <li><span class="font-medium ${String(it.severity || '').toLowerCase() === 'critical' ? 'text-rose-700' : 'text-amber-700'}">${severityLabel(it.severity)}</span> - ${escapeHtml(it.title || it.code || 'Issue')}</li>
+            <li><span class="font-medium ${String(it.severity || '').toLowerCase() === 'critical' ? 'text-rose-700' : 'text-amber-700'}">${severityLabel(it.severity)}</span> - ${escapeHtml(it.title || it.code || 'Проблема')}</li>
         `).join('');
         return `
             <div class="bg-gradient-to-br ${accentBox} rounded-2xl shadow-lg border p-6">
@@ -4052,17 +4052,17 @@ function generateOnPageAuditHTML(result) {
     const scoreBars = [
         scoreBar('Общая оценка', r.score ?? summary.score ?? 0, 'blue'),
         scoreBar('Spam-оценка', scores.spam_score ?? summary.spam_score ?? 0, 'emerald'),
-        scoreBar('Keyword Coverage', keywordCoverage.coverage_pct ?? summary.keyword_coverage_pct ?? 0, 'indigo'),
-        scoreBar('AI Risk', ai.ai_risk_composite ?? summary.ai_risk_composite ?? 0, 'rose'),
+        scoreBar('Покрытие ключей', keywordCoverage.coverage_pct ?? summary.keyword_coverage_pct ?? 0, 'indigo'),
+        scoreBar('AI-риск', ai.ai_risk_composite ?? summary.ai_risk_composite ?? 0, 'rose'),
     ].join('');
     const quickActions = priorityQueue.slice(0, 6).map((q, idx) => `
-        <div class="rounded-xl border border-slate-200 p-3 ${q.bucket === 'Now' ? 'bg-rose-50' : (q.bucket === 'Next' ? 'bg-amber-50' : 'bg-emerald-50')}">
+        <div class="rounded-xl border border-slate-200 p-3 ${q.bucket === 'Now' ? 'bg-rose-50' : (q.bucket === 'Next' ? 'bg-amber-50' : (q.bucket === 'Сейчас' ? 'bg-rose-50' : (q.bucket === 'Далее' ? 'bg-amber-50' : 'bg-emerald-50')))}">
             <div class="flex items-center justify-between mb-1">
-                <span class="text-xs font-semibold uppercase tracking-wide text-slate-600">#${idx + 1} ${q.bucket || 'Later'}</span>
+                <span class="text-xs font-semibold uppercase tracking-wide text-slate-600">#${idx + 1} ${(q.bucket === 'Now' ? 'Сейчас' : (q.bucket === 'Next' ? 'Далее' : (q.bucket || 'Позже')))}</span>
                 <span class="text-xs text-slate-500">P ${q.priority_score ?? 0}</span>
             </div>
-            <div class="text-sm font-medium text-slate-800">${q.title || q.code || 'Issue'}</div>
-            <div class="text-xs text-slate-600 mt-1">${(q.severity || '').toUpperCase()} | Effort ${q.effort ?? 0}</div>
+            <div class="text-sm font-medium text-slate-800">${q.title || q.code || 'Проблема'}</div>
+            <div class="text-xs text-slate-600 mt-1">${(q.severity || '').toUpperCase()} | Трудозатраты ${q.effort ?? 0}</div>
         </div>
     `).join('');
 
@@ -4260,38 +4260,38 @@ function generateSiteAuditProHTML(result) {
     };
     const rootCauseCluster = (code) => {
         const codeL = String(code || '').toLowerCase();
-        if (/(title|meta|h1|keyword|content|duplicate|ai_)/.test(codeL)) return 'Content model';
-        if (/(canonical|index|robots|http_status|redirect|crawl_budget)/.test(codeL)) return 'Indexing flow';
-        if (/(schema|structured|hreflang)/.test(codeL)) return 'Structured data';
-        if (/(security|https|cache|compression|mixed_content)/.test(codeL)) return 'Platform infra';
-        if (/(image|alt|webp|avif)/.test(codeL)) return 'Media pipeline';
-        return 'General SEO';
+        if (/(title|meta|h1|keyword|content|duplicate|ai_)/.test(codeL)) return 'Контентная модель';
+        if (/(canonical|index|robots|http_status|redirect|crawl_budget)/.test(codeL)) return 'Индексирование';
+        if (/(schema|structured|hreflang)/.test(codeL)) return 'Структурированные данные';
+        if (/(security|https|cache|compression|mixed_content)/.test(codeL)) return 'Платформа/Инфра';
+        if (/(image|alt|webp|avif)/.test(codeL)) return 'Медиа-пайплайн';
+        return 'Общее SEO';
     };
     const issueActionByCode = (code) => {
         const codeL = String(code || '').toLowerCase();
-        if (codeL.includes('title')) return 'Fix title tags: uniqueness and optimal length.';
-        if (codeL.includes('meta')) return 'Improve meta description quality and uniqueness.';
-        if (codeL.includes('h1') || codeL.includes('hierarchy')) return 'Normalize heading hierarchy (single H1, valid H2/H3 tree).';
-        if (codeL.includes('canonical')) return 'Resolve canonical conflicts and align canonical targets.';
-        if (codeL.includes('crawl_budget') || codeL.includes('redirect')) return 'Reduce crawl waste: redirects, parameter traps, non-indexable branches.';
-        if (codeL.includes('schema') || codeL.includes('structured')) return 'Fix structured data coverage and schema errors.';
-        if (codeL.includes('image') || codeL.includes('alt')) return 'Fix image optimization issues: ALT, lazy-load, dimensions.';
-        if (codeL.includes('anchor') || codeL.includes('link') || codeL.includes('orphan')) return 'Improve internal linking and anchor quality.';
-        if (codeL.includes('security') || codeL.includes('https')) return 'Close technical security/header issues.';
-        return 'Prioritize this issue type and apply template-level fixes.';
+        if (codeL.includes('title')) return 'Исправить title: уникальность и оптимальная длина.';
+        if (codeL.includes('meta')) return 'Повысить качество и уникальность meta description.';
+        if (codeL.includes('h1') || codeL.includes('hierarchy')) return 'Нормализовать иерархию заголовков (один H1, корректная структура H2/H3).';
+        if (codeL.includes('canonical')) return 'Устранить конфликты canonical и выровнять цели canonical.';
+        if (codeL.includes('crawl_budget') || codeL.includes('redirect')) return 'Снизить потери crawl budget: редиректы, параметрические ловушки, неиндексируемые ветки.';
+        if (codeL.includes('schema') || codeL.includes('structured')) return 'Исправить покрытие и ошибки структурированных данных.';
+        if (codeL.includes('image') || codeL.includes('alt')) return 'Исправить оптимизацию изображений: ALT, lazy-load, размеры.';
+        if (codeL.includes('anchor') || codeL.includes('link') || codeL.includes('orphan')) return 'Улучшить внутреннюю перелинковку и качество анкоров.';
+        if (codeL.includes('security') || codeL.includes('https')) return 'Закрыть технические проблемы безопасности/заголовков.';
+        return 'Приоритизировать данный тип проблемы и применить шаблонные исправления.';
     };
     const recommendationThemeFromText = (text) => {
         const t = normalizeRecommendationText(text);
-        if (!t) return { key: 'general', label: 'General SEO', action: 'Prioritize fixes by impact and severity.' };
-        if (/(title|meta)/.test(t)) return { key: 'metadata', label: 'Metadata quality', action: 'Improve title/meta uniqueness and quality across templates.' };
-        if (/(h1|heading|hierarchy)/.test(t)) return { key: 'heading_structure', label: 'Heading structure', action: 'Normalize heading hierarchy and enforce one clear H1.' };
-        if (/(canonical|index|robots|crawl|redirect|http status)/.test(t)) return { key: 'indexing_flow', label: 'Indexing flow', action: 'Fix indexing signals and reduce crawl waste.' };
-        if (/(schema|structured)/.test(t)) return { key: 'structured_data', label: 'Structured data', action: 'Fix schema coverage/validation on key templates.' };
-        if (/(image|alt|lazy|webp|avif)/.test(t)) return { key: 'image_pipeline', label: 'Image pipeline', action: 'Fix ALT coverage and image optimization issues.' };
-        if (/(anchor|link|orphan)/.test(t)) return { key: 'internal_links', label: 'Internal links', action: 'Improve internal links and anchor relevance for hubs.' };
-        if (/(security|https|header|cache|compression)/.test(t)) return { key: 'platform_infra', label: 'Platform infra', action: 'Close infrastructure and security-level SEO issues.' };
-        if (/(duplicate|thin|content|keyword|ai)/.test(t)) return { key: 'content_model', label: 'Content model', action: 'Improve content uniqueness, depth and intent coverage.' };
-        return { key: `custom:${t.slice(0, 80)}`, label: 'General SEO', action: String(text || '').trim() || 'General SEO improvements.' };
+        if (!t) return { key: 'general', label: 'Общее SEO', action: 'Приоритизировать исправления по влиянию и критичности.' };
+        if (/(title|meta)/.test(t)) return { key: 'metadata', label: 'Качество метаданных', action: 'Повысить уникальность и качество title/meta в шаблонах.' };
+        if (/(h1|heading|hierarchy)/.test(t)) return { key: 'heading_structure', label: 'Структура заголовков', action: 'Нормализовать иерархию заголовков и оставить один явный H1.' };
+        if (/(canonical|index|robots|crawl|redirect|http status)/.test(t)) return { key: 'indexing_flow', label: 'Индексирование', action: 'Исправить сигналы индексирования и снизить потери crawl budget.' };
+        if (/(schema|structured)/.test(t)) return { key: 'structured_data', label: 'Структурированные данные', action: 'Исправить покрытие/валидацию schema на ключевых шаблонах.' };
+        if (/(image|alt|lazy|webp|avif)/.test(t)) return { key: 'image_pipeline', label: 'Медиа-пайплайн', action: 'Исправить покрытие ALT и оптимизацию изображений.' };
+        if (/(anchor|link|orphan)/.test(t)) return { key: 'internal_links', label: 'Внутренние ссылки', action: 'Улучшить внутреннюю перелинковку и релевантность анкоров.' };
+        if (/(security|https|header|cache|compression)/.test(t)) return { key: 'platform_infra', label: 'Платформа/Инфра', action: 'Закрыть инфраструктурные и security-SEO проблемы.' };
+        if (/(duplicate|thin|content|keyword|ai)/.test(t)) return { key: 'content_model', label: 'Контентная модель', action: 'Повысить уникальность, глубину и покрытие интента контента.' };
+        return { key: `custom:${t.slice(0, 80)}`, label: 'Общее SEO', action: String(text || '').trim() || 'Общие SEO-улучшения.' };
     };
     const issuesByUrl = {};
     issues.forEach((issue) => {
@@ -4341,7 +4341,7 @@ function generateSiteAuditProHTML(result) {
         const impactScore = Number(((critical * 3.0) + (warning * 2.0) + info + (sharePct / 10.0)).toFixed(1));
         const effort = topSeverity === 'critical' ? 'M' : 'S';
         const roiScore = Number((impactScore / (effort === 'M' ? 1.3 : 1.0)).toFixed(1));
-        const sprintBucket = roiScore >= 25 ? 'Now' : roiScore >= 10 ? 'Next' : 'Later';
+        const sprintBucket = roiScore >= 25 ? 'Сейчас' : roiScore >= 10 ? 'Далее' : 'Позже';
         const action = issueActionByCode(row.code);
         const theme = recommendationThemeFromText(action);
         return {

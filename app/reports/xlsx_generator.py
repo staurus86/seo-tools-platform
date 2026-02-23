@@ -1078,7 +1078,7 @@ class XLSXGenerator:
         waf_detected = int(summary.get("waf_cdn_detected", 0) or 0)
 
         executive_kpis = [
-            ("URL", report_url, "Scope"),
+            ("URL", report_url, "Область"),
             ("Ботов проверено", total_bots, "Всего протестированных user-agent"),
             ("Индексируемые боты", indexable_bots, "Боты, которые могут индексировать контент"),
             ("Доля индексируемых", f"{indexable_pct}%", "Цель зависит от SLA-профиля"),
@@ -1642,9 +1642,9 @@ class XLSXGenerator:
             page_issues = page_issues or []
             if tab == "main":
                 if not page.get("indexable"):
-                    recs.append("Fix noindex/status/robots")
+                    recs.append("Исправить noindex/status/robots")
                 if to_float(page.get("health_score"), 100.0) < 60:
-                    recs.append("Improve technical and content quality to 60+")
+                    recs.append("Повысить техническое и контентное качество до 60+")
                 if not page_issues and not recs:
                     return "OK"
                 if recs:
@@ -1655,13 +1655,13 @@ class XLSXGenerator:
             if tab == "hierarchy":
                 status = str(page.get("h_hierarchy") or "").lower()
                 if "wrong start" in status:
-                    return "Add H1 at the start of main content"
+                    return "Добавить H1 в начале основного контента"
                 if "level skip" in status:
-                    return "Fix heading level skips (H1->H2->H3)"
+                    return "Исправить пропуски уровней заголовков (H1->H2->H3)"
                 if "multiple h1" in status:
-                    return "Keep only one H1 and convert others to H2"
+                    return "Оставить один H1, остальные перевести в H2"
                 if "missing h1" in status:
-                    return "Add one descriptive H1"
+                    return "Добавить один описательный H1"
                 return "OK"
 
             if tab == "onpage":
@@ -1746,27 +1746,27 @@ class XLSXGenerator:
                 if not page.get("has_contact_info"):
                     recs.append("Add contacts, address, and phone")
                 if not page.get("has_legal_docs"):
-                    recs.append("Add legal pages and policies")
+                    recs.append("Добавить юридические страницы и политики")
                 if not page.get("has_reviews"):
-                    recs.append("Add reviews")
+                    recs.append("Добавить отзывы")
                 if not page.get("trust_badges"):
-                    recs.append("Add trust badges/certifications")
+                    recs.append("Добавить бейджи доверия/сертификаты")
                 return ok_if_empty(recs)
 
             if tab == "health":
                 if to_float(page.get("health_score"), 100.0) < 60:
-                    recs.append("Raise overall health score to 60+")
+                    recs.append("Повысить общий health score до 60+")
                 if not page.get("indexable"):
-                    recs.append("Fix indexability")
+                    recs.append("Исправить индексируемость")
                 if int(page.get("duplicate_title_count") or 0) > 1:
-                    recs.append("Deduplicate title")
+                    recs.append("Убрать дубли title")
                 if int(page.get("duplicate_description_count") or 0) > 1:
-                    recs.append("Deduplicate meta description")
+                    recs.append("Убрать дубли meta description")
                 return ok_if_empty(recs)
 
             if tab == "links":
                 if page.get("orphan_page"):
-                    recs.append("Add internal links to this page")
+                    recs.append("Добавить внутренние ссылки на эту страницу")
                 if int(page.get("outgoing_internal_links") or 0) == 0:
                     recs.append("Add outgoing links to relevant pages")
                 return ok_if_empty(recs)
@@ -2044,66 +2044,66 @@ class XLSXGenerator:
                 "hreflang_extended_check",
             }
             mapping = [
-                ("duplicate_title", "Set unique title for each duplicate page."),
-                ("duplicate_meta_description", "Set unique meta description for each duplicate page."),
-                ("missing_title", "Add descriptive title (30-60 chars)."),
-                ("missing_meta_description", "Add meta description (100-160 chars)."),
-                ("missing_canonical", "Add canonical URL and point to the final 200 page."),
-                ("canonical_target_noindex", "Point canonical to indexable URL."),
-                ("canonical_target_redirect", "Point canonical directly to final 200 URL."),
-                ("canonical_target_error_status", "Fix canonical target HTTP status."),
-                ("noindex_canonical_conflict", "Align indexability: canonical and robots noindex."),
-                ("http_status_error", "Fix page HTTP status and internal links to this URL."),
-                ("non_https_url", "Enable HTTPS and redirect HTTP to HTTPS."),
-                ("compression_disabled", "Enable gzip/brotli compression."),
-                ("cache_disabled", "Add Cache-Control/ETag headers."),
-                ("light_perf_low_score", "Reduce render-blocking JS and heavy DOM."),
-                ("thin_content", "Expand page content and remove boilerplate."),
-                ("near_duplicate_content", "Rewrite near-duplicate text blocks."),
-                ("deep_click_depth", "Add internal links from higher-level pages."),
-                ("h1_hierarchy_issue", "Fix H1 structure and heading hierarchy."),
-                ("structured_data_common_errors", "Fix required fields in structured data (price, availability, rating, etc.)."),
-                ("ai_risk_high", "Humanize text and remove repetitive AI-style phrases."),
-                ("security_missing_csp", "Add Content-Security-Policy header."),
-                ("security_missing_hsts", "Add Strict-Transport-Security header."),
-                ("security_missing_xfo", "Add X-Frame-Options header."),
-                ("security_missing_referrer_policy", "Add Referrer-Policy header."),
-                ("security_missing_permissions_policy", "Add Permissions-Policy header."),
-                ("security_mixed_content_homepage", "Replace all http:// resources with https://."),
-                ("crawl_budget_risk_high", "Reduce URL parameters and flatten URL depth."),
-                ("crawl_budget_risk_medium", "Normalize URL parameters for crawl control."),
-                ("multiple_title_tags", "Keep one title tag per page."),
-                ("multiple_meta_descriptions", "Keep one meta description tag."),
-                ("multiple_meta_robots", "Keep one meta robots tag."),
-                ("missing_charset_meta", "Add charset declaration in <head>."),
-                ("missing_viewport_meta", "Add viewport meta tag."),
-                ("generic_alt_texts", "Replace generic ALT texts with specific descriptions."),
-                ("decorative_images_with_alt", "Use empty ALT for decorative images."),
-                ("duplicate_image_sources", "Remove duplicate image sources."),
-                ("low_modern_image_formats", "Convert key images to WebP/AVIF."),
-                ("hreflang_extended_check", "Fix hreflang reciprocity/x-default/lang codes."),
-                ("hidden_content_css", "Remove hidden SEO text (display:none/offscreen/opacity/font-size<5px)."),
-                ("cloaking_detected", "Align visible and hidden content; remove cloaking patterns."),
-                ("cta_missing", "Add clear conversion CTA blocks (form/button/callback/checkout)."),
-                ("no_lists_tables_on_long_content", "Structure long text with bullet lists and data tables."),
+                ("duplicate_title", "Сделать уникальный title для каждой дублирующейся страницы."),
+                ("duplicate_meta_description", "Сделать уникальный meta description для каждой дублирующейся страницы."),
+                ("missing_title", "Добавить описательный title (30-60 символов)."),
+                ("missing_meta_description", "Добавить meta description (100-160 символов)."),
+                ("missing_canonical", "Добавить canonical URL с указанием на финальную страницу со статусом 200."),
+                ("canonical_target_noindex", "Направить canonical на индексируемый URL."),
+                ("canonical_target_redirect", "Направить canonical сразу на финальный URL со статусом 200."),
+                ("canonical_target_error_status", "Исправить HTTP-статус canonical-цели."),
+                ("noindex_canonical_conflict", "Выровнять сигналы индексируемости: canonical и robots noindex."),
+                ("http_status_error", "Исправить HTTP-статус страницы и внутренние ссылки на этот URL."),
+                ("non_https_url", "Включить HTTPS и настроить редирект HTTP -> HTTPS."),
+                ("compression_disabled", "Включить сжатие gzip/brotli."),
+                ("cache_disabled", "Добавить заголовки Cache-Control/ETag."),
+                ("light_perf_low_score", "Снизить render-blocking JS и тяжелый DOM."),
+                ("thin_content", "Расширить контент и убрать шаблонную «воду»."),
+                ("near_duplicate_content", "Переписать близко-дублирующиеся блоки текста."),
+                ("deep_click_depth", "Добавить внутренние ссылки со страниц верхнего уровня."),
+                ("h1_hierarchy_issue", "Исправить структуру H1 и иерархию заголовков."),
+                ("structured_data_common_errors", "Исправить обязательные поля в structured data (цена, наличие, рейтинг и т.д.)."),
+                ("ai_risk_high", "Очеловечить текст и убрать повторяющиеся AI-паттерны."),
+                ("security_missing_csp", "Добавить заголовок Content-Security-Policy."),
+                ("security_missing_hsts", "Добавить заголовок Strict-Transport-Security."),
+                ("security_missing_xfo", "Добавить заголовок X-Frame-Options."),
+                ("security_missing_referrer_policy", "Добавить заголовок Referrer-Policy."),
+                ("security_missing_permissions_policy", "Добавить заголовок Permissions-Policy."),
+                ("security_mixed_content_homepage", "Заменить все ресурсы http:// на https://."),
+                ("crawl_budget_risk_high", "Снизить число URL-параметров и уменьшить глубину URL."),
+                ("crawl_budget_risk_medium", "Нормализовать URL-параметры для контроля обхода."),
+                ("multiple_title_tags", "Оставить один title-тег на страницу."),
+                ("multiple_meta_descriptions", "Оставить один meta description."),
+                ("multiple_meta_robots", "Оставить один meta robots."),
+                ("missing_charset_meta", "Добавить charset в <head>."),
+                ("missing_viewport_meta", "Добавить meta viewport."),
+                ("generic_alt_texts", "Заменить общие ALT-тексты на конкретные описания."),
+                ("decorative_images_with_alt", "Использовать пустой ALT для декоративных изображений."),
+                ("duplicate_image_sources", "Убрать дубли источников изображений."),
+                ("low_modern_image_formats", "Конвертировать ключевые изображения в WebP/AVIF."),
+                ("hreflang_extended_check", "Исправить взаимность hreflang/x-default/коды языков."),
+                ("hidden_content_css", "Убрать скрытый SEO-текст (display:none/offscreen/opacity/font-size<5px)."),
+                ("cloaking_detected", "Выровнять видимый и скрытый контент, убрать признаки клоакинга."),
+                ("cta_missing", "Добавить четкие CTA-блоки (форма/кнопка/обратный звонок/чекаут)."),
+                ("no_lists_tables_on_long_content", "Структурировать длинный текст списками и таблицами."),
             ]
-            prefix = "Info:"
+            prefix = "Инфо:"
             if severity == "critical" or code in critical_codes:
-                prefix = "Critical:"
+                prefix = "Критично:"
             elif severity == "warning" or code in warning_codes:
-                prefix = "Warning:"
+                prefix = "Предупреждение:"
             for key, rec in mapping:
                 if key in code:
                     return f"{prefix} {rec}"
             if "canonical" in title:
-                return f"{prefix} Validate canonical URL and consistency."
+                return f"{prefix} Проверить canonical URL и его консистентность."
             if "index" in title:
-                return f"{prefix} Fix indexability and robots directives."
+                return f"{prefix} Исправить индексируемость и директивы robots."
             if "schema" in title or "structured" in title:
-                return f"{prefix} Fix structured data required fields."
+                return f"{prefix} Исправить обязательные поля structured data."
             if details:
-                return f"{prefix} Investigate and fix: {details[:120]}"
-            return f"{prefix} Fix issue according to page context and SEO best practices."
+                return f"{prefix} Исследовать и исправить: {details[:120]}"
+            return f"{prefix} Исправить проблему с учетом контекста страницы и SEO best practices."
 
         def fill_sheet(
             sheet_name: str,
@@ -2422,11 +2422,11 @@ class XLSXGenerator:
 
         # Sheet 2: OnPage + Structured
         onpage_headers = [
-            "URL", "Title", "Title len", "Title px", "Meta description", "Meta len", "Desc px", "SERP truncation risk", "H1 count", "H1 text",
-            "Canonical URL", "Canonical status", "Meta robots", "X-Robots", "Schema count",
-            "JSON-LD", "Microdata", "RDFa", "Structured types", "Hreflang count",
-            "Breadcrumbs", "Mobile hint", "Charset", "Viewport", "Meta robots multi",
-            "Title tags", "Description tags", "Title dup", "Desc dup", "Canonical self match", "OnPage score", "OnPage delta to target", "OnPage solution", "Severity",
+            "URL", "Title", "Длина title", "Ширина title, px", "Meta description", "Длина description", "Ширина description, px", "Риск обрезки в SERP", "Кол-во H1", "Текст H1",
+            "Canonical URL", "Статус canonical", "Meta robots", "X-Robots", "Кол-во schema",
+            "JSON-LD", "Microdata", "RDFa", "Типы structured", "Кол-во hreflang",
+            "Хлебные крошки", "Mobile hint", "Charset", "Viewport", "Дубликаты meta robots",
+            "Кол-во title-тегов", "Кол-во description-тегов", "Дубли title", "Дубли description", "Self-match canonical", "OnPage-скор", "OnPage-дельта до цели", "OnPage-решение", "Критичность",
         ]
         onpage_rows = []
         for page in pages:
@@ -2484,12 +2484,12 @@ class XLSXGenerator:
 
         # Sheet 3: Technical
         tech_headers = [
-            "URL", "Final URL", "Status", "Status line", "Response ms", "Size KB", "HTML bytes", "DOM nodes", "Redirects",
+            "URL", "Итоговый URL", "Статус", "Строка статуса", "Ответ, мс", "Размер, KB", "HTML байт", "DOM-узлы", "Редиректы",
             "HTTPS", "Compression", "Compression algo", "Cache enabled", "Cache-Control",
             "Last-Modified", "Freshness days", "JS assets", "CSS assets", "Render-blocking JS", "Preload hints",
             "Perf light score", "Path depth", "URL params", "Crawl budget risk",
             "Security headers score", "CSP", "HSTS", "X-Frame-Options", "Referrer-Policy", "Permissions-Policy", "Mixed content refs",
-            "HTML quality score", "Deprecated tags count", "Indexability reason", "TTFB ms", "HTML/JS ratio", "Redirect chain risk", "Transport risk", "Transport level", "Technical score", "Technical delta to target", "Technical solution", "Severity",
+            "Оценка качества HTML", "Кол-во устаревших тегов", "Причина неиндексируемости", "TTFB, мс", "Соотношение HTML/JS", "Риск цепочки редиректов", "Транспортный риск", "Уровень транспорта", "Технический скор", "Техническая дельта до цели", "Техническое решение", "Критичность",
         ]
         tech_rows = []
         for page in pages:
@@ -2566,16 +2566,16 @@ class XLSXGenerator:
 
         # Sheet 4: Content + AI
         content_headers = [
-            "URL", "Word count", "Unique words", "Unique %", "Lexical diversity", "Readability score",
-            "Avg sentence len", "Avg word len", "Complex words %", "Keyword stuffing score",
-            "Content density %", "Boilerplate %", "Toxicity score", "Filler ratio",
-            "Filler phrases", "AI markers count", "AI markers list", "AI marker sample",
-            "AI density /1k", "AI risk", "AI risk level", "Page type",
-            "Hidden content", "Hidden nodes", "Hidden text chars", "Cloaking",
-            "Content/template ratio", "Paragraph count", "Avg paragraph len", "Hidden severity",
-            "CTA count", "CTA quality", "CTA type mix", "Lists count", "Tables count",
-            "Near duplicates", "Near duplicate URLs",
-            "Content score", "Content delta to target", "Content solution", "Severity",
+            "URL", "Кол-во слов", "Уникальных слов", "Уникальность, %", "Лексическое разнообразие", "Скор читабельности",
+            "Ср. длина предложения", "Ср. длина слова", "Сложные слова, %", "Скор keyword stuffing",
+            "Плотность контента, %", "Boilerplate, %", "Toxicity-скор", "Доля «воды»",
+            "Фразы-наполнители", "Кол-во AI-маркеров", "Список AI-маркеров", "Пример AI-маркеров",
+            "Плотность AI /1k", "AI-риск", "Уровень AI-риска", "Тип страницы",
+            "Скрытый контент", "Скрытые узлы", "Символов скрытого текста", "Клоакинг",
+            "Соотношение контент/шаблон", "Кол-во абзацев", "Ср. длина абзаца", "Критичность скрытого",
+            "Кол-во CTA", "Качество CTA", "Микс типов CTA", "Кол-во списков", "Кол-во таблиц",
+            "Близкие дубли", "URL близких дублей",
+            "Контент-скор", "Контент-дельта до цели", "Контент-решение", "Критичность",
         ]
         content_rows = []
         for page in pages:
@@ -2659,10 +2659,10 @@ class XLSXGenerator:
 
         # Sheet 5: Link Graph
         link_headers = [
-            "URL", "Incoming int", "Outgoing int", "Outgoing ext", "Orphan",
-            "Topic hub", "Click depth", "PageRank", "Weak anchor ratio", "Anchor quality", "Link quality",
-            "Follow links total", "Nofollow links total", "Semantic links count", "Internal link opportunities", "Broken internal targets", "Anchor overuse alert",
-            "Link score", "Link delta to target", "Linking solution", "Severity",
+            "URL", "Входящие внутренние", "Исходящие внутренние", "Исходящие внешние", "Страница-сирота",
+            "Тематический хаб", "Глубина клика", "PageRank", "Доля слабых анкоров", "Качество анкоров", "Качество ссылок",
+            "Всего follow-ссылок", "Всего nofollow-ссылок", "Кол-во семантических ссылок", "Возможности внутренней перелинковки", "Битые внутренние цели", "Алерт переиспользования анкоров",
+            "Link-скор", "Link-дельта до цели", "Решение по перелинковке", "Критичность",
         ]
         link_rows = []
         for page in pages:
@@ -2709,11 +2709,11 @@ class XLSXGenerator:
 
         # Sheet 6: Images + External
         img_headers = [
-            "URL", "Images total", "Without alt", "No width/height", "No lazy-load", "Image issues total",
-            "Modern formats", "Duplicate src", "External images", "Generic ALT", "Decorative with ALT",
-            "External total", "External follow", "External nofollow", "Follow ratio %",
-            "Largest image KB", "No srcset", "External img domains", "ALT relevance",
-            "Media score", "Media delta to target", "Images+External solution", "Severity",
+            "URL", "Всего изображений", "Без alt", "Без width/height", "Без lazy-load", "Всего image-проблем",
+            "Современные форматы", "Дубли src", "Внешние изображения", "Generic ALT", "Декоративные с ALT",
+            "Всего внешних", "Внешние follow", "Внешние nofollow", "Доля follow, %",
+            "Макс. размер изображения, KB", "Без srcset", "Домены внешних изображений", "Релевантность ALT",
+            "Медиа-скор", "Медиа-дельта до цели", "Решение по изображениям+внешним", "Критичность",
         ]
         img_rows = []
         for page in pages:
@@ -2767,9 +2767,9 @@ class XLSXGenerator:
 
         # Sheet 7: Hierarchy + Errors
         issue_headers = [
-            "URL", "Hierarchy status", "Hierarchy problems", "Total headers", "Hierarchy H1 count",
-            "Heading outline", "Code", "Issue title", "Issue details", "H2 before H1", "Outline depth score", "Heading dup texts", "TOC-ready",
-            "Hierarchy score", "Hierarchy delta to target", "Hierarchy solution", "Severity",
+            "URL", "Статус иерархии", "Проблемы иерархии", "Всего заголовков", "Кол-во H1",
+            "Outline заголовков", "Код", "Заголовок проблемы", "Детали проблемы", "H2 до H1", "Скор глубины outline", "Дубли текстов заголовков", "TOC-ready",
+            "Hierarchy-скор", "Hierarchy-дельта до цели", "Решение по иерархии", "Критичность",
         ]
         issue_rows = []
         for page in pages:
@@ -2823,10 +2823,10 @@ class XLSXGenerator:
 
         # Sheet 8: Keywords
         keyword_headers = [
-            "URL", "Topic", "Top terms (TF-IDF)", "Top keywords", "TF-IDF #1", "TF-IDF #2", "TF-IDF #3",
-            "Keyword density profile", "TF-IDF terms", "Keyword entropy", "Top keyword share %",
-            "SPAM alert", "Water words %", "BM25-like relevance", "Exact in Title", "Exact in H1", "Exact in URL", "Intent confidence",
-            "Intent level", "Keyword score", "Keyword delta to target", "Keyword solution", "Severity",
+            "URL", "Тема", "Топ терминов (TF-IDF)", "Топ ключей", "TF-IDF #1", "TF-IDF #2", "TF-IDF #3",
+            "Профиль плотности ключей", "TF-IDF термины", "Энтропия ключей", "Доля топ-ключа, %",
+            "SPAM-алерт", "Вода, %", "BM25-подобная релевантность", "Точное в Title", "Точное в H1", "Точное в URL", "Уверенность интента",
+            "Уровень интента", "Keyword-скор", "Keyword-дельта до цели", "Решение по ключам", "Критичность",
         ]
         keyword_rows = []
         total_pages = max(1, int(summary.get("total_pages", len(pages)) or len(pages) or 1))
@@ -2945,8 +2945,8 @@ class XLSXGenerator:
                 top_density_by_term[term_l] = max(top_density_by_term.get(term_l, 0.0), to_float(dens, 0.0))
 
         summary_headers = [
-            "N-gram", "Keyword", "Total freq", "Pages with term", "Pages %",
-            "Token share %", "Avg TF-IDF", "Top density %", "SPAM alert", "Water/noise", "Cross-page repeat", "Risk score", "Brand term", "Term intent", "Summary note",
+            "N-gram", "Ключ", "Общая частота", "Страниц с термином", "Страниц %",
+            "Доля токена %", "Средний TF-IDF", "Пиковая плотность %", "SPAM-сигнал", "Вода/шум", "Межстраничный повтор", "Риск-скор", "Брендовый термин", "Интент термина", "Сводная заметка",
         ]
         summary_rows: List[List[Any]] = []
         brand_host = re.sub(r"^https?://", "", str(report_url or "").lower()).split("/")[0]
@@ -3081,7 +3081,7 @@ class XLSXGenerator:
             return best_intent, confidence
 
         insights_headers = [
-            "Method", "Scope", "Intent", "Term/Pattern", "Metric", "Severity", "Action", "Examples", "Priority",
+            "Метод", "Область", "Интент", "Термин/паттерн", "Метрика", "Критичность", "Действие", "Примеры", "Приоритет",
         ]
         insights_rows: List[List[Any]] = []
         intent_counter: Counter = Counter()
@@ -3144,17 +3144,17 @@ class XLSXGenerator:
                 url_intent_hint = "navigational"
             if url_intent_hint != "unknown" and url_intent_hint != intent:
                 insights_rows.append([
-                    "Intent conflict",
+                    "Конфликт интента",
                     url,
                     intent,
                     f"url_hint={url_intent_hint}",
                     f"confidence={confidence}%",
                     "warning" if confidence >= 45 else "critical",
-                    "Align page copy and metadata with URL intent or update slug.",
+                    "Привести контент и метаданные в соответствие с интентом URL или обновить slug.",
                     extract_section(url),
                 ])
             insights_rows.append([
-                "Intent cluster",
+                "Кластер интента",
                 url,
                 intent,
                 ", ".join((top_terms_page or top_keywords_page or tfidf_terms_page)[:4]),
@@ -3271,7 +3271,7 @@ class XLSXGenerator:
                     term,
                     f"share={round(section_share*100,2)}% vs global={round(global_share*100,2)}%, lift={round(lift,2)}",
                     sev,
-                    "Check if repeated term is intentional for this section cluster.",
+                    "Проверить, намеренный ли повтор термина для этого кластера разделов.",
                     f"pages={pages_with_term}",
                 ])
 
@@ -3279,13 +3279,13 @@ class XLSXGenerator:
             share = round((count / max(1, len(pages))) * 100.0, 1)
             sev = "warning" if share >= 70.0 else "info"
             insights_rows.append([
-                "Intent overview",
-                "site-wide",
+                "Обзор интентов",
+                "весь сайт",
                 intent,
                 "",
                 f"pages={count}, share={share}%",
                 sev,
-                "Validate distribution against business goals and funnel mix.",
+                "Проверить распределение относительно бизнес-целей и структуры воронки.",
                 "",
             ])
 
@@ -3312,10 +3312,10 @@ class XLSXGenerator:
         # Optional full-mode optimized deep sheets (no compatibility duplication).
         if str(mode).lower() == "full":
             indexability_headers = [
-                "URL", "Status", "Indexable", "Noindex", "Blocked by robots",
-                "Indexability reason", "Canonical URL", "Canonical status",
-                "Meta robots", "X-Robots-Tag", "Conflict type", "In sitemap", "Discovery risk",
-                "Indexability score", "Indexability level", "Indexability delta to target", "Indexability solution", "Severity",
+                "URL", "Статус", "Индексируемо", "Noindex", "Заблокировано robots",
+                "Причина индексируемости", "Canonical URL", "Статус canonical",
+                "Meta robots", "X-Robots-Tag", "Тип конфликта", "В sitemap", "Риск обнаружения",
+                "Скор индексируемости", "Уровень индексируемости", "Дельта индексируемости до цели", "Решение по индексируемости", "Критичность",
             ]
             indexability_rows = []
             for page in pages:
@@ -3378,11 +3378,11 @@ class XLSXGenerator:
             )
 
             structured_headers = [
-                "URL", "Structured total", "JSON-LD", "Microdata", "RDFa",
-                "Structured types", "Hreflang", "Breadcrumbs",
+                "URL", "Всего structured", "JSON-LD", "Microdata", "RDFa",
+                "Типы structured", "Hreflang", "Хлебные крошки",
                 "FAQ schema", "Product schema", "Article schema",
-                "Schema mismatch", "Rich result eligible", "Critical schema errors", "Common errors count", "Common error codes",
-                "Structured coverage %", "Structured delta to target", "Structured solution", "Severity",
+                "Конфликт schema", "Подходит для rich result", "Критичные schema-ошибки", "Кол-во типовых ошибок", "Коды типовых ошибок",
+                "Покрытие structured, %", "Structured-дельта до цели", "Решение по structured", "Критичность",
             ]
             structured_rows = []
             for page in pages:
@@ -3467,9 +3467,9 @@ class XLSXGenerator:
             )
 
             trust_eeat_headers = [
-                "URL", "Trust score", "EEAT score", "Expertise", "Authority",
-                "Trustworthiness", "Experience", "Author info", "Contact", "Legal", "Reviews", "Badges",
-                "Editorial policy", "Sources cited", "EEAT matrix", "Trust gap", "Trust evidence count", "Trust delta to target", "Trust+EEAT solution", "Severity",
+                "URL", "Trust-скор", "EEAT-скор", "Экспертиза", "Авторитет",
+                "Надежность", "Опыт", "Инфо об авторе", "Контакты", "Юридическая инфо", "Отзывы", "Бейджи",
+                "Редакционная политика", "Указанные источники", "EEAT-матрица", "Trust-gap", "Кол-во trust-доказательств", "Trust-дельта до цели", "Решение Trust+EEAT", "Критичность",
             ]
             trust_eeat_rows = []
             for page in pages:
@@ -3524,10 +3524,10 @@ class XLSXGenerator:
             )
 
             topics_headers = [
-                "URL", "Topic", "Is hub", "Incoming links", "Outgoing int links", "Semantic links count",
-                "Suggested links", "Semantic links detail", "Top terms", "Top keywords", "Topical depth score", "Topical delta to target",
-                "Cluster completeness", "Orphan topic node", "Hub overload", "Entity consistency",
-                "Topics solution", "Severity",
+                "URL", "Тема", "Хаб", "Входящие ссылки", "Исходящие внутренние ссылки", "Кол-во семантических ссылок",
+                "Рекомендуемые ссылки", "Детали семантических ссылок", "Топ терминов", "Топ ключей", "Скор тематической глубины", "Тематическая дельта до цели",
+                "Полнота кластера", "Сиротский узел темы", "Перегруз хаба", "Консистентность сущностей",
+                "Решение по темам", "Критичность",
             ]
             topics_rows = []
             semantic_by_source: Dict[str, List[Dict[str, Any]]] = {}
@@ -3587,10 +3587,10 @@ class XLSXGenerator:
             )
 
             ai_headers = [
-                "URL", "AI markers", "AI markers list", "Marker sample",
-                "AI density /1k", "AI risk score", "AI risk level", "False-positive guard",
-                "Page type", "Toxicity score", "Filler ratio", "Style markers", "Disclaimer markers", "Transition markers", "Hedging markers",
-                "False-positive confidence", "AI risk over threshold", "Humanization hint", "Severity",
+                "URL", "AI-маркеры", "Список AI-маркеров", "Пример маркеров",
+                "Плотность AI /1k", "AI risk-скор", "Уровень AI-риска", "Защита от false-positive",
+                "Тип страницы", "Toxicity-скор", "Доля «воды»", "Стилевые маркеры", "Disclaimer-маркеры", "Transition-маркеры", "Hedging-маркеры",
+                "Уверенность false-positive", "AI-риск выше порога", "Подсказка по humanization", "Критичность",
             ]
             ai_rows = []
             for page in pages:
@@ -3640,9 +3640,9 @@ class XLSXGenerator:
             )
 
             crawl_budget_headers = [
-                "URL", "Path depth", "URL params", "Crawl budget risk", "Redirects", "Status", "Indexable",
-                "Incoming links", "Outgoing internal", "Near duplicates", "Crawl duplicates over target", "Param pattern group", "Crawl waste score", "Deep indexable risk",
-                "Crawl budget solution", "Severity",
+                "URL", "Глубина пути", "Параметры URL", "Риск crawl budget", "Редиректы", "Статус", "Индексируемо",
+                "Входящие ссылки", "Исходящие внутренние", "Близкие дубли", "Дубли обхода сверх цели", "Группа параметров", "Скор потерь обхода", "Риск глубокой индексируемости",
+                "Решение по crawl budget", "Критичность",
             ]
             crawl_budget_rows = []
             for page in pages:
@@ -3696,7 +3696,7 @@ class XLSXGenerator:
                 score_idx=9,
             )
 
-            raw_issue_headers = ["Severity", "URL", "Code", "Category", "First seen tab", "Dedupe hash", "Fix owner", "Title", "Details", "Affected", "Recommendation"]
+            raw_issue_headers = ["Критичность", "URL", "Код", "Категория", "Первая вкладка", "Dedupe hash", "Ответственный", "Заголовок", "Детали", "Затронуто", "Рекомендация"]
             raw_issue_rows = []
             seen_raw = set()
             for issue in issues:
@@ -3737,9 +3737,9 @@ class XLSXGenerator:
             )
 
             action_plan_headers = [
-                "Priority", "Issue code", "Top severity", "Affected pages", "Share %", "Critical", "Warning", "Info",
-                "Impact score", "Effort", "ETA", "Owner hint", "Expected lift", "Root cause cluster", "Depends on codes",
-                "Dependency", "Batch fix potential", "ROI score", "Sprint bucket", "Representative URLs", "Recommendation",
+                "Приоритет", "Код проблемы", "Макс. критичность", "Затронуто страниц", "Доля %", "Критично", "Предупреждение", "Инфо",
+                "Импакт-скор", "Трудоемкость", "ETA", "Подсказка владельца", "Ожидаемый эффект", "Кластер первопричин", "Зависит от кодов",
+                "Зависимость", "Потенциал batch-фикса", "ROI-скор", "Бакет спринта", "Репрезентативные URL", "Рекомендация",
             ]
             grouped: Dict[str, Dict[str, Any]] = {}
             for issue in issues:
@@ -3796,14 +3796,14 @@ class XLSXGenerator:
                 batch_fix_potential = "✅" if any(x in str(code).lower() for x in ("template", "title", "meta", "schema", "canonical", "robots")) else "❌"
                 effort_weight = 1.3 if effort_map.get(top_severity, "S") == "M" else 1.0
                 roi_score = round(impact_score / effort_weight, 1)
-                sprint_bucket = "Now" if roi_score >= 25 else ("Next" if roi_score >= 10 else "Later")
+                sprint_bucket = "Сейчас" if roi_score >= 25 else ("Далее" if roi_score >= 10 else "Позже")
                 rec = issue_recommendation(node.get("sample") or {"code": code, "severity": top_severity})
-                if rec.startswith("Critical: "):
-                    rec = rec[len("Critical: "):]
-                elif rec.startswith("Warning: "):
-                    rec = rec[len("Warning: "):]
-                elif rec.startswith("Info: "):
-                    rec = rec[len("Info: "):]
+                if rec.startswith("Критично: "):
+                    rec = rec[len("Критично: "):]
+                elif rec.startswith("Предупреждение: "):
+                    rec = rec[len("Предупреждение: "):]
+                elif rec.startswith("Инфо: "):
+                    rec = rec[len("Инфо: "):]
                 action_rows.append(
                     [
                         "",  # filled after sorting
@@ -3949,11 +3949,11 @@ class XLSXGenerator:
         h1_meta = results.get("h1", {}) or {}
         meta_rows = [
             ("Title", title_meta.get("text", "")),
-            ("Title length", title_meta.get("length", 0)),
+            ("Длина title", title_meta.get("length", 0)),
             ("Description", desc_meta.get("text", "")),
-            ("Description length", desc_meta.get("length", 0)),
-            ("H1 count", h1_meta.get("count", 0)),
-            ("H1 values", ", ".join(h1_meta.get("values", []) or [])),
+            ("Длина description", desc_meta.get("length", 0)),
+            ("Количество H1", h1_meta.get("count", 0)),
+            ("Значения H1", ", ".join(h1_meta.get("values", []) or [])),
         ]
         for row_idx, (key, value) in enumerate(meta_rows, start=2):
             self._apply_style(meta_ws.cell(row=row_idx, column=1, value=key), cell_style)
