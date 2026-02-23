@@ -4,6 +4,7 @@
 
 const HISTORY_KEY = 'seo_tools_history';
 const MAX_HISTORY_ITEMS = 10;
+const TERMINAL_STATUSES = new Set(['SUCCESS', 'FAILURE']);
 
 // Get history from LocalStorage
 function getHistory() {
@@ -124,9 +125,45 @@ function renderHistory() {
     `).join('');
 }
 
+// Pull current statuses from API for non-terminal history items.
+async function refreshHistoryStatuses() {
+    const history = getHistory();
+    if (!history.length) return;
+
+    const pendingIndexes = [];
+    for (let i = 0; i < history.length; i += 1) {
+        const status = String(history[i]?.status || '').toUpperCase();
+        if (!TERMINAL_STATUSES.has(status)) {
+            pendingIndexes.push(i);
+        }
+    }
+    if (!pendingIndexes.length) return;
+
+    const requests = pendingIndexes.map(async (idx) => {
+        const item = history[idx];
+        if (!item?.taskId) return;
+        try {
+            const response = await fetch(`/api/tasks/${item.taskId}`);
+            if (!response.ok) return;
+            const data = await response.json();
+            const nextStatus = String(data?.status || '').toUpperCase();
+            if (!nextStatus) return;
+            history[idx] = { ...item, status: nextStatus };
+        } catch (e) {
+            // Keep existing local status when API is unavailable.
+        }
+    });
+
+    await Promise.all(requests);
+    saveHistory(history);
+    renderHistory();
+}
+
 // Initialize history on page load
 document.addEventListener('DOMContentLoaded', () => {
     renderHistory();
+    refreshHistoryStatuses();
+    setInterval(refreshHistoryStatuses, 15000);
 });
 
 // Export functions
