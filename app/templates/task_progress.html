@@ -2193,13 +2193,14 @@ function generateSitemapHTMLV2(result) {
     const freshness = r.freshness || {};
     const mediaExt = r.media_extensions || {};
     const liveChecks = r.live_indexability_checks || [];
-    const duplicateLines = duplicateDetails.map(d => `${d.url}\tпервый: ${d.first_sitemap || '-'}\tдубликат: ${d.duplicate_sitemap || '-'}`);
+    const duplicateLines = duplicateDetails.map(d => `${d.url}	первый: ${d.first_sitemap || '-'}	дубликат: ${d.duplicate_sitemap || '-'}`);
     const exportChunkSize = r.export_chunk_size || 25000;
     const dateStamp = new Date().toISOString().slice(0, 10);
     const safeDomain = (result.url || 'sitemap').replace(/https?:\/\//, '').replace(/[^\w.-]+/g, '_');
     sitemapExportUrls = exportUrls;
     sitemapDuplicateLines = duplicateLines;
     sitemapFilePreviewUrls = sitemapFiles.map(f => (f.urls || []).slice(0, 100000));
+
     const totalIssues = errors.length + warnings.length;
     const healthBadge = r.valid && totalIssues === 0 ? 'bg-emerald-100 text-emerald-700' : (r.valid ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700');
     const healthText = r.valid && totalIssues === 0 ? 'Healthy sitemap' : (r.valid ? 'Valid with warnings' : 'Needs fixes');
@@ -2209,250 +2210,260 @@ function generateSitemapHTMLV2(result) {
     const validScanned = Number(r.sitemaps_valid || 0);
     const exported = Number(exportUrls.length || 0);
     const coverageUnique = totalUrls > 0 ? Math.round((uniqueUrls / totalUrls) * 1000) / 10 : 0;
-    const filesValidRate = scanned > 0 ? Math.round((validScanned / scanned) * 1000) / 10 : 0;
     const exportCoverage = totalUrls > 0 ? Math.round((exported / totalUrls) * 1000) / 10 : 0;
     const riskLevel = errors.length > 0 ? 'High' : (warnings.length > 0 ? 'Medium' : 'Low');
     const scanLimitFiles = Number(r.scan_limit_files || 0);
     const scanLimitReached = !!r.scan_limit_reached;
     const scanQueueRemaining = Number(r.scan_queue_remaining || 0);
     const scanProgressByLimit = scanLimitFiles > 0 ? Math.min(100, Math.round((scanned / scanLimitFiles) * 1000) / 10) : 100;
-    const maxUrlsPerFile = Math.max(1, ...sitemapFiles.map(f => Number(f.urls_count || 0)));
+
     const phaseFetchDone = Number.isFinite(Number(r.status_code)) && Number(r.status_code) > 0;
     const phaseTraverseDone = scanned > 0;
     const phaseParseDone = totalUrls > 0 || errors.length > 0;
     const phaseFinalizeDone = true;
 
+    const scorePct = Math.max(0, Math.min(100, Number(qualityScore || 0)));
+    const scoreRingStyle = `background: conic-gradient(#0ea5e9 ${scorePct}%, #e2e8f0 ${scorePct}% 100%);`;
+
+    const levelClass = {
+        critical: 'bg-rose-50 border-rose-200 text-rose-800',
+        warning: 'bg-amber-50 border-amber-200 text-amber-800',
+        info: 'bg-sky-50 border-sky-200 text-sky-800'
+    };
+
+    const classifyNotice = (message) => {
+        const text = String(message || '');
+        if (/uniform lastmod|lastmod/i.test(text)) return 'lastmod';
+        if (/preview truncated|export/i.test(text)) return 'preview_export';
+        if (/hreflang/i.test(text)) return 'hreflang';
+        if (/image|video|news/i.test(text)) return 'media';
+        if (/sitemap index|self-references|repeated/i.test(text)) return 'index_structure';
+        if (/http|parse|unsupported/i.test(text)) return 'fetch_parse';
+        return 'other';
+    };
+
+    const groupLabel = {
+        lastmod: 'Lastmod / Freshness',
+        preview_export: 'Preview / Export',
+        hreflang: 'Hreflang',
+        media: 'Media Extensions',
+        index_structure: 'Sitemap Index Structure',
+        fetch_parse: 'Fetch / Parse',
+        other: 'Other'
+    };
+
+    const groupedWarnings = {};
+    warnings.forEach((msg) => {
+        const key = classifyNotice(msg);
+        if (!groupedWarnings[key]) groupedWarnings[key] = [];
+        groupedWarnings[key].push(msg);
+    });
+
+    const groupedErrors = {};
+    errors.forEach((msg) => {
+        const key = classifyNotice(msg);
+        if (!groupedErrors[key]) groupedErrors[key] = [];
+        groupedErrors[key].push(msg);
+    });
+
+    const groupedIssues = {
+        critical: issues.filter(i => String(i.severity || '').toLowerCase() === 'critical'),
+        warning: issues.filter(i => String(i.severity || '').toLowerCase() === 'warning'),
+        info: issues.filter(i => String(i.severity || '').toLowerCase() === 'info'),
+    };
+
     return `
-        <div class="space-y-4">
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-lg font-semibold">Валидация Sitemap</h3>
-                    <div class="flex gap-2">
-                        <button onclick="copyToClipboard('${result.url}')" class="text-blue-600 hover:text-blue-800 text-sm">
+        <div class="space-y-5">
+            <div class="rounded-2xl overflow-hidden shadow-md border border-slate-200">
+                <div class="bg-gradient-to-r from-cyan-700 via-sky-700 to-indigo-700 text-white p-6">
+                    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+                        <div>
+                            <div class="text-xs uppercase tracking-[0.18em] text-cyan-100 mb-2">Sitemap Intelligence</div>
+                            <h3 class="text-2xl font-semibold mb-2">Валидация Sitemap</h3>
+                            <div class="text-sm text-cyan-100 break-all">${escapeHtml(result.url || '')}</div>
+                            <div class="mt-3 flex flex-wrap gap-2">
+                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${healthBadge}">${healthText}</span>
+                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-white/20 text-white">Errors: ${errors.length}</span>
+                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-white/20 text-white">Warnings: ${warnings.length}</span>
+                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-white/20 text-white">Risk: ${riskLevel}</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <div class="relative w-24 h-24 rounded-full p-2" style="${scoreRingStyle}">
+                                <div class="w-full h-full rounded-full bg-slate-900/80 backdrop-blur flex items-center justify-center">
+                                    <div class="text-center">
+                                        <div class="text-xl font-bold">${qualityScore !== null ? qualityScore : 'n/a'}</div>
+                                        <div class="text-[10px] text-slate-300">score ${qualityGrade ? `(${qualityGrade})` : ''}</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-xs text-cyan-100 space-y-1">
+                                <div>Scanned files: <span class="text-white font-semibold">${scanned}</span></div>
+                                <div>Total URLs: <span class="text-white font-semibold">${totalUrls}</span></div>
+                                <div>Unique URLs: <span class="text-white font-semibold">${uniqueUrls}</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white p-4 border-t border-slate-200">
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="copyToClipboard('${result.url}')" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition">
                             <i class="fas fa-copy mr-1"></i>Копировать URL
                         </button>
                         ${exportUrls.length > 0 ? `
-                            <button onclick='downloadCurrentSitemapUrls("sitemap-urls-${safeDomain}-${dateStamp}")' class="text-green-600 hover:text-green-800 text-sm">
-                                <i class="fas fa-file-download mr-1"></i>Экспорт URL (.txt)
+                            <button onclick='downloadCurrentSitemapUrls("sitemap-urls-${safeDomain}-${dateStamp}")' class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition">
+                                <i class="fas fa-file-download mr-1"></i>Экспорт URL
                             </button>
-                            <button onclick='downloadCurrentSitemapUrlsParts("sitemap-urls-${safeDomain}-${dateStamp}", ${exportChunkSize})' class="text-green-600 hover:text-green-800 text-sm">
-                                <i class="fas fa-layer-group mr-1"></i>Экспорт URL (частями)
+                            <button onclick='downloadCurrentSitemapUrlsParts("sitemap-urls-${safeDomain}-${dateStamp}", ${exportChunkSize})' class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition">
+                                <i class="fas fa-layer-group mr-1"></i>Экспорт частями
                             </button>
                         ` : ''}
-                        <button onclick="downloadSitemapXlsxReport()" class="text-indigo-600 hover:text-indigo-800 text-sm">
-                            <i class="fas fa-file-excel mr-1"></i>Скачать XLSX
+                        <button onclick="downloadSitemapXlsxReport()" class="px-3 py-2 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-800 text-sm transition">
+                            <i class="fas fa-file-excel mr-1"></i>XLSX
                         </button>
-                        <button onclick="downloadSitemapDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm">
-                            <i class="fas fa-file-word mr-1"></i>Скачать DOCX
+                        <button onclick="downloadSitemapDocxReport()" class="px-3 py-2 rounded-lg bg-sky-100 hover:bg-sky-200 text-sky-800 text-sm transition">
+                            <i class="fas fa-file-word mr-1"></i>DOCX
                         </button>
-                        <button onclick="copyToClipboard(JSON.stringify(lastTaskResult, null, 2))" class="text-blue-600 hover:text-blue-800 text-sm">
+                        <button onclick="copyToClipboard(JSON.stringify(lastTaskResult, null, 2))" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition">
                             <i class="fas fa-code mr-1"></i>JSON
                         </button>
                     </div>
                 </div>
-                <p class="text-sm text-gray-600 mb-4">
-                    Отчет показывает корректность структуры sitemap, качество URL и риски для индексации.
-                </p>
-                <div class="mb-4">
-                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${healthBadge}">
-                        ${healthText}
-                    </span>
-                    <span class="ml-3 text-sm text-gray-600">Errors: ${errors.length} | Warnings: ${warnings.length} | Recommendations: ${recommendations.length}${qualityScore !== null ? ` | Score: ${qualityScore}${qualityGrade ? ` (${qualityGrade})` : ''}` : ''}</span>
-                </div>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div><span class="text-gray-600">URL:</span> <span class="font-medium break-all">${result.url}</span></div>
-                    <div><span class="text-gray-600">Валиден:</span> <span class="font-medium">${r.valid ? 'Да' : 'Нет'}</span></div>
-                    <div><span class="text-gray-600">HTTP:</span> <span class="font-medium">${r.status_code || 'н/д'}</span></div>
-                    <div><span class="text-gray-600">Все URL:</span> <span class="font-medium">${r.urls_count || 0}</span></div>
-                    <div><span class="text-gray-600">Уникальных URL:</span> <span class="font-medium">${r.unique_urls_count || 0}</span></div>
-                    <div><span class="text-gray-600">Дубликат:</span> <span class="font-medium">${r.duplicate_urls_count || 0}</span></div>
-                    <div><span class="text-gray-600">Sitemap проверено:</span> <span class="font-medium">${r.sitemaps_scanned || 0}</span></div>
-                    <div><span class="text-gray-600">Sitemap валидно:</span> <span class="font-medium">${r.sitemaps_valid || 0}</span></div>
-                    <div><span class="text-gray-600">Invalid URL:</span> <span class="font-medium">${r.invalid_urls_count || 0}</span></div>
-                    <div><span class="text-gray-600">Invalid lastmod:</span> <span class="font-medium">${r.invalid_lastmod_count || 0}</span></div>
-                    <div><span class="text-gray-600">Invalid changefreq:</span> <span class="font-medium">${r.invalid_changefreq_count || 0}</span></div>
-                    <div><span class="text-gray-600">Invalid priority:</span> <span class="font-medium">${r.invalid_priority_count || 0}</span></div>
-                    <div><span class="text-gray-600">Size:</span> <span class="font-medium">${r.size || 0} bytes</span></div>
-                    <div><span class="text-gray-600">Sitemap depth:</span> <span class="font-medium">${r.max_depth_seen || 0}</span></div>
-                    <div><span class="text-gray-600">Index self refs:</span> <span class="font-medium">${r.self_child_refs || 0}</span></div>
-                    <div><span class="text-gray-600">Index repeated refs:</span> <span class="font-medium">${r.repeated_child_refs || 0}</span></div>
-                    <div><span class="text-gray-600">Live non-indexable:</span> <span class="font-medium">${r.live_non_indexable_count || 0}</span></div>
-                </div>
-                ${r.error ? `<div class="mt-3 text-red-600 font-medium">Ошибка: ${r.error}</div>` : ''}
-                ${r.urls_export_truncated ? `<div class="mt-3 text-amber-700 text-sm">Экспорт ограничен до ${r.max_export_urls || 0} URL.</div>` : ''}
-                ${(r.export_parts_count || 0) > 1 ? `<div class="mt-2 text-gray-600 text-sm">Рекомендуемое число частей: ${r.export_parts_count} ( ${exportChunkSize} URL).</div>` : ''}
             </div>
 
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold text-gray-700 mb-3">Scan Visualization</h4>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs mb-4">
-                    <div class="px-3 py-2 rounded border ${phaseFetchDone ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">1. Fetch root</div>
-                    <div class="px-3 py-2 rounded border ${phaseTraverseDone ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">2. Traverse sitemap index</div>
-                    <div class="px-3 py-2 rounded border ${phaseParseDone ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">3. Parse URLs</div>
-                    <div class="px-3 py-2 rounded border ${phaseFinalizeDone ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">4. Build report</div>
-                </div>
-                <div class="space-y-3">
-                    <div>
-                        <div class="flex justify-between text-xs text-gray-600 mb-1">
-                            <span>Traversal progress</span>
-                            <span>${scanned} / ${scanLimitFiles || scanned} files (${scanProgressByLimit}%)</span>
-                        </div>
-                        <div class="w-full bg-gray-200 rounded-full h-2">
-                            <div class="bg-blue-500 h-2 rounded-full" style="width:${scanProgressByLimit}%"></div>
-                        </div>
-                    </div>
-                    <div>
-                        <div class="flex justify-between text-xs text-gray-600 mb-1">
-                            <span>Unique URL coverage</span>
-                            <span>${coverageUnique}%</span>
-                        </div>
-                        <div class="w-full bg-gray-200 rounded-full h-2">
-                            <div class="bg-emerald-500 h-2 rounded-full" style="width:${coverageUnique}%"></div>
-                        </div>
-                    </div>
-                    <div>
-                        <div class="flex justify-between text-xs text-gray-600 mb-1">
-                            <span>Export coverage</span>
-                            <span>${exportCoverage}%</span>
-                        </div>
-                        <div class="w-full bg-gray-200 rounded-full h-2">
-                            <div class="bg-indigo-500 h-2 rounded-full" style="width:${exportCoverage}%"></div>
-                        </div>
-                    </div>
-                </div>
-                ${scanLimitReached ? `<div class="mt-3 text-xs text-amber-700">Traversal limit reached: ${scanLimitFiles}. Remaining queued sitemaps: ${scanQueueRemaining}.</div>` : ''}
+            <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3">
+                <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm transition hover:shadow-md"><div class="text-xs text-slate-500">HTTP</div><div class="text-xl font-semibold">${r.status_code || 'n/a'}</div></div>
+                <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm transition hover:shadow-md"><div class="text-xs text-slate-500">Sitemaps</div><div class="text-xl font-semibold">${scanned}</div><div class="text-[11px] text-slate-500">valid: ${validScanned}</div></div>
+                <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm transition hover:shadow-md"><div class="text-xs text-slate-500">URLs</div><div class="text-xl font-semibold">${totalUrls}</div><div class="text-[11px] text-slate-500">unique: ${uniqueUrls}</div></div>
+                <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm transition hover:shadow-md"><div class="text-xs text-slate-500">Duplicates</div><div class="text-xl font-semibold">${r.duplicate_urls_count || 0}</div></div>
+                <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm transition hover:shadow-md"><div class="text-xs text-slate-500">Live non-indexable</div><div class="text-xl font-semibold">${r.live_non_indexable_count || 0}</div></div>
+                <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm transition hover:shadow-md"><div class="text-xs text-slate-500">Depth</div><div class="text-xl font-semibold">${r.max_depth_seen || 0}</div><div class="text-[11px] text-slate-500">self/repeat: ${r.self_child_refs || 0}/${r.repeated_child_refs || 0}</div></div>
             </div>
 
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold text-gray-700 mb-3">Coverage Insights</h4>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                    <div class="bg-slate-50 border border-slate-200 rounded-lg p-3">
-                        <div class="text-slate-500">Unique URL coverage</div>
-                        <div class="text-lg font-semibold text-slate-800">${coverageUnique}%</div>
-                        <div class="text-xs text-slate-500">Unique / Total = ${uniqueUrls} / ${totalUrls}</div>
+            <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 xl:col-span-2">
+                    <h4 class="font-semibold text-slate-800 mb-4">Pipeline And Coverage</h4>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs mb-4">
+                        <div class="px-3 py-2 rounded border ${phaseFetchDone ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">1. Fetch</div>
+                        <div class="px-3 py-2 rounded border ${phaseTraverseDone ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">2. Traverse</div>
+                        <div class="px-3 py-2 rounded border ${phaseParseDone ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">3. Parse</div>
+                        <div class="px-3 py-2 rounded border ${phaseFinalizeDone ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">4. Build</div>
                     </div>
-                    <div class="bg-slate-50 border border-slate-200 rounded-lg p-3">
-                        <div class="text-slate-500">Valid sitemap files</div>
-                        <div class="text-lg font-semibold text-slate-800">${filesValidRate}%</div>
-                        <div class="text-xs text-slate-500">Valid / Scanned = ${validScanned} / ${scanned}</div>
+                    <div class="space-y-4">
+                        <div>
+                            <div class="flex justify-between text-xs text-slate-600 mb-1"><span>Traversal progress</span><span>${scanned} / ${scanLimitFiles || scanned} (${scanProgressByLimit}%)</span></div>
+                            <div class="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden"><div class="bg-sky-500 h-2.5 rounded-full transition-all duration-700" style="width:${scanProgressByLimit}%"></div></div>
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-xs text-slate-600 mb-1"><span>Unique URL coverage</span><span>${coverageUnique}%</span></div>
+                            <div class="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden"><div class="bg-emerald-500 h-2.5 rounded-full transition-all duration-700" style="width:${coverageUnique}%"></div></div>
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-xs text-slate-600 mb-1"><span>Export coverage</span><span>${exportCoverage}%</span></div>
+                            <div class="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden"><div class="bg-indigo-500 h-2.5 rounded-full transition-all duration-700" style="width:${exportCoverage}%"></div></div>
+                        </div>
                     </div>
-                    <div class="bg-slate-50 border border-slate-200 rounded-lg p-3">
-                        <div class="text-slate-500">Export coverage</div>
-                        <div class="text-lg font-semibold text-slate-800">${exportCoverage}%</div>
-                        <div class="text-xs text-slate-500">Exported / Total = ${exported} / ${totalUrls}</div>
-                    </div>
+                    ${scanLimitReached ? `<div class="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">Traversal limit reached: ${scanLimitFiles}. Remaining queued sitemaps: ${scanQueueRemaining}.</div>` : ''}
+                    ${r.urls_export_truncated ? `<div class="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">Export preview limited to ${r.max_export_urls || 0} URLs.</div>` : ''}
+                    ${(r.export_parts_count || 0) > 1 ? `<div class="mt-2 text-xs text-slate-600">Recommended export parts: ${r.export_parts_count} (${exportChunkSize} URLs each)</div>` : ''}
                 </div>
-            </div>
-
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold text-gray-700 mb-3">Indexation Risk</h4>
-                <div class="text-sm text-gray-700">
-                    <span class="font-medium">Risk level:</span> ${riskLevel} |
-                    <span class="font-medium">Errors:</span> ${errors.length} |
-                    <span class="font-medium">Warnings:</span> ${warnings.length}
-                </div>
-                <div class="mt-2 text-xs text-gray-500">
-                    High: sitemap fetch/parse errors. Medium: valid structure with warnings. Low: no errors and no warnings.
-                </div>
-            </div>
-
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold text-gray-700 mb-3">Advanced Checks</h4>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                    <div class="bg-slate-50 border border-slate-200 rounded-lg p-3">
-                        <div class="text-slate-500">Hreflang in sitemap</div>
-                        <div class="text-lg font-semibold text-slate-800">${hreflang.detected ? 'Detected' : 'Not detected'}</div>
-                        <div class="text-xs text-slate-500">links: ${hreflang.links_count || 0}, invalid: ${(hreflang.invalid_code_count || 0) + (hreflang.invalid_href_count || 0)}</div>
-                    </div>
-                    <div class="bg-slate-50 border border-slate-200 rounded-lg p-3">
-                        <div class="text-slate-500">Freshness by lastmod</div>
-                        <div class="text-lg font-semibold text-slate-800">stale: ${freshness.stale_lastmod_count || 0}</div>
-                        <div class="text-xs text-slate-500">missing: ${freshness.lastmod_missing_count || 0}, future: ${freshness.lastmod_future_count || 0}</div>
-                    </div>
-                    <div class="bg-slate-50 border border-slate-200 rounded-lg p-3">
-                        <div class="text-slate-500">Media extensions</div>
-                        <div class="text-lg font-semibold text-slate-800">img/video/news: ${mediaExt.image_tags_count || 0}/${mediaExt.video_tags_count || 0}/${mediaExt.news_tags_count || 0}</div>
-                        <div class="text-xs text-slate-500">missing required: ${(mediaExt.image_missing_loc_count || 0) + (mediaExt.video_missing_required_count || 0) + (mediaExt.news_missing_required_count || 0)}</div>
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                    <h4 class="font-semibold text-slate-800 mb-3">Advanced Signals</h4>
+                    <div class="space-y-3 text-sm">
+                        <div class="rounded-lg border border-slate-200 p-3">
+                            <div class="text-xs text-slate-500">Hreflang</div>
+                            <div class="font-semibold">${hreflang.detected ? 'Detected' : 'Not detected'}</div>
+                            <div class="text-xs text-slate-500">links: ${hreflang.links_count || 0}, invalid: ${(hreflang.invalid_code_count || 0) + (hreflang.invalid_href_count || 0)}</div>
+                        </div>
+                        <div class="rounded-lg border border-slate-200 p-3">
+                            <div class="text-xs text-slate-500">Freshness</div>
+                            <div class="font-semibold">stale: ${freshness.stale_lastmod_count || 0}</div>
+                            <div class="text-xs text-slate-500">missing: ${freshness.lastmod_missing_count || 0}, future: ${freshness.lastmod_future_count || 0}</div>
+                        </div>
+                        <div class="rounded-lg border border-slate-200 p-3">
+                            <div class="text-xs text-slate-500">Media Extensions</div>
+                            <div class="font-semibold">${mediaExt.image_tags_count || 0}/${mediaExt.video_tags_count || 0}/${mediaExt.news_tags_count || 0}</div>
+                            <div class="text-xs text-slate-500">missing required: ${(mediaExt.image_missing_loc_count || 0) + (mediaExt.video_missing_required_count || 0) + (mediaExt.news_missing_required_count || 0)}</div>
+                        </div>
                     </div>
                 </div>
             </div>
 
             ${(issues.length > 0 || actionPlan.length > 0) ? `
-                <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold text-gray-700 mb-3">Prioritized Issues And Action Plan</h4>
-                    <div class="text-sm text-gray-700 mb-3">
-                        Critical: <span class="font-medium">${severityCounts.critical || 0}</span>,
-                        Warning: <span class="font-medium">${severityCounts.warning || 0}</span>,
-                        Info: <span class="font-medium">${severityCounts.info || 0}</span>
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 class="font-semibold text-slate-800">Prioritized Findings</h4>
+                        <div class="text-xs text-slate-600">critical: <span class="font-semibold">${severityCounts.critical || 0}</span>, warning: <span class="font-semibold">${severityCounts.warning || 0}</span>, info: <span class="font-semibold">${severityCounts.info || 0}</span></div>
                     </div>
-                    ${issues.length > 0 ? `
-                        <div class="space-y-2 mb-4">
-                            ${issues.slice(0, 20).map(it => `
-                                <div class="border rounded p-2">
-                                    <div class="text-sm font-medium">${escapeHtml(it.title || it.code || 'Issue')}</div>
-                                    <div class="text-xs text-gray-600">Severity: ${escapeHtml(it.severity || 'warning')} | Owner: ${escapeHtml(it.owner || 'SEO')}</div>
-                                    <div class="text-xs text-gray-700">${escapeHtml(it.details || '')}</div>
-                                </div>
-                            `).join('')}
-                        </div>
-                    ` : ''}
-                    ${actionPlan.length > 0 ? `
-                        <div class="space-y-2">
-                            ${actionPlan.slice(0, 20).map(item => `
-                                <div class="border rounded p-2 text-sm">
-                                    <span class="font-medium">${escapeHtml(item.priority || 'P2')}</span>
-                                    <span class="text-gray-600"> | ${escapeHtml(item.owner || 'SEO')}</span>
-                                    <div class="text-gray-800">${escapeHtml(item.issue || '')}</div>
-                                    <div class="text-gray-700">${escapeHtml(item.action || '')}</div>
-                                    <div class="text-xs text-gray-500">SLA: ${escapeHtml(item.sla || 'n/a')}</div>
-                                </div>
-                            `).join('')}
-                        </div>
-                    ` : ''}
-                </div>
-            ` : ''}
-
-            ${liveChecks.length > 0 ? `
-                <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold text-gray-700 mb-3">Live Indexability Sample (${liveChecks.length})</h4>
-                    <div class="space-y-2">
-                        ${liveChecks.slice(0, 20).map(item => `
-                            <div class="border rounded p-2 text-sm">
-                                <div class="font-medium break-all">${escapeHtml(item.url || '')}</div>
-                                <div class="text-xs text-gray-600">HTTP: ${item.status_code ?? 'n/a'} | Indexable: ${item.indexable ? 'Yes' : 'No'} | ${item.response_ms ?? 0} ms</div>
-                                ${(item.reasons || []).length > 0 ? `<div class="text-xs text-rose-700">${escapeHtml((item.reasons || []).join(' | '))}</div>` : ''}
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                        ${['critical', 'warning', 'info'].map(level => `
+                            <div class="rounded-lg border p-3 ${levelClass[level]}">
+                                <div class="font-semibold text-sm mb-2 uppercase">${level}</div>
+                                ${groupedIssues[level].length > 0 ? groupedIssues[level].slice(0, 8).map(it => `
+                                    <div class="mb-2 pb-2 border-b border-current/20 last:border-0 last:mb-0 last:pb-0">
+                                        <div class="text-sm font-medium">${escapeHtml(it.title || it.code || 'Issue')}</div>
+                                        <div class="text-xs opacity-90">${escapeHtml(it.details || '')}</div>
+                                    </div>
+                                `).join('') : '<div class="text-xs opacity-75">No items</div>'}
                             </div>
                         `).join('')}
                     </div>
                 </div>
             ` : ''}
 
-            ${errors.length > 0 ? `
-                <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold text-red-600 mb-2">Ошибки (${errors.length})</h4>
-                    ${errors.slice(0, 50).map(e => `<div class="text-sm text-red-700 mb-1">${escapeHtml(e)}</div>`).join('')}
+            ${(Object.keys(groupedErrors).length > 0 || Object.keys(groupedWarnings).length > 0) ? `
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                    <h4 class="font-semibold text-slate-800 mb-3">Structured Problems</h4>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <div>
+                            <div class="text-sm font-semibold text-rose-700 mb-2">Errors (${errors.length})</div>
+                            ${Object.keys(groupedErrors).length === 0 ? '<div class="text-xs text-slate-500">No errors</div>' : Object.entries(groupedErrors).map(([key, list]) => `
+                                <details class="mb-2 border border-rose-200 rounded-lg bg-rose-50">
+                                    <summary class="px-3 py-2 text-xs font-medium cursor-pointer">${escapeHtml(groupLabel[key] || key)} (${list.length})</summary>
+                                    <div class="px-3 pb-3 space-y-1">${list.slice(0, 20).map(msg => `<div class="text-xs text-rose-700">${escapeHtml(msg)}</div>`).join('')}</div>
+                                </details>
+                            `).join('')}
+                        </div>
+                        <div>
+                            <div class="text-sm font-semibold text-amber-700 mb-2">Warnings (${warnings.length})</div>
+                            ${Object.keys(groupedWarnings).length === 0 ? '<div class="text-xs text-slate-500">No warnings</div>' : Object.entries(groupedWarnings).map(([key, list]) => `
+                                <details class="mb-2 border border-amber-200 rounded-lg bg-amber-50">
+                                    <summary class="px-3 py-2 text-xs font-medium cursor-pointer">${escapeHtml(groupLabel[key] || key)} (${list.length})</summary>
+                                    <div class="px-3 pb-3 space-y-1">${list.slice(0, 20).map(msg => `<div class="text-xs text-amber-800">${escapeHtml(msg)}</div>`).join('')}</div>
+                                </details>
+                            `).join('')}
+                        </div>
+                    </div>
                 </div>
             ` : ''}
 
-            ${warnings.length > 0 ? `
-                <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold text-amber-600 mb-2">Предупреждения (${warnings.length})</h4>
-                    ${warnings.slice(0, 50).map(w => `<div class="text-sm text-amber-700 mb-1">${escapeHtml(w)}</div>`).join('')}
+            ${liveChecks.length > 0 ? `
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                    <h4 class="font-semibold text-slate-800 mb-3">Live Indexability Sample (${liveChecks.length})</h4>
+                    <div class="space-y-2 max-h-80 overflow-auto pr-1">
+                        ${liveChecks.slice(0, 20).map(item => `
+                            <div class="border rounded-lg p-3 text-sm transition hover:shadow-sm ${item.indexable ? 'border-emerald-200 bg-emerald-50/40' : 'border-rose-200 bg-rose-50/40'}">
+                                <div class="font-medium break-all">${escapeHtml(item.url || '')}</div>
+                                <div class="text-xs text-gray-600 mt-1">HTTP: ${item.status_code ?? 'n/a'} | Indexable: <span class="${item.indexable ? 'text-emerald-700' : 'text-rose-700'} font-medium">${item.indexable ? 'Yes' : 'No'}</span> | ${item.response_ms ?? 0} ms</div>
+                                ${(item.reasons || []).length > 0 ? `<div class="text-xs text-rose-700 mt-1">${escapeHtml((item.reasons || []).join(' | '))}</div>` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
                 </div>
             ` : ''}
 
             ${duplicateDetails.length > 0 ? `
-                <div class="bg-white rounded-xl shadow-md p-6">
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
                     <div class="flex items-center justify-between mb-2">
                         <h4 class="font-semibold text-rose-700">Дубли URL (${duplicateDetails.length})</h4>
-                        <button onclick='downloadCurrentSitemapDuplicates("sitemap-duplicates-${safeDomain}-${dateStamp}.txt")' class="text-xs text-rose-700 hover:text-rose-900">
+                        <button onclick='downloadCurrentSitemapDuplicates("sitemap-duplicates-${safeDomain}-${dateStamp}.txt")' class="px-2 py-1 rounded bg-rose-100 hover:bg-rose-200 text-xs text-rose-700 transition">
                             <i class="fas fa-file-download mr-1"></i>Экспорт дублей
                         </button>
                     </div>
                     ${r.duplicate_details_truncated ? `<div class="text-xs text-amber-700 mb-2">Список сокращен.</div>` : ''}
-                    <div class="max-h-72 overflow-auto border rounded">
+                    <div class="max-h-72 overflow-auto border rounded-lg">
                         ${duplicateDetails.slice(0, 500).map(d => `
-                            <div class="text-xs border-b p-2">
+                            <div class="text-xs border-b p-2 bg-white hover:bg-rose-50/40">
                                 <div class="font-medium break-all text-gray-800">${escapeHtml(d.url)}</div>
                                 <div class="text-gray-600">первый: <span class="break-all">${escapeHtml(d.first_sitemap || '-')}</span></div>
                                 <div class="text-gray-600">дубликат: <span class="break-all">${escapeHtml(d.duplicate_sitemap || '-')}</span></div>
@@ -2463,57 +2474,75 @@ function generateSitemapHTMLV2(result) {
             ` : ''}
 
             ${recommendations.length > 0 ? `
-                <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold text-blue-600 mb-2">Рекомендации</h4>
-                    ${recommendations.map(rec => `<div class="text-sm text-blue-700 mb-1">- ${escapeHtml(rec)}</div>`).join('')}
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                    <h4 class="font-semibold text-blue-700 mb-3">Рекомендации</h4>
+                    <div class="space-y-2">${recommendations.map(rec => `<div class="text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded p-2">${escapeHtml(rec)}</div>`).join('')}</div>
                 </div>
             ` : ''}
 
             ${highlights.length > 0 ? `
-                <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold text-emerald-700 mb-2">Ключевые выводы</h4>
-                    ${highlights.map(item => `<div class="text-sm text-emerald-700 mb-1">- ${escapeHtml(item)}</div>`).join('')}
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                    <h4 class="font-semibold text-emerald-700 mb-3">Ключевые выводы</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-2">${highlights.map(item => `<div class="text-sm text-emerald-700 bg-emerald-50 border border-emerald-100 rounded p-2">${escapeHtml(item)}</div>`).join('')}</div>
                 </div>
             ` : ''}
 
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold text-gray-700 mb-3">Файлы Sitemap (${sitemapFiles.length})</h4>
+            ${actionPlan.length > 0 ? `
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                    <h4 class="font-semibold text-slate-800 mb-3">Execution Plan</h4>
+                    <div class="space-y-2">
+                        ${actionPlan.slice(0, 20).map(item => `
+                            <div class="border rounded-lg p-3 bg-slate-50">
+                                <div class="text-xs text-slate-600 mb-1">${escapeHtml(item.priority || 'P2')} | ${escapeHtml(item.owner || 'SEO')} | SLA: ${escapeHtml(item.sla || 'n/a')}</div>
+                                <div class="text-sm font-medium text-slate-800">${escapeHtml(item.issue || '')}</div>
+                                <div class="text-sm text-slate-700">${escapeHtml(item.action || '')}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            ` : ''}
+
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                <h4 class="font-semibold text-slate-800 mb-3">Sitemap Files (${sitemapFiles.length})</h4>
                 <div class="space-y-3">
                     ${sitemapFiles.map((f, idx) => `
-                        <div class="border rounded-lg p-3">
-                            <div class="flex justify-between items-center mb-1">
-                                <div class="text-sm font-medium break-all">${escapeHtml(f.sitemap_url)}</div>
-                                <div class="text-xs ${f.ok ? 'text-green-600' : 'text-red-600'}">${f.ok ? '' : 'ОШИБКА'}</div>
+                        <details class="border rounded-lg p-3 bg-white hover:bg-slate-50 transition">
+                            <summary class="cursor-pointer list-none">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div>
+                                        <div class="text-sm font-medium break-all">${escapeHtml(f.sitemap_url)}</div>
+                                        <div class="text-xs text-slate-600 mt-1">type: ${escapeHtml(f.type || 'unknown')} | HTTP: ${f.status_code || 'n/a'} | URLs: ${f.urls_count || 0} | dup: ${f.duplicate_count || 0}</div>
+                                    </div>
+                                    <span class="text-xs px-2 py-1 rounded ${f.ok ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">${f.ok ? 'OK' : 'ERROR'}</span>
+                                </div>
+                            </summary>
+                            <div class="mt-3 border-t pt-3">
+                                ${(f.urls || []).length > 0 ? `
+                                    <button onclick='downloadSitemapFilePreview(${idx}, "sitemap-${safeDomain}-${dateStamp}-${idx + 1}-urls-preview.txt")' class="px-2 py-1 rounded bg-emerald-100 hover:bg-emerald-200 text-xs text-emerald-800 transition mb-2">
+                                        <i class="fas fa-file-download mr-1"></i>Экспорт preview URL этого sitemap
+                                    </button>
+                                ` : ''}
+                                ${(f.urls_omitted || 0) > 0 ? `<div class="text-xs text-amber-700 mb-1">Preview limited, omitted: ${f.urls_omitted}</div>` : ''}
+                                ${(f.duplicate_urls || []).length > 0 ? `<div class="text-xs text-rose-700 break-all mb-1">Duplicate examples: ${escapeHtml((f.duplicate_urls || []).slice(0, 10).join(' | '))}</div>` : ''}
+                                ${(f.errors || []).length > 0 ? `<div class="text-xs text-rose-700">${escapeHtml((f.errors || []).join(' | '))}</div>` : ''}
+                                ${(f.warnings || []).length > 0 ? `<div class="text-xs text-amber-700 mt-1">${escapeHtml((f.warnings || []).join(' | '))}</div>` : ''}
                             </div>
-                            <div class="text-xs text-gray-600 mb-2">тип: ${escapeHtml(f.type || 'неизвестно')} | HTTP: ${f.status_code || 'н/д'} | URL: ${f.urls_count || 0}</div>
-                            ${f.duplicate_count > 0 ? `<div class="text-xs text-rose-700 mb-2">дубликат в эт sitemap: ${f.duplicate_count}</div>` : ''}
-                            ${(f.urls || []).length > 0 ? `
-                                <button onclick='downloadSitemapFilePreview(${idx}, "sitemap-${safeDomain}-${dateStamp}-${idx + 1}-urls-preview.txt")' class="text-xs text-green-700 hover:text-green-900 mb-2">
-                                    <i class="fas fa-file-download mr-1"></i>Экспорт URL этого sitemap
-                                </button>
-                            ` : ''}
-                            ${(f.urls_omitted || 0) > 0 ? `<div class="text-xs text-amber-700 mb-1">тол предпросмотр, пропущено: ${f.urls_omitted}</div>` : ''}
-                            ${(f.duplicate_urls || []).length > 0 ? `
-                                <div class="text-xs text-rose-700 mb-1">Примеры дублей URL:</div>
-                                <div class="text-xs text-rose-700 break-all">${escapeHtml((f.duplicate_urls || []).slice(0, 10).join(' | '))}</div>
-                            ` : ''}
-                            ${(f.errors || []).length > 0 ? `<div class="text-xs text-red-600">${escapeHtml((f.errors || []).join(' | '))}</div>` : ''}
-                            ${(f.warnings || []).length > 0 ? `<div class="text-xs text-amber-600">${escapeHtml((f.warnings || []).join(' | '))}</div>` : ''}
-                        </div>
+                        </details>
                     `).join('')}
                 </div>
             </div>
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold text-gray-700 mb-3">Help</h4>
-                <div class="space-y-1 text-sm">
+
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                <h4 class="font-semibold text-slate-800 mb-3">Reference</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
                     <a class="text-blue-600 hover:underline break-all" href="https://www.sitemaps.org/protocol.html" target="_blank" rel="noopener noreferrer">Sitemaps protocol (sitemaps.org)</a>
                     <a class="text-blue-600 hover:underline break-all" href="https://developers.google.com/search/docs/crawling-indexing/sitemaps/overview" target="_blank" rel="noopener noreferrer">Google Search Central: Sitemaps overview</a>
                 </div>
             </div>
-
         </div>
     `;
 }
+
 
 function generateSitemapHTML(result) {
     const r = result.results || result;

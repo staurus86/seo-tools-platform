@@ -1537,7 +1537,7 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                         file_report["warnings"].append("More than 50,000 URLs in one sitemap file.")
                     if file_report["urls_omitted"] > 0:
                         file_report["warnings"].append(
-                            f"URLs preview truncated: {file_report['urls_omitted']} omitted in API response."
+                            f"URLs preview truncated for UI/API payload: {file_report['urls_omitted']} omitted from preview; full URLs count was still validated."
                         )
                     if len(file_lastmods) >= 20:
                         histogram: Dict[str, int] = {}
