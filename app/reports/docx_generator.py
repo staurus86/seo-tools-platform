@@ -1808,6 +1808,23 @@ class DOCXGenerator:
         def _lim(rows: List[Dict[str, Any]], limit: int = 100) -> List[Dict[str, Any]]:
             return (rows or [])[:limit]
 
+        def _add_dict_table(title: str, rows: List[Dict[str, Any]], level: int = 2, limit: int = 100) -> None:
+            rows = rows or []
+            if not rows:
+                return
+            self._add_heading(doc, title, level=level)
+            limited = _lim(rows, limit)
+            cols = list((limited[0] or {}).keys())
+            if not cols:
+                doc.add_paragraph("Нет данных.")
+                return
+            values = [[r.get(c, "") for c in cols] for r in limited]
+            self._add_table(doc, cols, values)
+            if len(limited) < len(rows):
+                doc.add_paragraph(
+                    f"Показаны первые {len(limited)} строк. Все данные в выгрузке XLSX, где обрабатываются строки по лимиту."
+                )
+
         self._add_heading(doc, "1. Сводка", level=1)
         summary_rows = [
             ["Строк ссылок", summary.get("rows_total", 0)],
@@ -1825,142 +1842,69 @@ class DOCXGenerator:
         ]
         self._add_table(doc, ["Метрика", "Значение"], summary_rows)
 
-        self._add_heading(doc, "2. Ключевые таблицы", level=1)
-        priority_rows = tables.get("priority_dashboard", []) or []
-        if priority_rows:
-            self._add_heading(doc, "2.1 Приоритеты SEO (что смотреть первым)", level=2)
-            rows = [[x.get("Приоритет",""), x.get("Блок",""), x.get("Метрика",""), x.get("Значение",""), x.get("Статус","")] for x in _lim(priority_rows)]
-            self._add_table(doc, ["Приоритет","Блок","Метрика","Значение","Статус"], rows)
-        queue_rows = tables.get("action_queue", []) or []
-        if queue_rows:
-            self._add_heading(doc, "2.2 Очередь действий", level=2)
-            rows = [[x.get("Приоритет",""), x.get("Действие",""), x.get("Impact",""), x.get("Effort",""), x.get("Что сделать","")] for x in _lim(queue_rows)]
-            self._add_table(doc, ["Приоритет","Действие","Impact","Effort","Что сделать"], rows)
-        kpi_rows = tables.get("executive_kpi", []) or []
-        if kpi_rows:
-            self._add_heading(doc, "2.3 KPI сводка", level=2)
-            rows = [[x.get("Показатель",""), x.get("Наш сайт",""), x.get("Среднее конкурентов",""), x.get("Разница (п.п.)","")] for x in _lim(kpi_rows)]
-            self._add_table(doc, ["Показатель","Наш сайт","Среднее конкурентов","Разница"], rows)
-        profile_rows = tables.get("profile_structure", []) or []
-        if profile_rows:
-            self._add_heading(doc, "2.4 Структура профиля", level=2)
-            rows = [[x.get("Метрика",""), x.get("Значение","")] for x in _lim(profile_rows)]
-            self._add_table(doc, ["Метрика","Значение"], rows)
+        self._add_heading(doc, "2. Executive", level=1)
+        _add_dict_table("2.1 Executive overview", tables.get("executive_overview", []) or [], level=2)
+        _add_dict_table("2.2 KPI", tables.get("executive_kpi", []) or [], level=2)
+        _add_dict_table("2.3 Приоритеты", tables.get("priority_dashboard", []) or [], level=2)
 
-        top_comp = tables.get("competitor_analysis", []) or []
-        if top_comp:
-            self._add_heading(doc, "2.5 Конкуренты (топ)", level=2)
-            rows = [[x.get("competitor_domain", ""), x.get("links", 0), x.get("shared_with_our_site", 0)] for x in _lim(top_comp)]
-            self._add_table(doc, ["Домен", "Ссылки", "Общие доноры"], rows)
-        comp_rank = tables.get("competitor_ranking", []) or []
-        if comp_rank:
-            self._add_heading(doc, "2.6 Рейтинг конкурентов", level=2)
-            rows = [[x.get("rank", ""), x.get("competitor_domain", ""), x.get("batch_dr", ""), x.get("batch_backlinks_all", ""), x.get("batch_backlinks_followed_pct", ""), x.get("rank_score", "")] for x in _lim(comp_rank)]
-            self._add_table(doc, ["#","Домен","DR","Backlinks","Follow %","Rank score"], rows)
-        comp_quality = tables.get("competitor_quality", []) or []
-        if comp_quality:
-            self._add_heading(doc, "2.7 Качество профиля конкурентов", level=2)
-            rows = [
-                [
-                    x.get("competitor_domain", ""),
-                    x.get("quality_score_0_100", ""),
-                    x.get("follow_pct", ""),
-                    x.get("lost_pct", ""),
-                ]
-                for x in _lim(comp_quality)
-            ]
-            self._add_table(doc, ["Домен", "Quality score", "Follow %", "Lost %"], rows)
+        self._add_heading(doc, "3. Competitors", level=1)
+        _add_dict_table("3.1 Competitor benchmark", tables.get("competitor_benchmark", []) or [], level=2)
+        _add_dict_table("3.2 Рейтинг конкурентов", tables.get("competitor_ranking", []) or [], level=2)
+        _add_dict_table("3.3 Качество профиля конкурентов", tables.get("competitor_quality", []) or [], level=2)
+        _add_dict_table("3.4 Сырые метрики конкурентов", tables.get("competitor_analysis", []) or [], level=2)
 
-        top_prio = tables.get("priority_domains", []) or []
-        if top_prio:
-            self._add_heading(doc, "2.8 Priority domains", level=2)
-            rows = [[x.get("domain", ""), x.get("targets_count", 0), x.get("competitors_count", 0)] for x in _lim(top_prio)]
-            self._add_table(doc, ["Донор", "Targets", "Конкуренты"], rows)
-        comparison = tables.get("comparison_overview", []) or []
-        if comparison:
-            self._add_heading(doc, "2.9 Сравнение с конкурентами", level=2)
-            rows = [
-                [
-                    x.get("competitor_domain", ""),
-                    x.get("shared_ref_domains", 0),
-                    x.get("donor_gap_pct", 0),
-                    x.get("follow_gap_pp", 0),
-                    x.get("lost_gap_pp", 0),
-                ]
-                for x in _lim(comparison)
-            ]
-            self._add_table(doc, ["Домен", "Общие доноры", "Donor gap %", "Follow gap п.п.", "Lost gap п.п."], rows)
-        dr_matrix = tables.get("dr_distribution_matrix", []) or []
-        if dr_matrix:
-            self._add_heading(doc, "2.10 DR распределение доноров по доменам (%)", level=2)
-            cols = ["Домен", "DR 0-9", "DR 10-19", "DR 20-29", "DR 30-39", "DR 40-49", "DR 50-59", "DR 60-69", "DR 70-79", "DR 80-89", "DR 90-100"]
-            rows = [[x.get(c, "") for c in cols] for x in _lim(dr_matrix)]
-            self._add_table(doc, cols, rows)
-        opportunities = tables.get("opportunity_domains", []) or []
-        if opportunities:
-            self._add_heading(doc, "2.11 Матрица возможностей доноров", level=2)
-            rows = [
-                [
-                    x.get("domain", ""),
-                    x.get("competitors_covered", 0),
-                    x.get("competitors_covered_pct", 0),
-                    x.get("avg_dr", 0),
-                    x.get("opportunity_score", 0),
-                ]
-                for x in _lim(opportunities)
-            ]
-            self._add_table(doc, ["Донор", "Покрытие конкурентов", "Покрытие %", "Avg DR", "Opportunity score"], rows)
-        ready_buy = tables.get("ready_buy_domains", []) or []
-        if ready_buy:
-            self._add_heading(doc, "2.12 Ready-to-buy доноры (GGL/Miralinks)", level=2)
-            rows = [[x.get("domain",""), x.get("avg_dr",""), x.get("avg_traffic",""), x.get("follow_pct",""), x.get("opportunity_score","")] for x in _lim(ready_buy)]
-            self._add_table(doc, ["Домен","Avg DR","Traffic","Follow %","Opportunity"], rows)
+        self._add_heading(doc, "4. Gap-доноры", level=1)
+        _add_dict_table("4.1 Gap donors priority", tables.get("gap_donors_priority", []) or [], level=2)
+        _add_dict_table("4.2 Donor overlap matrix", tables.get("donor_overlap_matrix", []) or [], level=2)
+        _add_dict_table("4.3 Ready-to-buy domains", tables.get("ready_buy_domains", []) or [], level=2)
+        _add_dict_table("4.4 Priority score domains", tables.get("priority_score_domains", []) or [], level=2)
 
-        self._add_heading(doc, "3. Анкоры", level=1)
+        self._add_heading(doc, "5. Quality", level=1)
+        _add_dict_table("5.1 Link attributes", tables.get("link_attributes", []) or [], level=2)
+        _add_dict_table("5.2 HTTP / Type / Lang / Platform", tables.get("http_type_lang_platform", []) or [], level=2)
+        _add_dict_table("5.3 Target structure", tables.get("target_structure", []) or [], level=2)
+        _add_dict_table("5.4 Follow/Nofollow mix", tables.get("follow_mix_pct", []) or [], level=2)
+        _add_dict_table("5.5 Follow domain mix", tables.get("follow_domain_mix_pct", []) or [], level=2)
+
+        self._add_heading(doc, "6. Loss", level=1)
+        _add_dict_table("6.1 Loss & recovery", tables.get("loss_recovery", []) or [], level=2)
+        _add_dict_table("6.2 Lost status mix", tables.get("lost_status_mix", []) or [], level=2)
+        _add_dict_table("6.3 Ссылки с редиректов (sample)", tables.get("raw_redirect_links", []) or [], level=2)
+
+        self._add_heading(doc, "7. Anchors", level=1)
         anchor_types = results.get("anchor_breakdown", {}) or {}
         if anchor_types:
             rows = [[k, v] for k, v in anchor_types.items()]
             self._add_table(doc, ["Тип анкоров", "Количество"], rows)
-        top_anchors = tables.get("anchor_analysis", []) or []
-        if top_anchors:
-            self._add_heading(doc, "3.1 Топ анкоров", level=2)
-            rows = [[x.get("anchor", ""), x.get("count", 0)] for x in _lim(top_anchors)]
-            self._add_table(doc, ["Анкор", "Количество"], rows)
-        anchor_mix = tables.get("anchor_mix_pct", []) or []
-        if anchor_mix:
-            self._add_heading(doc, "3.2 Anchor mix (%)", level=2)
-            rows = [[x.get("anchor_type",""), x.get("count",0), x.get("pct",0)] for x in _lim(anchor_mix)]
-            self._add_table(doc, ["Тип", "Кол-во", "%"], rows)
-        follow_mix = tables.get("follow_mix_pct", []) or []
-        if follow_mix:
-            self._add_heading(doc, "3.3 Follow/Nofollow mix (%)", level=2)
-            rows = [[x.get("type", ""), x.get("count", 0), x.get("pct", 0)] for x in _lim(follow_mix)]
-            self._add_table(doc, ["Тип", "Кол-во", "%"], rows)
-        lost_mix = tables.get("lost_status_mix", []) or []
-        if lost_mix:
-            self._add_heading(doc, "3.4 Потерянные ссылки по статусам", level=2)
-            rows = [[x.get("lost_status", ""), x.get("count", 0), x.get("pct", 0)] for x in _lim(lost_mix)]
-            self._add_table(doc, ["Статус", "Кол-во", "%"], rows)
+        _add_dict_table("7.1 Anchor summary", tables.get("anchor_analysis", []) or [], level=2)
+        _add_dict_table("7.2 Word analysis", tables.get("anchor_word_analysis", []) or [], level=2)
+        _add_dict_table("7.3 Anchor mix", tables.get("anchor_mix_pct", []) or [], level=2)
 
-        self._add_heading(doc, "4. Рекомендации и предупреждения", level=1)
-        if errors:
-            self._add_heading(doc, "4.1 Ошибки", level=2)
-            for item in errors[:100]:
-                doc.add_paragraph(str(item), style="List Bullet")
-        if warnings:
-            self._add_heading(doc, "4.2 Предупреждения", level=2)
-            for item in warnings[:100]:
-                doc.add_paragraph(str(item), style="List Bullet")
+        self._add_heading(doc, "8. Risks", level=1)
+        _add_dict_table("8.1 Risk signals", tables.get("risk_signals", []) or [], level=2)
+        _add_dict_table("8.2 Дубликаты без нашего сайта", tables.get("raw_duplicates_without_our", []) or [], level=2)
 
-        self._add_heading(doc, "5. План действий", level=1)
+        self._add_heading(doc, "9. Plan", level=1)
+        _add_dict_table("9.1 План 30/60/90", tables.get("action_queue_90d", []) or [], level=2)
+        _add_dict_table("9.2 Очередь действий", tables.get("action_queue", []) or [], level=2)
         for key in ("ourSite", "competitors", "comparison", "plan"):
             text = prompts.get(key)
             if text:
                 doc.add_paragraph(f"{key}: {text}")
 
+        self._add_heading(doc, "10. Рекомендации и предупреждения", level=1)
+        if errors:
+            self._add_heading(doc, "10.1 Ошибки", level=2)
+            for item in errors[:100]:
+                doc.add_paragraph(str(item), style="List Bullet")
+        if warnings:
+            self._add_heading(doc, "10.2 Предупреждения", level=2)
+            for item in warnings[:100]:
+                doc.add_paragraph(str(item), style="List Bullet")
+
         derived = keywords.get("derivedBrandKeywords", []) or []
         if derived:
-            self._add_heading(doc, "6. Авто-брендовые ключи", level=1)
+            self._add_heading(doc, "11. Авто-брендовые ключи", level=1)
             doc.add_paragraph(", ".join(map(str, derived[:100])))
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
