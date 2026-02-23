@@ -424,7 +424,7 @@ class XLSXGenerator:
         header_style = self._create_header_style()
         cell_style = self._create_cell_style()
         results = data.get('results', {}) or {}
-        report_url = data.get('url', 'n/a')
+        report_url = results.get("resolved_sitemap_url") or data.get('url', 'n/a')
 
         ws = wb.active
         ws.title = "Summary"
@@ -563,6 +563,20 @@ class XLSXGenerator:
         rec_ws.column_dimensions['B'].width = 14
         rec_ws.freeze_panes = "A2"
         rec_ws.auto_filter.ref = "A1:B1"
+
+        tool_notes_ws = wb.create_sheet("Tool Notes")
+        tool_notes_ws.cell(row=1, column=1, value="Note")
+        self._apply_style(tool_notes_ws.cell(row=1, column=1), header_style)
+        tool_notes = results.get("tool_notes", []) or []
+        if tool_notes:
+            for idx, note in enumerate(tool_notes, start=2):
+                c = tool_notes_ws.cell(row=idx, column=1, value=str(note))
+                self._apply_style(c, cell_style)
+        else:
+            c = tool_notes_ws.cell(row=2, column=1, value="No tool notes")
+            self._apply_style(c, cell_style)
+        tool_notes_ws.column_dimensions['A'].width = 140
+        tool_notes_ws.freeze_panes = "A2"
 
         insights_ws = wb.create_sheet("Insights")
         insights_ws.cell(row=1, column=1, value="Metric")

@@ -2181,6 +2181,7 @@ function generateSitemapHTMLV2(result) {
     const sitemapFiles = r.sitemap_files || [];
     const warnings = r.warnings || [];
     const errors = r.errors || [];
+    const toolNotes = r.tool_notes || [];
     const recommendations = r.recommendations || [];
     const highlights = r.highlights || [];
     const qualityScore = Number.isFinite(r.quality_score) ? r.quality_score : null;
@@ -2437,6 +2438,15 @@ function generateSitemapHTMLV2(result) {
                                 </details>
                             `).join('')}
                         </div>
+                    </div>
+                </div>
+            ` : ''}
+
+            ${toolNotes.length > 0 ? `
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                    <h4 class="font-semibold text-slate-800 mb-3">Tool Notes (Not Sitemap Errors)</h4>
+                    <div class="space-y-1">
+                        ${toolNotes.map(note => `<div class="text-xs text-slate-600">${escapeHtml(note)}</div>`).join('')}
                     </div>
                 </div>
             ` : ''}

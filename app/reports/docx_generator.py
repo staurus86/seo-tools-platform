@@ -486,7 +486,13 @@ class DOCXGenerator:
 
         title = doc.add_heading('Sitemap Validation Report', 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        doc.add_paragraph(f"URL: {data.get('url', 'n/a')}")
+        input_url = results.get("input_url") or data.get('url', 'n/a')
+        resolved_url = results.get("resolved_sitemap_url") or data.get('url', 'n/a')
+        discovery_source = results.get("sitemap_discovery_source", "")
+        doc.add_paragraph(f"Input: {input_url}")
+        doc.add_paragraph(f"Sitemap URL: {resolved_url}")
+        if discovery_source:
+            doc.add_paragraph(f"Discovery source: {discovery_source}")
         doc.add_paragraph(f"Generated: {now_str}")
 
         summary_rows = [
@@ -563,8 +569,35 @@ class DOCXGenerator:
             ],
         )
 
+        sitemap_files = results.get("sitemap_files", []) or []
+        self._add_heading(doc, "6. File-Level Errors And Warnings", level=1)
+        if sitemap_files:
+            rows = []
+            for item in sitemap_files[:200]:
+                errors_txt = " | ".join((item.get("errors") or [])[:5])
+                warnings_txt = " | ".join((item.get("warnings") or [])[:5])
+                if not errors_txt and not warnings_txt:
+                    continue
+                rows.append([
+                    item.get("sitemap_url", ""),
+                    errors_txt,
+                    warnings_txt,
+                ])
+            if rows:
+                self._add_table(doc, ["Sitemap file", "Errors", "Warnings"], rows)
+            else:
+                doc.add_paragraph("No file-level errors or warnings.")
+        else:
+            doc.add_paragraph("No sitemap files in result.")
+
+        tool_notes = results.get("tool_notes", []) or []
+        if tool_notes:
+            self._add_heading(doc, "7. Tool Notes (Not Sitemap Errors)", level=1)
+            for note in tool_notes[:30]:
+                doc.add_paragraph(str(note), style='List Bullet')
+
         checks = results.get("live_indexability_checks", []) or []
-        self._add_heading(doc, "6. Live Indexability Sample", level=1)
+        self._add_heading(doc, "8. Live Indexability Sample", level=1)
         if checks:
             rows = []
             for item in checks[:20]:
@@ -579,7 +612,7 @@ class DOCXGenerator:
             doc.add_paragraph("Live sample is empty.")
 
         recs = results.get("recommendations", []) or []
-        self._add_heading(doc, "7. Recommendations", level=1)
+        self._add_heading(doc, "9. Recommendations", level=1)
         if recs:
             for rec in recs[:40]:
                 doc.add_paragraph(str(rec), style='List Bullet')

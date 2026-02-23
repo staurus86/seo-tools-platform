@@ -1331,6 +1331,7 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
     max_depth_seen = 0
     warnings: List[str] = []
     errors: List[str] = []
+    tool_notes: List[str] = []
     allowed_changefreq = {"always", "hourly", "daily", "weekly", "monthly", "yearly", "never"}
     root_status_code = None
     now_utc = datetime.utcnow()
@@ -1359,6 +1360,7 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                 "urls_omitted": 0,
                 "errors": [],
                 "warnings": [],
+                "tool_notes": [],
                 "urls": [],
             }
 
@@ -1419,6 +1421,15 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                     file_duplicate_urls: List[str] = []
                     file_duplicate_occurrences = 0
                     file_lastmods: List[str] = []
+                    file_invalid_lastmod_count = 0
+                    file_invalid_changefreq_count = 0
+                    file_invalid_priority_count = 0
+                    file_future_lastmod_count = 0
+                    file_stale_lastmod_count = 0
+                    file_invalid_lastmod_examples: List[str] = []
+                    file_future_lastmod_examples: List[str] = []
+                    file_stale_lastmod_examples: List[str] = []
+                    file_lastmod_url_samples: Dict[str, List[str]] = {}
                     for url_node in root.iter():
                         if local_name(url_node.tag).lower() != "url":
                             continue
@@ -1436,19 +1447,33 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                             parsed_lastmod = parse_lastmod_dt(lastmod)
                             if not is_valid_lastmod(lastmod) or parsed_lastmod is None:
                                 invalid_lastmod_count += 1
+                                file_invalid_lastmod_count += 1
+                                if len(file_invalid_lastmod_examples) < 5:
+                                    file_invalid_lastmod_examples.append(loc)
                             else:
                                 lastmod_present_count += 1
-                                file_lastmods.append(parsed_lastmod.date().isoformat())
+                                lastmod_iso_date = parsed_lastmod.date().isoformat()
+                                file_lastmods.append(lastmod_iso_date)
+                                bucket = file_lastmod_url_samples.setdefault(lastmod_iso_date, [])
+                                if len(bucket) < 3:
+                                    bucket.append(loc)
                                 if parsed_lastmod > now_utc:
                                     lastmod_future_count += 1
+                                    file_future_lastmod_count += 1
+                                    if len(file_future_lastmod_examples) < 5:
+                                        file_future_lastmod_examples.append(loc)
                                 if (now_utc - parsed_lastmod).days > stale_days:
                                     stale_lastmod_count += 1
+                                    file_stale_lastmod_count += 1
+                                    if len(file_stale_lastmod_examples) < 5:
+                                        file_stale_lastmod_examples.append(loc)
                         else:
                             lastmod_missing_count += 1
 
                         changefreq = find_child_text(url_node, "changefreq").lower()
                         if changefreq and changefreq not in allowed_changefreq:
                             invalid_changefreq_count += 1
+                            file_invalid_changefreq_count += 1
 
                         priority_raw = find_child_text(url_node, "priority")
                         if priority_raw:
@@ -1456,8 +1481,10 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                                 priority_value = float(priority_raw)
                                 if priority_value < 0 or priority_value > 1:
                                     invalid_priority_count += 1
+                                    file_invalid_priority_count += 1
                             except Exception:
                                 invalid_priority_count += 1
+                                file_invalid_priority_count += 1
 
                         # Minimal hreflang validation in sitemap (only when present)
                         local_hreflang_seen = set()
@@ -1536,8 +1563,24 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                     if len(file_urls) > max_urls_per_sitemap:
                         file_report["warnings"].append("More than 50,000 URLs in one sitemap file.")
                     if file_report["urls_omitted"] > 0:
-                        file_report["warnings"].append(
+                        file_report["tool_notes"].append(
                             f"URLs preview truncated for UI/API payload: {file_report['urls_omitted']} omitted from preview; full URLs count was still validated."
+                        )
+                    if file_invalid_lastmod_count > 0:
+                        file_report["warnings"].append(
+                            f"Invalid <lastmod> values: {file_invalid_lastmod_count}. Examples: {' | '.join(file_invalid_lastmod_examples[:5])}"
+                        )
+                    if file_invalid_changefreq_count > 0:
+                        file_report["warnings"].append(f"Invalid <changefreq> values: {file_invalid_changefreq_count}.")
+                    if file_invalid_priority_count > 0:
+                        file_report["warnings"].append(f"Invalid <priority> values: {file_invalid_priority_count}.")
+                    if file_future_lastmod_count > 0:
+                        file_report["warnings"].append(
+                            f"Future <lastmod> values: {file_future_lastmod_count}. Examples: {' | '.join(file_future_lastmod_examples[:5])}"
+                        )
+                    if file_stale_lastmod_count > 0:
+                        file_report["warnings"].append(
+                            f"Stale <lastmod> values (> {stale_days} days): {file_stale_lastmod_count}. Examples: {' | '.join(file_stale_lastmod_examples[:5])}"
                         )
                     if len(file_lastmods) >= 20:
                         histogram: Dict[str, int] = {}
@@ -1546,7 +1589,19 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                         dominant = max(histogram.values()) if histogram else 0
                         if dominant / max(1, len(file_lastmods)) >= 0.9:
                             uniform_lastmod_files += 1
-                            file_report["warnings"].append("Suspiciously uniform lastmod values in this sitemap file.")
+                            dominant_value = max(histogram, key=histogram.get) if histogram else ""
+                            dominant_ratio = round((dominant / max(1, len(file_lastmods))) * 100, 2)
+                            dominant_examples = file_lastmod_url_samples.get(dominant_value, [])[:3]
+                            file_report["lastmod_uniformity"] = {
+                                "dominant_date": dominant_value,
+                                "dominant_count": dominant,
+                                "total_with_lastmod": len(file_lastmods),
+                                "dominant_ratio_pct": dominant_ratio,
+                                "sample_urls": dominant_examples,
+                            }
+                            file_report["warnings"].append(
+                                f"Suspiciously uniform lastmod values: {dominant}/{len(file_lastmods)} ({dominant_ratio}%) are {dominant_value}. Examples: {' | '.join(dominant_examples)}"
+                            )
                     file_report["ok"] = len(file_report["errors"]) == 0
 
                 else:
@@ -1559,43 +1614,13 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                 sitemap_files.append(file_report)
 
         if queue:
-            warnings.append(f"Sitemap traversal limit reached: {max_sitemaps} files.")
+            tool_notes.append(f"Sitemap traversal limit reached: {max_sitemaps} files (remaining in queue: {len(queue)}).")
 
         errors.extend([f"{item['sitemap_url']}: {err}" for item in sitemap_files for err in item.get("errors", [])])
         warnings.extend([f"{item['sitemap_url']}: {warn}" for item in sitemap_files for warn in item.get("warnings", [])])
 
-        if invalid_lastmod_count:
-            warnings.append(f"Invalid lastmod format found: {invalid_lastmod_count}.")
-        if invalid_changefreq_count:
-            warnings.append(f"Invalid changefreq values found: {invalid_changefreq_count}.")
-        if invalid_priority_count:
-            warnings.append(f"Invalid priority values found: {invalid_priority_count}.")
-        if invalid_urls_count:
-            warnings.append(f"Invalid URLs found in sitemap: {invalid_urls_count}.")
         if duplicate_details_truncated:
-            warnings.append(f"Duplicate details were truncated to {max_duplicate_details} entries.")
-        if self_child_refs > 0:
-            warnings.append(f"Sitemap index self-references detected: {self_child_refs}.")
-        if repeated_child_refs > 0:
-            warnings.append(f"Repeated sitemap index references detected: {repeated_child_refs}.")
-        if lastmod_future_count > 0:
-            warnings.append(f"Future lastmod values detected: {lastmod_future_count}.")
-        if stale_lastmod_count > 0:
-            warnings.append(f"Stale pages by lastmod (> {stale_days} days): {stale_lastmod_count}.")
-        if uniform_lastmod_files > 0:
-            warnings.append(f"Sitemap files with suspiciously uniform lastmod values: {uniform_lastmod_files}.")
-        if hreflang_links_count > 0 and hreflang_invalid_code_count > 0:
-            warnings.append(f"Invalid hreflang codes in sitemap links: {hreflang_invalid_code_count}.")
-        if hreflang_links_count > 0 and hreflang_invalid_href_count > 0:
-            warnings.append(f"Invalid hreflang href URLs: {hreflang_invalid_href_count}.")
-        if hreflang_links_count > 0 and hreflang_duplicate_lang_count > 0:
-            warnings.append(f"Duplicate hreflang language entries in same URL nodes: {hreflang_duplicate_lang_count}.")
-        if image_tags_count > 0 and image_missing_loc_count > 0:
-            warnings.append(f"Image sitemap tags missing valid <image:loc>: {image_missing_loc_count}.")
-        if video_tags_count > 0 and video_missing_required_count > 0:
-            warnings.append(f"Video sitemap tags missing required fields: {video_missing_required_count}.")
-        if news_tags_count > 0 and news_missing_required_count > 0:
-            warnings.append(f"News sitemap tags missing required fields: {news_missing_required_count}.")
+            tool_notes.append(f"Duplicate details were truncated to {max_duplicate_details} entries.")
 
         valid_files = sum(1 for item in sitemap_files if item.get("ok"))
         total_urls_discovered = sum(item.get("urls_count", 0) for item in sitemap_files if item.get("type") == "urlset")
@@ -1689,10 +1714,9 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
             recommendations.append("Fix sitemap index structure (remove self-references and repeated child sitemap links).")
             quality_score -= min(10, self_child_refs + repeated_child_refs)
         if queue:
-            recommendations.append(f"Sitemap traversal reached limit ({max_sitemaps} files). Consider splitting index or increasing crawl budget.")
             quality_score -= 10
         if urls_export_truncated:
-            recommendations.append(f"Export was truncated to {max_export_urls} URLs. Use parts export or reduce sitemap scope per file.")
+            tool_notes.append(f"Export preview payload was truncated to {max_export_urls} URLs; use part exports for full list.")
         if total_urls_discovered > max_urls_per_sitemap:
             recommendations.append("At least one sitemap exceeds 50,000 URLs; split it into multiple files.")
             quality_score -= 10
@@ -1782,15 +1806,6 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                 "Fix noindex/HTTP issues on sampled pages and re-run validation.",
                 "SEO/Dev",
             ))
-        if queue:
-            issues.append(build_issue(
-                "warning",
-                "traversal_limit_reached",
-                "Traversal limit reached",
-                f"Reached scan cap of {max_sitemaps}; remaining queued files: {len(queue)}.",
-                "Split sitemap index or increase scan limit.",
-                "DevOps/SEO",
-            ))
 
         severity_counts = {
             "critical": sum(1 for it in issues if it.get("severity") == "critical"),
@@ -1847,6 +1862,7 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                 "sitemaps_valid": valid_files,
                 "errors": dedupe_keep_order(errors),
                 "warnings": dedupe_keep_order(warnings),
+                "tool_notes": dedupe_keep_order(tool_notes),
                 "recommendations": recommendations,
                 "highlights": dedupe_keep_order(highlights),
                 "quality_score": quality_score,
