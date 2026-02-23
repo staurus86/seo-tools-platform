@@ -1127,6 +1127,7 @@ def run_link_profile_audit(
 
     competitors_list = [d for d in per_target_metrics.keys() if not _is_our_target(str(d), domain)]
     our_metrics = per_target_metrics.get(domain) or next((v for k, v in per_target_metrics.items() if _is_our_target(str(k), domain)), {})
+    summary_domains_order: List[str] = list(dict.fromkeys([str(d) for d in competitors_list if str(d)] + [domain]))
     benchmark_rows: List[Dict[str, Any]] = []
     if competitors_list:
         keys = [
@@ -1155,6 +1156,83 @@ def run_link_profile_audit(
                     "delta_vs_median": round(our_v - med_v, 2),
                 }
             )
+
+    report_follow_nofollow_rows: List[Dict[str, Any]] = []
+    report_home_internal_rows: List[Dict[str, Any]] = []
+    report_follow_split_rows: List[Dict[str, Any]] = []
+    report_geo_distribution_rows: List[Dict[str, Any]] = []
+    report_anchor_matrix_rows: List[Dict[str, Any]] = []
+    for d in summary_domains_order:
+        m = per_target_metrics.get(d, {}) or {}
+        if not m:
+            continue
+        total_links = max(1, int(m.get("total_links", 0) or 0))
+        report_follow_nofollow_rows.append(
+            {
+                "Конкурент": d,
+                "Follow (False)": round(float(m.get("follow_pct", 0.0) or 0.0) / 100.0, 4),
+                "Nofollow (True)": round(float(m.get("nofollow_pct", 0.0) or 0.0) / 100.0, 4),
+            }
+        )
+        report_home_internal_rows.append(
+            {
+                "Конкурент": d,
+                "Главная страница": round(float(m.get("homepage_pct", 0.0) or 0.0) / 100.0, 4),
+                "Внутренние страницы": round(float(m.get("internal_pct", 0.0) or 0.0) / 100.0, 4),
+            }
+        )
+        report_follow_split_rows.append(
+            {
+                "Конкурент": d,
+                "Follow на главную": round(float(m.get("homepage_follow_pct", 0.0) or 0.0) / 100.0, 4),
+                "Nofollow на главную": round(float(m.get("homepage_nofollow_pct", 0.0) or 0.0) / 100.0, 4),
+                "Follow на внутренние": round(float(m.get("internal_follow_pct", 0.0) or 0.0) / 100.0, 4),
+                "Nofollow на внутренние": round(float(m.get("internal_nofollow_pct", 0.0) or 0.0) / 100.0, 4),
+            }
+        )
+        zc = m.get("zone_counts", Counter()) or Counter()
+        report_geo_distribution_rows.append(
+            {
+                "Конкурент": d,
+                ".ru": round(float(zc.get("ru", 0)) / total_links, 4),
+                ".com": round(float(zc.get("com", 0)) / total_links, 4),
+            }
+        )
+        ac = m.get("anchor_type", Counter()) or Counter()
+        report_anchor_matrix_rows.append(
+            {
+                "Домен": d,
+                "безанкорный": int(ac.get("empty", 0)),
+                "брендовый": int(ac.get("brand", 0)),
+                "инфо": int(ac.get("informational", 0)),
+                "коммерция": int(ac.get("commercial", 0)),
+                "навигационный": int(ac.get("other", 0)),
+                "спам": int(ac.get("spam", 0)),
+            }
+        )
+
+    def _append_avg_median(rows: List[Dict[str, Any]], label_key: str = "Конкурент") -> List[Dict[str, Any]]:
+        if not rows:
+            return rows
+        keys = [k for k in rows[0].keys() if k != label_key and k != "Домен"]
+        label_key_eff = label_key if label_key in rows[0] else "Домен"
+        avg_row: Dict[str, Any] = {label_key_eff: "Средние"}
+        med_row: Dict[str, Any] = {label_key_eff: "Медиана"}
+        for k in keys:
+            vals = [x.get(k) for x in rows if isinstance(x.get(k), (int, float))]
+            if vals:
+                avg_row[k] = round(mean([float(v) for v in vals]), 4)
+                med_row[k] = round(median([float(v) for v in vals]), 4)
+            else:
+                avg_row[k] = None
+                med_row[k] = None
+        return rows + [avg_row, med_row]
+
+    report_follow_nofollow_rows = _append_avg_median(report_follow_nofollow_rows, "Конкурент")
+    report_home_internal_rows = _append_avg_median(report_home_internal_rows, "Конкурент")
+    report_follow_split_rows = _append_avg_median(report_follow_split_rows, "Конкурент")
+    report_geo_distribution_rows = _append_avg_median(report_geo_distribution_rows, "Конкурент")
+    report_anchor_matrix_rows = _append_avg_median(report_anchor_matrix_rows, "Домен")
 
     link_types_by_competitor = _flatten_breakdown_rows(normalized_rows, dim="link_type", value_key="link_type", row_limit=3000)
     http_codes_by_competitor = _flatten_breakdown_rows(normalized_rows, dim="http_code", value_key="http_code", row_limit=3000)
@@ -1203,6 +1281,51 @@ def run_link_profile_audit(
                 "batch_ref_domains_followed_pct": round((ref_domains_followed / max(1.0, ref_domains_all)) * 100, 2) if ref_domains_all else None,
                 "batch_ref_domains_nofollow_pct": round((ref_domains_not_followed / max(1.0, ref_domains_all)) * 100, 2) if ref_domains_all else None,
                 "batch_organic_keywords_total": metrics.get("organic_keywords_total"),
+            }
+        )
+
+    summary_domains_order: List[str] = []
+    for item in competitor_rows:
+        d = str(item.get("competitor_domain") or "").strip()
+        if d and d not in summary_domains_order:
+            summary_domains_order.append(d)
+    if domain not in summary_domains_order:
+        summary_domains_order.append(domain)
+
+    report_core_metrics_rows: List[Dict[str, Any]] = []
+    for d in summary_domains_order:
+        bm = batch_metrics.get(d, {}) or {}
+        dr_v = _to_float(bm.get("dr"))
+        bl_v = _to_float(bm.get("backlinks_all"))
+        rd_v = _to_float(bm.get("ref_domains_all"))
+        if dr_v is None and bl_v is None and rd_v is None:
+            continue
+        report_core_metrics_rows.append(
+            {
+                "Конкурент": d,
+                "Domain Rating": dr_v,
+                "Total Backlinks": int(bl_v) if bl_v is not None else None,
+                "Referring Domains": int(rd_v) if rd_v is not None else None,
+            }
+        )
+    if report_core_metrics_rows:
+        dr_vals = [float(x.get("Domain Rating")) for x in report_core_metrics_rows if x.get("Domain Rating") is not None]
+        bl_vals = [float(x.get("Total Backlinks")) for x in report_core_metrics_rows if x.get("Total Backlinks") is not None]
+        rd_vals = [float(x.get("Referring Domains")) for x in report_core_metrics_rows if x.get("Referring Domains") is not None]
+        report_core_metrics_rows.append(
+            {
+                "Конкурент": "Средние",
+                "Domain Rating": round(mean(dr_vals), 2) if dr_vals else None,
+                "Total Backlinks": int(round(mean(bl_vals))) if bl_vals else None,
+                "Referring Domains": int(round(mean(rd_vals))) if rd_vals else None,
+            }
+        )
+        report_core_metrics_rows.append(
+            {
+                "Конкурент": "Медиана",
+                "Domain Rating": round(median(dr_vals), 2) if dr_vals else None,
+                "Total Backlinks": int(round(median(bl_vals))) if bl_vals else None,
+                "Referring Domains": int(round(median(rd_vals))) if rd_vals else None,
             }
         )
 
@@ -1341,6 +1464,16 @@ def run_link_profile_audit(
     for bucket in dr_deciles:
         our_row[bucket] = _pct(our_dr10.get(bucket, 0), our_total)
     dr_distribution_matrix_rows.append(our_row)
+    report_dr_distribution_rows: List[Dict[str, Any]] = []
+    for row in dr_distribution_matrix_rows:
+        rec: Dict[str, Any] = {"Конкурент": row.get("Домен")}
+        for bucket in dr_deciles:
+            value = row.get(bucket)
+            if isinstance(value, (int, float)):
+                rec[bucket] = round(float(value) / 100.0, 4)
+            else:
+                rec[bucket] = value
+        report_dr_distribution_rows.append(rec)
 
     def _build_mix_benchmark(
         value_getter: Callable[[Dict[str, Any]], Counter[str]],
@@ -1929,6 +2062,13 @@ def run_link_profile_audit(
                 "opportunity_domains": _cap_rows(opportunity_domains_rows),
                 "ready_buy_domains": _cap_rows(ready_buy_rows),
                 "dr_distribution_matrix": _cap_rows(dr_distribution_matrix_rows),
+                "report_core_metrics": _cap_rows(report_core_metrics_rows),
+                "report_follow_nofollow": _cap_rows(report_follow_nofollow_rows),
+                "report_home_internal": _cap_rows(report_home_internal_rows),
+                "report_follow_split": _cap_rows(report_follow_split_rows),
+                "report_dr_distribution": _cap_rows(report_dr_distribution_rows),
+                "report_geo_distribution": _cap_rows(report_geo_distribution_rows),
+                "report_anchor_matrix": _cap_rows(report_anchor_matrix_rows),
                 "analysis_data_sections": [{"title": s.get("title"), "rows": _cap_rows(s.get("rows") or [])} for s in imported_analysis_sections],
                 "raw_homepage_links": _cap_rows(raw_homepage_links_rows),
                 "raw_redirect_links": _cap_rows(raw_redirect_links_rows),

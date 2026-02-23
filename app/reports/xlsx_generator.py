@@ -4224,7 +4224,6 @@ class XLSXGenerator:
         tables = results.get("tables", {}) or {}
         warnings = results.get("warnings", []) or []
         errors = results.get("errors", []) or []
-        keywords = results.get("keywords", {}) or {}
         analysis_sections = tables.get("analysis_data_sections", []) or []
 
         ws["A1"] = "Отчет: Аудит ссылочного профиля (Итого)"
@@ -4264,6 +4263,12 @@ class XLSXGenerator:
                 if all(n in title for n in lowered_needles):
                     return (section or {}).get("rows") or []
             return []
+
+        def _pick_report_rows(table_key: str, *needles: str) -> List[Dict[str, Any]]:
+            direct = tables.get(table_key, []) or []
+            if direct:
+                return direct
+            return _pick_analysis_section(*needles)
 
         def _write_block(
             sheet,
@@ -4305,58 +4310,47 @@ class XLSXGenerator:
             ws,
             row_ptr,
             "Основные метрики",
-            _pick_analysis_section("domain rating", "total backlinks"),
+            _pick_report_rows("report_core_metrics", "domain rating", "total backlinks"),
             percent_mode=False,
         )
         row_ptr = _write_block(
             ws,
             row_ptr,
             "Соотношение Dofollow/Nofollow",
-            _pick_analysis_section("follow (false)", "nofollow (true)"),
+            _pick_report_rows("report_follow_nofollow", "follow (false)", "nofollow (true)"),
             percent_mode=True,
         )
         row_ptr = _write_block(
             ws,
             row_ptr,
             "Соотношение главная/внутренние",
-            _pick_analysis_section("главная страница", "внутренние страницы"),
+            _pick_report_rows("report_home_internal", "главная страница", "внутренние страницы"),
             percent_mode=True,
         )
         row_ptr = _write_block(
             ws,
             row_ptr,
             "Dofollow/Nofollow на главную/внутренние",
-            _pick_analysis_section("follow на главную", "nofollow на главную"),
+            _pick_report_rows("report_follow_split", "follow на главную", "nofollow на главную"),
             percent_mode=True,
         )
         row_ptr = _write_block(
             ws,
             row_ptr,
             "Распределение по DR",
-            _pick_analysis_section("dr 0-9", "dr 10-19"),
+            _pick_report_rows("report_dr_distribution", "dr 0-9", "dr 10-19"),
             percent_mode=True,
         )
         row_ptr = _write_block(
             ws,
             row_ptr,
             "Географическое распределение",
-            _pick_analysis_section(".ru", ".com"),
+            _pick_report_rows("report_geo_distribution", ".ru", ".com"),
             percent_mode=True,
         )
 
-        anchor_matrix_rows = _pick_analysis_section("безанкорный", "брендовый")
+        anchor_matrix_rows = _pick_report_rows("report_anchor_matrix", "безанкорный", "брендовый")
         _write_sheet("Анкоры", anchor_matrix_rows or [])
-
-        dictionaries_rows: List[Dict[str, Any]] = []
-        for word in (keywords.get("commercial") or []):
-            dictionaries_rows.append({"Тип": "Коммерческие", "Слово": word})
-        for word in (keywords.get("informational") or []):
-            dictionaries_rows.append({"Тип": "Информационные", "Слово": word})
-        for word in (keywords.get("spam") or []):
-            dictionaries_rows.append({"Тип": "Спамные", "Слово": word})
-        for word in (keywords.get("brand") or []):
-            dictionaries_rows.append({"Тип": "Брендовые", "Слово": word})
-        _write_sheet("Словари анкоров", dictionaries_rows)
 
         _write_sheet("Приоритеты SEO", tables.get("priority_dashboard", []) or [])
         _write_sheet("Очередь действий", tables.get("action_queue", []) or [])
