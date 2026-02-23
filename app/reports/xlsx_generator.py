@@ -4316,6 +4316,9 @@ class XLSXGenerator:
             "Outgoing links / Followed", "Outgoing links / All time",
         ]
         _write_header_row(ws_ru, 1, ru_headers)
+        ru_rows_direct = tables.get("report_ru_rows", []) or []
+        if ru_rows_direct:
+            _write_dict_rows(ws_ru, 2, ru_headers, ru_rows_direct)
         core_rows = tables.get("report_core_metrics", []) or []
         competitor_rows = tables.get("competitor_analysis", []) or []
         competitor_idx = {}
@@ -4324,60 +4327,37 @@ class XLSXGenerator:
             if name:
                 competitor_idx[name] = r
         ru_rows: List[Dict[str, Any]] = []
-        idx = 1
-        for row in core_rows:
-            target = str(_pick_value(row, "Конкурент", "Домен", "domain", "target") or "").strip()
-            if not target or target.lower() in {"средние", "медиана"}:
-                continue
-            extra = competitor_idx.get(target, {}) or {}
-            ru_rows.append(
-                {
-                    "#": idx,
-                    "Target": target,
-                    "IP": _pick_value(extra, "IP", "ip"),
-                    "URL Rating": _pick_value(extra, "URL Rating", "UR", "ur", "batch_ur"),
-                    "Domain Rating": _pick_value(row, "Domain Rating") or _pick_value(extra, "Domain Rating", "DR", "dr", "batch_dr"),
-                    "Ahrefs Rank": _pick_value(extra, "Ahrefs Rank", "ahrefs rank", "ahrefs_rank"),
-                    "Organic / Total Keywords": _pick_value(extra, "Organic / Total Keywords", "organic_keywords_total", "batch_organic_keywords_total"),
-                    "Organic / Keywords (Top 3)": _pick_value(extra, "Organic / Keywords (Top 3)", "organic_keywords_top3", "batch_organic_keywords_top3"),
-                    "Organic / Keywords (4-10)": _pick_value(extra, "Organic / Keywords (4-10)", "organic_keywords_4_10", "batch_organic_keywords_4_10"),
-                    "Organic / Keywords (11-20)": _pick_value(extra, "Organic / Keywords (11-20)", "organic_keywords_11_20", "batch_organic_keywords_11_20"),
-                    "Organic / Keywords (21-50)": _pick_value(extra, "Organic / Keywords (21-50)", "organic_keywords_21_50", "batch_organic_keywords_21_50"),
-                    "Organic / Keywords (51+)": _pick_value(extra, "Organic / Keywords (51+)", "organic_keywords_51_plus", "batch_organic_keywords_51_plus"),
-                    "Organic / Traffic": _pick_value(extra, "Organic / Traffic", "organic_traffic"),
-                    "Organic / Value": _pick_value(extra, "Organic / Value", "organic_value"),
-                    "Organic / Top Countries": _pick_value(extra, "Organic / Top Countries", "top_countries", "organic_top_countries"),
-                    "Ref. domains / All": _pick_value(row, "Referring Domains") or _pick_value(extra, "ref_domains_all", "batch_ref_domains_all"),
-                    "Ref. domains / Followed": _pick_value(extra, "ref_domains_followed", "batch_ref_domains_followed"),
-                    "Ref. domains / Not followed": _pick_value(extra, "ref_domains_not_followed", "batch_ref_domains_not_followed"),
-                    "Ref. IPs / IPs": _pick_value(extra, "Ref. IPs / IPs", "ref_ips_ips"),
-                    "Ref. IPs / Subnets": _pick_value(extra, "Ref. IPs / Subnets", "ref_ips_subnets"),
-                    "Backlinks / All": _pick_value(row, "Total Backlinks") or _pick_value(extra, "backlinks_all", "batch_backlinks_all"),
-                    "Backlinks / Followed": _pick_value(extra, "backlinks_followed", "batch_backlinks_followed"),
-                    "Backlinks / Not followed": _pick_value(extra, "backlinks_not_followed", "batch_backlinks_not_followed"),
-                    "Backlinks / Redirects": _pick_value(extra, "backlinks_redirects", "batch_backlinks_redirects"),
-                    "Backlinks / Internal": _pick_value(extra, "backlinks_internal", "batch_backlinks_internal"),
-                    "Outgoing domains / Followed": _pick_value(extra, "outgoing_domains_followed"),
-                    "Outgoing domains / All time": _pick_value(extra, "outgoing_domains_all_time"),
-                    "Outgoing links / Followed": _pick_value(extra, "outgoing_links_followed"),
-                    "Outgoing links / All time": _pick_value(extra, "outgoing_links_all_time"),
-                }
-            )
-            idx += 1
-        if not ru_rows and competitor_idx:
+        if not ru_rows_direct:
             idx = 1
-            for target, extra in sorted(competitor_idx.items()):
+            for row in core_rows:
+                target = str(_pick_value(row, "Конкурент", "Домен", "domain", "target") or "").strip()
+                if not target or target.lower() in {"средние", "медиана"}:
+                    continue
+                extra = competitor_idx.get(target, {}) or {}
                 ru_rows.append(
                     {
                         "#": idx,
                         "Target": target,
-                        "Domain Rating": _pick_value(extra, "Domain Rating", "DR", "dr", "batch_dr"),
-                        "Ref. domains / All": _pick_value(extra, "ref_domains_all", "batch_ref_domains_all"),
-                        "Backlinks / All": _pick_value(extra, "backlinks_all", "batch_backlinks_all"),
+                        "Domain Rating": _pick_value(row, "Domain Rating") or _pick_value(extra, "Domain Rating", "DR", "dr", "batch_dr"),
+                        "Ref. domains / All": _pick_value(row, "Referring Domains") or _pick_value(extra, "ref_domains_all", "batch_ref_domains_all"),
+                        "Backlinks / All": _pick_value(row, "Total Backlinks") or _pick_value(extra, "backlinks_all", "batch_backlinks_all"),
                     }
                 )
                 idx += 1
-        _write_dict_rows(ws_ru, 2, ru_headers, ru_rows)
+            if not ru_rows and competitor_idx:
+                idx = 1
+                for target, extra in sorted(competitor_idx.items()):
+                    ru_rows.append(
+                        {
+                            "#": idx,
+                            "Target": target,
+                            "Domain Rating": _pick_value(extra, "Domain Rating", "DR", "dr", "batch_dr"),
+                            "Ref. domains / All": _pick_value(extra, "ref_domains_all", "batch_ref_domains_all"),
+                            "Backlinks / All": _pick_value(extra, "backlinks_all", "batch_backlinks_all"),
+                        }
+                    )
+                    idx += 1
+            _write_dict_rows(ws_ru, 2, ru_headers, ru_rows)
 
         # Sheet 2: Анализ данных
         ws_analysis = wb.create_sheet("Анализ данных")
@@ -4512,6 +4492,20 @@ class XLSXGenerator:
             (block_starts[8], next_starts[8], b9_headers, b9_rows, set([f"{c} %" for c in ordered_http_codes])),
         ]
 
+        separator_titles = {
+            10: "Соотношение Follow/Nofollow",
+            20: "Соотношение главная/внутренние",
+            30: "Follow/Nofollow на главную и внутренние",
+            40: "Распределение по DR",
+            50: "Географическое распределение",
+            60: "Распределение анкоров",
+            70: "Типы ссылок",
+            78: "HTTP-коды доноров",
+        }
+        for row_idx, title in separator_titles.items():
+            cell = ws_analysis.cell(row=row_idx, column=1, value=title)
+            self._apply_style(cell, header_style)
+
         for start, next_start, headers, rows, pct_headers in blocks:
             _write_header_row(ws_analysis, start, headers, total_cols=total_analysis_cols)
             max_rows = len(rows)
@@ -4553,26 +4547,20 @@ class XLSXGenerator:
 
         # Sheet 7: Ссылки с редиректов
         ws_redir = wb.create_sheet("Ссылки с редиректов")
-        redir_headers = [
-            "Referring page URL", "", "Referring page HTTP code", "Domain rating", "UR", "Domain traffic",
-            "Referring domains", "Linked domains", "External links", "Page traffic", "Keywords", "Target URL",
-            "Left context", "Anchor", "Right context", "Redirect Chain URLs", "Redirect Chain status codes",
-            "Type", "Content", "Nofollow", "UGC", "Sponsored", "Rendered", "Raw", "Lost status", "Drop reason",
-            "Discovered status", "First seen", "Last seen", "Lost", "Author", "Links in group",
-        ]
+        redir_headers = ["Referring page URL", "Target URL", "Anchor", "Domain Rating", "UR", "Domain traffic", "Nofollow", "Lost status"]
         _write_header_row(ws_redir, 1, redir_headers)
         redir_rows = tables.get("raw_redirect_links", []) or []
         for idx, item in enumerate(redir_rows, start=2):
-            row_values = {h: _pick_value(item, h) for h in redir_headers}
-            row_values[""] = ""
-            row_values["Referring page URL"] = _pick_value(item, "Referring page URL", "referring page url")
-            row_values["Referring page HTTP code"] = _pick_value(item, "Referring page HTTP code", "referring page http code", "HTTP code", "http code", "status")
-            row_values["Domain rating"] = _pick_value(item, "Domain rating", "domain rating", "Domain Rating", "DR", "dr")
-            row_values["UR"] = _pick_value(item, "UR", "ur", "URL Rating", "url rating")
-            row_values["Domain traffic"] = _pick_value(item, "Domain traffic", "domain traffic", "traffic")
-            row_values["Target URL"] = _pick_value(item, "Target URL", "target url")
-            row_values["Anchor"] = _pick_value(item, "Anchor", "anchor")
-            row_values["Lost status"] = _pick_value(item, "Lost status", "lost status")
+            row_values = {
+                "Referring page URL": _pick_value(item, "Referring page URL", "referring page url"),
+                "Target URL": _pick_value(item, "Target URL", "target url"),
+                "Anchor": _pick_value(item, "Anchor", "anchor"),
+                "Domain Rating": _pick_value(item, "Domain Rating", "Domain rating", "domain rating", "DR", "dr"),
+                "UR": _pick_value(item, "UR", "ur", "URL Rating", "url rating"),
+                "Domain traffic": _pick_value(item, "Domain traffic", "domain traffic", "traffic"),
+                "Nofollow": _pick_value(item, "Nofollow", "nofollow"),
+                "Lost status": _pick_value(item, "Lost status", "lost status"),
+            }
             for c_idx, h in enumerate(redir_headers, start=1):
                 val = row_values.get(h)
                 cell = ws_redir.cell(row=idx, column=c_idx, value=val)

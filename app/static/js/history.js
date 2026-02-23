@@ -5,6 +5,7 @@
 const HISTORY_KEY = 'seo_tools_history';
 const MAX_HISTORY_ITEMS = 10;
 const TERMINAL_STATUSES = new Set(['SUCCESS', 'FAILURE']);
+let refreshInFlight = false;
 
 // Get history from LocalStorage
 function getHistory() {
@@ -129,36 +130,59 @@ function renderHistory() {
 
 // Pull current statuses from API for non-terminal history items.
 async function refreshHistoryStatuses() {
-    const history = getHistory();
-    if (!history.length) return;
+    if (refreshInFlight) return;
+    refreshInFlight = true;
 
-    const pendingIndexes = [];
-    for (let i = 0; i < history.length; i += 1) {
-        const status = String(history[i]?.status || '').toUpperCase();
-        if (!TERMINAL_STATUSES.has(status)) {
-            pendingIndexes.push(i);
+    try {
+        const history = getHistory();
+        if (!history.length) return;
+
+        const pendingItems = [];
+        for (let i = 0; i < history.length; i += 1) {
+            const status = String(history[i]?.status || '').toUpperCase();
+            if (!TERMINAL_STATUSES.has(status) && history[i]?.taskId) {
+                pendingItems.push(history[i]);
+            }
         }
+        if (!pendingItems.length) return;
+
+        const statusUpdates = new Map();
+        const requests = pendingItems.map(async (item) => {
+            try {
+                const response = await fetch(`/api/tasks/${item.taskId}`);
+                if (!response.ok) return;
+                const data = await response.json();
+                const nextStatus = String(data?.status || '').toUpperCase();
+                if (!nextStatus) return;
+                statusUpdates.set(item.taskId, nextStatus);
+            } catch (e) {
+                // Keep existing local status when API is unavailable.
+            }
+        });
+
+        await Promise.all(requests);
+
+        // Re-read current history to avoid re-adding entries after user cleared it.
+        const currentHistory = getHistory();
+        if (!currentHistory.length) return;
+
+        let changed = false;
+        const merged = currentHistory.map((item) => {
+            const nextStatus = statusUpdates.get(item?.taskId);
+            if (!nextStatus || String(item?.status || '').toUpperCase() === nextStatus) {
+                return item;
+            }
+            changed = true;
+            return { ...item, status: nextStatus };
+        });
+
+        if (changed) {
+            saveHistory(merged);
+            renderHistory();
+        }
+    } finally {
+        refreshInFlight = false;
     }
-    if (!pendingIndexes.length) return;
-
-    const requests = pendingIndexes.map(async (idx) => {
-        const item = history[idx];
-        if (!item?.taskId) return;
-        try {
-            const response = await fetch(`/api/tasks/${item.taskId}`);
-            if (!response.ok) return;
-            const data = await response.json();
-            const nextStatus = String(data?.status || '').toUpperCase();
-            if (!nextStatus) return;
-            history[idx] = { ...item, status: nextStatus };
-        } catch (e) {
-            // Keep existing local status when API is unavailable.
-        }
-    });
-
-    await Promise.all(requests);
-    saveHistory(history);
-    renderHistory();
 }
 
 // Initialize history on page load

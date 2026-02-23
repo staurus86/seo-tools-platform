@@ -1386,6 +1386,67 @@ def run_link_profile_audit(
     if domain not in summary_domains_order:
         summary_domains_order.append(domain)
 
+    # Build RU sheet rows directly from batch analysis data to preserve full metrics.
+    ru_headers = [
+        "#", "Target", "IP", "URL Rating", "Domain Rating", "Ahrefs Rank",
+        "Organic / Total Keywords", "Organic / Keywords (Top 3)", "Organic / Keywords (4-10)",
+        "Organic / Keywords (11-20)", "Organic / Keywords (21-50)", "Organic / Keywords (51+)",
+        "Organic / Traffic", "Organic / Value", "Organic / Top Countries",
+        "Ref. domains / All", "Ref. domains / Followed", "Ref. domains / Not followed",
+        "Ref. IPs / IPs", "Ref. IPs / Subnets",
+        "Backlinks / All", "Backlinks / Followed", "Backlinks / Not followed",
+        "Backlinks / Redirects", "Backlinks / Internal",
+        "Outgoing domains / Followed", "Outgoing domains / All time",
+        "Outgoing links / Followed", "Outgoing links / All time",
+    ]
+    batch_rows_by_domain: Dict[str, Dict[str, Any]] = {}
+    for row in batch_rows:
+        target_raw = _pick_value(row, ("target", "domain", "site", "url"))
+        key = _normalize_domain(str(target_raw or ""))
+        if key and key not in batch_rows_by_domain:
+            batch_rows_by_domain[key] = row
+
+    report_ru_rows: List[Dict[str, Any]] = []
+    ru_idx = 1
+    for d in summary_domains_order:
+        src = batch_rows_by_domain.get(d)
+        if not src:
+            continue
+        target_value = _pick_value(src, ("target", "domain", "site", "url")) or d
+        rec = {
+            "#": ru_idx,
+            "Target": str(target_value),
+            "IP": _pick_value(src, ("ip",)),
+            "URL Rating": _pick_value(src, ("url rating", "ur")),
+            "Domain Rating": _pick_value(src, ("domain rating", "dr")),
+            "Ahrefs Rank": _pick_value(src, ("ahrefs rank",)),
+            "Organic / Total Keywords": _pick_value(src, ("organic / total keywords", "organic_keywords_total")),
+            "Organic / Keywords (Top 3)": _pick_value(src, ("organic / keywords (top 3)", "organic_keywords_top3")),
+            "Organic / Keywords (4-10)": _pick_value(src, ("organic / keywords (4-10)", "organic_keywords_4_10")),
+            "Organic / Keywords (11-20)": _pick_value(src, ("organic / keywords (11-20)", "organic_keywords_11_20")),
+            "Organic / Keywords (21-50)": _pick_value(src, ("organic / keywords (21-50)", "organic_keywords_21_50")),
+            "Organic / Keywords (51+)": _pick_value(src, ("organic / keywords (51+)", "organic_keywords_51_plus")),
+            "Organic / Traffic": _pick_value(src, ("organic / traffic", "organic_traffic")),
+            "Organic / Value": _pick_value(src, ("organic / value", "organic_value")),
+            "Organic / Top Countries": _pick_value(src, ("organic / top countries",)),
+            "Ref. domains / All": _pick_value(src, ("ref. domains / all", "ref domains all", "ref_domains_all")),
+            "Ref. domains / Followed": _pick_value(src, ("ref. domains / followed", "ref_domains_followed")),
+            "Ref. domains / Not followed": _pick_value(src, ("ref. domains / not followed", "ref_domains_not_followed")),
+            "Ref. IPs / IPs": _pick_value(src, ("ref. ips / ips", "ref_ips_ips")),
+            "Ref. IPs / Subnets": _pick_value(src, ("ref. ips / subnets", "ref_ips_subnets")),
+            "Backlinks / All": _pick_value(src, ("backlinks / all", "backlinks_all", "total backlinks")),
+            "Backlinks / Followed": _pick_value(src, ("backlinks / followed", "backlinks_followed")),
+            "Backlinks / Not followed": _pick_value(src, ("backlinks / not followed", "backlinks_not_followed")),
+            "Backlinks / Redirects": _pick_value(src, ("backlinks / redirects", "backlinks_redirects")),
+            "Backlinks / Internal": _pick_value(src, ("backlinks / internal", "backlinks_internal")),
+            "Outgoing domains / Followed": _pick_value(src, ("outgoing domains / followed", "outgoing_domains_followed")),
+            "Outgoing domains / All time": _pick_value(src, ("outgoing domains / all time", "outgoing_domains_all_time")),
+            "Outgoing links / Followed": _pick_value(src, ("outgoing links / followed", "outgoing_links_followed")),
+            "Outgoing links / All time": _pick_value(src, ("outgoing links / all time", "outgoing_links_all_time")),
+        }
+        report_ru_rows.append(rec)
+        ru_idx += 1
+
     report_core_metrics_rows: List[Dict[str, Any]] = []
     for d in summary_domains_order:
         bm = batch_metrics.get(d, {}) or {}
@@ -2163,6 +2224,7 @@ def run_link_profile_audit(
                 "report_dr_distribution": _cap_rows(report_dr_distribution_rows),
                 "report_geo_distribution": _cap_rows(report_geo_distribution_rows),
                 "report_anchor_matrix": _cap_rows(report_anchor_matrix_rows),
+                "report_ru_rows": _cap_rows(report_ru_rows, 5000),
                 "analysis_data_sections": [{"title": s.get("title"), "rows": _cap_rows(s.get("rows") or [])} for s in imported_analysis_sections],
                 "raw_homepage_links": _cap_rows(raw_homepage_links_rows),
                 "raw_competitor_links": _cap_rows(raw_competitor_links_rows),
