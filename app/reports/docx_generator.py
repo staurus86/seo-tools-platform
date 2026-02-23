@@ -18,20 +18,20 @@ from app.config import settings
 
 
 class DOCXGenerator:
-    """Р вЂњР ВµР Р…Р ВµРЎР‚Р В°РЎвЂљРѕСЂ Word Р С•РЎвЂљРЎвЂЎР ВµРЎвЂљРѕРІ"""
+    """Р вЂњР ВµР Р…Р ВµРЎР‚Р В°С‚ор Word Р С•РЎвЂљРЎвЂЎР ВµС‚ов"""
     
     def __init__(self):
         self.reports_dir = settings.REPORTS_DIR
         os.makedirs(self.reports_dir, exist_ok=True)
     
     def _add_heading(self, doc, text: str, level: int = 1):
-        """Р вЂќР С•Р В±Р В°Р Р†Р В»РЎРЏР ВµРЎвЂљ Р В·Р В°Р С–Р С•Р В»РѕРІРѕРє"""
+        """Р вЂќР С•Р В±Р В°Р Р†Р В»РЎРЏР Вµт Р В·Р В°Р С–Р С•Р В»овок"""
         heading = doc.add_heading(self._fix_text(text), level=level)
         heading.alignment = WD_ALIGN_PARAGRAPH.LEFT
         return heading
     
     def _add_table(self, doc, headers: List[str], rows: List[List[Any]]):
-        """Р вЂќР С•Р В±Р В°Р Р†Р В»РЎРЏР ВµРЎвЂљ РЎвЂљР В°Р В±Р В»Р С‘РЎвЂ РЎС“"""
+        """Р вЂќР С•Р В±Р В°Р Р†Р В»РЎРЏР Вµт РЎвЂљР В°Р В±Р В»Р С‘РЎвЂ у"""
         table = doc.add_table(rows=1, cols=len(headers))
         table.style = 'Light Grid Accent 1'
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -61,12 +61,15 @@ class DOCXGenerator:
         weird_chars = set("Р‚РѓвЂљС“вЂћвЂ¦вЂ вЂЎв‚¬вЂ°Р‰вЂ№РЉРЊР‹РЏС’вЂвЂ™вЂњвЂќвЂўвЂ“вЂ”в„ўС™вЂєСљСњС›Сџ")
 
         def _quality(value: str) -> int:
-            cyr = sum(1 for ch in value if ("Рђ" <= ch <= "СЏ") or ch in ("РЃ", "С‘"))
+            cyr = sum(1 for ch in value if ("А" <= ch <= "я") or ch in ("Ё", "ё"))
             weird = sum(1 for ch in value if ch in weird_chars)
-            return cyr - (weird * 4) - (value.count("пїЅ") * 8)
+            c1 = sum(1 for ch in value if 0x80 <= ord(ch) <= 0x9F)
+            return cyr - (weird * 4) - (value.count("пїЅ") * 8) - (c1 * 6)
 
         def _looks_mojibake(value: str) -> bool:
-            if any(marker in value for marker in ("РІР‚", "РІвЂћ", "Рѓ", "вЂљ", "в‚¬", "в„ў", "С™", "Сљ", "С›", "Сџ")):
+            if any(marker in value for marker in ("вЂ", "в„", "Ѓ", "вЂљ", "в‚¬", "в„ў", "љ", "њ", "ћ", "џ")):
+                return True
+            if any(0x80 <= ord(ch) <= 0x9F for ch in value):
                 return True
             letters = [ch for ch in value if ch.isalpha()]
             if not letters:
@@ -74,22 +77,55 @@ class DOCXGenerator:
             rs_count = sum(1 for ch in letters if ch in ("Р ", "РЎ"))
             return (rs_count / len(letters)) > 0.28
 
+        def _cp1251_byte_for_char(ch: str) -> int | None:
+            code = ord(ch)
+            if code <= 0xFF:
+                return code
+            if ch == "Ё":
+                return 0xA8
+            if ch == "ё":
+                return 0xB8
+            if "А" <= ch <= "я":
+                return code - 0x350
+            try:
+                raw = ch.encode("cp1251", errors="strict")
+                if len(raw) == 1:
+                    return raw[0]
+            except Exception:
+                return None
+            return None
+
+        def _decode_mixed_cp1251_utf8(value: str) -> str | None:
+            raw = bytearray()
+            for ch in value:
+                b = _cp1251_byte_for_char(ch)
+                if b is None:
+                    return None
+                raw.append(b)
+            try:
+                return raw.decode("utf-8", errors="strict")
+            except Exception:
+                return None
+
         repaired = text
         for _ in range(3):
-            converted = None
+            candidates = []
+            converted = _decode_mixed_cp1251_utf8(repaired)
+            if converted and converted != repaired:
+                candidates.append(converted)
             try:
-                converted = repaired.encode("cp1251").decode("utf-8")
+                latin1 = repaired.encode("latin1", errors="strict").decode("utf-8", errors="strict")
+                if latin1 != repaired:
+                    candidates.append(latin1)
             except Exception:
-                try:
-                    converted = repaired.encode("latin1").decode("utf-8")
-                except Exception:
-                    break
-            if not converted or converted == repaired:
+                pass
+            if not candidates:
                 break
-            if _looks_mojibake(repaired) or _quality(converted) > (_quality(repaired) + 1):
-                repaired = converted
-            else:
-                break
+            best = max(candidates, key=_quality)
+            if _looks_mojibake(repaired) or _quality(best) > (_quality(repaired) + 1):
+                repaired = best
+                continue
+            break
         return repaired
 
     def _normalize_document_text(self, doc: Document) -> None:
@@ -120,37 +156,37 @@ class DOCXGenerator:
         doc.save(filepath)
     
     def generate_site_analyze_report(self, task_id: str, data: Dict[str, Any]) -> str:
-        """Р вЂњР ВµР Р…Р ВµРЎР‚Р С‘РЎР‚РЎС“Р ВµРЎвЂљ Р С”Р В»Р С‘Р ВµР Р…РЎвЂљРЎРѓР С”Р С‘Р в„– Р С•РЎвЂљРЎвЂЎР ВµРЎвЂљ Р В°Р Р…Р В°Р В»Р С‘Р В·Р В° РЎРѓР В°Р в„–РЎвЂљР В°."""
+        """Р вЂњР ВµР Р…Р ВµРЎР‚Р С‘РЎР‚РЎС“Р Вµт Р С”Р В»Р С‘Р ВµР Р…РЎвЂљРЎРѓР С”Р С‘Р в„– Р С•РЎвЂљРЎвЂЎР Вµт Р В°Р Р…Р В°Р В»Р С‘Р В·Р В° РЎРѓР В°Р в„–РЎвЂљР В°."""
         doc = Document()
 
-        title = doc.add_heading('Р С›РЎвЂљРЎвЂЎР ВµРЎвЂљ РїРѕ SEO-Р В°Р Р…Р В°Р В»Р С‘Р В·РЎС“ РЎРѓР В°Р в„–РЎвЂљР В°', 0)
+        title = doc.add_heading('Р С›РЎвЂљРЎвЂЎР Вµт по SEO-Р В°Р Р…Р В°Р В»Р С‘Р В·у РЎРѓР В°Р в„–РЎвЂљР В°', 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        doc.add_paragraph(f"URL: {data.get('url', 'РЅ/Рґ')}")
-        doc.add_paragraph(f"Р СџРЎР‚Р С•Р Р†Р ВµРЎР‚Р ВµР Р…Р С• РЎРѓРЎвЂљРЎР‚Р В°Р Р…Р С‘РЎвЂ : {data.get('pages_analyzed', 0)}")
+        doc.add_paragraph(f"URL: {data.get('url', 'н/д')}")
+        doc.add_paragraph(f"Р СџРЎР‚Р С•Р Р†Р ВµРЎР‚Р ВµР Р…Р ѕ РЎРѓРЎвЂљРЎР‚Р В°Р Р…Р С‘РЎвЂ : {data.get('pages_analyzed', 0)}")
         doc.add_paragraph(f"Completed at: {data.get('completed_at', 'n/a')}")
         doc.add_paragraph(
-            "Р С›Р С—Р С‘РЎРѓР В°Р Р…Р С‘Р Вµ: Р Т‘Р В°Р Р…Р Р…РЎвЂ№Р в„– Р С•РЎвЂљРЎвЂЎР ВµРЎвЂљ РЎвЂћР С‘Р С”РЎРѓР С‘РЎР‚РЎС“Р ВµРЎвЂљ Р С•Р В±РЎвЂ°Р ВµР Вµ РЎвЂљР ВµРЎвЂ¦Р Р…Р С‘РЎвЂЎР ВµРЎРѓР С”Р С•Р Вµ РЎРѓР С•РЎРѓРЎвЂљР С•РЎРЏР Р…Р С‘Р Вµ РЎРѓР В°Р в„–РЎвЂљР В° РЎРѓ РЎвЂљР С•РЎвЂЎР С”Р С‘ Р В·РЎР‚Р ВµР Р…Р С‘РЎРЏ SEO, "
-            "РЎвЂЎРЎвЂљР С•Р В±РЎвЂ№ Р С•Р С—РЎР‚Р ВµР Т‘Р ВµР В»Р С‘РЎвЂљРЎРЉ Р С—РЎР‚Р С‘Р С•РЎР‚Р С‘РЎвЂљР ВµРЎвЂљРЎвЂ№ Р Т‘Р С•РЎР‚Р В°Р В±Р С•РЎвЂљРѕРє Р С‘ РЎРѓР Р…Р С‘Р В·Р С‘РЎвЂљРЎРЉ РЎР‚Р С‘РЎРѓР С”Р С‘ Р С—Р С•РЎвЂљР ВµРЎР‚Р С‘ Р С•РЎР‚Р С–Р В°Р Р…Р С‘РЎвЂЎР ВµСЃРєРѕРіРѕ РЎвЂљРЎР‚Р В°РЎвЂћР С‘Р С”Р В°."
+            "Р С›Р С—Р С‘РЎРѓР В°Р Р…Р С‘Р Вµ: Р Т‘Р В°Р Р…Р Р…РЎвЂ№Р в„– Р С•РЎвЂљРЎвЂЎР Вµт РЎвЂћР С‘Р С”РЎРѓР С‘РЎР‚РЎС“Р Вµт Р С•Р В±РЎвЂ°Р ВµР Вµ РЎвЂљР ВµРЎвЂ¦Р Р…Р С‘РЎвЂЎР ВµРЎРѓР С”Р С•Р Вµ РЎРѓР С•РЎРѓРЎвЂљР С•РЎРЏР Р…Р С‘Р Вµ РЎРѓР В°Р в„–РЎвЂљР В° с РЎвЂљР С•РЎвЂЎР С”Р ё Р В·РЎР‚Р ВµР Р…Р ёя SEO, "
+            "РЎвЂЎРЎвЂљР С•Р В±ы Р С•Р С—РЎР‚Р ВµР Т‘Р ВµР В»Р ёть Р С—РЎР‚Р С‘Р С•РЎР‚Р С‘РЎвЂљР ВµРЎвЂљРЎвЂ№ Р Т‘Р С•РЎР‚Р В°Р В±Р ѕС‚ок Р ё РЎРѓР Р…Р С‘Р В·Р ёть РЎР‚Р С‘РЎРѓР С”Р ё Р С—Р С•РЎвЂљР ВµРЎР‚Р ё Р С•РЎР‚Р С–Р В°Р Р…Р С‘РЎвЂЎР Вµского РЎвЂљРЎР‚Р В°РЎвЂћР С‘Р С”Р В°."
         )
 
-        self._add_heading(doc, 'Р С™Р В»РЎР‹РЎвЂЎР ВµР Р†РЎвЂ№Р Вµ РЎР‚Р ВµР В·РЎС“Р В»РЎРЉРЎвЂљР В°РЎвЂљРЎвЂ№', level=1)
+        self._add_heading(doc, 'Ключевые результаты', level=1)
         results = data.get('results', {})
-        headers = ['Р СџР С•Р С”Р В°Р В·Р В°РЎвЂљР ВµР В»РЎРЉ', 'Р вЂ”Р Р…Р В°РЎвЂЎР ВµР Р…Р С‘Р Вµ', 'Р РЋРЎвЂљР В°РЎвЂљСѓСЃ']
+        headers = ['Р СџР С•Р С”Р В°Р В·Р В°РЎвЂљР ВµР В»ь', 'Р вЂ”Р Р…Р В°РЎвЂЎР ВµР Р…Р С‘Р Вµ', 'Р РЋРЎвЂљР В°С‚ус']
         rows = [
-            ['Р вЂ™РЎРѓР ВµРіРѕ РЎРѓРЎвЂљРЎР‚Р В°Р Р…Р С‘РЎвЂ ', results.get('total_pages', 0), 'OK'],
-            ['Р РЋРЎвЂљР В°РЎвЂљСѓСЃ Р В°Р Р…Р В°Р В»Р С‘Р В·Р В°', results.get('status', 'РЅ/Рґ'), 'OK'],
-            ['Р РЋР Р†Р С•Р Т‘Р С”Р В°', results.get('summary', 'РЅ/Рґ'), 'OK']
+            ['Р вЂ™РЎРѓР Вµго РЎРѓРЎвЂљРЎР‚Р В°Р Р…Р С‘РЎвЂ ', results.get('total_pages', 0), 'OK'],
+            ['Р РЋРЎвЂљР В°С‚ус Р В°Р Р…Р В°Р В»Р С‘Р В·Р В°', results.get('status', 'н/д'), 'OK'],
+            ['Р РЋР Р†Р С•Р Т‘Р С”Р В°', results.get('summary', 'н/д'), 'OK']
         ]
         self._add_table(doc, headers, rows)
 
         recs = results.get("recommendations", []) or data.get("recommendations", [])
         if recs:
-            self._add_heading(doc, 'Р В Р ВµР С”Р С•Р СР ВµР Р…Р Т‘Р В°РЎвЂ Р С‘Р С‘', level=1)
+            self._add_heading(doc, 'Р В Р ВµР С”Р С•Р СР ВµР Р…Р Т‘Р В°РЎвЂ Р С‘Р ё', level=1)
             for rec in recs[:30]:
                 doc.add_paragraph(str(rec), style='List Bullet')
 
         doc.add_paragraph()
-        footer = doc.add_paragraph(f"Р С›РЎвЂљРЎвЂЎР ВµРЎвЂљ РЎРѓРЎвЂћР С•РЎР‚Р СР С‘РЎР‚Р С•Р Р†Р В°Р Р… SEO Р ВР Р…РЎРѓРЎвЂљРЎР‚РЎС“Р СР ВµР Р…РЎвЂљРЎвЂ№: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        footer = doc.add_paragraph(f"Р С›РЎвЂљРЎвЂЎР Вµт РЎРѓРЎвЂћР С•РЎР‚Р СР С‘РЎР‚Р С•Р Р†Р В°Р Ѕ SEO Р ВР Р…РЎРѓРЎвЂљРЎР‚РЎС“Р СР ВµР Ѕты: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
         footer.runs[0].font.size = Pt(8)
         footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
@@ -443,28 +479,28 @@ class DOCXGenerator:
         return filepath
 
     def generate_sitemap_report(self, task_id: str, data: Dict[str, Any]) -> str:
-        """Р вЂњР ВµР Р…Р ВµРЎР‚Р С‘РЎР‚РЎС“Р ВµРЎвЂљ Р С”Р В»Р С‘Р ВµР Р…РЎвЂљРЎРѓР С”Р С‘Р в„– Р С•РЎвЂљРЎвЂЎР ВµРЎвЂљ РїРѕ sitemap."""
+        """Р вЂњР ВµР Р…Р ВµРЎР‚Р С‘РЎР‚РЎС“Р Вµт Р С”Р В»Р С‘Р ВµР Р…РЎвЂљРЎРѓР С”Р С‘Р в„– Р С•РЎвЂљРЎвЂЎР Вµт по sitemap."""
         doc = Document()
 
-        title = doc.add_heading('Р С›РЎвЂљРЎвЂЎР ВµРЎвЂљ РїРѕ Р Р†Р В°Р В»Р С‘Р Т‘Р В°РЎвЂ Р С‘Р С‘ sitemap', 0)
+        title = doc.add_heading('Р С›РЎвЂљРЎвЂЎР Вµт по Р Р†Р В°Р В»Р С‘Р Т‘Р В°РЎвЂ Р С‘Р ё sitemap', 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        doc.add_paragraph(f"URL: {data.get('url', 'РЅ/Рґ')}")
+        doc.add_paragraph(f"URL: {data.get('url', 'н/д')}")
         results = data.get('results', {})
-        doc.add_paragraph(f"Р вЂ™Р В°Р В»Р С‘Р Т‘Р ВµР Р…: {'Р вЂќР В°' if results.get('valid') else 'Р СњР ВµРЎвЂљ'}")
-        doc.add_paragraph(f"Р С™Р С•Р В»Р С‘РЎвЂЎР ВµРЎРѓРЎвЂљРІРѕ URL: {results.get('urls_count', 0)}")
+        doc.add_paragraph(f"Р вЂ™Р В°Р В»Р С‘Р Т‘Р ВµР Ѕ: {'Р вЂќР В°' if results.get('valid') else 'Р СњР Вµт'}")
+        doc.add_paragraph(f"Р С™Р С•Р В»Р С‘РЎвЂЎР ВµСЃС‚во URL: {results.get('urls_count', 0)}")
         doc.add_paragraph(
-            "Р С›Р С—Р С‘РЎРѓР В°Р Р…Р С‘Р Вµ: sitemap Р С—Р С•Р СР С•Р С–Р В°Р ВµРЎвЂљ Р С—Р С•Р С‘РЎРѓР С”Р С•Р Р†РЎвЂ№Р С РЎРѓР С‘РЎРѓРЎвЂљР ВµР СР В°Р С Р В±РЎвЂ№РЎРѓРЎвЂљРЎР‚Р ВµР Вµ Р Р…Р В°РЎвЂ¦Р С•Р Т‘Р С‘РЎвЂљРЎРЉ Р С‘ Р С—Р ВµРЎР‚Р ВµР С•Р В±РЎвЂ¦Р С•Р Т‘Р С‘РЎвЂљРЎРЉ РЎРѓРЎвЂљРЎР‚Р В°Р Р…Р С‘РЎвЂ РЎвЂ№. "
-            "Р С›РЎв‚¬Р С‘Р В±Р С”Р С‘ РЎРѓРЎвЂљРЎР‚РЎС“Р С”РЎвЂљРЎС“РЎР‚РЎвЂ№ Р С‘ Р Т‘РЎС“Р В±Р В»Р ВµР в„– Р СР С•Р С–РЎС“РЎвЂљ РЎС“РЎвЂ¦РЎС“Р Т‘РЎв‚¬Р В°РЎвЂљРЎРЉ Р С”Р В°РЎвЂЎР ВµРЎРѓРЎвЂљРІРѕ Р С‘Р Р…Р Т‘Р ВµР С”РЎРѓР В°РЎвЂ Р С‘Р С‘."
+            "Р С›Р С—Р С‘РЎРѓР В°Р Р…Р С‘Р Вµ: sitemap Р С—Р С•Р СР С•Р С–Р В°Р Вµт Р С—Р С•Р С‘РЎРѓР С”Р С•Р Р†РЎвЂ№Р С РЎРѓР С‘РЎРѓРЎвЂљР ВµР СР В°Р С Р В±РЎвЂ№РЎРѓРЎвЂљРЎР‚Р ВµР Вµ Р Р…Р В°РЎвЂ¦Р С•Р Т‘Р ёть Р ё Р С—Р ВµРЎР‚Р ВµР С•Р В±РЎвЂ¦Р С•Р Т‘Р ёть РЎРѓРЎвЂљРЎР‚Р В°Р Р…Р С‘РЎвЂ ы. "
+            "Р С›РЎв‚¬Р С‘Р В±Р С”Р ё РЎРѓРЎвЂљРЎР‚РЎС“Р єтуры Р ё Р Т‘РЎС“Р В±Р В»Р ВµР в„– Р СР С•Р іут РЎС“РЎвЂ¦РЎС“Р Т‘РЎв‚¬Р В°РЎвЂљРЎРЉ Р С”Р В°РЎвЂЎР ВµСЃС‚во Р С‘Р Р…Р Т‘Р ВµР С”РЎРѓР В°РЎвЂ Р С‘Р ё."
         )
         recs = results.get("recommendations", [])
         if recs:
-            self._add_heading(doc, 'Р В Р ВµР С”Р С•Р СР ВµР Р…Р Т‘Р В°РЎвЂ Р С‘Р С‘', level=1)
+            self._add_heading(doc, 'Р В Р ВµР С”Р С•Р СР ВµР Р…Р Т‘Р В°РЎвЂ Р С‘Р ё', level=1)
             for rec in recs[:30]:
                 doc.add_paragraph(str(rec), style='List Bullet')
 
         doc.add_paragraph()
-        footer = doc.add_paragraph(f"Р С›РЎвЂљРЎвЂЎР ВµРЎвЂљ РЎРѓРЎвЂћР С•РЎР‚Р СР С‘РЎР‚Р С•Р Р†Р В°Р Р… SEO Р ВР Р…РЎРѓРЎвЂљРЎР‚РЎС“Р СР ВµР Р…РЎвЂљРЎвЂ№: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        footer = doc.add_paragraph(f"Р С›РЎвЂљРЎвЂЎР Вµт РЎРѓРЎвЂћР С•РЎР‚Р СР С‘РЎР‚Р С•Р Р†Р В°Р Ѕ SEO Р ВР Р…РЎРѓРЎвЂљРЎР‚РЎС“Р СР ВµР Ѕты: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
         footer.runs[0].font.size = Pt(8)
         footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
@@ -474,15 +510,15 @@ class DOCXGenerator:
         return filepath
     
     def generate_render_report(self, task_id: str, data: Dict[str, Any]) -> str:
-        """Р“РµРЅРµСЂРёСЂСѓРµС‚ СЂР°СЃС€РёСЂРµРЅРЅС‹Р№ РєР»РёРµРЅС‚СЃРєРёР№ РѕС‚С‡РµС‚ Р°СѓРґРёС‚Р° СЂРµРЅРґРµСЂРёРЅРіР°."""
+        """Генерирует расширенный клиентский отчет аудита рендеринга."""
         doc = Document()
 
-        title = doc.add_heading('SEO-РђРЈР”РРў Р Р•РќР”Р•Р РРќР“Рђ', 0)
+        title = doc.add_heading('SEO-АУДИТ РЕНДЕРИНГА', 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        subtitle = doc.add_paragraph('РђРЅР°Р»РёР· РєРѕРЅС‚РµРЅС‚Р° СЃ JavaScript Рё Р±РµР· РЅРµРіРѕ')
+        subtitle = doc.add_paragraph('Анализ контента с JavaScript и без него')
         subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        url = data.get('url', 'РЅ/Рґ')
+        url = data.get('url', 'н/д')
         results = data.get('results', {}) or {}
         summary = results.get('summary', {}) or {}
         variants = results.get('variants', []) or []
@@ -490,29 +526,29 @@ class DOCXGenerator:
         recommendations = results.get('recommendations', []) or []
         generated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-        doc.add_paragraph(f"РђРЅР°Р»РёР·РёСЂСѓРµРјС‹Р№ URL: {url}")
-        doc.add_paragraph(f"Дата Р°СѓРґРёС‚Р°: {generated_at}")
-        doc.add_paragraph(f"Р”РІРёР¶РѕРє: {results.get('engine', 'legacy')}")
-        doc.add_paragraph("РљСЂР°С‚РєРѕРµ СЂРµР·СЋРјРµ")
+        doc.add_paragraph(f"Анализируемый URL: {url}")
+        doc.add_paragraph(f"Дата аудита: {generated_at}")
+        doc.add_paragraph(f"Движок: {results.get('engine', 'legacy')}")
+        doc.add_paragraph("Краткое резюме")
         doc.add_paragraph(
-            f"Р”Р°РЅРЅС‹Р№ РѕС‚С‡С‘С‚ СЃРѕРґРµСЂР¶РёС‚ СЂРµР·СѓР»СЊС‚Р°С‚С‹ SEO-Р°СѓРґРёС‚Р° СЃС‚СЂР°РЅРёС†С‹ {url} СЃ С„РѕРєСѓСЃРѕРј РЅР° СЃСЂР°РІРЅРµРЅРёРµ РєРѕРЅС‚РµРЅС‚Р°, "
-            "РґРѕСЃС‚СѓРїРЅРѕРіРѕ СЃ JavaScript Рё Р±РµР· РЅРµРіРѕ."
+            f"Данный отчёт содержит результаты SEO-аудита страницы {url} с фокусом на сравнение контента, "
+            "доступного с JavaScript и без него."
         )
 
-        self._add_heading(doc, '1. РљР»СЋС‡РµРІС‹Рµ РІС‹РІРѕРґС‹', level=1)
+        self._add_heading(doc, '1. Ключевые выводы', level=1)
         totals = [
-            ['РџСЂРѕС„РёР»РµР№ РїСЂРѕРІРµСЂРєРё', summary.get('variants_total', len(variants)), 'РРЅС„Рѕ'],
-            ['РћР±С‰Р°СЏ РѕС†РµРЅРєР°', summary.get('score', 'РЅ/Рґ'), 'РРЅС„Рѕ'],
-            ['РљСЂРёС‚РёС‡РЅС‹Рµ РїСЂРѕР±Р»РµРјС‹', summary.get('critical_issues', 0), 'Р’Р°Р¶РЅРѕ'],
-            ['РџСЂРµРґСѓРїСЂРµР¶РґРµРЅРёСЏ', summary.get('warning_issues', 0), 'Р’Р°Р¶РЅРѕ'],
-            ['Р’СЃРµРіРѕ РїРѕС‚РµСЂСЏРЅРЅС‹С… СЌР»РµРјРµРЅС‚РѕРІ', summary.get('missing_total', 0), 'Р’Р°Р¶РЅРѕ'],
-            ['РЎСЂРµРґРЅРёР№ РїСЂРѕС†РµРЅС‚ РїРѕС‚РµСЂСЊ', f"{summary.get('avg_missing_pct', 0)}%", 'РРЅС„Рѕ'],
+            ['Профилей проверки', summary.get('variants_total', len(variants)), 'Инфо'],
+            ['Общая оценка', summary.get('score', 'н/д'), 'Инфо'],
+            ['Критичные проблемы', summary.get('critical_issues', 0), 'Важно'],
+            ['Предупреждения', summary.get('warning_issues', 0), 'Важно'],
+            ['Всего потерянных элементов', summary.get('missing_total', 0), 'Важно'],
+            ['Средний процент потерь', f"{summary.get('avg_missing_pct', 0)}%", 'РРЅС„Рѕ'],
         ]
-        self._add_table(doc, ['РџРѕРєР°Р·Р°С‚РµР»СЊ', 'Р—РЅР°С‡РµРЅРёРµ', 'РЎС‚Р°С‚СѓСЃ'], totals)
-        doc.add_paragraph(f"вЂў SEO-РѕС†РµРЅРєР°: {summary.get('score', 'РЅ/Рґ')}/100")
-        doc.add_paragraph(f"вЂў РљСЂРёС‚РёС‡РµСЃРєРёС… РїСЂРѕР±Р»РµРј: {summary.get('critical_issues', 0)}")
-        doc.add_paragraph(f"вЂў РџСЂРµРґСѓРїСЂРµР¶РґРµРЅРёР№: {summary.get('warning_issues', 0)}")
-        doc.add_paragraph(f"вЂў Р”РѕР±Р°РІР»РµРЅРѕ СЌР»РµРјРµРЅС‚РѕРІ С‡РµСЂРµР· JS: {summary.get('missing_total', 0)}")
+        self._add_table(doc, ['Показатель', 'Значение', 'Статус'], totals)
+        doc.add_paragraph(f"вЂў SEO-оценка: {summary.get('score', 'н/д')}/100")
+        doc.add_paragraph(f"вЂў Критических проблем: {summary.get('critical_issues', 0)}")
+        doc.add_paragraph(f"вЂў Предупреждений: {summary.get('warning_issues', 0)}")
+        doc.add_paragraph(f"вЂў Добавлено элементов через JS: {summary.get('missing_total', 0)}")
 
         primary = variants[0] if variants else {}
         raw_p = primary.get('raw', {}) or {}
@@ -520,79 +556,79 @@ class DOCXGenerator:
         meta_p = ((primary.get('meta_non_seo') or {}).get('comparison') or {})
         raw_meta = ((primary.get('meta_non_seo') or {}).get('raw') or {})
         js_meta = ((primary.get('meta_non_seo') or {}).get('rendered') or {})
-        raw_schema = ", ".join(raw_p.get('schema_types', []) or []) or "РќРµС‚"
-        js_schema = ", ".join(js_p.get('schema_types', []) or []) or "РќРµС‚"
+        raw_schema = ", ".join(raw_p.get('schema_types', []) or []) or "Нет"
+        js_schema = ", ".join(js_p.get('schema_types', []) or []) or "Нет"
 
         def _status(a, b) -> str:
             return "вњ…" if str(a).strip() == str(b).strip() else "вљ пёЏ"
 
-        self._add_heading(doc, '2. РЎСЂР°РІРЅРµРЅРёРµ SEO-СЌР»РµРјРµРЅС‚РѕРІ', level=1)
+        self._add_heading(doc, '2. Сравнение SEO-элементов', level=1)
         compare_rows = [
-            ['Р—Р°РіРѕР»РѕРІРѕРє СЃС‚СЂР°РЅРёС†С‹ (title)', raw_p.get('title', ''), js_p.get('title', ''), _status(raw_p.get('title', ''), js_p.get('title', ''))],
-            ['РњРµС‚Р°-РѕРїРёСЃР°РЅРёРµ (description)', raw_p.get('meta_description', ''), js_p.get('meta_description', ''), _status(raw_p.get('meta_description', ''), js_p.get('meta_description', ''))],
-            ['H1 Р·Р°РіРѕР»РѕРІРєРё', f"{raw_p.get('h1_count', 0)} С€С‚", f"{js_p.get('h1_count', 0)} С€С‚", _status(raw_p.get('h1_count', 0), js_p.get('h1_count', 0))],
-            ['H2 Р·Р°РіРѕР»РѕРІРєРё', f"{raw_p.get('h2_count', 0)} С€С‚", f"{js_p.get('h2_count', 0)} С€С‚", _status(raw_p.get('h2_count', 0), js_p.get('h2_count', 0))],
-            ['РР·РѕР±СЂР°Р¶РµРЅРёСЏ', f"{raw_p.get('images_count', 0)} С€С‚", f"{js_p.get('images_count', 0)} С€С‚", _status(raw_p.get('images_count', 0), js_p.get('images_count', 0))],
-            ['РЎСЃС‹Р»РєРё', f"{raw_p.get('links_count', 0)} С€С‚", f"{js_p.get('links_count', 0)} С€С‚", _status(raw_p.get('links_count', 0), js_p.get('links_count', 0))],
+            ['Заголовок страницы (title)', raw_p.get('title', ''), js_p.get('title', ''), _status(raw_p.get('title', ''), js_p.get('title', ''))],
+            ['Мета-описание (description)', raw_p.get('meta_description', ''), js_p.get('meta_description', ''), _status(raw_p.get('meta_description', ''), js_p.get('meta_description', ''))],
+            ['H1 заголовки', f"{raw_p.get('h1_count', 0)} шт", f"{js_p.get('h1_count', 0)} шт", _status(raw_p.get('h1_count', 0), js_p.get('h1_count', 0))],
+            ['H2 заголовки', f"{raw_p.get('h2_count', 0)} шт", f"{js_p.get('h2_count', 0)} шт", _status(raw_p.get('h2_count', 0), js_p.get('h2_count', 0))],
+            ['РР·РѕР±СЂР°Р¶РµРЅРёСЏ', f"{raw_p.get('images_count', 0)} шт", f"{js_p.get('images_count', 0)} шт", _status(raw_p.get('images_count', 0), js_p.get('images_count', 0))],
+            ['Ссылки', f"{raw_p.get('links_count', 0)} шт", f"{js_p.get('links_count', 0)} шт", _status(raw_p.get('links_count', 0), js_p.get('links_count', 0))],
             ['Canonical', raw_p.get('canonical', ''), js_p.get('canonical', ''), _status(raw_p.get('canonical', ''), js_p.get('canonical', ''))],
-            ['Schema-СЂР°Р·РјРµС‚РєР°', raw_schema, js_schema, _status(raw_schema, js_schema)],
-            ['РњРµС‚Р° viewport', 'вњ… Р•СЃС‚СЊ' if raw_meta.get('meta:viewport') else 'вќЊ РќРµС‚', 'вњ… Р•СЃС‚СЊ' if js_meta.get('meta:viewport') else 'вќЊ РќРµС‚', _status(bool(raw_meta.get('meta:viewport')), bool(js_meta.get('meta:viewport')))],
+            ['Schema-разметка', raw_schema, js_schema, _status(raw_schema, js_schema)],
+            ['Мета viewport', 'вњ… Есть' if raw_meta.get('meta:viewport') else 'вќЊ Нет', 'вњ… Есть' if js_meta.get('meta:viewport') else 'вќЊ Нет', _status(bool(raw_meta.get('meta:viewport')), bool(js_meta.get('meta:viewport')))],
         ]
-        self._add_table(doc, ['Р­Р»РµРјРµРЅС‚', 'Р‘РµР· JS', 'РЎ JS', 'РЎС‚Р°С‚СѓСЃ'], compare_rows)
+        self._add_table(doc, ['Элемент', 'Без JS', 'РЎ JS', 'Статус'], compare_rows)
 
-        self._add_heading(doc, '3. РђРЅР°Р»РёР· РїРѕ СѓСЃС‚СЂРѕР№СЃС‚РІР°Рј', level=1)
+        self._add_heading(doc, '3. Анализ по устройствам', level=1)
         if variants:
             device_rows = []
             for variant in variants:
                 metrics = variant.get('metrics', {}) or {}
                 shots = variant.get('screenshots', {}) or {}
                 device_rows.append([
-                    variant.get('variant_label') or variant.get('variant_id', 'РџСЂРѕС„РёР»СЊ'),
+                    variant.get('variant_label') or variant.get('variant_id', 'Профиль'),
                     (variant.get('profile_type') or ('mobile' if variant.get('mobile') else 'desktop')),
                     f"{float(metrics.get('score', 0) or 0):.1f}",
                     f"{int(metrics.get('total_missing', 0) or 0)}",
-                    ", ".join(list(shots.keys())) if shots else 'РЅРµС‚',
+                    ", ".join(list(shots.keys())) if shots else 'нет',
                 ])
-            self._add_table(doc, ['РЈСЃС‚СЂРѕР№СЃС‚РІРѕ', 'РўРёРї РїСЂРѕС„РёР»СЏ', 'РћС†РµРЅРєР°', 'РџРѕС‚РµСЂРё', 'РЎРєСЂРёРЅС€РѕС‚С‹'], device_rows)
+            self._add_table(doc, ['Устройство', 'Тип профиля', 'Оценка', 'Потери', 'Скриншоты'], device_rows)
         else:
-            doc.add_paragraph("РџСЂРѕС„РёР»Рё СѓСЃС‚СЂРѕР№СЃС‚РІ РѕС‚СЃСѓС‚СЃС‚РІСѓСЋС‚.")
+            doc.add_paragraph("Профили устройств отсутствуют.")
 
-        self._add_heading(doc, '4. Р§С‚Рѕ РїСЂРѕРІРµСЂСЏР»РѕСЃСЊ Рё Р·Р°С‡РµРј', level=1)
+        self._add_heading(doc, '4. Что проверялось и зачем', level=1)
         doc.add_paragraph(
-            "РЎРёСЃС‚РµРјР° СЃСЂР°РІРЅРёРІР°РµС‚ РґРІРµ РІРµСЂСЃРёРё СЃС‚СЂР°РЅРёС†С‹: РёСЃС…РѕРґРЅС‹Р№ HTML (Р±РµР· JS) Рё РёС‚РѕРіРѕРІС‹Р№ DOM РїРѕСЃР»Рµ JS-СЂРµРЅРґРµСЂР°. "
-            "Р•СЃР»Рё Р·РЅР°С‡РёРјС‹Р№ РєРѕРЅС‚РµРЅС‚ РїРѕСЏРІР»СЏРµС‚СЃСЏ С‚РѕР»СЊРєРѕ РїРѕСЃР»Рµ JS, РїРѕРёСЃРєРѕРІС‹Р№ СЂРѕР±РѕС‚ РјРѕР¶РµС‚ СѓРІРёРґРµС‚СЊ РЅРµРїРѕР»РЅСѓСЋ СЃС‚СЂР°РЅРёС†Сѓ."
+            "Система сравнивает две версии страницы: исходный HTML (без JS) и итоговый DOM после JS-рендера. "
+            "Если значимый контент появляется только после JS, поисковый робот может увидеть неполную страницу."
         )
-        doc.add_paragraph("РџСЂРѕРІРµСЂСЏСЋС‚СЃСЏ СЌР»РµРјРµРЅС‚С‹: title, meta description, canonical, H1-H2, СЃСЃС‹Р»РєРё, РёР·РѕР±СЂР°Р¶РµРЅРёСЏ, schema.org, РІРёРґРёРјС‹Р№ С‚РµРєСЃС‚.")
-        doc.add_paragraph("Р”РѕРїРѕР»РЅРёС‚РµР»СЊРЅРѕ СЃСЂР°РІРЅРёРІР°СЋС‚СЃСЏ РЅРµ-SEO meta-РґР°РЅРЅС‹Рµ РјРµР¶РґСѓ no-JS Рё JS: viewport, charset, referrer, theme-color, manifest Рё РґСЂ.")
+        doc.add_paragraph("Проверяются элементы: title, meta description, canonical, H1-H2, ссылки, изображения, schema.org, видимый текст.")
+        doc.add_paragraph("Дополнительно сравниваются не-SEO meta-данные между no-JS и JS: viewport, charset, referrer, theme-color, manifest и др.")
 
-        self._add_heading(doc, '5. Р РµР·СѓР»СЊС‚Р°С‚С‹ РїРѕ РїСЂРѕС„РёР»СЏРј', level=1)
+        self._add_heading(doc, '5. Р езультаты по профилям', level=1)
         if variants:
             for variant in variants:
-                label = variant.get('variant_label') or variant.get('variant_id', 'РџСЂРѕС„РёР»СЊ')
+                label = variant.get('variant_label') or variant.get('variant_id', 'Профиль')
                 metrics = variant.get('metrics', {}) or {}
                 raw = variant.get('raw', {}) or {}
                 rendered = variant.get('rendered', {}) or {}
                 doc.add_heading(label, level=2)
 
                 rows = [
-                    ['РћС†РµРЅРєР°', f"{metrics.get('score', 0):.1f}/100", ''],
-                    ['РџРѕС‚РµСЂСЏРЅРЅС‹Рµ СЌР»РµРјРµРЅС‚С‹', int(metrics.get('total_missing', 0) or 0), ''],
-                    ['РџРѕС‚РµСЂРё %', f"{metrics.get('missing_pct', 0):.1f}%", ''],
-                    ['H1 (Р±РµР· JS / СЃ JS)', f"{raw.get('h1_count', 0)} / {rendered.get('h1_count', 0)}", ''],
-                    ['РЎСЃС‹Р»РєРё (Р±РµР· JS / СЃ JS)', f"{raw.get('links_count', 0)} / {rendered.get('links_count', 0)}", ''],
-                    ['РЎС‚СЂСѓРєС‚СѓСЂРёСЂРѕРІР°РЅРЅС‹Рµ РґР°РЅРЅС‹Рµ (Р±РµР· JS / СЃ JS)', f"{raw.get('structured_data_count', 0)} / {rendered.get('structured_data_count', 0)}", ''],
+                    ['Оценка', f"{metrics.get('score', 0):.1f}/100", ''],
+                    ['Потерянные элементы', int(metrics.get('total_missing', 0) or 0), ''],
+                    ['Потери %', f"{metrics.get('missing_pct', 0):.1f}%", ''],
+                    ['H1 (без JS / с JS)', f"{raw.get('h1_count', 0)} / {rendered.get('h1_count', 0)}", ''],
+                    ['Ссылки (без JS / с JS)', f"{raw.get('links_count', 0)} / {rendered.get('links_count', 0)}", ''],
+                    ['Структурированные данные (без JS / с JS)', f"{raw.get('structured_data_count', 0)} / {rendered.get('structured_data_count', 0)}", ''],
                 ]
-                self._add_table(doc, ['РџР°СЂР°РјРµС‚СЂ', 'Р—РЅР°С‡РµРЅРёРµ', ''], rows)
+                self._add_table(doc, ['Параметр', 'Значение', ''], rows)
 
                 seo_required = variant.get('seo_required', {}) or {}
                 seo_items = seo_required.get('items', []) or []
                 if seo_items:
                     doc.add_paragraph(
-                        f"РћР±СЏР·Р°С‚РµР»СЊРЅС‹Рµ SEO-СЌР»РµРјРµРЅС‚С‹: РџСЂРѕР№РґРµРЅРѕ {seo_required.get('pass', 0)}, "
-                        f"РџСЂРµРґСѓРїСЂРµР¶РґРµРЅРёР№ {seo_required.get('warn', 0)}, РљСЂРёС‚РёС‡РЅС‹С… {seo_required.get('fail', 0)}."
+                        f"Обязательные SEO-элементы: Пройдено {seo_required.get('pass', 0)}, "
+                        f"Предупреждений {seo_required.get('warn', 0)}, Критичных {seo_required.get('fail', 0)}."
                     )
                     seo_rows = []
-                    status_map = {'pass': 'РџСЂРѕР№РґРµРЅРѕ', 'warn': 'РџСЂРµРґСѓРїСЂРµР¶РґРµРЅРёРµ', 'fail': 'РљСЂРёС‚РёС‡РЅРѕ'}
+                    status_map = {'pass': 'Пройдено', 'warn': 'Предупреждение', 'fail': 'Критично'}
                     for item in seo_items:
                         seo_rows.append([
                             item.get('label', ''),
@@ -601,11 +637,11 @@ class DOCXGenerator:
                             status_map.get(item.get('status', ''), item.get('status', '')),
                             item.get('fix', ''),
                         ])
-                    self._add_table(doc, ['Р­Р»РµРјРµРЅС‚', 'Р‘РµР· JS', 'РЎ JS', 'РЎС‚Р°С‚СѓСЃ', 'Р§С‚Рѕ РёСЃРїСЂР°РІРёС‚СЊ'], seo_rows[:80])
+                    self._add_table(doc, ['Элемент', 'Без JS', 'РЎ JS', 'Статус', 'Что исправить'], seo_rows[:80])
 
                 var_issues = variant.get('issues', []) or []
                 if var_issues:
-                    doc.add_paragraph("РќР°Р№РґРµРЅРЅС‹Рµ РїСЂРѕР±Р»РµРјС‹:", style='List Bullet')
+                    doc.add_paragraph("Найденные проблемы:", style='List Bullet')
                     for issue in var_issues:
                         sev = str(issue.get('severity', 'info')).upper()
                         title_i = issue.get('title', '')
@@ -613,16 +649,16 @@ class DOCXGenerator:
                         doc.add_paragraph(f"[{sev}] {title_i}: {details_i}", style='List Bullet')
                         examples = issue.get('examples', []) or []
                         for ex in examples[:5]:
-                            doc.add_paragraph(f"РџСЂРёРјРµСЂ: {ex}", style='List Bullet')
+                            doc.add_paragraph(f"Пример: {ex}", style='List Bullet')
                 else:
-                    doc.add_paragraph("РџСЂРѕР±Р»РµРјС‹ РЅРµ РѕР±РЅР°СЂСѓР¶РµРЅС‹.")
+                    doc.add_paragraph("Проблемы не обнаружены.")
 
                 missing = variant.get('missing', {}) or {}
                 for key, label in [
-                    ('visible_text', 'РўРµРєСЃС‚, РєРѕС‚РѕСЂС‹Р№ РїРѕСЏРІР»СЏРµС‚СЃСЏ С‚РѕР»СЊРєРѕ РїРѕСЃР»Рµ JS'),
-                    ('headings', 'Р—Р°РіРѕР»РѕРІРєРё, РєРѕС‚РѕСЂС‹Рµ РїРѕСЏРІР»СЏСЋС‚СЃСЏ С‚РѕР»СЊРєРѕ РїРѕСЃР»Рµ JS'),
-                    ('links', 'РЎСЃС‹Р»РєРё, РєРѕС‚РѕСЂС‹Рµ РїРѕСЏРІР»СЏСЋС‚СЃСЏ С‚РѕР»СЊРєРѕ РїРѕСЃР»Рµ JS'),
-                    ('structured_data', 'РЎС‚СЂСѓРєС‚СѓСЂРёСЂРѕРІР°РЅРЅС‹Рµ РґР°РЅРЅС‹Рµ, РєРѕС‚РѕСЂС‹Рµ РїРѕСЏРІР»СЏСЋС‚СЃСЏ С‚РѕР»СЊРєРѕ РїРѕСЃР»Рµ JS'),
+                    ('visible_text', 'Текст, который появляется только после JS'),
+                    ('headings', 'Заголовки, которые появляются только после JS'),
+                    ('links', 'Ссылки, которые появляются только после JS'),
+                    ('structured_data', 'Структурированные данные, которые появляются только после JS'),
                 ]:
                     values = missing.get(key, []) or []
                     if not values:
@@ -635,17 +671,17 @@ class DOCXGenerator:
                 meta_items = meta_cmp.get('items', []) or []
                 if meta_items:
                     doc.add_paragraph(
-                        f"РњРµС‚Р°-РґР°РЅРЅС‹Рµ (РЅРµ SEO): РІСЃРµРіРѕ {meta_cmp.get('total', 0)}, "
-                        f"СЃРѕРІРїР°РґР°РµС‚ {meta_cmp.get('same', 0)}, РёР·РјРµРЅРµРЅРѕ {meta_cmp.get('changed', 0)}, "
-                        f"С‚РѕР»СЊРєРѕ JS {meta_cmp.get('only_rendered', 0)}, С‚РѕР»СЊРєРѕ Р±РµР· JS {meta_cmp.get('only_raw', 0)}."
+                        f"Мета-данные (не SEO): всего {meta_cmp.get('total', 0)}, "
+                        f"совпадает {meta_cmp.get('same', 0)}, изменено {meta_cmp.get('changed', 0)}, "
+                        f"только JS {meta_cmp.get('only_rendered', 0)}, только без JS {meta_cmp.get('only_raw', 0)}."
                     )
                     meta_rows = []
                     for item in meta_items:
                         status_map = {
-                            'same': 'РЎРѕРІРїР°РґР°РµС‚',
-                            'changed': 'РР·РјРµРЅРµРЅРѕ',
-                            'only_rendered': 'РўРѕР»СЊРєРѕ РІ JS',
-                            'only_raw': 'РўРѕР»СЊРєРѕ Р±РµР· JS',
+                            'same': 'Совпадает',
+                            'changed': 'Изменено',
+                            'only_rendered': 'Только в JS',
+                            'only_raw': 'Только без JS',
                         }
                         meta_rows.append([
                             item.get('key', ''),
@@ -653,11 +689,11 @@ class DOCXGenerator:
                             item.get('rendered', ''),
                             status_map.get(item.get('status', ''), item.get('status', '')),
                         ])
-                    self._add_table(doc, ['РљР»СЋС‡', 'Р‘РµР· JS', 'РЎ JS', 'РЎС‚Р°С‚СѓСЃ'], meta_rows[:50])
+                    self._add_table(doc, ['Ключ', 'Без JS', 'РЎ JS', 'Статус'], meta_rows[:50])
 
                 var_recs = variant.get('recommendations', []) or []
                 if var_recs:
-                    doc.add_paragraph("Р РµРєРѕРјРµРЅРґР°С†РёРё РїРѕ РїСЂРѕС„РёР»СЋ:", style='List Bullet')
+                    doc.add_paragraph("Р екомендации по профилю:", style='List Bullet')
                     for rec in var_recs:
                         doc.add_paragraph(str(rec), style='List Bullet')
 
@@ -667,36 +703,36 @@ class DOCXGenerator:
                     shot_path = shot.get('path')
                     if shot_path and os.path.exists(shot_path):
                         caption = {
-                            'js': 'РЎРєСЂРёРЅС€РѕС‚: СЂРµРЅРґРµСЂ СЃ JavaScript',
-                            'nojs': 'РЎРєСЂРёРЅС€РѕС‚: РІРµСЂСЃРёСЏ Р±РµР· JavaScript',
-                            'js_landscape': 'РЎРєСЂРёРЅС€РѕС‚: РјРѕР±РёР»СЊРЅС‹Р№ (РіРѕСЂРёР·РѕРЅС‚Р°Р»СЊРЅС‹Р№), СЃ JavaScript',
-                            'nojs_landscape': 'РЎРєСЂРёРЅС€РѕС‚: РјРѕР±РёР»СЊРЅС‹Р№ (РіРѕСЂРёР·РѕРЅС‚Р°Р»СЊРЅС‹Р№), Р±РµР· JavaScript',
-                        }.get(key, 'РЎРєСЂРёРЅС€РѕС‚')
+                            'js': 'Скриншот: рендер с JavaScript',
+                            'nojs': 'Скриншот: версия без JavaScript',
+                            'js_landscape': 'Скриншот: мобильный (горизонтальный), с JavaScript',
+                            'nojs_landscape': 'Скриншот: мобильный (горизонтальный), без JavaScript',
+                        }.get(key, 'Скриншот')
                         doc.add_paragraph(caption)
                         doc.add_picture(shot_path, width=Inches(6.5))
         else:
-            doc.add_paragraph("Р”Р°РЅРЅС‹Рµ РїРѕ РїСЂРѕС„РёР»СЏРј РѕС‚СЃСѓС‚СЃС‚РІСѓСЋС‚.")
+            doc.add_paragraph("Данные по профилям отсутствуют.")
 
-        self._add_heading(doc, '6. РћР±С‰РёР№ СЃРїРёСЃРѕРє РѕС€РёР±РѕРє', level=1)
+        self._add_heading(doc, '6. Общий список ошибок', level=1)
         if issues:
             for issue in issues:
                 sev = str(issue.get('severity', 'info')).upper()
-                profile = issue.get('variant', 'РџСЂРѕС„РёР»СЊ')
+                profile = issue.get('variant', 'Профиль')
                 title_i = issue.get('title', '')
                 details_i = issue.get('details', '')
                 doc.add_paragraph(f"[{sev}] {profile}: {title_i} вЂ” {details_i}", style='List Bullet')
         else:
-            doc.add_paragraph("РћС€РёР±РѕРє РЅРµ РѕР±РЅР°СЂСѓР¶РµРЅРѕ.")
+            doc.add_paragraph("Ошибок не обнаружено.")
 
-        self._add_heading(doc, '7. Р§С‚Рѕ РґРµР»Р°С‚СЊ РґР»СЏ РёСЃРїСЂР°РІР»РµРЅРёСЏ', level=1)
+        self._add_heading(doc, '7. Что делать для исправления', level=1)
         if recommendations:
             for rec in recommendations:
                 doc.add_paragraph(str(rec), style='List Bullet')
         else:
-            doc.add_paragraph("РљСЂРёС‚РёС‡РЅС‹С… СЂРµРєРѕРјРµРЅРґР°С†РёР№ РїРѕ РёС‚РѕРіР°Рј РїСЂРѕРІРµСЂРєРё РЅРµС‚.")
+            doc.add_paragraph("Критичных рекомендаций по итогам проверки нет.")
 
         doc.add_paragraph()
-        footer = doc.add_paragraph(f"РћС‚С‡РµС‚ СЃС„РѕСЂРјРёСЂРѕРІР°РЅ SEO РРЅСЃС‚СЂСѓРјРµРЅС‚С‹: {generated_at}")
+        footer = doc.add_paragraph(f"Отчет сформирован SEO Инструменты: {generated_at}")
         footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
         footer.runs[0].font.size = Pt(8)
         footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
@@ -710,104 +746,104 @@ class DOCXGenerator:
 
         issue_guides = {
             "viewport_missing": {
-                "name": "РћС‚СЃСѓС‚СЃС‚РІСѓРµС‚ meta viewport",
-                "why": "РЎС‚СЂР°РЅРёС†Р° РѕС‚РѕР±СЂР°Р¶Р°РµС‚СЃСЏ РєР°Рє РґРµСЃРєС‚РѕРїРЅР°СЏ Рё РїР»РѕС…Рѕ Р°РґР°РїС‚РёСЂСѓРµС‚СЃСЏ РїРѕРґ РјРѕР±РёР»СЊРЅС‹Рµ СЌРєСЂР°РЅС‹.",
-                "impact": "Р’С‹СЃРѕРєРѕРµ",
+                "name": "Отсутствует meta viewport",
+                "why": "Страница отображается как десктопная и плохо адаптируется под мобильные экраны.",
+                "impact": "Высокое",
                 "fix": [
-                    "Р”РѕР±Р°РІРёС‚СЊ С‚РµРі <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"> РІ <head>.",
-                    "РџСЂРѕРІРµСЂРёС‚СЊ РЅР°Р»РёС‡РёРµ С‚РµРіР° РЅР° РІСЃРµС… С€Р°Р±Р»РѕРЅР°С… СЃС‚СЂР°РЅРёС†.",
+                    "Добавить тег <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"> в <head>.",
+                    "Проверить наличие тега на всех шаблонах страниц.",
                 ],
             },
             "viewport_invalid": {
-                "name": "РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ viewport",
-                "why": "РќРµРїСЂР°РІРёР»СЊРЅС‹Рµ РїР°СЂР°РјРµС‚СЂС‹ viewport Р»РѕРјР°СЋС‚ РјР°СЃС€С‚Р°Р± Рё Р°РґР°РїС‚РёРІРЅРѕСЃС‚СЊ.",
-                "impact": "Р’С‹СЃРѕРєРѕРµ",
+                "name": "Некорректный viewport",
+                "why": "Неправильные параметры viewport ломают масштаб и адаптивность.",
+                "impact": "Высокое",
                 "fix": [
-                    "РСЃРїСЂР°РІРёС‚СЊ viewport РЅР° width=device-width, initial-scale=1.",
-                    "РЈР±СЂР°С‚СЊ РґСѓР±Р»РёСЂСѓСЋС‰РёРµСЃСЏ viewport-С‚РµРіРё.",
+                    "РСЃРїСЂР°РІРёС‚СЊ viewport на width=device-width, initial-scale=1.",
+                    "Убрать дублирующиеся viewport-теги.",
                 ],
             },
             "horizontal_overflow": {
-                "name": "Р“РѕСЂРёР·РѕРЅС‚Р°Р»СЊРЅР°СЏ РїСЂРѕРєСЂСѓС‚РєР°",
-                "why": "РљРѕРЅС‚РµРЅС‚ РІС‹С…РѕРґРёС‚ Р·Р° С€РёСЂРёРЅСѓ СЌРєСЂР°РЅР°.",
-                "impact": "Р’С‹СЃРѕРєРѕРµ",
+                "name": "Горизонтальная прокрутка",
+                "why": "Контент выходит за ширину экрана.",
+                "impact": "Высокое",
                 "fix": [
-                    "РќР°Р№С‚Рё СЌР»РµРјРµРЅС‚С‹ СЃ С€РёСЂРёРЅРѕР№ Р±РѕР»СЊС€Рµ viewport.",
-                    "Р”РѕР±Р°РІРёС‚СЊ max-width: 100% РґР»СЏ РјРµРґРёР°-СЌР»РµРјРµРЅС‚РѕРІ.",
+                    "Найти элементы с шириной больше viewport.",
+                    "Добавить max-width: 100% для медиа-элементов.",
                 ],
             },
             "small_touch_targets": {
-                "name": "РњР°Р»РµРЅСЊРєРёРµ РёРЅС‚РµСЂР°РєС‚РёРІРЅС‹Рµ СЌР»РµРјРµРЅС‚С‹",
-                "why": "Р­Р»РµРјРµРЅС‚С‹ < 44x44px РЅРµСѓРґРѕР±РЅС‹ РґР»СЏ тача.",
-                "impact": "РЎСЂРµРґРЅРµРµ",
+                "name": "Маленькие интерактивные элементы",
+                "why": "Элементы < 44x44px неудобны для тача.",
+                "impact": "Среднее",
                 "fix": [
-                    "РЈРІРµР»РёС‡РёС‚СЊ СЂР°Р·РјРµСЂС‹ РєРЅРѕРїРѕРє/СЃСЃС‹Р»РѕРє РґРѕ 44x44px Рё Р±РѕР»СЊС€Рµ.",
-                    "Р”РѕР±Р°РІРёС‚СЊ РѕС‚СЃС‚СѓРїС‹ РјРµР¶РґСѓ СЃРѕСЃРµРґРЅРёРјРё СЌР»РµРјРµРЅС‚Р°РјРё.",
+                    "Увеличить размеры кнопок/ссылок до 44x44px и больше.",
+                    "Добавить отступы между соседними элементами.",
                 ],
             },
             "small_fonts": {
-                "name": "РЎР»РёС€РєРѕРј РјРµР»РєРёР№ С‚РµРєСЃС‚",
-                "why": "РќРёР·РєР°СЏ С‡РёС‚Р°РµРјРѕСЃС‚СЊ СѓС…СѓРґС€Р°РµС‚ UX-РјРµС‚СЂРёРєРё.",
-                "impact": "РЎСЂРµРґРЅРµРµ",
+                "name": "Слишком мелкий текст",
+                "why": "Низкая читаемость ухудшает UX-метрики.",
+                "impact": "Среднее",
                 "fix": [
-                    "РџСЂРёРІРµСЃС‚Рё Р±Р°Р·РѕРІС‹Р№ СЂР°Р·РјРµСЂ С€СЂРёС„С‚Р° Рє 16px+ РЅР° РјРѕР±РёР»СЊРЅС‹С… СЌРєСЂР°РЅР°С….",
-                    "РџСЂРѕРІРµСЂРёС‚СЊ С‡РёС‚Р°РµРјРѕСЃС‚СЊ РєР»СЋС‡РµРІС‹С… Р±Р»РѕРєРѕРІ.",
+                    "Привести базовый размер шрифта к 16px+ на мобильных экранах.",
+                    "Проверить читаемость ключевых блоков.",
                 ],
             },
             "large_images": {
-                "name": "РР·РѕР±СЂР°Р¶РµРЅРёСЏ С€РёСЂРµ СЌРєСЂР°РЅР°",
-                "why": "РЁРёСЂРѕРєРёРµ РёР·РѕР±СЂР°Р¶РµРЅРёСЏ Р»РѕРјР°СЋС‚ СЃРµС‚РєСѓ Рё РїСЂРѕРІРѕС†РёСЂСѓСЋС‚ СЃРєСЂРѕР»Р».",
-                "impact": "РЎСЂРµРґРЅРµРµ",
+                "name": "РР·РѕР±СЂР°Р¶РµРЅРёСЏ шире экрана",
+                "why": "Широкие изображения ломают сетку и провоцируют скролл.",
+                "impact": "Среднее",
                 "fix": [
-                    "Р”РѕР±Р°РІРёС‚СЊ РґР»СЏ РёР·РѕР±СЂР°Р¶РµРЅРёР№ max-width: 100%; height: auto;.",
-                    "РџСЂРѕРІРµСЂРёС‚СЊ Р°РґР°РїС‚РёРІРЅРѕСЃС‚СЊ Р±Р°РЅРЅРµСЂРѕРІ/СЃР»Р°Р№РґРµСЂРѕРІ.",
+                    "Добавить для изображений max-width: 100%; height: auto;.",
+                    "Проверить адаптивность баннеров/слайдеров.",
                 ],
             },
             "console_errors": {
-                "name": "РћС€РёР±РєРё JavaScript РІ РєРѕРЅСЃРѕР»Рё",
-                "why": "JS-РѕС€РёР±РєРё РјРѕРіСѓС‚ Р»РѕРјР°С‚СЊ РєР»СЋС‡РµРІС‹Рµ UI-СЃС†РµРЅР°СЂРёРё.",
-                "impact": "РЎСЂРµРґРЅРµРµ",
+                "name": "Ошибки JavaScript в консоли",
+                "why": "JS-ошибки могут ломать ключевые UI-сценарии.",
+                "impact": "Среднее",
                 "fix": [
-                    "Р Р°Р·РѕР±СЂР°С‚СЊ РѕС€РёР±РєРё РєРѕРЅСЃРѕР»Рё РїРѕ РїСЂРёРѕСЂРёС‚РµС‚Сѓ.",
-                    "РСЃРїСЂР°РІРёС‚СЊ РЅРµРґРѕСЃС‚СѓРїРЅС‹Рµ СЂРµСЃСѓСЂСЃС‹ Рё РёСЃРєР»СЋС‡РµРЅРёСЏ.",
+                    "Р азобрать ошибки консоли по приоритету.",
+                    "РСЃРїСЂР°РІРёС‚СЊ недоступные ресурсы и исключения.",
                 ],
             },
             "runtime_error": {
-                "name": "РћС€РёР±РєР° РІС‹РїРѕР»РЅРµРЅРёСЏ РїСЂРѕРІРµСЂРєРё",
-                "why": "Р§Р°СЃС‚СЊ РґР°РЅРЅС‹С… РїРѕ СѓСЃС‚СЂРѕР№СЃС‚РІСѓ РјРѕР¶РµС‚ Р±С‹С‚СЊ РЅРµРїРѕР»РЅРѕР№.",
-                "impact": "Р’С‹СЃРѕРєРѕРµ",
+                "name": "Ошибка выполнения проверки",
+                "why": "Часть данных по устройству может быть неполной.",
+                "impact": "Высокое",
                 "fix": [
-                    "РџСЂРѕРІРµСЂРёС‚СЊ РґРѕСЃС‚СѓРїРЅРѕСЃС‚СЊ СЃР°Р№С‚Р° Рё РѕРєСЂСѓР¶РµРЅРёРµ Р°РЅР°Р»РёР·Р°.",
-                    "РџРѕРІС‚РѕСЂРёС‚СЊ Р°СѓРґРёС‚ РїРѕСЃР»Рµ СѓСЃС‚СЂР°РЅРµРЅРёСЏ РїСЂРёС‡РёРЅС‹.",
+                    "Проверить доступность сайта и окружение анализа.",
+                    "Повторить аудит после устранения причины.",
                 ],
             },
             "playwright_unavailable": {
-                "name": "РЎСЂРµРґР° Playwright РЅРµРґРѕСЃС‚СѓРїРЅР°",
-                "why": "Р‘РµР· Р±СЂР°СѓР·РµСЂРЅРѕРіРѕ РґРІРёР¶РєР° РЅРµР»СЊР·СЏ РІС‹РїРѕР»РЅРёС‚СЊ РїРѕР»РЅС‹Р№ Р°СѓРґРёС‚.",
-                "impact": "Р’С‹СЃРѕРєРѕРµ",
+                "name": "Среда Playwright недоступна",
+                "why": "Без браузерного движка нельзя выполнить полный аудит.",
+                "impact": "Высокое",
                 "fix": [
-                    "РЈСЃС‚Р°РЅРѕРІРёС‚СЊ Playwright Рё Chromium РІ РѕРєСЂСѓР¶РµРЅРёРё СЃРµСЂРІРµСЂР°.",
-                    "РџРµСЂРµР·Р°РїСѓСЃС‚РёС‚СЊ СЃРµСЂРІРёСЃ Рё РїРѕРІС‚РѕСЂРёС‚СЊ Р°СѓРґРёС‚.",
+                    "Установить Playwright и Chromium в окружении сервера.",
+                    "Перезапустить сервис и повторить аудит.",
                 ],
             },
             "mobile_engine_error": {
-                "name": "РЎР±РѕР№ РґРІРёР¶РєР° РјРѕР±РёР»СЊРЅРѕР№ РїСЂРѕРІРµСЂРєРё",
-                "why": "Р”РІРёР¶РѕРє РЅРµ СЃРјРѕРі РєРѕСЂСЂРµРєС‚РЅРѕ Р·Р°РІРµСЂС€РёС‚СЊ Р°РЅР°Р»РёР·.",
-                "impact": "Р’С‹СЃРѕРєРѕРµ",
+                "name": "Сбой движка мобильной проверки",
+                "why": "Движок не смог корректно завершить анализ.",
+                "impact": "Высокое",
                 "fix": [
-                    "РџСЂРѕРІРµСЂРёС‚СЊ Р»РѕРіРё СЃРµСЂРІРёСЃР° Рё РѕРєСЂСѓР¶РµРЅРёРµ РІС‹РїРѕР»РЅРµРЅРёСЏ.",
-                    "РЈСЃС‚СЂР°РЅРёС‚СЊ РїСЂРёС‡РёРЅСѓ Рё РїРѕРІС‚РѕСЂРЅРѕ Р·Р°РїСѓСЃС‚РёС‚СЊ Р°СѓРґРёС‚.",
+                    "Проверить логи сервиса и окружение выполнения.",
+                    "Устранить причину и повторно запустить аудит.",
                 ],
             },
         }
 
-        title = doc.add_heading("РљР»РёРµРЅС‚СЃРєРёР№ РѕС‚С‡РµС‚: РјРѕР±РёР»СЊРЅР°СЏ РІРµСЂСЃРёСЏ СЃР°Р№С‚Р°", 0)
+        title = doc.add_heading("Клиентский отчет: мобильная версия сайта", 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         url = data.get("url", "n/a")
         generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        doc.add_paragraph(f"РЎР°Р№С‚: {url}")
-        doc.add_paragraph(f"РћС‚С‡РµС‚ СЃС„РѕСЂРјРёСЂРѕРІР°РЅ: {generated_at}")
+        doc.add_paragraph(f"Сайт: {url}")
+        doc.add_paragraph(f"Отчет сформирован: {generated_at}")
 
         results = data.get("results", {}) or {}
         summary = results.get("summary", {}) or {}
@@ -861,39 +897,39 @@ class DOCXGenerator:
                         pass
             return ""
 
-        self._add_heading(doc, "1. РЎРІРѕРґРєР° РїРѕ РїСЂРѕРІРµСЂРєРµ", level=1)
+        self._add_heading(doc, "1. Сводка по проверке", level=1)
         summary_rows = [
-            ["Р”РІРёР¶РѕРє РїСЂРѕРІРµСЂРєРё", results.get("engine", "legacy")],
-            ["Р РµР¶РёРј РїСЂРѕРІРµСЂРєРё", "Р‘С‹СЃС‚СЂС‹Р№" if results.get("mode") == "quick" else "РџРѕР»РЅС‹Р№"],
-            ["РџСЂРѕРІРµСЂРµРЅРѕ СѓСЃС‚СЂРѕР№СЃС‚РІ", summary.get("total_devices", len(devices))],
-            ["РЈСЃС‚СЂРѕР№СЃС‚РІ Р±РµР· РєСЂРёС‚РёС‡РЅС‹С… РїСЂРѕР±Р»РµРј", summary.get("mobile_friendly_devices", 0)],
-            ["РЈСЃС‚СЂРѕР№СЃС‚РІ СЃ РїСЂРѕР±Р»РµРјР°РјРё", summary.get("non_friendly_devices", 0)],
-            ["РЎСЂРµРґРЅРµРµ РІСЂРµРјСЏ Р·Р°РіСЂСѓР·РєРё, РјСЃ", summary.get("avg_load_time_ms", 0)],
-            ["РћС€РёР±РѕРє (critical + warning)", len(actionable_issues)],
-            ["РРЅС„РѕСЂРјР°С†РёРѕРЅРЅС‹С… Р·Р°РјРµС‡Р°РЅРёР№", len(info_issues)],
-            ["РРЅС‚РµРіСЂР°Р»СЊРЅР°СЏ РѕС†РµРЅРєР°", results.get("score", "РЅ/Рґ")],
-            ["РС‚РѕРі", "РЎРѕРѕС‚РІРµС‚СЃС‚РІСѓРµС‚ С‚СЂРµР±РѕРІР°РЅРёСЏРј" if results.get("mobile_friendly") else "РўСЂРµР±СѓСЋС‚СЃСЏ РґРѕСЂР°Р±РѕС‚РєРё"],
+            ["Движок проверки", results.get("engine", "legacy")],
+            ["Р ежим проверки", "Быстрый" if results.get("mode") == "quick" else "Полный"],
+            ["Проверено устройств", summary.get("total_devices", len(devices))],
+            ["Устройств без критичных проблем", summary.get("mobile_friendly_devices", 0)],
+            ["Устройств с проблемами", summary.get("non_friendly_devices", 0)],
+            ["Среднее время загрузки, мс", summary.get("avg_load_time_ms", 0)],
+            ["Ошибок (critical + warning)", len(actionable_issues)],
+            ["РРЅС„РѕСЂРјР°С†РёРѕРЅРЅС‹С… замечаний", len(info_issues)],
+            ["РРЅС‚РµРіСЂР°Р»СЊРЅР°СЏ оценка", results.get("score", "н/д")],
+            ["РС‚РѕРі", "Соответствует требованиям" if results.get("mobile_friendly") else "Требуются доработки"],
         ]
-        self._add_table(doc, ["РџРѕРєР°Р·Р°С‚РµР»СЊ", "Р—РЅР°С‡РµРЅРёРµ"], summary_rows)
+        self._add_table(doc, ["Показатель", "Значение"], summary_rows)
 
-        self._add_heading(doc, "2. РўРµС…РЅРёС‡РµСЃРєРёРµ РїР°СЂР°РјРµС‚СЂС‹", level=1)
+        self._add_heading(doc, "2. Технические параметры", level=1)
         tech_rows = [
             ["HTTP", results.get("status_code", "n/a")],
             ["Final URL", results.get("final_url", url)],
-            ["Viewport РЅР°Р№РґРµРЅ", "Р”Р°" if results.get("viewport_found") else "РќРµС‚"],
+            ["Viewport найден", "Да" if results.get("viewport_found") else "Нет"],
             ["Viewport content", results.get("viewport_content") or "-"],
         ]
-        self._add_table(doc, ["РџР°СЂР°РјРµС‚СЂ", "Р—РЅР°С‡РµРЅРёРµ"], tech_rows)
+        self._add_table(doc, ["Параметр", "Значение"], tech_rows)
 
-        self._add_heading(doc, "3. Р РµР·СѓР»СЊС‚Р°С‚С‹ РїРѕ СѓСЃС‚СЂРѕР№СЃС‚РІР°Рј", level=1)
+        self._add_heading(doc, "3. Р езультаты по устройствам", level=1)
         if devices:
             device_rows = []
             for d in devices:
                 category = d.get("category", "")
                 if category == "phone":
-                    category = "РўРµР»РµС„РѕРЅ"
+                    category = "Телефон"
                 elif category == "tablet":
-                    category = "РџР»Р°РЅС€РµС‚"
+                    category = "Планшет"
                 device_rows.append([
                     d.get("device_name", ""),
                     category,
@@ -901,15 +937,15 @@ class DOCXGenerator:
                     d.get("status_code", "n/a"),
                     d.get("load_time_ms", 0),
                     d.get("issues_count", 0),
-                    "Р”Р°" if d.get("mobile_friendly") else "РќРµС‚",
+                    "Да" if d.get("mobile_friendly") else "Нет",
                 ])
             self._add_table(
                 doc,
-                ["РЈСЃС‚СЂРѕР№СЃС‚РІРѕ", "РўРёРї", "Viewport", "HTTP", "Load ms", "РћС€РёР±РѕРє", "РћРљ РґР»СЏ mobile"],
+                ["Устройство", "Тип", "Viewport", "HTTP", "Load ms", "Ошибок", "ОК для mobile"],
                 device_rows,
             )
         else:
-            doc.add_paragraph("Р”Р°РЅРЅС‹Рµ РїРѕ СѓСЃС‚СЂРѕР№СЃС‚РІР°Рј РѕС‚СЃСѓС‚СЃС‚РІСѓСЋС‚.")
+            doc.add_paragraph("Данные по устройствам отсутствуют.")
 
         self._add_heading(doc, "3.1 \u0414\u0435\u0442\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u044f \u043f\u0440\u043e\u0431\u043b\u0435\u043c \u043f\u043e \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u0430\u043c", level=2)
         detailed_added = 0
@@ -935,9 +971,9 @@ class DOCXGenerator:
         if detailed_added == 0:
             doc.add_paragraph("\u0414\u0435\u0442\u0430\u043b\u0438 \u043f\u043e \u043f\u0440\u043e\u0431\u043b\u0435\u043c\u0430\u043c \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432 \u043e\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u044e\u0442.")
 
-        self._add_heading(doc, "4. Р’С‹СЏРІР»РµРЅРЅС‹Рµ РѕС€РёР±РєРё Рё РїР»Р°РЅ РёСЃРїСЂР°РІР»РµРЅРёСЏ", level=1)
+        self._add_heading(doc, "4. Выявленные ошибки и план исправления", level=1)
         if not actionable_issues:
-            doc.add_paragraph("РљСЂРёС‚РёС‡РµСЃРєРёРµ РѕС€РёР±РєРё Рё РїСЂРµРґСѓРїСЂРµР¶РґРµРЅРёСЏ РЅРµ РѕР±РЅР°СЂСѓР¶РµРЅС‹.")
+            doc.add_paragraph("Критические ошибки и предупреждения не обнаружены.")
         else:
             grouped = {}
             for issue in actionable_issues:
@@ -946,27 +982,27 @@ class DOCXGenerator:
             for idx, (code, items) in enumerate(grouped.items(), start=1):
                 guide = issue_guides.get(code, {
                     "name": items[0].get("title", code),
-                    "why": "РџСЂРѕР±Р»РµРјР° РІР»РёСЏРµС‚ РЅР° РєР°С‡РµСЃС‚РІРѕ РјРѕР±РёР»СЊРЅРѕР№ РІРµСЂСЃРёРё.",
-                    "impact": "РЎСЂРµРґРЅРµРµ",
-                    "fix": ["РџСЂРѕРІРµСЂРёС‚СЊ РІРµСЂСЃС‚РєСѓ Рё РёСЃРїСЂР°РІРёС‚СЊ РёСЃС‚РѕС‡РЅРёРє РѕС€РёР±РєРё."],
+                    "why": "Проблема влияет на качество мобильной версии.",
+                    "impact": "Среднее",
+                    "fix": ["Проверить верстку и исправить источник ошибки."],
                 })
                 self._add_heading(doc, f"4.{idx} {guide['name']}", level=2)
-                devices_list = sorted({str(i.get("device", "РЅРµ СѓРєР°Р·Р°РЅРѕ")) for i in items})
-                doc.add_paragraph(f"РЎРµСЂСЊРµР·РЅРѕСЃС‚СЊ: {items[0].get('severity', 'warning')}")
-                doc.add_paragraph(f"Р—Р°С‚СЂРѕРЅСѓС‚Рѕ СѓСЃС‚СЂРѕР№СЃС‚РІ: {len(devices_list)}")
-                doc.add_paragraph(f"РЈСЃС‚СЂРѕР№СЃС‚РІР°: {', '.join(devices_list)}")
-                doc.add_paragraph(f"РџРѕС‡РµРјСѓ СЌС‚Рѕ РІР°Р¶РЅРѕ: {guide['why']}")
-                doc.add_paragraph(f"Р‘РёР·РЅРµСЃ-РІР»РёСЏРЅРёРµ: {guide['impact']}")
-                doc.add_paragraph("Р§С‚Рѕ СЃРґРµР»Р°С‚СЊ:")
+                devices_list = sorted({str(i.get("device", "не указано")) for i in items})
+                doc.add_paragraph(f"Серьезность: {items[0].get('severity', 'warning')}")
+                doc.add_paragraph(f"Затронуто устройств: {len(devices_list)}")
+                doc.add_paragraph(f"Устройства: {', '.join(devices_list)}")
+                doc.add_paragraph(f"Почему это важно: {guide['why']}")
+                doc.add_paragraph(f"Бизнес-влияние: {guide['impact']}")
+                doc.add_paragraph("Что сделать:")
                 for step in guide["fix"]:
                     doc.add_paragraph(step, style="List Number")
-                doc.add_paragraph("РўРµС…РЅРёС‡РµСЃРєРёРµ РґРµС‚Р°Р»Рё РёР· РїСЂРѕРІРµСЂРєРё:")
+                doc.add_paragraph("Технические детали из проверки:")
                 for example in items[:5]:
                     detail = str(example.get("details", "") or "").strip()
                     if detail:
                         doc.add_paragraph(f"- {detail}")
 
-        self._add_heading(doc, "5. РРЅС„РѕСЂРјР°С†РёРѕРЅРЅС‹Рµ РЅР°Р±Р»СЋРґРµРЅРёСЏ", level=1)
+        self._add_heading(doc, "5. РРЅС„РѕСЂРјР°С†РёРѕРЅРЅС‹Рµ наблюдения", level=1)
         if info_issues:
             for issue in info_issues:
                 info_title = issue.get("title") or "\u041d\u0430\u0431\u043b\u044e\u0434\u0435\u043d\u0438\u0435"
@@ -976,9 +1012,9 @@ class DOCXGenerator:
                     style="List Bullet",
                 )
         else:
-            doc.add_paragraph("Р”РѕРїРѕР»РЅРёС‚РµР»СЊРЅС‹Рµ РёРЅС„РѕСЂРјР°С†РёРѕРЅРЅС‹Рµ Р·Р°РјРµС‡Р°РЅРёСЏ РѕС‚СЃСѓС‚СЃС‚РІСѓСЋС‚.")
+            doc.add_paragraph("Дополнительные информационные замечания отсутствуют.")
 
-        self._add_heading(doc, "6. РЎРєСЂРёРЅС€РѕС‚С‹ РїСЂРѕРІРµСЂРµРЅРЅС‹С… СѓСЃС‚СЂРѕР№СЃС‚РІ", level=1)
+        self._add_heading(doc, "6. Скриншоты проверенных устройств", level=1)
         added = 0
         missing_files = 0
         for d in devices:
@@ -999,30 +1035,30 @@ class DOCXGenerator:
             except Exception:
                 doc.add_paragraph(f"\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0432\u0441\u0442\u0440\u043e\u0438\u0442\u044c \u0441\u043a\u0440\u0438\u043d\u0448\u043e\u0442: {shot}")
         if added == 0:
-            doc.add_paragraph("РЎРєСЂРёРЅС€РѕС‚С‹ РѕС‚СЃСѓС‚СЃС‚РІСѓСЋС‚.")
+            doc.add_paragraph("Скриншоты отсутствуют.")
             if missing_files > 0:
                 doc.add_paragraph(
                     f"\u0424\u0430\u0439\u043b\u044b \u0441\u043a\u0440\u0438\u043d\u0448\u043e\u0442\u043e\u0432 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u044b \u043d\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0435: {missing_files}."
                 )
 
-        self._add_heading(doc, "7. РС‚РѕРіРё", level=1)
+        self._add_heading(doc, "7. Итоги", level=1)
         if actionable_issues:
             doc.add_paragraph(
-                "РћР±РЅР°СЂСѓР¶РµРЅС‹ РѕС€РёР±РєРё РјРѕР±РёР»СЊРЅРѕР№ РІРµСЂСЃРёРё, РєРѕС‚РѕСЂС‹Рµ С‚СЂРµР±СѓСЋС‚ РёСЃРїСЂР°РІР»РµРЅРёСЏ РґР»СЏ РїРѕРІС‹С€РµРЅРёСЏ "
-                "РєР°С‡РµСЃС‚РІР° UX Рё СЃС‚Р°Р±РёР»СЊРЅРѕСЃС‚Рё SEO-РїРѕРєР°Р·Р°С‚РµР»РµР№."
+                "Обнаружены ошибки мобильной версии, которые требуют исправления для повышения "
+                "качества UX и стабильности SEO-показателей."
             )
             doc.add_paragraph(
-                "Р РµРєРѕРјРµРЅРґСѓРµС‚СЃСЏ РІС‹РїРѕР»РЅРёС‚СЊ РёСЃРїСЂР°РІР»РµРЅРёСЏ РїРѕ РїСЂРёРѕСЂРёС‚РµС‚Сѓ (critical -> warning), Р·Р°С‚РµРј "
-                "РїРѕРІС‚РѕСЂРёС‚СЊ Р°СѓРґРёС‚ Рё СЃСЂР°РІРЅРёС‚СЊ РјРµС‚СЂРёРєРё."
+                "Р екомендуется выполнить исправления по приоритету (critical -> warning), затем "
+                "повторить аудит и сравнить метрики."
             )
         else:
             doc.add_paragraph(
-                "РљСЂРёС‚РёС‡РЅС‹С… РїСЂРѕР±Р»РµРј РЅРµ РѕР±РЅР°СЂСѓР¶РµРЅРѕ. РњРѕР±РёР»СЊРЅР°СЏ РІРµСЂСЃРёСЏ СЃР°Р№С‚Р° СЃРѕРѕС‚РІРµС‚СЃС‚РІСѓРµС‚ "
-                "Р±Р°Р·РѕРІС‹Рј С‚СЂРµР±РѕРІР°РЅРёСЏРј СѓРґРѕР±СЃС‚РІР° Рё С‚РµС…РЅРёС‡РµСЃРєРѕР№ РєРѕСЂСЂРµРєС‚РЅРѕСЃС‚Рё."
+                "Критичных проблем не обнаружено. Мобильная версия сайта соответствует "
+                "базовым требованиям удобства и технической корректности."
             )
 
         doc.add_paragraph()
-        footer = doc.add_paragraph(f"РћС‚С‡РµС‚ СЃС„РѕСЂРјРёСЂРѕРІР°РЅ SEO РРЅСЃС‚СЂСѓРјРµРЅС‚С‹: {generated_at}")
+        footer = doc.add_paragraph(f"Отчет сформирован SEO Инструменты: {generated_at}")
         footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
         footer.runs[0].font.size = Pt(8)
         footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
@@ -1583,7 +1619,7 @@ class DOCXGenerator:
         self._save_document(doc, filepath)
         return filepath
     def generate_report(self, task_id: str, task_type: str, data: Dict[str, Any]) -> str:
-        """Р вЂњР ВµР Р…Р ВµРЎР‚Р С‘РЎР‚РЎС“Р ВµРЎвЂљ Р С•РЎвЂљРЎвЂЎР ВµРЎвЂљ Р Р† Р В·Р В°Р Р†Р С‘РЎРѓР С‘Р СР С•РЎРѓРЎвЂљР С‘ Р С•РЎвЂљ РЎвЂљР С‘Р С—Р В° Р В·Р В°Р Т‘Р В°РЎвЂЎР С‘"""
+        """Р вЂњР ВµР Р…Р ВµРЎР‚Р С‘РЎР‚РЎС“Р Вµт Р С•РЎвЂљРЎвЂЎР Вµт Р І Р В·Р В°Р Р†Р С‘РЎРѓР С‘Р СР С•РЎРѓРЎвЂљР ё Р ѕт РЎвЂљР С‘Р С—Р В° Р В·Р В°Р Т‘Р В°РЎвЂЎР ё"""
         generators = {
             'site_analyze': self.generate_site_analyze_report,
             'robots_check': self.generate_robots_report,

@@ -7,11 +7,16 @@ from pathlib import Path
 from typing import Iterable, Tuple
 
 
-# Most common leading characters in cp1251->utf8 mojibake sequences.
-MOJIBAKE_LEAD_CHARS = "\u0420\u0421\u0401\u0403\u0404\u0407\u0406\u0409\u040a\u040b\u040c\u040e\u040f"
+# Most common leading characters in mojibake sequences:
+# - "Р/С..." for utf-8 text decoded as cp1251
+# - "Ð/Ñ..." for utf-8 text decoded as latin1/western encodings
+MOJIBAKE_LEAD_CHARS = "\u0420\u0421\u00D0\u00D1\u0401\u0403\u0404\u0407\u0406\u0409\u040a\u040b\u040c\u040e\u040f"
 MOJIBAKE_RARE_CHARS = "\u0403\u0404\u0407\u0406\u0409\u040a\u040b\u040c\u040e\u040f\u0452\u0453\u0454\u0456\u0457\u0458\u0459\u045a\u045b\u045c\u045e\u045f\u0451"
-# Capture broad non-whitespace mojibake segments (including punctuation) to avoid misses.
-TOKEN_RE = re.compile(rf"[{MOJIBAKE_LEAD_CHARS}][^\s]{{1,}}")
+MOJIBAKE_MARKER_CHARS = set("РСÐÑÃâ")
+# Include C1 control range and no-break space - these often appear in broken cp1251/utf-8 chains.
+CONTROL_RE = re.compile(r"[\u0080-\u009F]")
+# Capture broad mojibake segments, but do not treat NBSP as whitespace.
+TOKEN_RE = re.compile(rf"[{MOJIBAKE_LEAD_CHARS}][^\t\r\n\f\v]{{1,}}")
 CYRILLIC_RE = re.compile(r"[\u0400-\u04FF]")
 
 
@@ -24,19 +29,73 @@ def iter_files(root: Path, exts: Tuple[str, ...]) -> Iterable[Path]:
 
 
 def maybe_fix_token(token: str) -> str:
-    # Avoid touching normal Cyrillic text; focus on common mojibake signatures.
-    if not (("Р" in token and "С" in token) or any(ch in token for ch in MOJIBAKE_RARE_CHARS)):
+    # Avoid touching normal text; focus on common mojibake signatures.
+    if not (any(ch in token for ch in MOJIBAKE_LEAD_CHARS) or any(ch in token for ch in MOJIBAKE_RARE_CHARS)):
         return token
-    try:
-        fixed = token.encode("cp1251").decode("utf-8")
-    except Exception:
+
+    def quality(value: str) -> tuple[int, int, int]:
+        # Lower marker count is better; higher readable Cyrillic count is better.
+        marker_count = sum(1 for ch in value if ch in MOJIBAKE_MARKER_CHARS)
+        cyr_count = len(CYRILLIC_RE.findall(value))
+        control_count = len(CONTROL_RE.findall(value))
+        return marker_count + (control_count * 2), -cyr_count, control_count
+
+    def cp1251_byte_for_char(ch: str) -> int | None:
+        code = ord(ch)
+        if code <= 0xFF:
+            return code
+        if ch == "Ё":
+            return 0xA8
+        if ch == "ё":
+            return 0xB8
+        if "А" <= ch <= "я":
+            return code - 0x350
+        try:
+            raw = ch.encode("cp1251", errors="strict")
+            if len(raw) == 1:
+                return raw[0]
+        except Exception:
+            return None
+        return None
+
+    def decode_mixed_cp1251_utf8(value: str) -> str | None:
+        raw = bytearray()
+        for ch in value:
+            b = cp1251_byte_for_char(ch)
+            if b is None:
+                return None
+            raw.append(b)
+        try:
+            return raw.decode("utf-8", errors="strict")
+        except Exception:
+            return None
+
+    variants = [token]
+    mixed = decode_mixed_cp1251_utf8(token)
+    if mixed and mixed != token:
+        variants.append(mixed)
+    for src_enc in ("cp1251", "latin1"):
+        current = token
+        for _ in range(2):
+            try:
+                candidate = current.encode(src_enc).decode("utf-8")
+            except Exception:
+                break
+            if candidate == current:
+                break
+            variants.append(candidate)
+            current = candidate
+
+    best = min(variants, key=quality)
+    if best == token:
         return token
-    if fixed == token:
-        return token
-    src_score = len(CYRILLIC_RE.findall(token))
-    dst_score = len(CYRILLIC_RE.findall(fixed))
-    if dst_score >= src_score:
-        return fixed
+
+    src_markers, src_neg_cyr, _src_ctrl = quality(token)
+    dst_markers, dst_neg_cyr, _dst_ctrl = quality(best)
+    src_cyr = -src_neg_cyr
+    dst_cyr = -dst_neg_cyr
+    if dst_markers < src_markers and dst_cyr >= max(1, src_cyr // 3):
+        return best
     return token
 
 
