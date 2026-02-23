@@ -55,7 +55,7 @@ def _is_our_target(target_domain: str, our_domain: str) -> bool:
 
 
 def _decode_text(payload: bytes) -> str:
-    for enc in ("utf-8-sig", "utf-8", "cp1251", "latin-1"):
+    for enc in ("utf-16", "utf-16-le", "utf-8-sig", "utf-8", "cp1251", "latin-1"):
         try:
             return payload.decode(enc)
         except Exception:
@@ -71,11 +71,30 @@ def _read_csv_rows(payload: bytes) -> List[Dict[str, Any]]:
         dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
     except Exception:
         dialect = csv.excel
-    reader = csv.DictReader(stream, dialect=dialect)
-    rows: List[Dict[str, Any]] = []
-    for row in reader:
-        rows.append(dict(row))
-    return rows
+    try:
+        reader = csv.DictReader(stream, dialect=dialect)
+        rows: List[Dict[str, Any]] = []
+        for row in reader:
+            rows.append(dict(row))
+        return rows
+    except csv.Error:
+        # Fallback for malformed CSV where fields contain raw newlines.
+        lines = text.splitlines()
+        if not lines:
+            return []
+        delim = "\t" if lines[0].count("\t") >= lines[0].count(",") else ","
+        headers = [h.strip() for h in lines[0].split(delim)]
+        rows: List[Dict[str, Any]] = []
+        for line in lines[1:]:
+            if not line.strip():
+                continue
+            parts = line.split(delim)
+            if len(parts) < len(headers):
+                parts = parts + [""] * (len(headers) - len(parts))
+            elif len(parts) > len(headers):
+                parts = parts[: len(headers) - 1] + [delim.join(parts[len(headers) - 1 :])]
+            rows.append({headers[i]: parts[i] for i in range(len(headers))})
+        return rows
 
 
 def _read_xlsx_rows(payload: bytes) -> List[Dict[str, Any]]:
@@ -163,6 +182,7 @@ def _normalize_backlink_row(row: Dict[str, Any]) -> Dict[str, Any]:
         row,
         (
             "source_url",
+            "referring page url",
             "referring_url",
             "source",
             "url_from",
@@ -177,6 +197,7 @@ def _normalize_backlink_row(row: Dict[str, Any]) -> Dict[str, Any]:
         row,
         (
             "target_url",
+            "target url",
             "target",
             "url_to",
             "to",
@@ -193,6 +214,10 @@ def _normalize_backlink_row(row: Dict[str, Any]) -> Dict[str, Any]:
         row,
         ("follow", "link_type", "type", "rel", "is_dofollow", "dofollow"),
     )
+    nofollow = _pick_value(
+        row,
+        ("nofollow",),
+    )
     domain_rating = _pick_value(
         row,
         ("dr", "domain rating", "domain_rating", "ahrefs_dr"),
@@ -204,22 +229,26 @@ def _normalize_backlink_row(row: Dict[str, Any]) -> Dict[str, Any]:
 
     source_url = str(source or "").strip()
     target_url = str(target or "").strip()
+    follow_flag = _to_follow_bool(follow)
+    nofollow_flag = _to_follow_bool(nofollow)
+    if follow_flag is None and nofollow_flag is not None:
+        follow_flag = not nofollow_flag
     return {
         "source_url": source_url,
         "source_domain": _extract_domain(source_url),
         "target_url": target_url,
         "target_domain": _extract_domain(target_url),
         "anchor": str(anchor or "").strip(),
-        "follow": _to_follow_bool(follow),
+        "follow": follow_flag,
         "dr": _to_float(domain_rating),
         "traffic": _to_float(traffic),
     }
 
 
 def _normalize_batch_row(row: Dict[str, Any]) -> Tuple[str, Dict[str, Optional[float]]]:
-    domain = _pick_value(row, ("domain", "referring_domain", "site", "host"))
+    domain = _pick_value(row, ("domain", "target", "referring_domain", "site", "host"))
     dr = _pick_value(row, ("dr", "domain rating", "domain_rating", "ahrefs_dr"))
-    traffic = _pick_value(row, ("traffic", "domain traffic", "organic_traffic", "ahrefs_traffic"))
+    traffic = _pick_value(row, ("traffic", "organic / traffic", "domain traffic", "organic_traffic", "ahrefs_traffic"))
     d = _normalize_domain(str(domain or ""))
     return d, {"dr": _to_float(dr), "traffic": _to_float(traffic)}
 
