@@ -3,7 +3,7 @@ import io
 import re
 from collections import Counter, defaultdict
 from datetime import datetime
-from statistics import mean
+from statistics import mean, median
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import urlparse
 
@@ -199,6 +199,19 @@ def _derive_brand_keywords(domain: str) -> List[str]:
     return result
 
 
+def _brand_token_from_domain(domain: str) -> str:
+    host = _normalize_domain(domain)
+    if not host:
+        return ""
+    parts = host.split(".")
+    if len(parts) >= 2:
+        token = parts[-2]
+    else:
+        token = parts[0]
+    token = re.sub(r"[^a-z0-9а-яё]+", "", token.lower(), flags=re.IGNORECASE)
+    return token
+
+
 def _extract_zone(domain: str) -> str:
     parts = (domain or "").split(".")
     if len(parts) < 2:
@@ -324,9 +337,13 @@ def run_link_profile_audit(
         "spam": _parse_keywords(spam_keywords),
         "brand": _parse_keywords(brand_keywords),
     }
-    derived_brand_keywords = _derive_brand_keywords(domain)
-    brand_keywords_used = list(dict.fromkeys((keywords.get("brand") or []) + derived_brand_keywords))
-    keywords["brand"] = brand_keywords_used
+    auto_brand_tokens: List[str] = _derive_brand_keywords(domain)
+    for fname, _ in backlink_files:
+        base = re.sub(r"-backlinks.*$", "", str(fname or ""), flags=re.IGNORECASE)
+        auto_brand_tokens.extend(_derive_brand_keywords(base))
+        token = _brand_token_from_domain(base)
+        if token:
+            auto_brand_tokens.append(token)
 
     if progress_callback:
         progress_callback(15, "Чтение файла batch analysis")
@@ -334,10 +351,21 @@ def run_link_profile_audit(
     batch_name, batch_payload = batch_file
     batch_rows = _read_tabular_rows(batch_name, batch_payload)
     batch_metrics: Dict[str, Dict[str, Optional[float]]] = {}
+    batch_targets: List[str] = []
     for row in batch_rows:
         d, metrics = _normalize_batch_row(row)
         if d:
             batch_metrics[d] = metrics
+            batch_targets.append(d)
+
+    for target_domain in batch_targets:
+        auto_brand_tokens.extend(_derive_brand_keywords(target_domain))
+        token = _brand_token_from_domain(target_domain)
+        if token:
+            auto_brand_tokens.append(token)
+    derived_brand_keywords = list(dict.fromkeys([x for x in auto_brand_tokens if x and len(x) >= 2]))
+    brand_keywords_used = list(dict.fromkeys((keywords.get("brand") or []) + derived_brand_keywords))
+    keywords["brand"] = brand_keywords_used
 
     if progress_callback:
         progress_callback(35, "Чтение файлов бэклинков")
@@ -369,6 +397,8 @@ def run_link_profile_audit(
     competitor_ref_domains: Dict[str, set[str]] = defaultdict(set)
     our_source_counter: Counter[str] = Counter()
     follow_counter: Counter[str] = Counter()
+    follow_our_counter: Counter[str] = Counter()
+    follow_comp_counter: Counter[str] = Counter()
     anchor_type_counter: Counter[str] = Counter()
     anchor_counter: Counter[str] = Counter()
     anchor_word_counter: Counter[str] = Counter()
@@ -379,6 +409,8 @@ def run_link_profile_audit(
     traffic_values: List[float] = []
     our_dr_values: List[float] = []
     our_traffic_values: List[float] = []
+    comp_dr_values: List[float] = []
+    comp_traffic_values: List[float] = []
 
     our_links = 0
     for row in normalized_rows:
@@ -398,10 +430,22 @@ def run_link_profile_audit(
         follow = row.get("follow")
         if follow is True:
             follow_counter["dofollow"] += 1
+            if _is_our_target(trg, domain):
+                follow_our_counter["dofollow"] += 1
+            else:
+                follow_comp_counter["dofollow"] += 1
         elif follow is False:
             follow_counter["nofollow"] += 1
+            if _is_our_target(trg, domain):
+                follow_our_counter["nofollow"] += 1
+            else:
+                follow_comp_counter["nofollow"] += 1
         else:
             follow_counter["unknown"] += 1
+            if _is_our_target(trg, domain):
+                follow_our_counter["unknown"] += 1
+            else:
+                follow_comp_counter["unknown"] += 1
 
         anchor = row.get("anchor") or ""
         anchor_type = _classify_anchor(anchor, keywords)
@@ -421,10 +465,14 @@ def run_link_profile_audit(
             dr_bucket_counter[_dr_bucket(float(effective_dr))] += 1
             if _is_our_target(trg, domain):
                 our_dr_values.append(float(effective_dr))
+            else:
+                comp_dr_values.append(float(effective_dr))
         if effective_traffic is not None:
             traffic_values.append(float(effective_traffic))
             if _is_our_target(trg, domain):
                 our_traffic_values.append(float(effective_traffic))
+            else:
+                comp_traffic_values.append(float(effective_traffic))
 
     duplicates_with_our: List[Dict[str, Any]] = []
     duplicates_without_our: List[Dict[str, Any]] = []
@@ -511,12 +559,76 @@ def run_link_profile_audit(
         reverse=True,
     )[:30]
     dr_bucket_rows = [{"dr_bucket": k, "links": v} for k, v in sorted(dr_bucket_counter.items(), key=lambda x: str(x[0]))]
+    dr_bucket_our_rows = []
+    dr_bucket_comp_rows = []
+    for bucket in ["0-9", "10-29", "30-49", "50-69", "70+", "unknown"]:
+        dr_bucket_our_rows.append({"dr_bucket": bucket, "links": sum(1 for x in our_dr_values if _dr_bucket(x) == bucket) if bucket != "unknown" else 0})
+        dr_bucket_comp_rows.append({"dr_bucket": bucket, "links": sum(1 for x in comp_dr_values if _dr_bucket(x) == bucket) if bucket != "unknown" else 0})
     zone_rows = [{"zone": z, "links": c} for z, c in zone_counter.most_common(20)]
     follow_rows = [
         {"type": "dofollow", "count": follow_counter.get("dofollow", 0)},
         {"type": "nofollow", "count": follow_counter.get("nofollow", 0)},
         {"type": "unknown", "count": follow_counter.get("unknown", 0)},
     ]
+    follow_detail_rows = [
+        {
+            "segment": "our_site",
+            "dofollow": follow_our_counter.get("dofollow", 0),
+            "nofollow": follow_our_counter.get("nofollow", 0),
+            "unknown": follow_our_counter.get("unknown", 0),
+            "nofollow_share_pct": round(
+                (follow_our_counter.get("nofollow", 0) / max(1, sum(follow_our_counter.values()))) * 100,
+                2,
+            ),
+        },
+        {
+            "segment": "competitors",
+            "dofollow": follow_comp_counter.get("dofollow", 0),
+            "nofollow": follow_comp_counter.get("nofollow", 0),
+            "unknown": follow_comp_counter.get("unknown", 0),
+            "nofollow_share_pct": round(
+                (follow_comp_counter.get("nofollow", 0) / max(1, sum(follow_comp_counter.values()))) * 100,
+                2,
+            ),
+        },
+        {
+            "segment": "all",
+            "dofollow": follow_counter.get("dofollow", 0),
+            "nofollow": follow_counter.get("nofollow", 0),
+            "unknown": follow_counter.get("unknown", 0),
+            "nofollow_share_pct": round(
+                (follow_counter.get("nofollow", 0) / max(1, sum(follow_counter.values()))) * 100,
+                2,
+            ),
+        },
+    ]
+    dr_stats_rows = [
+        {
+            "segment": "our_site",
+            "links_with_dr": len(our_dr_values),
+            "avg_dr": round(mean(our_dr_values), 2) if our_dr_values else None,
+            "median_dr": round(median(our_dr_values), 2) if our_dr_values else None,
+            "min_dr": min(our_dr_values) if our_dr_values else None,
+            "max_dr": max(our_dr_values) if our_dr_values else None,
+        },
+        {
+            "segment": "competitors",
+            "links_with_dr": len(comp_dr_values),
+            "avg_dr": round(mean(comp_dr_values), 2) if comp_dr_values else None,
+            "median_dr": round(median(comp_dr_values), 2) if comp_dr_values else None,
+            "min_dr": min(comp_dr_values) if comp_dr_values else None,
+            "max_dr": max(comp_dr_values) if comp_dr_values else None,
+        },
+        {
+            "segment": "all",
+            "links_with_dr": len(dr_values),
+            "avg_dr": round(mean(dr_values), 2) if dr_values else None,
+            "median_dr": round(median(dr_values), 2) if dr_values else None,
+            "min_dr": min(dr_values) if dr_values else None,
+            "max_dr": max(dr_values) if dr_values else None,
+        },
+    ]
+    brand_rows = [{"keyword": k} for k in brand_keywords_used[:100]]
 
     if progress_callback:
         progress_callback(85, "Формирование итогового отчета")
@@ -598,9 +710,15 @@ def run_link_profile_audit(
                 "priority_domains": priority_domains,
                 "our_site_overview": our_site_rows,
                 "comparison_overview": comparison_rows,
+                "dr_stats": dr_stats_rows,
                 "dr_buckets": dr_bucket_rows,
+                "dr_buckets_our_site": dr_bucket_our_rows,
+                "dr_buckets_competitors": dr_bucket_comp_rows,
                 "zones": zone_rows,
                 "follow_types": follow_rows,
+                "follow_types_detailed": follow_detail_rows,
+                "brand_keywords_auto": brand_rows,
+                "source_files": file_summaries,
                 "ourSiteTables": [
                     {"title": "Наш сайт: доноры", "rows": our_site_rows},
                 ],
@@ -611,9 +729,15 @@ def run_link_profile_audit(
                     {"title": "Сравнение с конкурентами", "rows": comparison_rows},
                 ],
                 "additionalTables": [
+                    {"title": "DR статистика", "rows": dr_stats_rows},
                     {"title": "DR buckets", "rows": dr_bucket_rows},
+                    {"title": "DR buckets: наш сайт", "rows": dr_bucket_our_rows},
+                    {"title": "DR buckets: конкуренты", "rows": dr_bucket_comp_rows},
                     {"title": "Domain zones", "rows": zone_rows},
                     {"title": "Follow / Nofollow", "rows": follow_rows},
+                    {"title": "Follow / Nofollow detailed", "rows": follow_detail_rows},
+                    {"title": "Auto brand keywords", "rows": brand_rows},
+                    {"title": "Source files", "rows": file_summaries},
                 ],
                 "duplicatesTables": [
                     {"title": "Duplicates with our site", "rows": duplicates_with_our[:200]},
