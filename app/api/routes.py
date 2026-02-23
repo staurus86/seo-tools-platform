@@ -3,7 +3,7 @@ SEO Tools API Routes - Full integration with original scripts
 """
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel, field_validator
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
 import re
 import json
@@ -1193,7 +1193,7 @@ def check_robots_simple(url: str) -> Dict[str, Any]:
         }
 
 
-def check_sitemap_full(url: str) -> Dict[str, Any]:
+def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
     """Full sitemap validation with sitemap index traversal and URL export."""
     import xml.etree.ElementTree as ET
     from app.config import settings
@@ -1292,7 +1292,14 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
     stale_days = max(30, min(3650, int(getattr(settings, "SITEMAP_STALE_DAYS", 180) or 180)))
     live_check_sample_size = max(10, min(20, int(getattr(settings, "SITEMAP_LIVE_CHECK_SAMPLE", 15) or 15)))
     live_check_timeout = max(2, min(15, int(getattr(settings, "SITEMAP_LIVE_CHECK_TIMEOUT", 6) or 6)))
-    queue: List[str] = [url]
+    root_urls: List[str]
+    if isinstance(url, list):
+        root_urls = [str(u).strip() for u in url if str(u).strip()]
+    else:
+        root_urls = [str(url).strip()] if str(url).strip() else []
+    root_urls = list(dict.fromkeys(root_urls))
+    primary_root_url = root_urls[0] if root_urls else ""
+    queue: List[str] = list(root_urls)
     visited: set = set()
     sitemap_files: List[Dict[str, Any]] = []
     all_urls: List[str] = []
@@ -1904,9 +1911,10 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
 
         return {
             "task_type": "sitemap_validate",
-            "url": url,
+            "url": primary_root_url,
             "completed_at": datetime.utcnow().isoformat(),
             "results": {
+                "root_sitemaps": root_urls,
                 "valid": len(errors) == 0 and len(sitemap_files) > 0,
                 "status_code": root_status_code,
                 "urls_count": total_urls_discovered,
@@ -1984,7 +1992,7 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
     except Exception as e:
         return {
             "task_type": "sitemap_validate",
-            "url": url,
+            "url": primary_root_url,
             "completed_at": datetime.utcnow().isoformat(),
             "results": {
                 "valid": False,
@@ -2142,11 +2150,11 @@ def _looks_like_sitemap_xml(payload: str) -> bool:
     return text.startswith("<?xml") or "<urlset" in text or "<sitemapindex" in text
 
 
-def _discover_sitemap_url(site_url: str, timeout: int = 12) -> tuple[Optional[str], Optional[str]]:
-    """Discover sitemap URL for a site. Returns (sitemap_url, source)."""
+def _discover_sitemap_urls(site_url: str, timeout: int = 12) -> tuple[List[str], Optional[str]]:
+    """Discover sitemap URLs for a site. Returns (sitemap_urls, source)."""
     candidate_root = _normalize_http_input(site_url)
     if not candidate_root:
-        return None, None
+        return [], None
 
     parsed_root = urlparse(candidate_root)
     root = f"{parsed_root.scheme}://{parsed_root.netloc}"
@@ -2195,8 +2203,7 @@ def _discover_sitemap_url(site_url: str, timeout: int = 12) -> tuple[Optional[st
                 if robots_candidates:
                     unique_candidates = list(dict.fromkeys(robots_candidates))
                     unique_candidates.sort(key=lambda u: (_candidate_score(u), -len(u)), reverse=True)
-                    chosen = unique_candidates[0]
-                    return chosen, "robots.txt"
+                    return unique_candidates, "robots.txt"
         except Exception:
             pass
 
@@ -2214,11 +2221,11 @@ def _discover_sitemap_url(site_url: str, timeout: int = 12) -> tuple[Optional[st
             try:
                 sm_resp = session.get(loc, timeout=timeout, allow_redirects=True, headers=headers)
                 if sm_resp.status_code == 200 and _looks_like_sitemap_xml(sm_resp.text[:10000]):
-                    return loc, "common_path"
+                    return [loc], "common_path"
             except Exception:
                 continue
 
-    return None, None
+    return [], None
 
     @field_validator("batch_urls", mode="before")
     @classmethod
@@ -2955,27 +2962,36 @@ async def create_sitemap_validate(data: SitemapValidateRequest):
         raise HTTPException(status_code=422, detail="Введите корректный домен или URL sitemap.")
 
     if _is_likely_sitemap_url(normalized_input):
-        target_sitemap_url = normalized_input
+        target_sitemap_urls = [normalized_input]
         discovery_source = "direct_input"
     else:
-        discovered, source = _discover_sitemap_url(normalized_input)
-        if not discovered:
+        discovered_urls, source = _discover_sitemap_urls(normalized_input)
+        if not discovered_urls:
             raise HTTPException(
                 status_code=422,
                 detail="Мы не нашли sitemap автоматически. Введите полный URL sitemap (например, https://example.com/sitemap.xml)."
             )
-        target_sitemap_url = discovered
+        target_sitemap_urls = discovered_urls
         discovery_source = source or "auto_discovery"
 
-    print(f"[API] Full sitemap validation for input={normalized_input}, sitemap={target_sitemap_url}, source={discovery_source}")
+    print(
+        f"[API] Full sitemap validation for input={normalized_input}, "
+        f"sitemaps={len(target_sitemap_urls)}, source={discovery_source}"
+    )
 
-    result = check_sitemap_full(target_sitemap_url)
+    result = check_sitemap_full(target_sitemap_urls)
     if isinstance(result, dict):
         result["input_url"] = normalized_input
-        result["resolved_sitemap_url"] = target_sitemap_url
+        result["resolved_sitemap_url"] = target_sitemap_urls[0] if target_sitemap_urls else ""
+        result["resolved_sitemap_urls"] = target_sitemap_urls
         result["sitemap_discovery_source"] = discovery_source
     task_id = f"sitemap-{datetime.now().timestamp()}"
-    create_task_result(task_id, "sitemap_validate", target_sitemap_url, result)
+    create_task_result(
+        task_id,
+        "sitemap_validate",
+        target_sitemap_urls[0] if target_sitemap_urls else normalized_input,
+        result
+    )
     
     return {
         "task_id": task_id,
