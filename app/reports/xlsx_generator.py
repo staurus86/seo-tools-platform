@@ -4214,7 +4214,7 @@ class XLSXGenerator:
         """Generate XLSX report for link_profile_audit."""
         wb = Workbook()
         ws = wb.active
-        ws.title = "Сводка"
+        ws.title = "Итого"
 
         header_style = self._create_header_style()
         cell_style = self._create_cell_style()
@@ -4224,44 +4224,23 @@ class XLSXGenerator:
         tables = results.get("tables", {}) or {}
         warnings = results.get("warnings", []) or []
         errors = results.get("errors", []) or []
+        keywords = results.get("keywords", {}) or {}
+        analysis_sections = tables.get("analysis_data_sections", []) or []
 
-        ws["A1"] = "Отчет: Аудит ссылочного профиля"
+        ws["A1"] = "Отчет: Аудит ссылочного профиля (Итого)"
         self._apply_style(ws["A1"], header_style)
-        ws.merge_cells("A1:D1")
+        ws.merge_cells("A1:F1")
         ws["A2"] = "Домен"
         ws["B2"] = data.get("url", summary.get("our_domain", ""))
         ws["A3"] = "Дата"
         ws["B3"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        summary_rows = [
-            ("Строк ссылок", summary.get("rows_total", 0)),
-            ("Уникальных доноров", summary.get("unique_ref_domains", 0)),
-            ("Уникальных конкурентов", summary.get("unique_competitors", 0)),
-            ("Ссылок на наш домен", summary.get("our_links", 0)),
-            ("Dofollow", summary.get("dofollow", 0)),
-            ("Nofollow", summary.get("nofollow", 0)),
-            ("Unknown follow", summary.get("unknown_follow", 0)),
-            ("Dofollow %", summary.get("dofollow_pct", "")),
-            ("Nofollow %", summary.get("nofollow_pct", "")),
-            ("Lost links %", summary.get("lost_links_pct", "")),
-            ("HTTP 2xx %", summary.get("http_2xx_pct", "")),
-            ("Средний DR", summary.get("avg_dr", "")),
-        ]
-        ws["A5"] = "Метрика"
-        ws["B5"] = "Значение"
-        self._apply_style(ws["A5"], header_style)
-        self._apply_style(ws["B5"], header_style)
-        row_idx = 6
-        for k, v in summary_rows:
-            ws.cell(row=row_idx, column=1, value=k)
-            ws.cell(row=row_idx, column=2, value=v)
-            self._apply_style(ws.cell(row=row_idx, column=1), cell_style)
-            self._apply_style(ws.cell(row=row_idx, column=2), cell_style)
-            row_idx += 1
-        ws.column_dimensions["A"].width = 38
-        ws.column_dimensions["B"].width = 26
-        ws.column_dimensions["C"].width = 24
-        ws.column_dimensions["D"].width = 24
+        ws.column_dimensions["A"].width = 34
+        ws.column_dimensions["B"].width = 18
+        ws.column_dimensions["C"].width = 18
+        ws.column_dimensions["D"].width = 18
+        ws.column_dimensions["E"].width = 18
+        ws.column_dimensions["F"].width = 18
 
         def _write_sheet(title: str, rows: List[Dict[str, Any]]) -> None:
             sheet = wb.create_sheet(title[:31])
@@ -4278,7 +4257,107 @@ class XLSXGenerator:
                     c = sheet.cell(row=r_idx, column=c_idx, value=item.get(col_name))
                     self._apply_style(c, cell_style)
 
-        _write_sheet("Наш сайт", tables.get("our_site_overview", []) or [])
+        def _pick_analysis_section(*needles: str) -> List[Dict[str, Any]]:
+            lowered_needles = [n.lower() for n in needles]
+            for section in analysis_sections:
+                title = str((section or {}).get("title") or "").lower()
+                if all(n in title for n in lowered_needles):
+                    return (section or {}).get("rows") or []
+            return []
+
+        def _write_block(
+            sheet,
+            start_row: int,
+            title: str,
+            rows: List[Dict[str, Any]],
+            percent_mode: bool = False,
+        ) -> int:
+            sheet.cell(row=start_row, column=1, value=title)
+            self._apply_style(sheet.cell(row=start_row, column=1), header_style)
+            if not rows:
+                sheet.cell(row=start_row + 1, column=1, value="Нет данных")
+                self._apply_style(sheet.cell(row=start_row + 1, column=1), cell_style)
+                return start_row + 3
+            cols = list((rows[0] or {}).keys())
+            row_h = start_row + 1
+            for col_idx, col_name in enumerate(cols, start=1):
+                c = sheet.cell(row=row_h, column=col_idx, value=col_name)
+                self._apply_style(c, header_style)
+                sheet.column_dimensions[get_column_letter(col_idx)].width = min(38, max(12, len(str(col_name)) + 4))
+            row_ptr = row_h + 1
+            for item in rows:
+                for col_idx, col_name in enumerate(cols, start=1):
+                    value = item.get(col_name)
+                    c = sheet.cell(row=row_ptr, column=col_idx, value=value)
+                    self._apply_style(c, cell_style)
+                    if (
+                        percent_mode
+                        and col_idx > 1
+                        and isinstance(value, (int, float))
+                        and 0 <= float(value) <= 1
+                    ):
+                        c.number_format = "0%"
+                row_ptr += 1
+            return row_ptr + 1
+
+        row_ptr = 5
+        row_ptr = _write_block(
+            ws,
+            row_ptr,
+            "Основные метрики",
+            _pick_analysis_section("domain rating", "total backlinks"),
+            percent_mode=False,
+        )
+        row_ptr = _write_block(
+            ws,
+            row_ptr,
+            "Соотношение Dofollow/Nofollow",
+            _pick_analysis_section("follow (false)", "nofollow (true)"),
+            percent_mode=True,
+        )
+        row_ptr = _write_block(
+            ws,
+            row_ptr,
+            "Соотношение главная/внутренние",
+            _pick_analysis_section("главная страница", "внутренние страницы"),
+            percent_mode=True,
+        )
+        row_ptr = _write_block(
+            ws,
+            row_ptr,
+            "Dofollow/Nofollow на главную/внутренние",
+            _pick_analysis_section("follow на главную", "nofollow на главную"),
+            percent_mode=True,
+        )
+        row_ptr = _write_block(
+            ws,
+            row_ptr,
+            "Распределение по DR",
+            _pick_analysis_section("dr 0-9", "dr 10-19"),
+            percent_mode=True,
+        )
+        row_ptr = _write_block(
+            ws,
+            row_ptr,
+            "Географическое распределение",
+            _pick_analysis_section(".ru", ".com"),
+            percent_mode=True,
+        )
+
+        anchor_matrix_rows = _pick_analysis_section("безанкорный", "брендовый")
+        _write_sheet("Анкоры", anchor_matrix_rows or [])
+
+        dictionaries_rows: List[Dict[str, Any]] = []
+        for word in (keywords.get("commercial") or []):
+            dictionaries_rows.append({"Тип": "Коммерческие", "Слово": word})
+        for word in (keywords.get("informational") or []):
+            dictionaries_rows.append({"Тип": "Информационные", "Слово": word})
+        for word in (keywords.get("spam") or []):
+            dictionaries_rows.append({"Тип": "Спамные", "Слово": word})
+        for word in (keywords.get("brand") or []):
+            dictionaries_rows.append({"Тип": "Брендовые", "Слово": word})
+        _write_sheet("Словари анкоров", dictionaries_rows)
+
         _write_sheet("Приоритеты SEO", tables.get("priority_dashboard", []) or [])
         _write_sheet("Очередь действий", tables.get("action_queue", []) or [])
         _write_sheet("KPI сводка", tables.get("executive_kpi", []) or [])
@@ -4290,7 +4369,7 @@ class XLSXGenerator:
         _write_sheet("Рейтинг конкурентов", tables.get("competitor_ranking", []) or [])
         _write_sheet("Сравнение", tables.get("comparison_overview", []) or [])
         _write_sheet("Ready-buy доноры", tables.get("ready_buy_domains", []) or [])
-        _write_sheet("Анкоры", tables.get("anchor_analysis", []) or [])
+        _write_sheet("Топ анкоры", tables.get("anchor_analysis", []) or [])
         _write_sheet("Слова анкоров", tables.get("anchor_word_analysis", []) or [])
         _write_sheet("Anchor mix %", tables.get("anchor_mix_pct", []) or [])
         _write_sheet("Дубликаты с нами", tables.get("duplicates_with_our_site", []) or [])
@@ -4309,7 +4388,6 @@ class XLSXGenerator:
         _write_sheet("HTTP class mix", tables.get("http_class_mix", []) or [])
         _write_sheet("Link type mix", tables.get("link_type_mix", []) or [])
         _write_sheet("Language mix", tables.get("language_mix", []) or [])
-        analysis_sections = tables.get("analysis_data_sections", []) or []
         for idx, section in enumerate(analysis_sections, start=1):
             title = str((section or {}).get("title") or f"Анализ-{idx:02d}")
             rows = (section or {}).get("rows") or []

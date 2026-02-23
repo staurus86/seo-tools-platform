@@ -34,6 +34,33 @@ _MULTI_PART_TLDS = {
     "co.in",
 }
 
+DEFAULT_COMMERCIAL_KEYWORDS = [
+    "купить", "цена", "заказать", "промо", "скидка", "акция", "доставка", "покупка", "заказ", "оплата",
+    "магазин", "товар", "онлайн", "online", "sale", "deals", "discount", "shop", "coupon", "code", "код",
+    "бесплатно", "бесплатный", "cheap", "outlet", "clearance", "new", "arrivals", "promo", "promotion",
+    "offer", "deal", "buy", "order", "purchase", "delivery", "save", "bargain", "price", "cart",
+    "checkout", "special", "limited", "exclusive", "subscription", "подписка", "product", "item", "store",
+    "market", "маркет",
+]
+
+DEFAULT_INFORMATIONAL_KEYWORDS = [
+    "как", "что", "почему", "статья", "руководство", "обзор", "советы", "инструкция", "гид", "обучение",
+    "уроки", "tutorial", "guide", "tips", "review", "how", "what", "why", "learn", "explained", "faq",
+    "вопросы", "ответы", "информация", "info", "подробно", "анализ", "исследование", "блог", "blog",
+    "article", "news", "новости", "история", "history", "факты", "facts", "причины", "решение", "solution",
+    "совет", "рекомендации", "best", "top", "рейтинг", "список", "list", "объяснение", "description", "описание",
+]
+
+DEFAULT_SPAM_KEYWORDS = [
+    "seo", "backlinks", "backlinking", "traffic", "boost", "ranking", "indexing", "dofollow", "black", "white",
+    "grey", "linkbuilding", "links", "purchased", "buy links", "sell links", "click here", "click now",
+    "free traffic", "fast results", "guaranteed ranking", "telegram", "tg", "gambling", "casino", "bet",
+    "betting", "stavka", "фриспин", "freespin", "viagra", "cialis", "pharmacy", "drugs", "hacked", "взлом",
+    "взломка", "взломанный", "torrent", "торрент", "pirate", "crack", "keygen", "adult", "xxx", "porn",
+    "escort", "webcam", "cheap pills", "earn money", "make money", "crypto scam", "investment scam",
+    "get rich", "lottery", "free gift", "win prize", "survey", "spam", "↑↑↑", "??????",
+]
+
 
 def _to_registrable_domain(host: str) -> str:
     value = (host or "").strip().lower().rstrip(".")
@@ -62,6 +89,18 @@ def _parse_keywords(raw: str) -> List[str]:
         return []
     parts = re.split(r"[,;\n\r\t]+", str(raw))
     return [p.strip().lower() for p in parts if p and p.strip()]
+
+
+def _merge_keywords(base: List[str], extra: List[str]) -> List[str]:
+    out: List[str] = []
+    seen = set()
+    for token in list(base or []) + list(extra or []):
+        t = str(token or "").strip().lower()
+        if not t or t in seen:
+            continue
+        seen.add(t)
+        out.append(t)
+    return out
 
 
 def _normalize_domain(raw: str) -> str:
@@ -636,9 +675,9 @@ def run_link_profile_audit(
         raise ValueError("Добавьте хотя бы один файл бэклинков")
 
     keywords = {
-        "commercial": _parse_keywords(commercial_keywords),
-        "informational": _parse_keywords(informational_keywords),
-        "spam": _parse_keywords(spam_keywords),
+        "commercial": _merge_keywords(DEFAULT_COMMERCIAL_KEYWORDS, _parse_keywords(commercial_keywords)),
+        "informational": _merge_keywords(DEFAULT_INFORMATIONAL_KEYWORDS, _parse_keywords(informational_keywords)),
+        "spam": _merge_keywords(DEFAULT_SPAM_KEYWORDS, _parse_keywords(spam_keywords)),
         "brand": _parse_keywords(brand_keywords),
     }
     auto_brand_tokens: List[str] = _derive_brand_keywords(domain)
