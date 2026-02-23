@@ -4302,6 +4302,32 @@ class XLSXGenerator:
                     return (section or {}).get("rows") or []
             return []
 
+        def _write_dynamic_sheet(
+            name: str,
+            rows: List[Dict[str, Any]],
+            *,
+            preferred_headers: List[str] | None = None,
+            percent_headers: Set[str] | None = None,
+        ) -> None:
+            ws = wb.create_sheet(name[:31])
+            rows = rows or []
+            headers: List[str] = []
+            if preferred_headers:
+                headers = list(preferred_headers)
+                if rows:
+                    extra = [k for k in rows[0].keys() if k not in headers]
+                    headers.extend(extra)
+            elif rows:
+                headers = list((rows[0] or {}).keys())
+            else:
+                headers = ["Info"]
+            _write_header_row(ws, 1, headers)
+            if rows:
+                _write_dict_rows(ws, 2, headers, rows, percent_headers=percent_headers or set())
+            else:
+                c = ws.cell(row=2, column=1, value="Нет данных")
+                self._apply_style(c, cell_style)
+
         # Sheet 1: RU
         ru_headers = [
             "#", "Target", "IP", "URL Rating", "Domain Rating", "Ahrefs Rank",
@@ -4565,6 +4591,108 @@ class XLSXGenerator:
                 val = row_values.get(h)
                 cell = ws_redir.cell(row=idx, column=c_idx, value=val)
                 self._apply_style(cell, cell_style)
+
+        # Additional analytics sheets (approved 7 sheets above remain unchanged).
+        _write_dynamic_sheet(
+            "08_Executive_KPI",
+            tables.get("executive_overview", []) or [],
+            preferred_headers=["Metric", "Value"],
+        )
+        _write_dynamic_sheet(
+            "09_Competitor_Benchmark",
+            tables.get("competitor_benchmark", []) or [],
+            preferred_headers=[
+                "Домен",
+                "Domain Rating",
+                "Total Backlinks",
+                "Referring Domains",
+                "Follow %",
+                "Lost %",
+                "HTTP 2xx %",
+                "Homepage %",
+                "UGC %",
+                "Sponsored %",
+                "Rendered %",
+                "Quality Score",
+            ],
+        )
+        _write_dynamic_sheet(
+            "10_Gap_Donors_Priority",
+            tables.get("gap_donors_priority", []) or [],
+            preferred_headers=[
+                "Domain",
+                "Competitors Covered",
+                "Coverage %",
+                "Avg DR",
+                "Avg Traffic",
+                "Follow %",
+                "Lost %",
+                "Opportunity Score",
+            ],
+        )
+        _write_dynamic_sheet(
+            "11_Donor_Overlap_Matrix",
+            tables.get("donor_overlap_matrix", []) or [],
+            preferred_headers=[
+                "Domain",
+                "Has Our Site",
+                "Competitors Count",
+                "Competitors",
+                "Targets Total",
+                "Gap Type",
+            ],
+        )
+        _write_dynamic_sheet(
+            "12_Link_Attributes",
+            tables.get("link_attributes", []) or [],
+            preferred_headers=["Attribute", "Count", "Pct"],
+        )
+        _write_dynamic_sheet(
+            "13_Loss_Recovery",
+            tables.get("loss_recovery", []) or [],
+            preferred_headers=["Group", "Value", "Count", "Pct"],
+        )
+        _write_dynamic_sheet(
+            "14_HTTP_Type_Lang_Platform",
+            tables.get("http_type_lang_platform", []) or [],
+            preferred_headers=["Dimension", "Value", "Count", "Pct"],
+        )
+        _write_dynamic_sheet(
+            "15_Target_Structure",
+            tables.get("target_structure", []) or [],
+            preferred_headers=[
+                "Domain",
+                "Homepage %",
+                "Internal %",
+                "Follow %",
+                "Nofollow %",
+                "UGC %",
+                "Sponsored %",
+                "Rendered %",
+                "Raw %",
+            ],
+        )
+        _write_dynamic_sheet(
+            "16_Risk_Signals",
+            tables.get("risk_signals", []) or [],
+            preferred_headers=[
+                "Domain",
+                "Links",
+                "Avg DR",
+                "Avg Traffic",
+                "Avg External Links",
+                "Lost %",
+                "Nofollow %",
+                "Sponsored %",
+                "Risk Score",
+                "Risk Level",
+            ],
+        )
+        _write_dynamic_sheet(
+            "17_Action_Queue_90d",
+            tables.get("action_queue_90d", []) or [],
+            preferred_headers=["Phase", "Priority", "Action", "Target KPI", "Owner"],
+        )
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         self._save_workbook(wb, filepath)
