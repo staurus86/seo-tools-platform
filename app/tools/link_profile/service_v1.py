@@ -912,6 +912,60 @@ def run_link_profile_audit(
                 }
             )
 
+    # Fallback: if source sheets are not present, build raw tables from normalized rows.
+    if not raw_homepage_links_rows:
+        for row in normalized_rows:
+            if not row.get("source_is_homepage"):
+                continue
+            raw_homepage_links_rows.append(
+                {
+                    "Referring page URL": row.get("source_url") or "",
+                    "Target URL": row.get("target_url") or "",
+                    "Anchor": row.get("anchor") or "",
+                    "Domain Rating": row.get("dr"),
+                    "UR": row.get("ur"),
+                    "Domain traffic": row.get("traffic"),
+                    "Nofollow": "nofollow" if row.get("follow") is False else "dofollow" if row.get("follow") is True else "",
+                    "Lost status": row.get("lost_status") or "",
+                }
+            )
+    if not raw_redirect_links_rows:
+        for row in normalized_rows:
+            code = str(row.get("http_code") or "")
+            if not row.get("has_redirect_301") and not code.startswith("3"):
+                continue
+            raw_redirect_links_rows.append(
+                {
+                    "Referring page URL": row.get("source_url") or "",
+                    "Referring page HTTP code": row.get("http_code") or "",
+                    "Domain rating": row.get("dr"),
+                    "UR": row.get("ur"),
+                    "Domain traffic": row.get("traffic"),
+                    "Target URL": row.get("target_url") or "",
+                }
+            )
+    if not raw_duplicates_without_our_rows:
+        dup_wo_domains = {str(x.get("domain") or "") for x in duplicates_without_our}
+        for row in normalized_rows:
+            src = str(row.get("source_domain") or "")
+            trg = str(row.get("target_domain") or "")
+            if src not in dup_wo_domains:
+                continue
+            if _is_our_target(trg, domain):
+                continue
+            raw_duplicates_without_our_rows.append(
+                {
+                    "Referring page URL": row.get("source_url") or "",
+                    "Target URL": row.get("target_url") or "",
+                    "Anchor": row.get("anchor") or "",
+                    "Domain Rating": row.get("dr"),
+                    "UR": row.get("ur"),
+                    "Domain traffic": row.get("traffic"),
+                    "Nofollow": "nofollow" if row.get("follow") is False else "dofollow" if row.get("follow") is True else "",
+                    "Lost status": row.get("lost_status") or "",
+                }
+            )
+
     per_target_metrics: Dict[str, Dict[str, Any]] = {}
     for target_domain, agg in target_agg.items():
         total = int(agg.get("total", 0))
