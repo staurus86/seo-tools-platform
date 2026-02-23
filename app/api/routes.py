@@ -1717,7 +1717,7 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
         if canonical_checked_count > 0 and (canonical_missing_count + canonical_invalid_count + canonical_non_self_count) > 0:
             warnings.append(
                 "Проверка canonical на случайной выборке: "
-                f"отсутствует={canonical_missing_count}, некорректный={canonical_invalid_count}, не self={canonical_non_self_count} "
+                f"отсутствует={canonical_missing_count}, некорректный={canonical_invalid_count}, не self-canonical={canonical_non_self_count} "
                 f"(выборка={canonical_checked_count})."
             )
 
@@ -1734,7 +1734,7 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
         if hreflang_links_count > 0:
             highlights.append(f"В sitemap обнаружены hreflang-ссылки: {hreflang_links_count}.")
         if image_tags_count + video_tags_count + news_tags_count > 0:
-            highlights.append(f"Обнаружены media-расширения (image/video/news): {image_tags_count}/{video_tags_count}/{news_tags_count}.")
+            highlights.append(f"Обнаружены media-расширения (изображения/видео/новости): {image_tags_count}/{video_tags_count}/{news_tags_count}.")
         if live_indexability_checks:
             highlights.append(f"Проверена live-выборка индексируемости: {len(live_indexability_checks)} URL, неиндексируемых: {live_non_indexable_count}.")
 
@@ -1847,7 +1847,7 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
                 "warning",
                 "media_extension_issues",
                 "Проблемы расширений media/news sitemap",
-                f"image без loc: {image_missing_loc_count}, video без обязательных полей: {video_missing_required_count}, news без обязательных полей: {news_missing_required_count}.",
+                f"image: без loc={image_missing_loc_count}, video: без обязательных полей={video_missing_required_count}, news: без обязательных полей={news_missing_required_count}.",
                 "Заполните обязательные поля в расширениях image/video/news sitemap.",
                 "SEO/Dev",
             ))
