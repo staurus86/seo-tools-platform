@@ -10,6 +10,9 @@ from urllib.parse import urlparse
 from openpyxl import load_workbook
 
 ProgressCallback = Optional[Callable[[int, str], None]]
+MAX_LINK_PROFILE_ROWS = 120000
+MAX_RAW_TABLE_ROWS = 5000
+MAX_RESULT_TABLE_ROWS = 10000
 
 
 _MULTI_PART_TLDS = {
@@ -101,7 +104,7 @@ def _decode_text(payload: bytes) -> str:
     return payload.decode("utf-8", errors="replace")
 
 
-def _read_csv_rows(payload: bytes) -> List[Dict[str, Any]]:
+def _read_csv_rows(payload: bytes, max_rows: Optional[int] = None) -> List[Dict[str, Any]]:
     text = _decode_text(payload)
     stream = io.StringIO(text, newline="")
     sample = text[:8192]
@@ -114,6 +117,8 @@ def _read_csv_rows(payload: bytes) -> List[Dict[str, Any]]:
         rows: List[Dict[str, Any]] = []
         for row in reader:
             rows.append(dict(row))
+            if max_rows is not None and len(rows) >= max_rows:
+                break
         return rows
     except csv.Error:
         # Fallback for malformed CSV where fields contain raw newlines.
@@ -132,10 +137,12 @@ def _read_csv_rows(payload: bytes) -> List[Dict[str, Any]]:
             elif len(parts) > len(headers):
                 parts = parts[: len(headers) - 1] + [delim.join(parts[len(headers) - 1 :])]
             rows.append({headers[i]: parts[i] for i in range(len(headers))})
+            if max_rows is not None and len(rows) >= max_rows:
+                break
         return rows
 
 
-def _read_xlsx_rows(payload: bytes) -> List[Dict[str, Any]]:
+def _read_xlsx_rows(payload: bytes, max_rows: Optional[int] = None) -> List[Dict[str, Any]]:
     wb = load_workbook(io.BytesIO(payload), read_only=True, data_only=True)
     ws = wb.active
     iterator = ws.iter_rows(values_only=True)
@@ -151,10 +158,12 @@ def _read_xlsx_rows(payload: bytes) -> List[Dict[str, Any]]:
                 continue
             item[key] = values[idx] if idx < len(values) else None
         rows.append(item)
+        if max_rows is not None and len(rows) >= max_rows:
+            break
     return rows
 
 
-def _worksheet_to_rows(ws) -> List[Dict[str, Any]]:
+def _worksheet_to_rows(ws, max_rows: Optional[int] = None) -> List[Dict[str, Any]]:
     iterator = ws.iter_rows(values_only=True)
     header_row = next(iterator, None)
     if not header_row:
@@ -175,6 +184,8 @@ def _worksheet_to_rows(ws) -> List[Dict[str, Any]]:
             item[key] = value
         if non_empty:
             rows.append(item)
+            if max_rows is not None and len(rows) >= max_rows:
+                break
     return rows
 
 
@@ -212,7 +223,13 @@ def _parse_analysis_data_sections(ws) -> List[Dict[str, Any]]:
     return sections
 
 
-def _read_test_links_pack(payload: bytes) -> Dict[str, List[Dict[str, Any]]]:
+def _read_test_links_pack(
+    payload: bytes,
+    *,
+    max_backlink_rows: Optional[int] = None,
+    max_batch_rows: Optional[int] = None,
+    max_priority_rows: Optional[int] = None,
+) -> Dict[str, List[Dict[str, Any]]]:
     wb = load_workbook(io.BytesIO(payload), read_only=True, data_only=True)
     sheet_map = {str(n): wb[n] for n in wb.sheetnames}
     backlinks_rows: List[Dict[str, Any]] = []
@@ -225,7 +242,12 @@ def _read_test_links_pack(payload: bytes) -> Dict[str, List[Dict[str, Any]]]:
         ws = sheet_map.get(s)
         if not ws:
             continue
-        for row in _worksheet_to_rows(ws):
+        remaining = None
+        if max_backlink_rows is not None:
+            remaining = max(0, max_backlink_rows - len(backlinks_rows))
+            if remaining <= 0:
+                break
+        for row in _worksheet_to_rows(ws, max_rows=remaining):
             row["__sheet__"] = s
             backlinks_rows.append(row)
 
@@ -233,11 +255,16 @@ def _read_test_links_pack(payload: bytes) -> Dict[str, List[Dict[str, Any]]]:
         ws = sheet_map.get(s)
         if not ws:
             continue
-        batch_rows.extend(_worksheet_to_rows(ws))
+        remaining = None
+        if max_batch_rows is not None:
+            remaining = max(0, max_batch_rows - len(batch_rows))
+            if remaining <= 0:
+                break
+        batch_rows.extend(_worksheet_to_rows(ws, max_rows=remaining))
 
     ws_prio = sheet_map.get("Приоритетные доноры")
     if ws_prio:
-        priority_rows.extend(_worksheet_to_rows(ws_prio))
+        priority_rows.extend(_worksheet_to_rows(ws_prio, max_rows=max_priority_rows))
     ws_analysis = sheet_map.get("Анализ данных")
     if ws_analysis:
         analysis_sections.extend(_parse_analysis_data_sections(ws_analysis))
@@ -250,12 +277,12 @@ def _read_test_links_pack(payload: bytes) -> Dict[str, List[Dict[str, Any]]]:
     }
 
 
-def _read_tabular_rows(filename: str, payload: bytes) -> List[Dict[str, Any]]:
+def _read_tabular_rows(filename: str, payload: bytes, max_rows: Optional[int] = None) -> List[Dict[str, Any]]:
     lower = filename.lower()
     if lower.endswith(".csv"):
-        return _read_csv_rows(payload)
+        return _read_csv_rows(payload, max_rows=max_rows)
     if lower.endswith(".xlsx"):
-        return _read_xlsx_rows(payload)
+        return _read_xlsx_rows(payload, max_rows=max_rows)
     raise ValueError(f"Unsupported file format: {filename}")
 
 
@@ -633,7 +660,7 @@ def run_link_profile_audit(
 
     if batch_file:
         batch_name, batch_payload = batch_file
-        batch_rows = _read_tabular_rows(batch_name, batch_payload)
+        batch_rows = _read_tabular_rows(batch_name, batch_payload, max_rows=50000)
     batch_metrics: Dict[str, Dict[str, Optional[float]]] = {}
     batch_targets: List[str] = []
 
@@ -644,60 +671,76 @@ def run_link_profile_audit(
     raw_homepage_links_rows: List[Dict[str, Any]] = []
     raw_redirect_links_rows: List[Dict[str, Any]] = []
     raw_duplicates_without_our_rows: List[Dict[str, Any]] = []
+    row_limit_hit = False
     file_summaries: List[Dict[str, Any]] = []
     for filename, payload in backlink_files:
         rows: List[Dict[str, Any]] = []
+        remaining_rows = max(0, MAX_LINK_PROFILE_ROWS - len(normalized_rows))
+        if remaining_rows <= 0:
+            row_limit_hit = True
+            break
         if str(filename or "").lower().endswith(".xlsx"):
-            pack = _read_test_links_pack(payload)
+            pack = _read_test_links_pack(
+                payload,
+                max_backlink_rows=remaining_rows,
+                max_batch_rows=50000,
+                max_priority_rows=5000,
+            )
             if pack.get("backlinks_rows"):
                 rows = pack.get("backlinks_rows", [])
                 auto_batch_rows.extend(pack.get("batch_rows", []))
                 precomputed_priority_rows.extend(pack.get("priority_rows", []))
                 imported_analysis_sections.extend(pack.get("analysis_sections", []))
             else:
-                rows = _read_tabular_rows(filename, payload)
+                rows = _read_tabular_rows(filename, payload, max_rows=remaining_rows)
         else:
-            rows = _read_tabular_rows(filename, payload)
+            rows = _read_tabular_rows(filename, payload, max_rows=remaining_rows)
         valid_rows = 0
         for row in rows:
+            if len(normalized_rows) >= MAX_LINK_PROFILE_ROWS:
+                row_limit_hit = True
+                break
             sheet_name = str(row.get("__sheet__") or "").strip()
             if sheet_name == "Ссылки с главных":
-                raw_homepage_links_rows.append(
-                    {
-                        "Referring page URL": _pick_value(row, ("referring page url",)) or "",
-                        "Target URL": _pick_value(row, ("target url",)) or "",
-                        "Anchor": _pick_value(row, ("anchor",)) or "",
-                        "Domain Rating": _pick_value(row, ("domain rating", "dr")) or "",
-                        "UR": _pick_value(row, ("ur", "url rating")) or "",
-                        "Domain traffic": _pick_value(row, ("domain traffic", "traffic")) or "",
-                        "Nofollow": _pick_value(row, ("nofollow",)) or "",
-                        "Lost status": _pick_value(row, ("lost status",)) or "",
-                    }
-                )
+                if len(raw_homepage_links_rows) < MAX_RAW_TABLE_ROWS:
+                    raw_homepage_links_rows.append(
+                        {
+                            "Referring page URL": _pick_value(row, ("referring page url",)) or "",
+                            "Target URL": _pick_value(row, ("target url",)) or "",
+                            "Anchor": _pick_value(row, ("anchor",)) or "",
+                            "Domain Rating": _pick_value(row, ("domain rating", "dr")) or "",
+                            "UR": _pick_value(row, ("ur", "url rating")) or "",
+                            "Domain traffic": _pick_value(row, ("domain traffic", "traffic")) or "",
+                            "Nofollow": _pick_value(row, ("nofollow",)) or "",
+                            "Lost status": _pick_value(row, ("lost status",)) or "",
+                        }
+                    )
             elif sheet_name == "Ссылки с редиректов":
-                raw_redirect_links_rows.append(
-                    {
-                        "Referring page URL": _pick_value(row, ("referring page url",)) or "",
-                        "Referring page HTTP code": _pick_value(row, ("referring page http code", "http code", "status")) or "",
-                        "Domain rating": _pick_value(row, ("domain rating", "dr")) or "",
-                        "UR": _pick_value(row, ("ur", "url rating")) or "",
-                        "Domain traffic": _pick_value(row, ("domain traffic", "traffic")) or "",
-                        "Target URL": _pick_value(row, ("target url",)) or "",
-                    }
-                )
+                if len(raw_redirect_links_rows) < MAX_RAW_TABLE_ROWS:
+                    raw_redirect_links_rows.append(
+                        {
+                            "Referring page URL": _pick_value(row, ("referring page url",)) or "",
+                            "Referring page HTTP code": _pick_value(row, ("referring page http code", "http code", "status")) or "",
+                            "Domain rating": _pick_value(row, ("domain rating", "dr")) or "",
+                            "UR": _pick_value(row, ("ur", "url rating")) or "",
+                            "Domain traffic": _pick_value(row, ("domain traffic", "traffic")) or "",
+                            "Target URL": _pick_value(row, ("target url",)) or "",
+                        }
+                    )
             elif sheet_name == "Дубли без нашего сайта":
-                raw_duplicates_without_our_rows.append(
-                    {
-                        "Referring page URL": _pick_value(row, ("referring page url",)) or "",
-                        "Target URL": _pick_value(row, ("target url",)) or "",
-                        "Anchor": _pick_value(row, ("anchor",)) or "",
-                        "Domain Rating": _pick_value(row, ("domain rating", "dr")) or "",
-                        "UR": _pick_value(row, ("ur", "url rating")) or "",
-                        "Domain traffic": _pick_value(row, ("domain traffic", "traffic")) or "",
-                        "Nofollow": _pick_value(row, ("nofollow",)) or "",
-                        "Lost status": _pick_value(row, ("lost status",)) or "",
-                    }
-                )
+                if len(raw_duplicates_without_our_rows) < MAX_RAW_TABLE_ROWS:
+                    raw_duplicates_without_our_rows.append(
+                        {
+                            "Referring page URL": _pick_value(row, ("referring page url",)) or "",
+                            "Target URL": _pick_value(row, ("target url",)) or "",
+                            "Anchor": _pick_value(row, ("anchor",)) or "",
+                            "Domain Rating": _pick_value(row, ("domain rating", "dr")) or "",
+                            "UR": _pick_value(row, ("ur", "url rating")) or "",
+                            "Domain traffic": _pick_value(row, ("domain traffic", "traffic")) or "",
+                            "Nofollow": _pick_value(row, ("nofollow",)) or "",
+                            "Lost status": _pick_value(row, ("lost status",)) or "",
+                        }
+                    )
             normalized = _normalize_backlink_row(row)
             if not normalized["source_domain"]:
                 continue
@@ -706,6 +749,8 @@ def run_link_profile_audit(
             normalized_rows.append(normalized)
             valid_rows += 1
         file_summaries.append({"file": filename, "rows": len(rows), "valid_rows": valid_rows})
+        if row_limit_hit:
+            break
 
     if (not batch_rows) and auto_batch_rows:
         batch_rows = auto_batch_rows
@@ -1528,6 +1573,19 @@ def run_link_profile_audit(
         warnings.append("Часть ссылок без явного признака dofollow/nofollow")
     if not _parse_keywords(brand_keywords):
         warnings.append("Словарь brand keywords не передан, использованы автоматически выведенные брендовые токены")
+    if row_limit_hit:
+        warnings.append(
+            f"Обработан лимит {MAX_LINK_PROFILE_ROWS} строк для стабильной работы. "
+            "Для полного охвата разделите выгрузку на части."
+        )
+    if (
+        len(raw_homepage_links_rows) >= MAX_RAW_TABLE_ROWS
+        or len(raw_redirect_links_rows) >= MAX_RAW_TABLE_ROWS
+        or len(raw_duplicates_without_our_rows) >= MAX_RAW_TABLE_ROWS
+    ):
+        warnings.append(
+            f"Сырые таблицы ограничены до {MAX_RAW_TABLE_ROWS} строк на блок для стабильной работы интерфейса."
+        )
 
     summary = {
         "our_domain": domain,
@@ -1765,6 +1823,13 @@ def run_link_profile_audit(
         ),
     }
 
+    def _cap_rows(rows: List[Dict[str, Any]], limit: int = MAX_RESULT_TABLE_ROWS) -> List[Dict[str, Any]]:
+        if not isinstance(rows, list):
+            return []
+        if len(rows) <= limit:
+            return rows
+        return rows[:limit]
+
     result = {
         "task_type": "link_profile_audit",
         "url": domain,
@@ -1780,117 +1845,117 @@ def run_link_profile_audit(
             },
             "source_files": file_summaries,
             "outputs": {
-                "competitorAnalysis": {"rows": competitor_rows},
-                "anchorAnalysis": {"rows": top_anchors},
-                "duplicates": {"rows": duplicates_with_our},
-                "additionalMetrics": {"rows": dr_bucket_rows},
+                "competitorAnalysis": {"rows": _cap_rows(competitor_rows)},
+                "anchorAnalysis": {"rows": _cap_rows(top_anchors)},
+                "duplicates": {"rows": _cap_rows(duplicates_with_our)},
+                "additionalMetrics": {"rows": _cap_rows(dr_bucket_rows)},
                 "combinedOutput": {"rows": []},
             },
             "tables": {
-                "competitor_analysis": competitor_rows,
-                "anchor_analysis": top_anchors,
-                "anchor_word_analysis": anchor_word_rows,
-                "duplicates_with_our_site": duplicates_with_our,
-                "duplicates_with_two_competitors": duplicates_without_our,
-                "single_competitor_domains": single_competitor,
-                "single_our_domains": single_our,
-                "priority_domains": priority_domains,
-                "priority_score_domains": priority_score_domains,
-                "our_site_overview": our_site_rows,
-                "comparison_overview": comparison_rows,
-                "benchmark_overview": benchmark_rows,
-                "dr_stats": dr_stats_rows,
-                "dr_buckets": dr_bucket_rows,
-                "dr_buckets_our_site": dr_bucket_our_rows,
-                "dr_buckets_competitors": dr_bucket_comp_rows,
-                "zones": zone_rows,
-                "follow_types": follow_rows,
-                "follow_mix_pct": follow_mix_rows,
-                "follow_domain_mix_pct": follow_domain_mix_rows,
-                "follow_types_detailed": follow_detail_rows,
-                "lost_status_mix": lost_status_rows,
-                "http_class_mix": http_class_rows,
-                "link_type_mix": link_type_mix_rows,
-                "language_mix": language_mix_rows,
-                "anchor_mix_pct": anchor_mix_rows,
-                "donors_with_redirect_301": redirect_301_rows,
-                "donors_homepage": homepage_donor_rows,
-                "brand_keywords_auto": brand_rows,
-                "source_files": file_summaries,
-                "link_types_by_competitor": link_types_by_competitor,
-                "http_codes_by_competitor": http_codes_by_competitor,
-                "languages_by_competitor": languages_by_competitor,
-                "competitor_quality": competitor_quality_rows,
-                "competitor_ranking": competitor_rank_rows,
-                "opportunity_domains": opportunity_domains_rows,
-                "ready_buy_domains": ready_buy_rows,
-                "dr_distribution_matrix": dr_distribution_matrix_rows,
-                "analysis_data_sections": imported_analysis_sections,
-                "raw_homepage_links": raw_homepage_links_rows,
-                "raw_redirect_links": raw_redirect_links_rows,
-                "raw_duplicates_without_our": raw_duplicates_without_our_rows,
-                "executive_kpi": executive_kpi_rows,
-                "profile_structure": profile_structure_rows,
-                "priority_dashboard": priority_dashboard_rows,
-                "action_queue": action_queue_rows,
+                "competitor_analysis": _cap_rows(competitor_rows),
+                "anchor_analysis": _cap_rows(top_anchors),
+                "anchor_word_analysis": _cap_rows(anchor_word_rows),
+                "duplicates_with_our_site": _cap_rows(duplicates_with_our),
+                "duplicates_with_two_competitors": _cap_rows(duplicates_without_our),
+                "single_competitor_domains": _cap_rows(single_competitor),
+                "single_our_domains": _cap_rows(single_our),
+                "priority_domains": _cap_rows(priority_domains),
+                "priority_score_domains": _cap_rows(priority_score_domains),
+                "our_site_overview": _cap_rows(our_site_rows),
+                "comparison_overview": _cap_rows(comparison_rows),
+                "benchmark_overview": _cap_rows(benchmark_rows),
+                "dr_stats": _cap_rows(dr_stats_rows),
+                "dr_buckets": _cap_rows(dr_bucket_rows),
+                "dr_buckets_our_site": _cap_rows(dr_bucket_our_rows),
+                "dr_buckets_competitors": _cap_rows(dr_bucket_comp_rows),
+                "zones": _cap_rows(zone_rows),
+                "follow_types": _cap_rows(follow_rows),
+                "follow_mix_pct": _cap_rows(follow_mix_rows),
+                "follow_domain_mix_pct": _cap_rows(follow_domain_mix_rows),
+                "follow_types_detailed": _cap_rows(follow_detail_rows),
+                "lost_status_mix": _cap_rows(lost_status_rows),
+                "http_class_mix": _cap_rows(http_class_rows),
+                "link_type_mix": _cap_rows(link_type_mix_rows),
+                "language_mix": _cap_rows(language_mix_rows),
+                "anchor_mix_pct": _cap_rows(anchor_mix_rows),
+                "donors_with_redirect_301": _cap_rows(redirect_301_rows),
+                "donors_homepage": _cap_rows(homepage_donor_rows),
+                "brand_keywords_auto": _cap_rows(brand_rows),
+                "source_files": _cap_rows(file_summaries),
+                "link_types_by_competitor": _cap_rows(link_types_by_competitor),
+                "http_codes_by_competitor": _cap_rows(http_codes_by_competitor),
+                "languages_by_competitor": _cap_rows(languages_by_competitor),
+                "competitor_quality": _cap_rows(competitor_quality_rows),
+                "competitor_ranking": _cap_rows(competitor_rank_rows),
+                "opportunity_domains": _cap_rows(opportunity_domains_rows),
+                "ready_buy_domains": _cap_rows(ready_buy_rows),
+                "dr_distribution_matrix": _cap_rows(dr_distribution_matrix_rows),
+                "analysis_data_sections": [{"title": s.get("title"), "rows": _cap_rows(s.get("rows") or [])} for s in imported_analysis_sections],
+                "raw_homepage_links": _cap_rows(raw_homepage_links_rows),
+                "raw_redirect_links": _cap_rows(raw_redirect_links_rows),
+                "raw_duplicates_without_our": _cap_rows(raw_duplicates_without_our_rows),
+                "executive_kpi": _cap_rows(executive_kpi_rows),
+                "profile_structure": _cap_rows(profile_structure_rows),
+                "priority_dashboard": _cap_rows(priority_dashboard_rows),
+                "action_queue": _cap_rows(action_queue_rows),
                 "ourSiteTables": [
-                    {"title": "Приоритеты SEO (первый экран)", "rows": priority_dashboard_rows},
-                    {"title": "Очередь действий (что делать первым)", "rows": action_queue_rows},
-                    {"title": "KPI по нашему сайту vs среднее конкурентов", "rows": executive_kpi_rows},
-                    {"title": "Структура ссылочного профиля (наш сайт)", "rows": profile_structure_rows},
-                    {"title": "Наш сайт: доноры", "rows": our_site_rows},
-                    {"title": "Ссылки с главных (raw)", "rows": raw_homepage_links_rows},
-                    {"title": "Ссылки с редиректов (raw)", "rows": raw_redirect_links_rows},
-                    {"title": "Дубликаты без нашего сайта (raw)", "rows": raw_duplicates_without_our_rows},
+                    {"title": "Приоритеты SEO (первый экран)", "rows": _cap_rows(priority_dashboard_rows)},
+                    {"title": "Очередь действий (что делать первым)", "rows": _cap_rows(action_queue_rows)},
+                    {"title": "KPI по нашему сайту vs среднее конкурентов", "rows": _cap_rows(executive_kpi_rows)},
+                    {"title": "Структура ссылочного профиля (наш сайт)", "rows": _cap_rows(profile_structure_rows)},
+                    {"title": "Наш сайт: доноры", "rows": _cap_rows(our_site_rows)},
+                    {"title": "Ссылки с главных (raw)", "rows": _cap_rows(raw_homepage_links_rows)},
+                    {"title": "Ссылки с редиректов (raw)", "rows": _cap_rows(raw_redirect_links_rows)},
+                    {"title": "Дубликаты без нашего сайта (raw)", "rows": _cap_rows(raw_duplicates_without_our_rows)},
                 ],
                 "competitorTables": [
-                    {"title": "Конкуренты", "rows": competitor_rows},
-                    {"title": "Рейтинг конкурентов (DR / Backlinks / Follow%)", "rows": competitor_rank_rows},
-                    {"title": "Качество профиля конкурентов (0-100)", "rows": competitor_quality_rows},
+                    {"title": "Конкуренты", "rows": _cap_rows(competitor_rows)},
+                    {"title": "Рейтинг конкурентов (DR / Backlinks / Follow%)", "rows": _cap_rows(competitor_rank_rows)},
+                    {"title": "Качество профиля конкурентов (0-100)", "rows": _cap_rows(competitor_quality_rows)},
                 ],
                 "comparisonTables": [
-                    {"title": "Сравнение с конкурентами", "rows": comparison_rows},
-                    {"title": "Бенчмарк avg/median по конкурентам", "rows": benchmark_rows},
-                    {"title": "Бенчмарк по анкорам (avg/median)", "rows": anchor_mix_benchmark_rows},
-                    {"title": "Бенчмарк по типам ссылок (avg/median)", "rows": link_type_benchmark_rows},
-                    {"title": "Бенчмарк по HTTP кодам (avg/median)", "rows": http_benchmark_rows},
-                    {"title": "Бенчмарк follow/home/internal (avg/median)", "rows": follow_home_internal_benchmark_rows},
-                    {"title": "DR распределение доноров по доменам (%)", "rows": dr_distribution_matrix_rows},
-                    {"title": "Матрица возможностей доноров", "rows": opportunity_domains_rows},
-                    {"title": "Ready-to-buy доноры (GGL/Miralinks)", "rows": ready_buy_rows},
-                    *imported_analysis_sections,
+                    {"title": "Сравнение с конкурентами", "rows": _cap_rows(comparison_rows)},
+                    {"title": "Бенчмарк avg/median по конкурентам", "rows": _cap_rows(benchmark_rows)},
+                    {"title": "Бенчмарк по анкорам (avg/median)", "rows": _cap_rows(anchor_mix_benchmark_rows)},
+                    {"title": "Бенчмарк по типам ссылок (avg/median)", "rows": _cap_rows(link_type_benchmark_rows)},
+                    {"title": "Бенчмарк по HTTP кодам (avg/median)", "rows": _cap_rows(http_benchmark_rows)},
+                    {"title": "Бенчмарк follow/home/internal (avg/median)", "rows": _cap_rows(follow_home_internal_benchmark_rows)},
+                    {"title": "DR распределение доноров по доменам (%)", "rows": _cap_rows(dr_distribution_matrix_rows)},
+                    {"title": "Матрица возможностей доноров", "rows": _cap_rows(opportunity_domains_rows)},
+                    {"title": "Ready-to-buy доноры (GGL/Miralinks)", "rows": _cap_rows(ready_buy_rows)},
+                    *[{"title": str(s.get("title") or "Анализ"), "rows": _cap_rows(s.get("rows") or [])} for s in imported_analysis_sections],
                 ],
                 "additionalTables": [
-                    {"title": "DR статистика", "rows": dr_stats_rows},
-                    {"title": "DR buckets", "rows": dr_bucket_rows},
-                    {"title": "DR buckets: наш сайт", "rows": dr_bucket_our_rows},
-                    {"title": "DR buckets: конкуренты", "rows": dr_bucket_comp_rows},
-                    {"title": "Domain zones", "rows": zone_rows},
-                    {"title": "Follow / Nofollow", "rows": follow_rows},
-                    {"title": "Follow / Nofollow %", "rows": follow_mix_rows},
-                    {"title": "Follow/Nofollow по доменам %", "rows": follow_domain_mix_rows},
-                    {"title": "Follow / Nofollow detailed", "rows": follow_detail_rows},
-                    {"title": "Anchor mix %", "rows": anchor_mix_rows},
-                    {"title": "Lost status mix", "rows": lost_status_rows},
-                    {"title": "HTTP class mix", "rows": http_class_rows},
-                    {"title": "Link type mix", "rows": link_type_mix_rows},
-                    {"title": "Language mix", "rows": language_mix_rows},
-                    {"title": "Donors with redirect 301", "rows": redirect_301_rows},
-                    {"title": "Donors from homepage", "rows": homepage_donor_rows},
-                    {"title": "Link types by competitor", "rows": link_types_by_competitor},
-                    {"title": "HTTP codes by competitor", "rows": http_codes_by_competitor},
-                    {"title": "Languages by competitor", "rows": languages_by_competitor},
-                    {"title": "Auto brand keywords", "rows": brand_rows},
-                    {"title": "Source files", "rows": file_summaries},
+                    {"title": "DR статистика", "rows": _cap_rows(dr_stats_rows)},
+                    {"title": "DR buckets", "rows": _cap_rows(dr_bucket_rows)},
+                    {"title": "DR buckets: наш сайт", "rows": _cap_rows(dr_bucket_our_rows)},
+                    {"title": "DR buckets: конкуренты", "rows": _cap_rows(dr_bucket_comp_rows)},
+                    {"title": "Domain zones", "rows": _cap_rows(zone_rows)},
+                    {"title": "Follow / Nofollow", "rows": _cap_rows(follow_rows)},
+                    {"title": "Follow / Nofollow %", "rows": _cap_rows(follow_mix_rows)},
+                    {"title": "Follow/Nofollow по доменам %", "rows": _cap_rows(follow_domain_mix_rows)},
+                    {"title": "Follow / Nofollow detailed", "rows": _cap_rows(follow_detail_rows)},
+                    {"title": "Anchor mix %", "rows": _cap_rows(anchor_mix_rows)},
+                    {"title": "Lost status mix", "rows": _cap_rows(lost_status_rows)},
+                    {"title": "HTTP class mix", "rows": _cap_rows(http_class_rows)},
+                    {"title": "Link type mix", "rows": _cap_rows(link_type_mix_rows)},
+                    {"title": "Language mix", "rows": _cap_rows(language_mix_rows)},
+                    {"title": "Donors with redirect 301", "rows": _cap_rows(redirect_301_rows)},
+                    {"title": "Donors from homepage", "rows": _cap_rows(homepage_donor_rows)},
+                    {"title": "Link types by competitor", "rows": _cap_rows(link_types_by_competitor)},
+                    {"title": "HTTP codes by competitor", "rows": _cap_rows(http_codes_by_competitor)},
+                    {"title": "Languages by competitor", "rows": _cap_rows(languages_by_competitor)},
+                    {"title": "Auto brand keywords", "rows": _cap_rows(brand_rows)},
+                    {"title": "Source files", "rows": _cap_rows(file_summaries)},
                 ],
                 "duplicatesTables": [
-                    {"title": "Duplicates with our site", "rows": duplicates_with_our},
-                    {"title": "Duplicates with two competitors", "rows": duplicates_without_our},
-                    {"title": "Single competitor domains", "rows": single_competitor},
-                    {"title": "Single our domains", "rows": single_our},
-                    {"title": "Priority domains", "rows": priority_domains},
-                    {"title": "Priority score domains", "rows": priority_score_domains},
-                    {"title": "Competitors analysis", "rows": competitor_rows},
+                    {"title": "Duplicates with our site", "rows": _cap_rows(duplicates_with_our)},
+                    {"title": "Duplicates with two competitors", "rows": _cap_rows(duplicates_without_our)},
+                    {"title": "Single competitor domains", "rows": _cap_rows(single_competitor)},
+                    {"title": "Single our domains", "rows": _cap_rows(single_our)},
+                    {"title": "Priority domains", "rows": _cap_rows(priority_domains)},
+                    {"title": "Priority score domains", "rows": _cap_rows(priority_score_domains)},
+                    {"title": "Competitors analysis", "rows": _cap_rows(competitor_rows)},
                 ],
             },
             "anchor_breakdown": dict(anchor_type_counter),
