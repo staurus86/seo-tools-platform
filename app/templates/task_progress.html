@@ -1748,6 +1748,72 @@ async function downloadOnpageXlsxReport() {
     }
 }
 
+async function downloadLinkProfileDocxReport() {
+    if (!linkProfileData) {
+        alert('Нет данных аудита ссылочного профиля');
+        return;
+    }
+    try {
+        const response = await fetch('/api/export/link-profile-docx', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task_id: linkProfileData.task_id || taskId })
+        });
+        const payloadType = response.headers.get('content-type') || '';
+        if (!response.ok || payloadType.includes('application/json')) {
+            const err = await response.json();
+            throw new Error(err.error || `HTTP ${response.status}`);
+        }
+        const blob = await response.blob();
+        const href = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const cd = response.headers.get('Content-Disposition') || '';
+        const m = cd.match(/filename=([^;]+)/i);
+        a.download = m ? m[1].replace(/\"/g, '') : `link-profile-report-${new Date().toISOString().slice(0,10)}.docx`;
+        a.href = href;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(href);
+    } catch (error) {
+        console.error('Ошибка скачивания Link Profile DOCX:', error);
+        alert(error.message || 'Не удалось скачать DOCX-отчет');
+    }
+}
+
+async function downloadLinkProfileXlsxReport() {
+    if (!linkProfileData) {
+        alert('Нет данных аудита ссылочного профиля');
+        return;
+    }
+    try {
+        const response = await fetch('/api/export/link-profile-xlsx', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task_id: linkProfileData.task_id || taskId })
+        });
+        const payloadType = response.headers.get('content-type') || '';
+        if (!response.ok || payloadType.includes('application/json')) {
+            const err = await response.json();
+            throw new Error(err.error || `HTTP ${response.status}`);
+        }
+        const blob = await response.blob();
+        const href = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const cd = response.headers.get('Content-Disposition') || '';
+        const m = cd.match(/filename=([^;]+)/i);
+        a.download = m ? m[1].replace(/\"/g, '') : `link-profile-report-${new Date().toISOString().slice(0,10)}.xlsx`;
+        a.href = href;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(href);
+    } catch (error) {
+        console.error('Ошибка скачивания Link Profile XLSX:', error);
+        alert(error.message || 'Не удалось скачать XLSX-отчет');
+    }
+}
+
 let mobileLightboxItems = [];
 let mobileLightboxIndex = 0;
 
@@ -1882,6 +1948,14 @@ function generateLinkProfileAuditHTML(data) {
             <div class="bg-white rounded-xl shadow-md p-6">
                 <h3 class="text-xl font-semibold mb-2">Аудит ссылочного профиля</h3>
                 <p class="text-sm text-slate-600">Структура результатов: Links / Anchors / Duplicates / Additional.</p>
+                <div class="mt-4 flex flex-wrap gap-2">
+                    <button onclick="downloadLinkProfileDocxReport()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition text-sm">
+                        <i class="fas fa-file-word mr-1"></i>Скачать DOCX
+                    </button>
+                    <button onclick="downloadLinkProfileXlsxReport()" class="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition text-sm">
+                        <i class="fas fa-file-excel mr-1"></i>Скачать XLSX
+                    </button>
+                </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

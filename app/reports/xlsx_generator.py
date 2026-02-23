@@ -4210,6 +4210,106 @@ class XLSXGenerator:
         wb.close()
         return filepath
 
+    def generate_link_profile_report(self, task_id: str, data: Dict[str, Any]) -> str:
+        """Generate XLSX report for link_profile_audit."""
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Сводка"
+
+        header_style = self._create_header_style()
+        cell_style = self._create_cell_style()
+
+        results = data.get("results", {}) or {}
+        summary = results.get("summary", {}) or {}
+        tables = results.get("tables", {}) or {}
+        warnings = results.get("warnings", []) or []
+        errors = results.get("errors", []) or []
+
+        ws["A1"] = "Отчет: Аудит ссылочного профиля"
+        self._apply_style(ws["A1"], header_style)
+        ws.merge_cells("A1:D1")
+        ws["A2"] = "Домен"
+        ws["B2"] = data.get("url", summary.get("our_domain", ""))
+        ws["A3"] = "Дата"
+        ws["B3"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        summary_rows = [
+            ("Строк ссылок", summary.get("rows_total", 0)),
+            ("Уникальных доноров", summary.get("unique_ref_domains", 0)),
+            ("Уникальных конкурентов", summary.get("unique_competitors", 0)),
+            ("Ссылок на наш домен", summary.get("our_links", 0)),
+            ("Dofollow", summary.get("dofollow", 0)),
+            ("Nofollow", summary.get("nofollow", 0)),
+            ("Unknown follow", summary.get("unknown_follow", 0)),
+            ("Средний DR", summary.get("avg_dr", "")),
+        ]
+        ws["A5"] = "Метрика"
+        ws["B5"] = "Значение"
+        self._apply_style(ws["A5"], header_style)
+        self._apply_style(ws["B5"], header_style)
+        row_idx = 6
+        for k, v in summary_rows:
+            ws.cell(row=row_idx, column=1, value=k)
+            ws.cell(row=row_idx, column=2, value=v)
+            self._apply_style(ws.cell(row=row_idx, column=1), cell_style)
+            self._apply_style(ws.cell(row=row_idx, column=2), cell_style)
+            row_idx += 1
+        ws.column_dimensions["A"].width = 38
+        ws.column_dimensions["B"].width = 26
+        ws.column_dimensions["C"].width = 24
+        ws.column_dimensions["D"].width = 24
+
+        def _write_sheet(title: str, rows: List[Dict[str, Any]]) -> None:
+            sheet = wb.create_sheet(title[:31])
+            if not rows:
+                sheet["A1"] = "Нет данных"
+                return
+            cols = list((rows[0] or {}).keys())
+            for col_idx, col_name in enumerate(cols, start=1):
+                c = sheet.cell(row=1, column=col_idx, value=col_name)
+                self._apply_style(c, header_style)
+                sheet.column_dimensions[get_column_letter(col_idx)].width = min(60, max(12, len(str(col_name)) + 4))
+            for r_idx, item in enumerate(rows, start=2):
+                for c_idx, col_name in enumerate(cols, start=1):
+                    c = sheet.cell(row=r_idx, column=c_idx, value=item.get(col_name))
+                    self._apply_style(c, cell_style)
+
+        _write_sheet("Наш сайт", tables.get("our_site_overview", []) or [])
+        _write_sheet("Конкуренты", tables.get("competitor_analysis", []) or [])
+        _write_sheet("Сравнение", tables.get("comparison_overview", []) or [])
+        _write_sheet("Анкоры", tables.get("anchor_analysis", []) or [])
+        _write_sheet("Слова анкоров", tables.get("anchor_word_analysis", []) or [])
+        _write_sheet("Дубликаты с нами", tables.get("duplicates_with_our_site", []) or [])
+        _write_sheet("Priority domains", tables.get("priority_domains", []) or [])
+        _write_sheet("DR buckets", tables.get("dr_buckets", []) or [])
+        _write_sheet("Доменные зоны", tables.get("zones", []) or [])
+
+        notes_ws = wb.create_sheet("Warnings")
+        notes_ws["A1"] = "Тип"
+        notes_ws["B1"] = "Текст"
+        self._apply_style(notes_ws["A1"], header_style)
+        self._apply_style(notes_ws["B1"], header_style)
+        cur = 2
+        for item in errors:
+            notes_ws.cell(row=cur, column=1, value="error")
+            notes_ws.cell(row=cur, column=2, value=item)
+            self._apply_style(notes_ws.cell(row=cur, column=1), cell_style)
+            self._apply_style(notes_ws.cell(row=cur, column=2), cell_style)
+            cur += 1
+        for item in warnings:
+            notes_ws.cell(row=cur, column=1, value="warning")
+            notes_ws.cell(row=cur, column=2, value=item)
+            self._apply_style(notes_ws.cell(row=cur, column=1), cell_style)
+            self._apply_style(notes_ws.cell(row=cur, column=2), cell_style)
+            cur += 1
+        notes_ws.column_dimensions["A"].width = 14
+        notes_ws.column_dimensions["B"].width = 120
+
+        filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
+        self._save_workbook(wb, filepath)
+        wb.close()
+        return filepath
+
     def generate_report(self, task_id: str, task_type: str, data: Dict[str, Any]) -> str:
         """Dispatch report generation by task type."""
         generators = {
@@ -4221,6 +4321,7 @@ class XLSXGenerator:
             'bot_check': self.generate_bot_report,
             'site_audit_pro': self.generate_site_audit_pro_report,
             'onpage_audit': self.generate_onpage_report,
+            'link_profile_audit': self.generate_link_profile_report,
         }
         
         generator = generators.get(task_type, self.generate_site_analyze_report)

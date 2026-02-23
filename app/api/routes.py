@@ -2850,6 +2850,94 @@ async def export_onpage_xlsx(data: ExportRequest):
         return {"error": str(e)}
 
 
+@router.post("/export/link-profile-docx")
+async def export_link_profile_docx(data: ExportRequest):
+    """Export link profile audit report to DOCX."""
+    import os
+    import re
+    from fastapi.responses import Response
+    from app.reports.docx_generator import docx_generator
+
+    try:
+        task_id = data.task_id
+        task = get_task_result(task_id)
+        if not task:
+            return {"error": "Task not found", "task_id": task_id}
+
+        task_type = task.get("task_type")
+        if task_type != "link_profile_audit":
+            return {"error": f"Unsupported task type for link profile DOCX export: {task_type}"}
+
+        task_result = task.get("result", {})
+        url = task.get("url", "") or task_result.get("url", "")
+        report_payload = {
+            "url": url,
+            "results": task_result.get("results", task_result),
+        }
+        filepath = docx_generator.generate_link_profile_report(task_id, report_payload)
+        if not filepath or not os.path.exists(filepath):
+            return {"error": "Failed to generate report"}
+        append_task_artifact(task_id, filepath, kind="export")
+
+        with open(filepath, "rb") as f:
+            content = f.read()
+
+        domain = re.sub(r"[^a-zA-Z0-9._-]+", "_", (urlparse(url).netloc or str(url) or "site"))
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+        filename = f"link_profile_report_{domain}_{timestamp}.docx"
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.post("/export/link-profile-xlsx")
+async def export_link_profile_xlsx(data: ExportRequest):
+    """Export link profile audit report to XLSX."""
+    import os
+    import re
+    from fastapi.responses import Response
+    from app.reports.xlsx_generator import xlsx_generator
+
+    try:
+        task_id = data.task_id
+        task = get_task_result(task_id)
+        if not task:
+            return {"error": "Task not found", "task_id": task_id}
+
+        task_type = task.get("task_type")
+        if task_type != "link_profile_audit":
+            return {"error": f"Unsupported task type for link profile XLSX export: {task_type}"}
+
+        task_result = task.get("result", {})
+        url = task.get("url", "") or task_result.get("url", "")
+        report_payload = {
+            "url": url,
+            "results": task_result.get("results", task_result),
+        }
+        filepath = xlsx_generator.generate_link_profile_report(task_id, report_payload)
+        if not filepath or not os.path.exists(filepath):
+            return {"error": "Failed to generate report"}
+        append_task_artifact(task_id, filepath, kind="export")
+
+        with open(filepath, "rb") as f:
+            content = f.read()
+
+        domain = re.sub(r"[^a-zA-Z0-9._-]+", "_", (urlparse(url).netloc or str(url) or "site"))
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+        filename = f"link_profile_report_{domain}_{timestamp}.xlsx"
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.get("/mobile-artifacts/{task_id}/{filename}")
 async def get_mobile_artifact(task_id: str, filename: str):
     """Serve mobile screenshot artifact for UI gallery."""

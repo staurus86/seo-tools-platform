@@ -1786,6 +1786,86 @@ class DOCXGenerator:
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)
         return filepath
+
+    def generate_link_profile_report(self, task_id: str, data: Dict[str, Any]) -> str:
+        """Generate DOCX report for link_profile_audit."""
+        doc = Document()
+        title = doc.add_heading("Отчет: Аудит ссылочного профиля", 0)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        results = data.get("results", {}) or {}
+        summary = results.get("summary", {}) or {}
+        tables = results.get("tables", {}) or {}
+        prompts = results.get("prompts", {}) or {}
+        warnings = results.get("warnings", []) or []
+        errors = results.get("errors", []) or []
+        keywords = results.get("keywords", {}) or {}
+
+        doc.add_paragraph(f"Домен: {data.get('url', summary.get('our_domain', 'н/д'))}")
+        doc.add_paragraph(f"Сформирован: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+        self._add_heading(doc, "1. Сводка", level=1)
+        summary_rows = [
+            ["Строк ссылок", summary.get("rows_total", 0)],
+            ["Уникальных доноров", summary.get("unique_ref_domains", 0)],
+            ["Уникальных конкурентов", summary.get("unique_competitors", 0)],
+            ["Ссылок на наш домен", summary.get("our_links", 0)],
+            ["Dofollow", summary.get("dofollow", 0)],
+            ["Nofollow", summary.get("nofollow", 0)],
+            ["Unknown follow", summary.get("unknown_follow", 0)],
+            ["Средний DR", summary.get("avg_dr", "н/д")],
+        ]
+        self._add_table(doc, ["Метрика", "Значение"], summary_rows)
+
+        self._add_heading(doc, "2. Ключевые таблицы", level=1)
+        top_comp = tables.get("competitor_analysis", []) or []
+        if top_comp:
+            self._add_heading(doc, "2.1 Конкуренты (топ)", level=2)
+            rows = [[x.get("competitor_domain", ""), x.get("links", 0), x.get("shared_with_our_site", 0)] for x in top_comp[:20]]
+            self._add_table(doc, ["Домен", "Ссылки", "Общие доноры"], rows)
+
+        top_prio = tables.get("priority_domains", []) or []
+        if top_prio:
+            self._add_heading(doc, "2.2 Priority domains", level=2)
+            rows = [[x.get("domain", ""), x.get("targets_count", 0), x.get("competitors_count", 0)] for x in top_prio[:30]]
+            self._add_table(doc, ["Донор", "Targets", "Конкуренты"], rows)
+
+        self._add_heading(doc, "3. Анкоры", level=1)
+        anchor_types = results.get("anchor_breakdown", {}) or {}
+        if anchor_types:
+            rows = [[k, v] for k, v in anchor_types.items()]
+            self._add_table(doc, ["Тип анкоров", "Количество"], rows)
+        top_anchors = tables.get("anchor_analysis", []) or []
+        if top_anchors:
+            self._add_heading(doc, "3.1 Топ анкоров", level=2)
+            rows = [[x.get("anchor", ""), x.get("count", 0)] for x in top_anchors[:30]]
+            self._add_table(doc, ["Анкор", "Количество"], rows)
+
+        self._add_heading(doc, "4. Рекомендации и предупреждения", level=1)
+        if errors:
+            self._add_heading(doc, "4.1 Ошибки", level=2)
+            for item in errors[:50]:
+                doc.add_paragraph(str(item), style="List Bullet")
+        if warnings:
+            self._add_heading(doc, "4.2 Предупреждения", level=2)
+            for item in warnings[:50]:
+                doc.add_paragraph(str(item), style="List Bullet")
+
+        self._add_heading(doc, "5. План действий", level=1)
+        for key in ("ourSite", "competitors", "comparison", "plan"):
+            text = prompts.get(key)
+            if text:
+                doc.add_paragraph(f"{key}: {text}")
+
+        derived = keywords.get("derivedBrandKeywords", []) or []
+        if derived:
+            self._add_heading(doc, "6. Авто-брендовые ключи", level=1)
+            doc.add_paragraph(", ".join(map(str, derived[:50])))
+
+        filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
+        self._save_document(doc, filepath)
+        return filepath
+
     def generate_report(self, task_id: str, task_type: str, data: Dict[str, Any]) -> str:
         """Генерирует отчет в зависимости от типа задачи."""
         generators = {
@@ -1797,6 +1877,7 @@ class DOCXGenerator:
             'bot_check': self.generate_bot_report,
             'site_audit_pro': self.generate_site_audit_pro_report,
             'onpage_audit': self.generate_onpage_report,
+            'link_profile_audit': self.generate_link_profile_report,
         }
         
         generator = generators.get(task_type, self.generate_site_analyze_report)
