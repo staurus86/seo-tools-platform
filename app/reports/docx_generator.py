@@ -1826,19 +1826,30 @@ class DOCXGenerator:
         self._add_table(doc, ["Метрика", "Значение"], summary_rows)
 
         self._add_heading(doc, "2. Ключевые таблицы", level=1)
+        kpi_rows = tables.get("executive_kpi", []) or []
+        if kpi_rows:
+            self._add_heading(doc, "2.1 KPI сводка", level=2)
+            rows = [[x.get("Показатель",""), x.get("Наш сайт",""), x.get("Среднее конкурентов",""), x.get("Разница (п.п.)","")] for x in _lim(kpi_rows)]
+            self._add_table(doc, ["Показатель","Наш сайт","Среднее конкурентов","Разница"], rows)
+        profile_rows = tables.get("profile_structure", []) or []
+        if profile_rows:
+            self._add_heading(doc, "2.2 Структура профиля", level=2)
+            rows = [[x.get("Метрика",""), x.get("Значение","")] for x in _lim(profile_rows)]
+            self._add_table(doc, ["Метрика","Значение"], rows)
+
         top_comp = tables.get("competitor_analysis", []) or []
         if top_comp:
-            self._add_heading(doc, "2.1 Конкуренты (топ)", level=2)
+            self._add_heading(doc, "2.3 Конкуренты (топ)", level=2)
             rows = [[x.get("competitor_domain", ""), x.get("links", 0), x.get("shared_with_our_site", 0)] for x in _lim(top_comp)]
             self._add_table(doc, ["Домен", "Ссылки", "Общие доноры"], rows)
         comp_rank = tables.get("competitor_ranking", []) or []
         if comp_rank:
-            self._add_heading(doc, "2.2 Рейтинг конкурентов", level=2)
+            self._add_heading(doc, "2.4 Рейтинг конкурентов", level=2)
             rows = [[x.get("rank", ""), x.get("competitor_domain", ""), x.get("batch_dr", ""), x.get("batch_backlinks_all", ""), x.get("batch_backlinks_followed_pct", ""), x.get("rank_score", "")] for x in _lim(comp_rank)]
             self._add_table(doc, ["#","Домен","DR","Backlinks","Follow %","Rank score"], rows)
         comp_quality = tables.get("competitor_quality", []) or []
         if comp_quality:
-            self._add_heading(doc, "2.3 Качество профиля конкурентов", level=2)
+            self._add_heading(doc, "2.5 Качество профиля конкурентов", level=2)
             rows = [
                 [
                     x.get("competitor_domain", ""),
@@ -1852,12 +1863,12 @@ class DOCXGenerator:
 
         top_prio = tables.get("priority_domains", []) or []
         if top_prio:
-            self._add_heading(doc, "2.4 Priority domains", level=2)
+            self._add_heading(doc, "2.6 Priority domains", level=2)
             rows = [[x.get("domain", ""), x.get("targets_count", 0), x.get("competitors_count", 0)] for x in _lim(top_prio)]
             self._add_table(doc, ["Донор", "Targets", "Конкуренты"], rows)
         comparison = tables.get("comparison_overview", []) or []
         if comparison:
-            self._add_heading(doc, "2.5 Сравнение с конкурентами", level=2)
+            self._add_heading(doc, "2.7 Сравнение с конкурентами", level=2)
             rows = [
                 [
                     x.get("competitor_domain", ""),
@@ -1871,13 +1882,13 @@ class DOCXGenerator:
             self._add_table(doc, ["Домен", "Общие доноры", "Donor gap %", "Follow gap п.п.", "Lost gap п.п."], rows)
         dr_matrix = tables.get("dr_distribution_matrix", []) or []
         if dr_matrix:
-            self._add_heading(doc, "2.6 DR распределение доноров по доменам (%)", level=2)
+            self._add_heading(doc, "2.8 DR распределение доноров по доменам (%)", level=2)
             cols = ["Домен", "DR 0-9", "DR 10-19", "DR 20-29", "DR 30-39", "DR 40-49", "DR 50-59", "DR 60-69", "DR 70-79", "DR 80-89", "DR 90-100"]
             rows = [[x.get(c, "") for c in cols] for x in _lim(dr_matrix)]
             self._add_table(doc, cols, rows)
         opportunities = tables.get("opportunity_domains", []) or []
         if opportunities:
-            self._add_heading(doc, "2.7 Матрица возможностей доноров", level=2)
+            self._add_heading(doc, "2.9 Матрица возможностей доноров", level=2)
             rows = [
                 [
                     x.get("domain", ""),
@@ -1891,7 +1902,7 @@ class DOCXGenerator:
             self._add_table(doc, ["Донор", "Покрытие конкурентов", "Покрытие %", "Avg DR", "Opportunity score"], rows)
         ready_buy = tables.get("ready_buy_domains", []) or []
         if ready_buy:
-            self._add_heading(doc, "2.8 Ready-to-buy доноры (GGL/Miralinks)", level=2)
+            self._add_heading(doc, "2.10 Ready-to-buy доноры (GGL/Miralinks)", level=2)
             rows = [[x.get("domain",""), x.get("avg_dr",""), x.get("avg_traffic",""), x.get("follow_pct",""), x.get("opportunity_score","")] for x in _lim(ready_buy)]
             self._add_table(doc, ["Домен","Avg DR","Traffic","Follow %","Opportunity"], rows)
 

@@ -12,6 +12,48 @@ from openpyxl import load_workbook
 ProgressCallback = Optional[Callable[[int, str], None]]
 
 
+_MULTI_PART_TLDS = {
+    "co.uk",
+    "org.uk",
+    "gov.uk",
+    "ac.uk",
+    "co.jp",
+    "ne.jp",
+    "or.jp",
+    "com.au",
+    "net.au",
+    "org.au",
+    "co.nz",
+    "com.br",
+    "com.tr",
+    "co.kr",
+    "com.mx",
+    "co.in",
+}
+
+
+def _to_registrable_domain(host: str) -> str:
+    value = (host or "").strip().lower().rstrip(".")
+    if not value:
+        return ""
+    if ":" in value:
+        value = value.split(":", 1)[0]
+    if value.startswith("www."):
+        value = value[4:]
+    if re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}", value):
+        return value
+    parts = [p for p in value.split(".") if p]
+    if len(parts) <= 2:
+        return value
+    tail2 = ".".join(parts[-2:])
+    tail3 = ".".join(parts[-3:])
+    if tail2 in _MULTI_PART_TLDS and len(parts) >= 3:
+        return tail3
+    if re.fullmatch(r"[a-z]{2}", parts[-1]) and parts[-2] in {"co", "com", "net", "org", "gov", "edu", "ac"} and len(parts) >= 3:
+        return tail3
+    return tail2
+
+
 def _parse_keywords(raw: str) -> List[str]:
     if not raw:
         return []
@@ -27,9 +69,7 @@ def _normalize_domain(raw: str) -> str:
         value = f"https://{value}"
     parsed = urlparse(value)
     host = (parsed.netloc or "").lower().strip()
-    if host.startswith("www."):
-        host = host[4:]
-    return host
+    return _to_registrable_domain(host)
 
 
 def _extract_domain(raw: str) -> str:
@@ -41,9 +81,7 @@ def _extract_domain(raw: str) -> str:
     try:
         parsed = urlparse(value)
         host = (parsed.netloc or "").lower().strip()
-        if host.startswith("www."):
-            host = host[4:]
-        return host
+        return _to_registrable_domain(host)
     except Exception:
         return ""
 
@@ -1368,6 +1406,69 @@ def run_link_profile_audit(
         "http_2xx_pct": _pct(http_class_counter.get("2xx", 0), sum(http_class_counter.values())),
     }
 
+    avg_comp_follow = round(mean([float(x.get("follow_pct") or 0.0) for x in competitor_quality_rows]), 2) if competitor_quality_rows else 0.0
+    avg_comp_lost = round(mean([float(x.get("lost_pct") or 0.0) for x in competitor_quality_rows]), 2) if competitor_quality_rows else 0.0
+    avg_comp_quality = round(mean([float(x.get("quality_score_0_100") or 0.0) for x in competitor_quality_rows]), 2) if competitor_quality_rows else 0.0
+    avg_comp_http2xx = round(mean([float(x.get("http_2xx_pct") or 0.0) for x in competitor_quality_rows]), 2) if competitor_quality_rows else 0.0
+
+    executive_kpi_rows = [
+        {
+            "Показатель": "Доля dofollow ссылок, %",
+            "Наш сайт": summary.get("dofollow_pct"),
+            "Среднее конкурентов": avg_comp_follow,
+            "Разница (п.п.)": round(float(summary.get("dofollow_pct") or 0.0) - avg_comp_follow, 2),
+        },
+        {
+            "Показатель": "Доля потерянных ссылок, %",
+            "Наш сайт": summary.get("lost_links_pct"),
+            "Среднее конкурентов": avg_comp_lost,
+            "Разница (п.п.)": round(float(summary.get("lost_links_pct") or 0.0) - avg_comp_lost, 2),
+        },
+        {
+            "Показатель": "Доля 2xx доноров, %",
+            "Наш сайт": summary.get("http_2xx_pct"),
+            "Среднее конкурентов": avg_comp_http2xx,
+            "Разница (п.п.)": round(float(summary.get("http_2xx_pct") or 0.0) - avg_comp_http2xx, 2),
+        },
+        {
+            "Показатель": "Средний DR доноров",
+            "Наш сайт": summary.get("avg_our_dr"),
+            "Среднее конкурентов": round(mean([float(x) for x in comp_dr_values]), 2) if comp_dr_values else None,
+            "Разница (п.п.)": round(float(summary.get("avg_our_dr") or 0.0) - (round(mean([float(x) for x in comp_dr_values]), 2) if comp_dr_values else 0.0), 2),
+        },
+        {
+            "Показатель": "Индекс качества профиля (0-100)",
+            "Наш сайт": round(
+                (float(summary.get("dofollow_pct") or 0.0) * 0.35)
+                + (float(summary.get("http_2xx_pct") or 0.0) * 0.25)
+                + ((100.0 - float(summary.get("lost_links_pct") or 0.0)) * 0.25)
+                + ((100.0 - float(our_metrics.get("homepage_pct", 0.0) or 0.0)) * 0.15),
+                2,
+            ),
+            "Среднее конкурентов": avg_comp_quality,
+            "Разница (п.п.)": round(
+                round(
+                    (float(summary.get("dofollow_pct") or 0.0) * 0.35)
+                    + (float(summary.get("http_2xx_pct") or 0.0) * 0.25)
+                    + ((100.0 - float(summary.get("lost_links_pct") or 0.0)) * 0.25)
+                    + ((100.0 - float(our_metrics.get("homepage_pct", 0.0) or 0.0)) * 0.15),
+                    2,
+                )
+                - avg_comp_quality,
+                2,
+            ),
+        },
+    ]
+
+    profile_structure_rows = [
+        {"Метрика": "Анкоры: безанкорные, %", "Значение": _pct(anchor_type_counter.get("empty", 0), sum(anchor_type_counter.values()))},
+        {"Метрика": "Анкоры: брендовые, %", "Значение": _pct(anchor_type_counter.get("brand", 0), sum(anchor_type_counter.values()))},
+        {"Метрика": "Анкоры: коммерческие, %", "Значение": _pct(anchor_type_counter.get("commercial", 0), sum(anchor_type_counter.values()))},
+        {"Метрика": "Анкоры: спам, %", "Значение": _pct(anchor_type_counter.get("spam", 0), sum(anchor_type_counter.values()))},
+        {"Метрика": "Follow-ссылки на главную, %", "Значение": round(float(our_metrics.get("homepage_follow_pct", 0.0) or 0.0), 2)},
+        {"Метрика": "Follow-ссылки на внутренние, %", "Значение": round(float(our_metrics.get("internal_follow_pct", 0.0) or 0.0), 2)},
+    ]
+
     prompts = {
         "ourSite": (
             f"У сайта {domain} {summary['our_unique_ref_domains']} уникальных доноров. "
@@ -1447,7 +1548,11 @@ def run_link_profile_audit(
                 "opportunity_domains": opportunity_domains_rows,
                 "ready_buy_domains": ready_buy_rows,
                 "dr_distribution_matrix": dr_distribution_matrix_rows,
+                "executive_kpi": executive_kpi_rows,
+                "profile_structure": profile_structure_rows,
                 "ourSiteTables": [
+                    {"title": "KPI по нашему сайту vs среднее конкурентов", "rows": executive_kpi_rows},
+                    {"title": "Структура ссылочного профиля (наш сайт)", "rows": profile_structure_rows},
                     {"title": "Наш сайт: доноры", "rows": our_site_rows},
                 ],
                 "competitorTables": [
