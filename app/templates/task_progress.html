@@ -2139,6 +2139,7 @@ function generateLinkProfileAuditHTML(data) {
                         <button type="button" data-lp-subscope="additional" data-lp-subtab="domains" onclick="switchLinkProfileSubTab('additional','domains')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Domains</button>
                         <button type="button" data-lp-subscope="additional" data-lp-subtab="redirects" onclick="switchLinkProfileSubTab('additional','redirects')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Redirect 301</button>
                         <button type="button" data-lp-subscope="additional" data-lp-subtab="homepage" onclick="switchLinkProfileSubTab('additional','homepage')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Homepage Donors</button>
+                        <button type="button" data-lp-subscope="additional" data-lp-subtab="techmix" onclick="switchLinkProfileSubTab('additional','techmix')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Type/HTTP/Lang</button>
                         <button type="button" data-lp-subscope="additional" data-lp-subtab="brand" onclick="switchLinkProfileSubTab('additional','brand')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Brand Auto</button>
                         <button type="button" data-lp-subscope="additional" data-lp-subtab="files" onclick="switchLinkProfileSubTab('additional','files')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Files</button>
                     </div>
@@ -2162,6 +2163,11 @@ function generateLinkProfileAuditHTML(data) {
                 </div>
                 <div data-lp-subscope="additional" data-lp-subpanel="homepage" class="space-y-6 hidden">
                     ${renderTableGroup({ title: 'Donors from homepage', rows: tables.donors_homepage || [] }, 'Нет доноров с главной страницы')}
+                </div>
+                <div data-lp-subscope="additional" data-lp-subpanel="techmix" class="space-y-6 hidden">
+                    ${renderTableGroup({ title: 'Link types by competitor', rows: tables.link_types_by_competitor || [] }, 'Нет данных по типам ссылок')}
+                    ${renderTableGroup({ title: 'HTTP codes by competitor', rows: tables.http_codes_by_competitor || [] }, 'Нет данных по HTTP кодам')}
+                    ${renderTableGroup({ title: 'Languages by competitor', rows: tables.languages_by_competitor || [] }, 'Нет данных по языкам')}
                 </div>
                 <div data-lp-subscope="additional" data-lp-subpanel="brand" class="space-y-6 hidden">
                     ${renderTableGroup({ title: 'Auto brand keywords', rows: tables.brand_keywords_auto || [] }, 'Нет авто-брендовых ключей')}

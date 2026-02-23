@@ -256,6 +256,32 @@ def _is_homepage_url(url: str) -> bool:
         return False
 
 
+def _flatten_breakdown_rows(rows: List[Dict[str, Any]], *, dim: str, value_key: str, row_limit: int = 500) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    grouped: Dict[str, Counter[str]] = defaultdict(Counter)
+    for row in rows:
+        comp = str(row.get("target_domain") or "")
+        if not comp:
+            continue
+        value = str(row.get(value_key) or "").strip().lower()
+        if not value:
+            value = "unknown"
+        grouped[comp][value] += 1
+    for comp, cnt in grouped.items():
+        total = sum(cnt.values()) or 1
+        for v, c in cnt.items():
+            out.append(
+                {
+                    "competitor_domain": comp,
+                    dim: v,
+                    "count": c,
+                    "pct": round((c / total) * 100, 2),
+                }
+            )
+    out.sort(key=lambda x: (x.get("competitor_domain", ""), -(x.get("count", 0))))
+    return out[:row_limit]
+
+
 def _normalize_backlink_row(row: Dict[str, Any]) -> Dict[str, Any]:
     source = _pick_value(
         row,
@@ -301,6 +327,18 @@ def _normalize_backlink_row(row: Dict[str, Any]) -> Dict[str, Any]:
         row,
         ("redirect chain status codes", "redirect_status_codes", "redirect status", "status codes"),
     )
+    link_type = _pick_value(
+        row,
+        ("type", "link type"),
+    )
+    http_code = _pick_value(
+        row,
+        ("referring page http code", "http code", "status"),
+    )
+    language = _pick_value(
+        row,
+        ("language", "lang"),
+    )
     domain_rating = _pick_value(
         row,
         ("dr", "domain rating", "domain_rating", "ahrefs_dr"),
@@ -322,9 +360,13 @@ def _normalize_backlink_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "source_is_homepage": _is_homepage_url(source_url),
         "target_url": target_url,
         "target_domain": _extract_domain(target_url),
+        "target_is_homepage": _is_homepage_url(target_url),
         "anchor": str(anchor or "").strip(),
         "follow": follow_flag,
         "has_redirect_301": _has_redirect_301(redirect_status_codes),
+        "link_type": str(link_type or "").strip().lower(),
+        "http_code": str(http_code or "").strip(),
+        "language": str(language or "").strip().lower(),
         "dr": _to_float(domain_rating),
         "traffic": _to_float(traffic),
     }
@@ -533,6 +575,69 @@ def run_link_profile_audit(
                     "competitor_targets": ", ".join(sorted(competitor_targets)[:5]),
                 }
             )
+
+    per_target_metrics: Dict[str, Dict[str, Any]] = {}
+    for target_domain in set([r.get("target_domain") for r in normalized_rows if r.get("target_domain")]):
+        trows = [r for r in normalized_rows if r.get("target_domain") == target_domain]
+        total = len(trows)
+        follow = sum(1 for r in trows if r.get("follow") is True)
+        nofollow = sum(1 for r in trows if r.get("follow") is False)
+        unknown = total - follow - nofollow
+        home = sum(1 for r in trows if r.get("target_is_homepage"))
+        internal = total - home
+        home_follow = sum(1 for r in trows if r.get("target_is_homepage") and r.get("follow") is True)
+        home_nofollow = sum(1 for r in trows if r.get("target_is_homepage") and r.get("follow") is False)
+        int_follow = sum(1 for r in trows if (not r.get("target_is_homepage")) and r.get("follow") is True)
+        int_nofollow = sum(1 for r in trows if (not r.get("target_is_homepage")) and r.get("follow") is False)
+        dr_counts = Counter(_dr_bucket(r.get("dr")) for r in trows if r.get("dr") is not None)
+        zone_counts = Counter(_extract_zone(r.get("source_domain", "")) for r in trows if r.get("source_domain"))
+        per_target_metrics[target_domain] = {
+            "total_links": total,
+            "homepage_pct": round((home / max(1, total)) * 100, 2),
+            "internal_pct": round((internal / max(1, total)) * 100, 2),
+            "follow_pct": round((follow / max(1, follow + nofollow + unknown)) * 100, 2),
+            "nofollow_pct": round((nofollow / max(1, follow + nofollow + unknown)) * 100, 2),
+            "homepage_follow_pct": round((home_follow / max(1, follow)) * 100, 2),
+            "homepage_nofollow_pct": round((home_nofollow / max(1, nofollow)) * 100, 2),
+            "internal_follow_pct": round((int_follow / max(1, follow)) * 100, 2),
+            "internal_nofollow_pct": round((int_nofollow / max(1, nofollow)) * 100, 2),
+            "dr_counts": dr_counts,
+            "zone_counts": zone_counts,
+        }
+
+    competitors_list = [d for d in per_target_metrics.keys() if not _is_our_target(str(d), domain)]
+    our_metrics = per_target_metrics.get(domain) or next((v for k, v in per_target_metrics.items() if _is_our_target(str(k), domain)), {})
+    benchmark_rows: List[Dict[str, Any]] = []
+    if competitors_list:
+        keys = [
+            "homepage_pct",
+            "internal_pct",
+            "follow_pct",
+            "nofollow_pct",
+            "homepage_follow_pct",
+            "homepage_nofollow_pct",
+            "internal_follow_pct",
+            "internal_nofollow_pct",
+        ]
+        for key in keys:
+            vals = [float(per_target_metrics[d].get(key, 0.0)) for d in competitors_list]
+            avg_v = round(mean(vals), 2) if vals else 0.0
+            med_v = round(median(vals), 2) if vals else 0.0
+            our_v = round(float(our_metrics.get(key, 0.0)), 2) if our_metrics else 0.0
+            benchmark_rows.append(
+                {
+                    "metric": key,
+                    "our_site_pct": our_v,
+                    "competitors_avg_pct": avg_v,
+                    "competitors_median_pct": med_v,
+                    "delta_vs_avg": round(our_v - avg_v, 2),
+                    "delta_vs_median": round(our_v - med_v, 2),
+                }
+            )
+
+    link_types_by_competitor = _flatten_breakdown_rows(normalized_rows, dim="link_type", value_key="link_type", row_limit=1000)
+    http_codes_by_competitor = _flatten_breakdown_rows(normalized_rows, dim="http_code", value_key="http_code", row_limit=1000)
+    languages_by_competitor = _flatten_breakdown_rows(normalized_rows, dim="language", value_key="language", row_limit=1000)
 
     our_ref_domains = set(our_source_counter.keys())
     our_site_rows: List[Dict[str, Any]] = []
@@ -744,6 +849,7 @@ def run_link_profile_audit(
                 "priority_domains": priority_domains,
                 "our_site_overview": our_site_rows,
                 "comparison_overview": comparison_rows,
+                "benchmark_overview": benchmark_rows,
                 "dr_stats": dr_stats_rows,
                 "dr_buckets": dr_bucket_rows,
                 "dr_buckets_our_site": dr_bucket_our_rows,
@@ -755,6 +861,9 @@ def run_link_profile_audit(
                 "donors_homepage": homepage_donor_rows,
                 "brand_keywords_auto": brand_rows,
                 "source_files": file_summaries,
+                "link_types_by_competitor": link_types_by_competitor,
+                "http_codes_by_competitor": http_codes_by_competitor,
+                "languages_by_competitor": languages_by_competitor,
                 "ourSiteTables": [
                     {"title": "Наш сайт: доноры", "rows": our_site_rows},
                 ],
@@ -763,6 +872,7 @@ def run_link_profile_audit(
                 ],
                 "comparisonTables": [
                     {"title": "Сравнение с конкурентами", "rows": comparison_rows},
+                    {"title": "Бенчмарк avg/median по конкурентам", "rows": benchmark_rows},
                 ],
                 "additionalTables": [
                     {"title": "DR статистика", "rows": dr_stats_rows},
@@ -774,6 +884,9 @@ def run_link_profile_audit(
                     {"title": "Follow / Nofollow detailed", "rows": follow_detail_rows},
                     {"title": "Donors with redirect 301", "rows": redirect_301_rows},
                     {"title": "Donors from homepage", "rows": homepage_donor_rows},
+                    {"title": "Link types by competitor", "rows": link_types_by_competitor},
+                    {"title": "HTTP codes by competitor", "rows": http_codes_by_competitor},
+                    {"title": "Languages by competitor", "rows": languages_by_competitor},
                     {"title": "Auto brand keywords", "rows": brand_rows},
                     {"title": "Source files", "rows": file_summaries},
                 ],
