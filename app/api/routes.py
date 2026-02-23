@@ -2152,11 +2152,30 @@ def _discover_sitemap_url(site_url: str, timeout: int = 12) -> tuple[Optional[st
     root = f"{parsed_root.scheme}://{parsed_root.netloc}"
     headers = {"User-Agent": "Mozilla/5.0 (compatible; SEO-Tools/1.0)"}
 
+    def _candidate_score(sitemap_url: str) -> int:
+        path = (urlparse(sitemap_url).path or "").lower().strip("/")
+        filename = path.split("/")[-1] if path else ""
+        score = 0
+        # Prefer common "main" sitemap/index files.
+        if filename in ("sitemap.xml", "sitemap_index.xml", "sitemap-index.xml", "wp-sitemap.xml"):
+            score += 120
+        if "index" in filename:
+            score += 40
+        if filename.startswith("sitemap"):
+            score += 20
+        # De-prioritize vertical/topic sitemaps as default entry point.
+        if re.search(r"(news|image|video|blog|post|tag|category|product|forum|help|article|media)", filename):
+            score -= 60
+        # Slightly prefer shallower paths.
+        score -= path.count("/")
+        return score
+
     with requests.Session() as session:
         # 1) robots.txt sitemap declarations (priority)
         try:
             robots_resp = session.get(urljoin(root, "/robots.txt"), timeout=timeout, allow_redirects=True, headers=headers)
             if robots_resp.status_code == 200:
+                robots_candidates: List[str] = []
                 for line in (robots_resp.text or "").splitlines():
                     if not re.match(r"^\s*sitemap\s*:", line, flags=re.IGNORECASE):
                         continue
@@ -2170,9 +2189,14 @@ def _discover_sitemap_url(site_url: str, timeout: int = 12) -> tuple[Optional[st
                     try:
                         sm_resp = session.get(normalized_loc, timeout=timeout, allow_redirects=True, headers=headers)
                         if sm_resp.status_code == 200 and _looks_like_sitemap_xml(sm_resp.text[:10000]):
-                            return normalized_loc, "robots.txt"
+                            robots_candidates.append(normalized_loc)
                     except Exception:
                         continue
+                if robots_candidates:
+                    unique_candidates = list(dict.fromkeys(robots_candidates))
+                    unique_candidates.sort(key=lambda u: (_candidate_score(u), -len(u)), reverse=True)
+                    chosen = unique_candidates[0]
+                    return chosen, "robots.txt"
         except Exception:
             pass
 
