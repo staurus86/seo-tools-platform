@@ -18,20 +18,20 @@ from app.config import settings
 
 
 class DOCXGenerator:
-    """Р вЂњР ВµР Р…Р ВµРЎР‚Р В°С‚ор Word Р С•РЎвЂљРЎвЂЎР ВµС‚ов"""
+    """Генератор Word-отчетов."""
     
     def __init__(self):
         self.reports_dir = settings.REPORTS_DIR
         os.makedirs(self.reports_dir, exist_ok=True)
     
     def _add_heading(self, doc, text: str, level: int = 1):
-        """Р вЂќР С•Р В±Р В°Р Р†Р В»РЎРЏР Вµт Р В·Р В°Р С–Р С•Р В»овок"""
+        """Добавляет заголовок."""
         heading = doc.add_heading(self._fix_text(text), level=level)
         heading.alignment = WD_ALIGN_PARAGRAPH.LEFT
         return heading
     
     def _add_table(self, doc, headers: List[str], rows: List[List[Any]]):
-        """Р вЂќР С•Р В±Р В°Р Р†Р В»РЎРЏР Вµт РЎвЂљР В°Р В±Р В»Р С‘РЎвЂ у"""
+        """Добавляет таблицу."""
         table = doc.add_table(rows=1, cols=len(headers))
         table.style = 'Light Grid Accent 1'
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -156,37 +156,37 @@ class DOCXGenerator:
         doc.save(filepath)
     
     def generate_site_analyze_report(self, task_id: str, data: Dict[str, Any]) -> str:
-        """Р вЂњР ВµР Р…Р ВµРЎР‚Р С‘РЎР‚РЎС“Р Вµт Р С”Р В»Р С‘Р ВµР Р…РЎвЂљРЎРѓР С”Р С‘Р в„– Р С•РЎвЂљРЎвЂЎР Вµт Р В°Р Р…Р В°Р В»Р С‘Р В·Р В° РЎРѓР В°Р в„–РЎвЂљР В°."""
+        """Генерирует клиентский DOCX-отчет общего анализа сайта."""
         doc = Document()
 
-        title = doc.add_heading('Р С›РЎвЂљРЎвЂЎР Вµт по SEO-Р В°Р Р…Р В°Р В»Р С‘Р В·у РЎРѓР В°Р в„–РЎвЂљР В°', 0)
+        title = doc.add_heading('Отчет по SEO-анализу сайта', 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
         doc.add_paragraph(f"URL: {data.get('url', 'н/д')}")
-        doc.add_paragraph(f"Р СџРЎР‚Р С•Р Р†Р ВµРЎР‚Р ВµР Р…Р ѕ РЎРѓРЎвЂљРЎР‚Р В°Р Р…Р С‘РЎвЂ : {data.get('pages_analyzed', 0)}")
+        doc.add_paragraph(f"Проверено страниц: {data.get('pages_analyzed', 0)}")
         doc.add_paragraph(f"Завершено: {data.get('completed_at', 'н/д')}")
         doc.add_paragraph(
-            "Р С›Р С—Р С‘РЎРѓР В°Р Р…Р С‘Р Вµ: Р Т‘Р В°Р Р…Р Р…РЎвЂ№Р в„– Р С•РЎвЂљРЎвЂЎР Вµт РЎвЂћР С‘Р С”РЎРѓР С‘РЎР‚РЎС“Р Вµт Р С•Р В±РЎвЂ°Р ВµР Вµ РЎвЂљР ВµРЎвЂ¦Р Р…Р С‘РЎвЂЎР ВµРЎРѓР С”Р С•Р Вµ РЎРѓР С•РЎРѓРЎвЂљР С•РЎРЏР Р…Р С‘Р Вµ РЎРѓР В°Р в„–РЎвЂљР В° с РЎвЂљР С•РЎвЂЎР С”Р ё Р В·РЎР‚Р ВµР Р…Р ёя SEO, "
-            "РЎвЂЎРЎвЂљР С•Р В±ы Р С•Р С—РЎР‚Р ВµР Т‘Р ВµР В»Р ёть Р С—РЎР‚Р С‘Р С•РЎР‚Р С‘РЎвЂљР ВµРЎвЂљРЎвЂ№ Р Т‘Р С•РЎР‚Р В°Р В±Р ѕС‚ок Р ё РЎРѓР Р…Р С‘Р В·Р ёть РЎР‚Р С‘РЎРѓР С”Р ё Р С—Р С•РЎвЂљР ВµРЎР‚Р ё Р С•РЎР‚Р С–Р В°Р Р…Р С‘РЎвЂЎР Вµского РЎвЂљРЎР‚Р В°РЎвЂћР С‘Р С”Р В°."
+            "Отчет фиксирует текущее техническое состояние сайта и ключевые SEO-риски, "
+            "чтобы определить приоритетные доработки и снизить риски потери органического трафика."
         )
 
         self._add_heading(doc, 'Ключевые результаты', level=1)
         results = data.get('results', {})
-        headers = ['Р СџР С•Р С”Р В°Р В·Р В°РЎвЂљР ВµР В»ь', 'Р вЂ”Р Р…Р В°РЎвЂЎР ВµР Р…Р С‘Р Вµ', 'Р РЋРЎвЂљР В°С‚ус']
+        headers = ['Показатель', 'Значение', 'Статус']
         rows = [
-            ['Р вЂ™РЎРѓР Вµго РЎРѓРЎвЂљРЎР‚Р В°Р Р…Р С‘РЎвЂ ', results.get('total_pages', 0), 'OK'],
-            ['Р РЋРЎвЂљР В°С‚ус Р В°Р Р…Р В°Р В»Р С‘Р В·Р В°', results.get('status', 'н/д'), 'OK'],
-            ['Р РЋР Р†Р С•Р Т‘Р С”Р В°', results.get('summary', 'н/д'), 'OK']
+            ['Всего страниц', results.get('total_pages', 0), 'OK'],
+            ['Статус анализа', results.get('status', 'н/д'), 'OK'],
+            ['Сводка', results.get('summary', 'н/д'), 'OK']
         ]
         self._add_table(doc, headers, rows)
 
         recs = results.get("recommendations", []) or data.get("recommendations", [])
         if recs:
-            self._add_heading(doc, 'Р В Р ВµР С”Р С•Р СР ВµР Р…Р Т‘Р В°РЎвЂ Р С‘Р ё', level=1)
+            self._add_heading(doc, 'Рекомендации', level=1)
             for rec in recs[:30]:
                 doc.add_paragraph(str(rec), style='List Bullet')
 
         doc.add_paragraph()
-        footer = doc.add_paragraph(f"Р С›РЎвЂљРЎвЂЎР Вµт РЎРѓРЎвЂћР С•РЎР‚Р СР С‘РЎР‚Р С•Р Р†Р В°Р Ѕ SEO Р ВР Р…РЎРѓРЎвЂљРЎР‚РЎС“Р СР ВµР Ѕты: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        footer = doc.add_paragraph(f"Отчет сформирован SEO Tools Platform: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
         footer.runs[0].font.size = Pt(8)
         footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
@@ -669,7 +669,7 @@ class DOCXGenerator:
             ['Критичные проблемы', summary.get('critical_issues', 0), 'Важно'],
             ['Предупреждения', summary.get('warning_issues', 0), 'Важно'],
             ['Всего потерянных элементов', summary.get('missing_total', 0), 'Важно'],
-            ['Средний процент потерь', f"{summary.get('avg_missing_pct', 0)}%", 'РРЅС„Рѕ'],
+            ['Средний процент потерь', f"{summary.get('avg_missing_pct', 0)}%", 'Инфо'],
         ]
         self._add_table(doc, ['Показатель', 'Значение', 'Статус'], totals)
         doc.add_paragraph(f"• SEO-оценка: {summary.get('score', 'н/д')}/100")
@@ -687,7 +687,7 @@ class DOCXGenerator:
         js_schema = ", ".join(js_p.get('schema_types', []) or []) or "Нет"
 
         def _status(a, b) -> str:
-            return "вњ…" if str(a).strip() == str(b).strip() else "вљ пёЏ"
+            return "OK" if str(a).strip() == str(b).strip() else "DIFF"
 
         self._add_heading(doc, '2. Сравнение SEO-элементов', level=1)
         compare_rows = [
@@ -695,13 +695,13 @@ class DOCXGenerator:
             ['Мета-описание (description)', raw_p.get('meta_description', ''), js_p.get('meta_description', ''), _status(raw_p.get('meta_description', ''), js_p.get('meta_description', ''))],
             ['H1 заголовки', f"{raw_p.get('h1_count', 0)} шт", f"{js_p.get('h1_count', 0)} шт", _status(raw_p.get('h1_count', 0), js_p.get('h1_count', 0))],
             ['H2 заголовки', f"{raw_p.get('h2_count', 0)} шт", f"{js_p.get('h2_count', 0)} шт", _status(raw_p.get('h2_count', 0), js_p.get('h2_count', 0))],
-            ['РР·РѕР±СЂР°Р¶РµРЅРёСЏ', f"{raw_p.get('images_count', 0)} шт", f"{js_p.get('images_count', 0)} шт", _status(raw_p.get('images_count', 0), js_p.get('images_count', 0))],
+            ['Изображения', f"{raw_p.get('images_count', 0)} шт", f"{js_p.get('images_count', 0)} шт", _status(raw_p.get('images_count', 0), js_p.get('images_count', 0))],
             ['Ссылки', f"{raw_p.get('links_count', 0)} шт", f"{js_p.get('links_count', 0)} шт", _status(raw_p.get('links_count', 0), js_p.get('links_count', 0))],
             ['Canonical', raw_p.get('canonical', ''), js_p.get('canonical', ''), _status(raw_p.get('canonical', ''), js_p.get('canonical', ''))],
             ['Schema-разметка', raw_schema, js_schema, _status(raw_schema, js_schema)],
-            ['Мета viewport', 'вњ… Есть' if raw_meta.get('meta:viewport') else 'вќЊ Нет', 'вњ… Есть' if js_meta.get('meta:viewport') else 'вќЊ Нет', _status(bool(raw_meta.get('meta:viewport')), bool(js_meta.get('meta:viewport')))],
+            ['Мета viewport', 'Есть' if raw_meta.get('meta:viewport') else 'Нет', 'Есть' if js_meta.get('meta:viewport') else 'Нет', _status(bool(raw_meta.get('meta:viewport')), bool(js_meta.get('meta:viewport')))],
         ]
-        self._add_table(doc, ['Элемент', 'Без JS', 'РЎ JS', 'Статус'], compare_rows)
+        self._add_table(doc, ['Элемент', 'Без JS', 'С JS', 'Статус'], compare_rows)
 
         self._add_heading(doc, '3. Анализ по устройствам', level=1)
         if variants:
@@ -728,7 +728,7 @@ class DOCXGenerator:
         doc.add_paragraph("Проверяются элементы: title, meta description, canonical, H1-H2, ссылки, изображения, schema.org, видимый текст.")
         doc.add_paragraph("Дополнительно сравниваются не-SEO meta-данные между no-JS и JS: viewport, charset, referrer, theme-color, manifest и др.")
 
-        self._add_heading(doc, '5. Р езультаты по профилям', level=1)
+        self._add_heading(doc, '5. Результаты по профилям', level=1)
         if variants:
             for variant in variants:
                 label = variant.get('variant_label') or variant.get('variant_id', 'Профиль')
@@ -764,7 +764,7 @@ class DOCXGenerator:
                             status_map.get(item.get('status', ''), item.get('status', '')),
                             item.get('fix', ''),
                         ])
-                    self._add_table(doc, ['Элемент', 'Без JS', 'РЎ JS', 'Статус', 'Что исправить'], seo_rows[:80])
+                    self._add_table(doc, ['Элемент', 'Без JS', 'С JS', 'Статус', 'Что исправить'], seo_rows[:80])
 
                 var_issues = variant.get('issues', []) or []
                 if var_issues:
@@ -816,11 +816,11 @@ class DOCXGenerator:
                             item.get('rendered', ''),
                             status_map.get(item.get('status', ''), item.get('status', '')),
                         ])
-                    self._add_table(doc, ['Ключ', 'Без JS', 'РЎ JS', 'Статус'], meta_rows[:50])
+                    self._add_table(doc, ['Ключ', 'Без JS', 'С JS', 'Статус'], meta_rows[:50])
 
                 var_recs = variant.get('recommendations', []) or []
                 if var_recs:
-                    doc.add_paragraph("Р екомендации по профилю:", style='List Bullet')
+                    doc.add_paragraph("Рекомендации по профилю:", style='List Bullet')
                     for rec in var_recs:
                         doc.add_paragraph(str(rec), style='List Bullet')
 
@@ -847,7 +847,7 @@ class DOCXGenerator:
                 profile = issue.get('variant', 'Профиль')
                 title_i = issue.get('title', '')
                 details_i = issue.get('details', '')
-                doc.add_paragraph(f"[{sev}] {profile}: {title_i} вЂ” {details_i}", style='List Bullet')
+                doc.add_paragraph(f"[{sev}] {profile}: {title_i} - {details_i}", style='List Bullet')
         else:
             doc.add_paragraph("Ошибок не обнаружено.")
 
@@ -886,7 +886,7 @@ class DOCXGenerator:
                 "why": "Неправильные параметры viewport ломают масштаб и адаптивность.",
                 "impact": "Высокое",
                 "fix": [
-                    "РСЃРїСЂР°РІРёС‚СЊ viewport на width=device-width, initial-scale=1.",
+                    "Исправить viewport на width=device-width, initial-scale=1.",
                     "Убрать дублирующиеся viewport-теги.",
                 ],
             },
@@ -918,7 +918,7 @@ class DOCXGenerator:
                 ],
             },
             "large_images": {
-                "name": "РР·РѕР±СЂР°Р¶РµРЅРёСЏ шире экрана",
+                "name": "Изображения шире экрана",
                 "why": "Широкие изображения ломают сетку и провоцируют скролл.",
                 "impact": "Среднее",
                 "fix": [
@@ -931,8 +931,8 @@ class DOCXGenerator:
                 "why": "JS-ошибки могут ломать ключевые UI-сценарии.",
                 "impact": "Среднее",
                 "fix": [
-                    "Р азобрать ошибки консоли по приоритету.",
-                    "РСЃРїСЂР°РІРёС‚СЊ недоступные ресурсы и исключения.",
+                    "Разобрать ошибки консоли по приоритету.",
+                    "Исправить недоступные ресурсы и исключения.",
                 ],
             },
             "runtime_error": {
@@ -1175,7 +1175,7 @@ class DOCXGenerator:
                 "качества UX и стабильности SEO-показателей."
             )
             doc.add_paragraph(
-                "Р екомендуется выполнить исправления по приоритету (critical -> warning), затем "
+                "Рекомендуется выполнить исправления по приоритету (critical -> warning), затем "
                 "повторить аудит и сравнить метрики."
             )
         else:
@@ -1746,7 +1746,7 @@ class DOCXGenerator:
         self._save_document(doc, filepath)
         return filepath
     def generate_report(self, task_id: str, task_type: str, data: Dict[str, Any]) -> str:
-        """Р вЂњР ВµР Р…Р ВµРЎР‚Р С‘РЎР‚РЎС“Р Вµт Р С•РЎвЂљРЎвЂЎР Вµт Р І Р В·Р В°Р Р†Р С‘РЎРѓР С‘Р СР С•РЎРѓРЎвЂљР ё Р ѕт РЎвЂљР С‘Р С—Р В° Р В·Р В°Р Т‘Р В°РЎвЂЎР ё"""
+        """Генерирует отчет в зависимости от типа задачи."""
         generators = {
             'site_analyze': self.generate_site_analyze_report,
             'robots_check': self.generate_robots_report,
