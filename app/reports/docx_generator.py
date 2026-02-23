@@ -128,6 +128,47 @@ class DOCXGenerator:
             break
         return repaired
 
+    def _format_engine_label(self, engine: Any) -> str:
+        value = str(engine or "legacy").lower()
+        if value == "legacy":
+            return "базовый"
+        if value == "legacy-fallback":
+            return "базовый (fallback)"
+        return str(engine or "legacy")
+
+    def _format_profile_label(self, profile: Any, is_mobile: Any = False) -> str:
+        value = str(profile or ("mobile" if is_mobile else "desktop")).lower()
+        if value == "mobile":
+            return "мобильный"
+        if value == "desktop":
+            return "десктоп"
+        return str(profile or "-")
+
+    def _format_policy_profile(self, value: Any, profile_type: str) -> str:
+        v = str(value or "").lower()
+        if not v:
+            return "н/д"
+        if profile_type == "retry":
+            if v == "standard":
+                return "стандартный"
+            if v == "aggressive":
+                return "агрессивный"
+            if v == "strict":
+                return "строгий"
+        if profile_type == "criticality":
+            if v == "balanced":
+                return "сбалансированный"
+            if v == "strict":
+                return "строгий"
+            if v == "aggressive":
+                return "агрессивный"
+        if profile_type == "sla":
+            if v == "standard":
+                return "стандартный"
+            if v == "strict":
+                return "строгий"
+        return str(value)
+
     def _normalize_document_text(self, doc: Document) -> None:
         """Normalize paragraph/table text before saving DOCX."""
         def _fix_paragraph(paragraph) -> None:
@@ -173,9 +214,9 @@ class DOCXGenerator:
         results = data.get('results', {})
         headers = ['Показатель', 'Значение', 'Статус']
         rows = [
-            ['Всего страниц', results.get('total_pages', 0), 'OK'],
-            ['Статус анализа', results.get('status', 'н/д'), 'OK'],
-            ['Сводка', results.get('summary', 'н/д'), 'OK']
+            ['Всего страниц', results.get('total_pages', 0), 'ОК'],
+            ['Статус анализа', results.get('status', 'н/д'), 'ОК'],
+            ['Сводка', results.get('summary', 'н/д'), 'ОК']
         ]
         self._add_table(doc, headers, rows)
 
@@ -420,7 +461,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph('Key bots coverage looks complete.')
 
-        self._add_heading(doc, '13. Raw robots.txt (line-numbered view)', level=1)
+        self._add_heading(doc, '13. Raw robots.txt (построчный просмотр)', level=1)
         raw = str(results.get('raw_content', '') or '')
         if raw:
             for idx, line in enumerate(raw.splitlines(), start=1):
@@ -433,9 +474,9 @@ class DOCXGenerator:
                 run_txt.font.size = Pt(9)
                 run_txt.font.name = 'Consolas'
         else:
-            doc.add_paragraph('Raw robots.txt content is unavailable.')
+            doc.add_paragraph('Содержимое raw robots.txt недоступно.')
 
-        self._add_heading(doc, '14. Additional Fields Snapshot', level=1)
+        self._add_heading(doc, '14. Снимок дополнительных полей', level=1)
         covered = {
             'robots_txt_found', 'status_code', 'quality_score', 'quality_grade', 'production_ready', 'quick_status',
             'content_length', 'lines_count', 'user_agents', 'disallow_rules', 'allow_rules', 'sitemaps', 'hosts',
@@ -458,11 +499,11 @@ class DOCXGenerator:
                 rendered = rendered[:500] + ' ...'
             extra_rows.append([key, rendered])
         if extra_rows:
-            self._add_table(doc, ['Field', 'Value'], extra_rows)
+            self._add_table(doc, ['Поле', 'Значение'], extra_rows)
         else:
-            doc.add_paragraph('No additional fields beyond core sections.')
+            doc.add_paragraph('Дополнительных полей сверх базовых разделов не обнаружено.')
 
-        self._add_heading(doc, '15. Official Documentation', level=1)
+        self._add_heading(doc, '15. Официальная документация', level=1)
         doc.add_paragraph('Google Search Central: https://developers.google.com/search/docs/crawling-indexing/robots/robots_txt')
         doc.add_paragraph('Yandex Webmaster: https://yandex.com/support/webmaster/en/robot-workings/allow-disallow')
         doc.add_paragraph('Yandex Clean-param: https://yandex.com/support/webmaster/en/robot-workings/clean-param')
@@ -655,7 +696,7 @@ class DOCXGenerator:
 
         doc.add_paragraph(f"Анализируемый URL: {url}")
         doc.add_paragraph(f"Дата аудита: {generated_at}")
-        doc.add_paragraph(f"Движок: {results.get('engine', 'legacy')}")
+        doc.add_paragraph(f"Движок: {self._format_engine_label(results.get('engine', 'legacy'))}")
         doc.add_paragraph("Краткое резюме")
         doc.add_paragraph(
             f"Данный отчёт содержит результаты SEO-аудита страницы {url} с фокусом на сравнение контента, "
@@ -687,7 +728,7 @@ class DOCXGenerator:
         js_schema = ", ".join(js_p.get('schema_types', []) or []) or "Нет"
 
         def _status(a, b) -> str:
-            return "OK" if str(a).strip() == str(b).strip() else "DIFF"
+            return "ОК" if str(a).strip() == str(b).strip() else "РАЗЛ."
 
         self._add_heading(doc, '2. Сравнение SEO-элементов', level=1)
         compare_rows = [
@@ -711,7 +752,7 @@ class DOCXGenerator:
                 shots = variant.get('screenshots', {}) or {}
                 device_rows.append([
                     variant.get('variant_label') or variant.get('variant_id', 'Профиль'),
-                    (variant.get('profile_type') or ('mobile' if variant.get('mobile') else 'desktop')),
+                    self._format_profile_label(variant.get('profile_type'), variant.get('mobile')),
                     f"{float(metrics.get('score', 0) or 0):.1f}",
                     f"{int(metrics.get('total_missing', 0) or 0)}",
                     ", ".join(list(shots.keys())) if shots else 'нет',
@@ -1026,7 +1067,7 @@ class DOCXGenerator:
 
         self._add_heading(doc, "1. Сводка по проверке", level=1)
         summary_rows = [
-            ["Движок проверки", results.get("engine", "legacy")],
+            ["Движок проверки", self._format_engine_label(results.get("engine", "legacy"))],
             ["Режим проверки", "Быстрый" if results.get("mode") == "quick" else "Полный"],
             ["Проверено устройств", summary.get("total_devices", len(devices))],
             ["Устройств без критичных проблем", summary.get("mobile_friendly_devices", 0)],
@@ -1068,7 +1109,7 @@ class DOCXGenerator:
                 ])
             self._add_table(
                 doc,
-                ["Устройство", "Тип", "Viewport", "HTTP", "Загрузка, мс", "Ошибок", "ОК для mobile"],
+                ["Устройство", "Тип", "Viewport", "HTTP", "Загрузка, мс", "Ошибок", "ОК для мобильной версии"],
                 device_rows,
             )
         else:
@@ -1223,10 +1264,10 @@ class DOCXGenerator:
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
         doc.add_paragraph(f"URL: {data.get('url', 'н/д')}")
         doc.add_paragraph(f"Сформирован: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        doc.add_paragraph(f"Профиль ретраев: {results.get('retry_profile', 'standard')}")
+        doc.add_paragraph(f"Профиль ретраев: {self._format_policy_profile(results.get('retry_profile', 'standard'), 'retry')}")
         doc.add_paragraph(
-            f"Профиль критичности: {results.get('criticality_profile', 'balanced')} | "
-            f"Профиль SLA: {results.get('sla_profile', 'standard')}"
+            f"Профиль критичности: {self._format_policy_profile(results.get('criticality_profile', 'balanced'), 'criticality')} | "
+            f"Профиль SLA: {self._format_policy_profile(results.get('sla_profile', 'standard'), 'sla')}"
         )
         doc.add_paragraph(
             f"Режим AI-политики: {'намеренные блокировки AI' if results.get('ai_block_expected') else 'строгая доступность'} "
@@ -1312,7 +1353,7 @@ class DOCXGenerator:
             else:
                 doc.add_paragraph("Дельты метрик отсутствуют.")
         else:
-            doc.add_paragraph(baseline_diff.get("message", "Baseline не найден."))
+            doc.add_paragraph(baseline_diff.get("message", "Базовый срез (baseline) не найден."))
 
         self._add_heading(doc, "7. История тренда", level=1)
         trend_history = trend.get("history", []) or []
@@ -1474,32 +1515,32 @@ class DOCXGenerator:
         content_profile = results.get("content_profile", {}) or {}
         self._add_heading(doc, "2. Метрики контента", level=1)
         content_rows = [
-            ["Word count", content.get("word_count", 0)],
-            ["Unique words", content.get("unique_word_count", 0)],
-            ["Characters", content.get("char_count", 0)],
-            ["Clean text length", content_profile.get("clean_text_length", 0)],
-            ["Core vocabulary", content_profile.get("core_vocabulary", 0)],
-            ["Wateriness %", content_profile.get("wateriness_pct", 0)],
-            ["Nausea", content_profile.get("nausea_index", 0)],
+            ["Количество слов", content.get("word_count", 0)],
+            ["Уникальные слова", content.get("unique_word_count", 0)],
+            ["Количество символов", content.get("char_count", 0)],
+            ["Длина чистого текста", content_profile.get("clean_text_length", 0)],
+            ["Ядро словаря", content_profile.get("core_vocabulary", 0)],
+            ["Водность %", content_profile.get("wateriness_pct", 0)],
+            ["Тошнота", content_profile.get("nausea_index", 0)],
             ["Text/HTML %", content_profile.get("text_html_pct", 0)],
         ]
         self._add_table(doc, ["Метрика", "Значение"], content_rows)
 
-        self._add_heading(doc, "3. Meta Tags", level=1)
+        self._add_heading(doc, "3. Мета-теги", level=1)
         title_meta = results.get("title", {}) or {}
         desc_meta = results.get("description", {}) or {}
         h1_meta = results.get("h1", {}) or {}
         meta_rows = [
             ["Title", title_meta.get("text", "")],
-            ["Title length", title_meta.get("length", 0)],
+            ["Длина title", title_meta.get("length", 0)],
             ["Description", desc_meta.get("text", "")],
-            ["Description length", desc_meta.get("length", 0)],
-            ["H1 count", h1_meta.get("count", 0)],
-            ["H1 values", ", ".join(h1_meta.get("values", []) or [])],
+            ["Длина description", desc_meta.get("length", 0)],
+            ["Количество H1", h1_meta.get("count", 0)],
+            ["Значения H1", ", ".join(h1_meta.get("values", []) or [])],
         ]
-        self._add_table(doc, ["Field", "Value"], meta_rows)
+        self._add_table(doc, ["Поле", "Значение"], meta_rows)
 
-        self._add_heading(doc, "4. Keywords", level=1)
+        self._add_heading(doc, "4. Ключевые слова", level=1)
         keyword_rows = []
         for row in (results.get("keywords", []) or [])[:50]:
             keyword_rows.append(
@@ -1527,7 +1568,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Топ терминов недоступен.")
 
-        self._add_heading(doc, "6. Technical Signals", level=1)
+        self._add_heading(doc, "6. Технические сигналы", level=1)
         technical = results.get("technical", {}) or {}
         technical_rows = [
             ["Canonical href", technical.get("canonical_href", "")],
@@ -1537,86 +1578,86 @@ class DOCXGenerator:
             ["Nofollow", "Да" if technical.get("nofollow") else "Нет"],
             ["Viewport", technical.get("viewport", "")],
             ["HTML lang", technical.get("lang", "")],
-            ["Hreflang tags", technical.get("hreflang_count", 0)],
-            ["Schema blocks", technical.get("schema_count", 0)],
+            ["Hreflang теги", technical.get("hreflang_count", 0)],
+            ["Блоки schema", technical.get("schema_count", 0)],
         ]
-        self._add_table(doc, ["Signal", "Value"], technical_rows)
+        self._add_table(doc, ["Сигнал", "Значение"], technical_rows)
 
-        self._add_heading(doc, "7. Links, Media, Readability", level=1)
+        self._add_heading(doc, "7. Ссылки, медиа и читабельность", level=1)
         links = results.get("links", {}) or {}
         media = results.get("media", {}) or {}
         readability = results.get("readability", {}) or {}
         quality_rows = [
-            ["Total links", links.get("links_total", 0)],
-            ["Internal links", links.get("internal_links", 0)],
-            ["External links", links.get("external_links", 0)],
-            ["Nofollow links", links.get("nofollow_links", 0)],
-            ["Empty anchor links", links.get("empty_anchor_links", 0)],
-            ["Images total", media.get("images_total", 0)],
-            ["Images missing alt", media.get("images_missing_alt", 0)],
-            ["Sentences", readability.get("sentences_count", 0)],
-            ["Avg sentence len", readability.get("avg_sentence_len", 0)],
-            ["Long sentence ratio", readability.get("long_sentence_ratio", 0)],
-            ["Lexical diversity", readability.get("lexical_diversity", 0)],
+            ["Всего ссылок", links.get("links_total", 0)],
+            ["Внутренние ссылки", links.get("internal_links", 0)],
+            ["Внешние ссылки", links.get("external_links", 0)],
+            ["Nofollow ссылки", links.get("nofollow_links", 0)],
+            ["Пустые анкоры", links.get("empty_anchor_links", 0)],
+            ["Всего изображений", media.get("images_total", 0)],
+            ["Изображения без alt", media.get("images_missing_alt", 0)],
+            ["Предложения", readability.get("sentences_count", 0)],
+            ["Средняя длина предложения", readability.get("avg_sentence_len", 0)],
+            ["Доля длинных предложений", readability.get("long_sentence_ratio", 0)],
+            ["Лексическое разнообразие", readability.get("lexical_diversity", 0)],
         ]
         spam_metrics = results.get("spam_metrics", {}) or {}
         quality_rows.extend(
             [
-                ["Stopword ratio", spam_metrics.get("stopword_ratio", 0)],
-                ["Content/HTML ratio", spam_metrics.get("content_html_ratio", 0)],
-                ["Uppercase ratio", spam_metrics.get("uppercase_ratio", 0)],
-                ["Punctuation ratio", spam_metrics.get("punctuation_ratio", 0)],
-                ["Duplicate sentences", spam_metrics.get("duplicate_sentences", 0)],
-                ["Duplicate sentence ratio", spam_metrics.get("duplicate_sentence_ratio", 0)],
+                ["Доля стоп-слов", spam_metrics.get("stopword_ratio", 0)],
+                ["Соотношение контента к HTML", spam_metrics.get("content_html_ratio", 0)],
+                ["Доля uppercase", spam_metrics.get("uppercase_ratio", 0)],
+                ["Доля пунктуации", spam_metrics.get("punctuation_ratio", 0)],
+                ["Дубли предложений", spam_metrics.get("duplicate_sentences", 0)],
+                ["Доля дублей предложений", spam_metrics.get("duplicate_sentence_ratio", 0)],
             ]
         )
         self._add_table(doc, ["Метрика", "Значение"], quality_rows)
 
-        self._add_heading(doc, "8. N-grams", level=1)
+        self._add_heading(doc, "8. N-граммы", level=1)
         ngrams = results.get("ngrams", {}) or {}
         bigrams = ngrams.get("bigrams", []) or []
         if bigrams:
             bigram_rows = [[row.get("term", ""), row.get("count", 0), row.get("pct", 0)] for row in bigrams[:20]]
-            self._add_table(doc, ["Bigram", "Count", "Share %"], bigram_rows)
+            self._add_table(doc, ["Биграмма", "Количество", "Доля %"], bigram_rows)
         else:
             doc.add_paragraph("Биграммы недоступны.")
         trigrams = ngrams.get("trigrams", []) or []
         if trigrams:
             trigram_rows = [[row.get("term", ""), row.get("count", 0), row.get("pct", 0)] for row in trigrams[:20]]
-            self._add_table(doc, ["Trigram", "Count", "Share %"], trigram_rows)
+            self._add_table(doc, ["Триграмма", "Количество", "Доля %"], trigram_rows)
         else:
             doc.add_paragraph("Триграммы недоступны.")
 
-        self._add_heading(doc, "9. Schema and OpenGraph", level=1)
+        self._add_heading(doc, "9. Schema и OpenGraph", level=1)
         schema = results.get("schema", {}) or {}
         og = results.get("opengraph", {}) or {}
         schema_rows = [
-            ["JSON-LD blocks", schema.get("json_ld_blocks", 0)],
-            ["Valid JSON-LD", schema.get("json_ld_valid_blocks", 0)],
-            ["Microdata items", schema.get("microdata_items", 0)],
-            ["RDFa items", schema.get("rdfa_items", 0)],
-            ["Schema types", ", ".join([x.get("type", "") for x in (schema.get("types", []) or [])[:10]])],
-            ["OpenGraph tags", og.get("tags_count", 0)],
-            ["OG required present", og.get("required_present_count", 0)],
-            ["OG missing", ", ".join(og.get("required_missing", []) or [])],
+            ["JSON-LD блоки", schema.get("json_ld_blocks", 0)],
+            ["Валидные JSON-LD", schema.get("json_ld_valid_blocks", 0)],
+            ["Элементы Microdata", schema.get("microdata_items", 0)],
+            ["Элементы RDFa", schema.get("rdfa_items", 0)],
+            ["Типы schema", ", ".join([x.get("type", "") for x in (schema.get("types", []) or [])[:10]])],
+            ["Теги OpenGraph", og.get("tags_count", 0)],
+            ["Обязательные OG найдены", og.get("required_present_count", 0)],
+            ["Отсутствующие OG", ", ".join(og.get("required_missing", []) or [])],
         ]
-        self._add_table(doc, ["Field", "Value"], schema_rows)
+        self._add_table(doc, ["Поле", "Значение"], schema_rows)
 
-        self._add_heading(doc, "10. AI Signals", level=1)
+        self._add_heading(doc, "10. AI-сигналы", level=1)
         ai = results.get("ai_insights", {}) or {}
         ai_rows = [
-            ["AI marker density /1k", ai.get("ai_marker_density_1k", 0)],
-            ["Hedging ratio", ai.get("hedging_ratio", 0)],
-            ["Template repetition /1k", ai.get("template_repetition", 0)],
-            ["Burstiness CV", ai.get("burstiness_cv", 0)],
-            ["Perplexity proxy", ai.get("perplexity_proxy", 0)],
-            ["Entity depth /1k", ai.get("entity_depth_1k", 0)],
-            ["Claim specificity score", ai.get("claim_specificity_score", 0)],
-            ["Author signal score", ai.get("author_signal_score", 0)],
-            ["Source attribution score", ai.get("source_attribution_score", 0)],
-            ["AI risk composite", ai.get("ai_risk_composite", 0)],
+            ["Плотность AI-маркеров /1k", ai.get("ai_marker_density_1k", 0)],
+            ["Доля хеджирования", ai.get("hedging_ratio", 0)],
+            ["Повторяемость шаблонов /1k", ai.get("template_repetition", 0)],
+            ["Вариативность (CV)", ai.get("burstiness_cv", 0)],
+            ["Прокси perplexity", ai.get("perplexity_proxy", 0)],
+            ["Глубина сущностей /1k", ai.get("entity_depth_1k", 0)],
+            ["Оценка специфичности утверждений", ai.get("claim_specificity_score", 0)],
+            ["Оценка сигнала автора", ai.get("author_signal_score", 0)],
+            ["Оценка атрибуции источников", ai.get("source_attribution_score", 0)],
+            ["Композитный AI-риск", ai.get("ai_risk_composite", 0)],
         ]
-        self._add_table(doc, ["Signal", "Value"], ai_rows)
+        self._add_table(doc, ["Сигнал", "Значение"], ai_rows)
 
         link_terms = results.get("link_anchor_terms", []) or []
         if link_terms:

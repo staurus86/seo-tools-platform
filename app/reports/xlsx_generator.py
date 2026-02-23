@@ -124,6 +124,14 @@ class XLSXGenerator:
         if isinstance(value, str):
             return self._repair_mojibake_text(value).strip()
         return value
+
+    def _format_engine_label(self, engine: Any) -> str:
+        value = str(engine or "legacy").lower()
+        if value == "legacy":
+            return "базовый"
+        if value == "legacy-fallback":
+            return "базовый (fallback)"
+        return str(engine or "legacy")
     
     def _create_header_style(self):
         """Создает стиль заголовка."""
@@ -657,7 +665,7 @@ class XLSXGenerator:
 
         rows = [
             ('Адрес URL', data.get('url', 'н/д')),
-            ('Движок', results.get('engine', 'legacy')),
+            ('Движок', self._format_engine_label(results.get('engine', 'legacy'))),
             ('Профилей', summary.get('variants_total', len(variants))),
             ('Оценка', summary.get('score', 'н/д')),
             ('Критичные', summary.get('critical_issues', 0)),
@@ -895,7 +903,7 @@ class XLSXGenerator:
 
         rows = [
             ("URL", data.get("url", "н/д")),
-            ("Движок", results.get("engine", "legacy")),
+            ("Движок", self._format_engine_label(results.get("engine", "legacy"))),
             ("Режим", results.get("mode", "full")),
             ("Оценка", results.get("score", 0)),
             ("Мобильно-дружелюбно", "Да" if results.get("mobile_friendly") else "Нет"),
@@ -1044,7 +1052,7 @@ class XLSXGenerator:
 
         summary_rows = [
             ("URL", report_url),
-            ("Движок", results.get("engine", "legacy")),
+            ("Движок", self._format_engine_label(results.get("engine", "legacy"))),
             ("Домен", results.get("domain", "")),
             ("Ботов проверено", len(results.get("bots_checked", []) or list(bot_results.keys()))),
             ("Доступно", summary.get("accessible", 0)),
@@ -1668,83 +1676,83 @@ class XLSXGenerator:
                 title_len = int(page.get("title_len") or len(str(page.get("title") or "")))
                 desc_len = int(page.get("description_len") or len(str(page.get("meta_description") or "")))
                 if title_len < 30 or title_len > 60:
-                    recs.append("Keep title length in 30-60 chars and unique")
+                    recs.append("Держите длину title в диапазоне 30-60 символов и обеспечьте уникальность")
                 if desc_len < 50 or desc_len > 160:
-                    recs.append("Keep meta description in 100-160 chars")
+                    recs.append("Держите meta description в диапазоне 100-160 символов")
                 if int(page.get("h1_count") or 0) != 1:
-                    recs.append("Keep exactly one H1")
+                    recs.append("Оставьте ровно один H1")
                 if (page.get("canonical_status") or "") in ("missing", "external", "invalid"):
-                    recs.append("Set a valid canonical URL")
+                    recs.append("Укажите валидный canonical URL")
                 if int(page.get("duplicate_title_count") or 0) > 1:
-                    recs.append("Deduplicate title")
+                    recs.append("Уберите дубли title")
                 if int(page.get("duplicate_description_count") or 0) > 1:
-                    recs.append("Deduplicate meta description")
+                    recs.append("Уберите дубли meta description")
                 if not bool(page.get("charset_declared")):
-                    recs.append("Add <meta charset=\"utf-8\">")
+                    recs.append("Добавьте <meta charset=\"utf-8\">")
                 if not bool(page.get("viewport_declared")):
-                    recs.append("Add viewport meta for mobile devices")
+                    recs.append("Добавьте meta viewport для мобильных устройств")
                 if bool(page.get("multiple_meta_robots")):
-                    recs.append("Keep only one meta robots tag")
+                    recs.append("Оставьте только один meta robots тег")
                 return ok_if_empty(recs)
 
             if tab == "content":
                 unique_percent = to_float(page.get("unique_percent"), 0.0)
                 words = int(page.get("word_count") or 0)
                 if unique_percent < 30:
-                    recs.append("Add unique content blocks (uniqueness <30%)")
+                    recs.append("Добавьте уникальные блоки контента (уникальность <30%)")
                 elif unique_percent < 50:
-                    recs.append("Increase uniqueness above 50%")
+                    recs.append("Повышайте уникальность выше 50%")
                 if words < 300:
-                    recs.append("Increase content volume to 300+ words")
+                    recs.append("Увеличьте объем контента до 300+ слов")
                 if to_float(page.get("toxicity_score"), 0.0) > 40:
-                    recs.append("Reduce keyword stuffing and spam")
+                    recs.append("Снизьте переспам и злоупотребление ключевыми словами")
                 if int(page.get("near_duplicate_count") or 0) > 0:
-                    recs.append("Rewrite near-duplicate blocks and strengthen page intent")
+                    recs.append("Перепишите близкие дубли и усилите соответствие интенту страницы")
                 if bool(page.get("hidden_content")):
-                    recs.append("Remove hidden content blocks (display:none/offscreen/small font)")
+                    recs.append("Удалите скрытые блоки контента (display:none/offscreen/small font)")
                 if bool(page.get("cloaking_detected")):
-                    recs.append("Resolve cloaking-like hidden/visible content mismatch")
+                    recs.append("Устраните расхождения скрытого/видимого контента (признаки cloaking)")
                 if int(page.get("cta_count") or 0) <= 0 and str(page.get("page_type") or "") in {"home", "service", "product", "category"}:
-                    recs.append("Add conversion CTA blocks (form/button/callback)")
+                    recs.append("Добавьте конверсионные CTA-блоки (форма/кнопка/обратный звонок)")
                 if words >= 600 and int(page.get("lists_count") or 0) == 0 and int(page.get("tables_count") or 0) == 0:
-                    recs.append("Structure long content with lists/tables")
+                    recs.append("Структурируйте длинный контент списками и таблицами")
                 return ok_if_empty(recs)
 
             if tab == "technical":
                 if not page.get("indexable"):
-                    recs.append("Make page indexable")
+                    recs.append("Сделайте страницу индексируемой")
                 if not page.get("is_https"):
-                    recs.append("Enable HTTPS")
+                    recs.append("Включите HTTPS")
                 if not page.get("compression_enabled"):
-                    recs.append("Enable gzip or brotli")
+                    recs.append("Включите gzip или brotli")
                 if not page.get("cache_enabled"):
-                    recs.append("Configure Cache-Control")
+                    recs.append("Настройте Cache-Control")
                 if (page.get("canonical_status") or "") in ("missing", "external", "invalid"):
-                    recs.append("Validate canonical")
+                    recs.append("Проверьте и исправьте canonical")
                 if len(page.get("deprecated_tags") or []) > 0:
-                    recs.append("Remove deprecated HTML tags")
+                    recs.append("Удалите устаревшие HTML-теги")
                 rt = page.get("response_time_ms")
                 if rt is not None and int(rt) > 2000:
-                    recs.append("Reduce server response time")
+                    recs.append("Сократите время ответа сервера")
                 if to_float(page.get("perf_light_score"), 100.0) < 60:
-                    recs.append("Reduce render-blocking JS and DOM/HTML size")
+                    recs.append("Снизьте render-blocking JS и размер DOM/HTML")
                 return ok_if_empty(recs)
 
             if tab == "eeat":
                 eeat = to_float(page.get("eeat_score"), 0.0)
                 if eeat < 50:
-                    recs.append("Add author profile, bio, sources, and case studies")
+                    recs.append("Добавьте профиль автора, био, источники и кейсы")
                 elif eeat < 70:
-                    recs.append("Strengthen expertise and trust signals")
+                    recs.append("Усильте сигналы экспертности и доверия")
                 if not page.get("has_author_info"):
-                    recs.append("Add author block with contacts/social links")
+                    recs.append("Добавьте блок автора с контактами и соцсетями")
                 if not page.get("has_reviews"):
-                    recs.append("Add reviews and case studies")
+                    recs.append("Добавьте отзывы и кейсы")
                 return ok_if_empty(recs)
 
             if tab == "trust":
                 if not page.get("has_contact_info"):
-                    recs.append("Add contacts, address, and phone")
+                    recs.append("Добавьте контакты, адрес и телефон")
                 if not page.get("has_legal_docs"):
                     recs.append("Добавить юридические страницы и политики")
                 if not page.get("has_reviews"):
@@ -1768,79 +1776,79 @@ class XLSXGenerator:
                 if page.get("orphan_page"):
                     recs.append("Добавить внутренние ссылки на эту страницу")
                 if int(page.get("outgoing_internal_links") or 0) == 0:
-                    recs.append("Add outgoing links to relevant pages")
+                    recs.append("Добавьте исходящие внутренние ссылки на релевантные страницы")
                 return ok_if_empty(recs)
 
             if tab == "images":
                 img_opt = page.get("images_optimization") or {}
                 if int(img_opt.get("no_alt") or page.get("images_without_alt") or 0) > 0:
-                    recs.append("Add ALT text for images")
+                    recs.append("Добавьте ALT-тексты для изображений")
                 if int(img_opt.get("no_width_height") or 0) > 0:
-                    recs.append("Add width/height attributes")
+                    recs.append("Добавьте атрибуты width/height")
                 if int(img_opt.get("no_lazy_load") or 0) > 0:
-                    recs.append("Enable lazy loading")
+                    recs.append("Включите lazy loading")
                 if int(page.get("images_modern_format_count") or 0) <= 0 and int(page.get("images_count") or 0) > 0:
-                    recs.append("Use WebP/AVIF for key images")
+                    recs.append("Используйте WebP/AVIF для ключевых изображений")
                 if int(page.get("generic_alt_count") or 0) > 0:
-                    recs.append("Replace generic ALT texts with descriptive ones")
+                    recs.append("Замените общие ALT-тексты на описательные")
                 if int(page.get("decorative_non_empty_alt_count") or 0) > 0:
-                    recs.append("Use empty ALT for decorative images")
+                    recs.append("Используйте пустой ALT для декоративных изображений")
                 return ok_if_empty(recs)
 
             if tab == "external":
                 total = int(page.get("outgoing_external_links") or 0)
                 if total == 0:
-                    recs.append("Add relevant external sources")
+                    recs.append("Добавьте релевантные внешние источники")
                 return ok_if_empty(recs)
 
             if tab == "structured":
                 if int(page.get("structured_data") or 0) == 0:
-                    recs.append("Implement schema.org (JSON-LD)")
+                    recs.append("Внедрите schema.org (JSON-LD)")
                 if int(page.get("hreflang_count") or 0) == 0:
-                    recs.append("Add hreflang for language versions")
+                    recs.append("Добавьте hreflang для языковых версий")
                 return ok_if_empty(recs)
 
             if tab == "keywords":
                 if not (page.get("top_keywords") or page.get("top_terms") or page.get("tf_idf_keywords")):
-                    recs.append("Refine semantic core and target keywords")
+                    recs.append("Уточните семантическое ядро и целевые ключи")
                 if to_float(page.get("toxicity_score"), 0.0) > 40:
-                    recs.append("Reduce keyword over-optimization")
+                    recs.append("Снизьте переоптимизацию ключевых слов")
                 return ok_if_empty(recs)
 
             if tab == "topics":
                 if not page.get("topic_hub"):
-                    recs.append("Connect page to relevant hub pages")
+                    recs.append("Свяжите страницу с релевантными hub-страницами")
                 if not page.get("topic_label"):
-                    recs.append("Define a clear topic cluster")
+                    recs.append("Определите четкий тематический кластер")
                 return ok_if_empty(recs)
 
             if tab == "advanced":
                 freshness = page.get("content_freshness_days")
                 if freshness is not None and int(freshness) > 365:
-                    recs.append("Refresh stale content")
+                    recs.append("Обновите устаревший контент")
                 if bool(page.get("hidden_content")):
-                    recs.append("Remove hidden content")
+                    recs.append("Удалите скрытый контент")
                 if bool(page.get("cloaking_detected")):
-                    recs.append("Remove cloaking behavior")
+                    recs.append("Устраните признаки cloaking")
                 return ok_if_empty(recs)
 
             if tab == "link_quality":
                 if to_float(page.get("link_quality_score"), 0.0) < 60:
-                    recs.append("Improve internal linking")
+                    recs.append("Улучшите внутреннюю перелинковку")
                 if page.get("orphan_page"):
-                    recs.append("Add incoming links")
+                    recs.append("Добавьте входящие внутренние ссылки")
                 return ok_if_empty(recs)
 
-            return "OK"
+            return "ОК"
 
         def hierarchy_problem(page: Dict[str, Any]) -> str:
             errors = page.get("h_errors") or []
             if errors:
                 mapping = {
-                    "wrong_start": "Hierarchy starts from H2+ instead of H1",
-                    "missing_h1": "Missing H1",
-                    "multiple_h1": "Multiple H1 tags",
-                    "heading_level_skip": "Heading level skip detected",
+                    "wrong_start": "Иерархия начинается с H2+ вместо H1",
+                    "missing_h1": "Отсутствует H1",
+                    "multiple_h1": "Несколько H1",
+                    "heading_level_skip": "Обнаружен пропуск уровня заголовков",
                 }
                 return "; ".join(mapping.get(str(e), str(e)) for e in errors)
             return "No hierarchy issues"
@@ -2405,7 +2413,7 @@ class XLSXGenerator:
 
         ws["M3"] = "Топ кодов проблем"
         ws["M3"].font = Font(bold=True)
-        ws["M4"] = "Code"
+        ws["M4"] = "Код"
         ws["N4"] = "Количество"
         ws["O4"] = "Доля %"
         ws["P4"] = "Владелец"
@@ -3187,13 +3195,13 @@ class XLSXGenerator:
             elif gap_risk >= 6:
                 gap_sev = "warning"
             insights_rows.append([
-                "Gap analysis",
+                "Gap-анализ",
                 url,
                 intent,
                 ", ".join(targets[:5]),
-                f"missing title/h1/meta = {len(missing_title)}/{len(missing_h1)}/{len(missing_meta)}",
+                f"пропуски title/h1/meta = {len(missing_title)}/{len(missing_h1)}/{len(missing_meta)}",
                 gap_sev,
-                "Add core terms to title/H1/meta naturally without stuffing.",
+                "Добавьте ключевые термины в title/H1/meta естественно, без переспама.",
                 "; ".join([
                     f"title:{', '.join(missing_title[:3])}" if missing_title else "",
                     f"h1:{', '.join(missing_h1[:3])}" if missing_h1 else "",

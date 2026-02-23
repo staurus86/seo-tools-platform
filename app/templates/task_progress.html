@@ -386,9 +386,43 @@ function getBotSnapshotsForUrl(url) {
 function formatTrendDelta(current, prev) {
     const c = Number(current || 0);
     const p = Number(prev || 0);
-    if (!Number.isFinite(c) || !Number.isFinite(p)) return 'n/a';
+    if (!Number.isFinite(c) || !Number.isFinite(p)) return 'н/д';
     const d = c - p;
     return `${d > 0 ? '+' : ''}${d}`;
+}
+
+function formatEngineLabel(engine) {
+    const value = String(engine || 'legacy').toLowerCase();
+    if (value === 'legacy') return 'базовый';
+    if (value === 'legacy-fallback') return 'базовый (fallback)';
+    return value;
+}
+
+function formatProfileLabel(profile) {
+    const value = String(profile || '').toLowerCase();
+    if (value === 'mobile') return 'мобильный';
+    if (value === 'desktop') return 'десктоп';
+    return profile || '-';
+}
+
+function formatPolicyProfile(value, type) {
+    const v = String(value || '').toLowerCase();
+    if (!v) return 'н/д';
+    if (type === 'retry') {
+        if (v === 'standard') return 'стандартный';
+        if (v === 'aggressive') return 'агрессивный';
+        if (v === 'strict') return 'строгий';
+    }
+    if (type === 'criticality') {
+        if (v === 'balanced') return 'сбалансированный';
+        if (v === 'strict') return 'строгий';
+        if (v === 'aggressive') return 'агрессивный';
+    }
+    if (type === 'sla') {
+        if (v === 'standard') return 'стандартный';
+        if (v === 'strict') return 'строгий';
+    }
+    return value;
 }
 
 function _cp1251ByteForChar(ch) {
@@ -672,18 +706,18 @@ function generateTextReport() {
         totalAllow += (g.allow || []).length;
     });
 
-    let report = 'ROBOTS.TXT AUDIT REPORT\n';
+    let report = 'ОТЧЕТ АУДИТА ROBOTS.TXT\n';
     report += '='.repeat(60) + '\n';
-    report += 'Site URL: ' + (robotsData.url || '') + '\n';
-    report += 'Generated at: ' + new Date().toLocaleString() + '\n';
+    report += 'URL сайта: ' + (robotsData.url || '') + '\n';
+    report += 'Сформирован: ' + new Date().toLocaleString() + '\n';
     report += '='.repeat(60) + '\n\n';
 
-    report += 'SUMMARY\n' + '-'.repeat(30) + '\n';
-    report += 'robots.txt found: ' + (r.robots_txt_found ? 'yes' : 'no') + '\n';
-    report += 'HTTP status: ' + (r.status_code ?? 'n/a') + '\n';
-    report += 'Quality score: ' + (r.quality_score ?? 'n/a') + ' (' + (r.quality_grade || 'n/a') + ')\n';
+    report += 'СВОДКА\n' + '-'.repeat(30) + '\n';
+    report += 'robots.txt найден: ' + (r.robots_txt_found ? 'да' : 'нет') + '\n';
+    report += 'HTTP-статус: ' + (r.status_code ?? 'н/д') + '\n';
+    report += 'Оценка качества: ' + (r.quality_score ?? 'н/д') + ' (' + (r.quality_grade || 'н/д') + ')\n';
     report += 'Готово к продакшну: ' + (r.production_ready ? 'да' : 'нет') + '\n';
-    report += 'User-Agents: ' + (r.user_agents || 0) + '\n';
+    report += 'User-Agent групп: ' + (r.user_agents || 0) + '\n';
     report += 'Правила Disallow: ' + totalDisallow + '\n';
     report += 'Правила Allow: ' + totalAllow + '\n';
     report += 'Размер файла: ' + (r.content_length || 0) + ' байт\n';
@@ -718,16 +752,16 @@ function generateTextReport() {
 
     const sitemaps = (r.sitemaps || []).map(s => s && s.url ? s.url : s).filter(Boolean);
     if (sitemaps.length > 0) {
-        report += 'SITEMAPS\n' + '-'.repeat(30) + '\n';
+        report += 'SITEMAP-ФАЙЛЫ\n' + '-'.repeat(30) + '\n';
         sitemaps.forEach(sm => report += '- ' + sm + '\n');
         report += '\n';
     }
 
     const sitemapChecks = r.sitemap_checks || [];
     if (sitemapChecks.length > 0) {
-        report += 'SITEMAP URL CHECKS\n' + '-'.repeat(30) + '\n';
+        report += 'ПРОВЕРКИ URL ИЗ SITEMAP\n' + '-'.repeat(30) + '\n';
         sitemapChecks.forEach(check => {
-            const status = check.ok === true ? 'OK' : (check.ok === false ? 'FAIL' : 'SKIPPED');
+            const status = check.ok === true ? 'ОК' : (check.ok === false ? 'ОШИБКА' : 'ПРОПУЩЕНО');
             const code = check.status_code ? ` HTTP ${check.status_code}` : '';
             const err = check.error ? ` | ${check.error}` : '';
             report += `- ${status}: ${check.url || ''}${code}${err}\n`;
@@ -736,21 +770,21 @@ function generateTextReport() {
     }
 
     if (groups.length > 0) {
-        report += 'GROUP RULES\n' + '-'.repeat(30) + '\n';
+        report += 'ПРАВИЛА ПО ГРУППАМ\n' + '-'.repeat(30) + '\n';
         groups.forEach((group, idx) => {
-            report += `\nGroup ${idx + 1}: ${(group.user_agents || []).join(', ')}\n`;
-            (group.disallow || []).forEach(d => report += `  Disallow: ${d.path} (line ${d.line})\n`);
-            (group.allow || []).forEach(a => report += `  Allow: ${a.path} (line ${a.line})\n`);
+            report += `\nГруппа ${idx + 1}: ${(group.user_agents || []).join(', ')}\n`;
+            (group.disallow || []).forEach(d => report += `  Disallow: ${d.path} (строка ${d.line})\n`);
+            (group.allow || []).forEach(a => report += `  Allow: ${a.path} (строка ${a.line})\n`);
         });
         report += '\n';
     }
 
     const syntaxErrors = r.syntax_errors || [];
     if (syntaxErrors.length > 0) {
-        report += 'SYNTAX ERRORS\n' + '-'.repeat(30) + '\n';
+        report += 'СИНТАКСИЧЕСКИЕ ОШИБКИ\n' + '-'.repeat(30) + '\n';
         syntaxErrors.forEach(err => {
-            report += `- line ${err.line || '?'}: ${err.error || ''}\n`;
-            if (err.content) report += `  content: ${err.content}\n`;
+            report += `- строка ${err.line || '?'}: ${err.error || ''}\n`;
+            if (err.content) report += `  контент: ${err.content}\n`;
         });
         report += '\n';
     }
@@ -784,9 +818,9 @@ function generateTextReport() {
 
     const unsupported = r.unsupported_directives || [];
     if (unsupported.length > 0) {
-        report += 'UNSUPPORTED DIRECTIVES\n' + '-'.repeat(30) + '\n';
+        report += 'НЕПОДДЕРЖИВАЕМЫЕ ДИРЕКТИВЫ\n' + '-'.repeat(30) + '\n';
         unsupported.forEach(item => {
-            report += `- line ${item.line || '?'}: ${item.directive || ''}${item.value ? `: ${item.value}` : ''}\n`;
+            report += `- строка ${item.line || '?'}: ${item.directive || ''}${item.value ? `: ${item.value}` : ''}\n`;
         });
         report += '\n';
     }
@@ -795,7 +829,7 @@ function generateTextReport() {
     const hostWarnings = hostValidation.warnings || [];
     const hostList = hostValidation.hosts || r.hosts || [];
     if (hostList.length > 0 || hostWarnings.length > 0) {
-        report += 'HOST VALIDATION\n' + '-'.repeat(30) + '\n';
+        report += 'ПРОВЕРКА HOST\n' + '-'.repeat(30) + '\n';
         if (hostList.length > 0) report += 'Hosts: ' + hostList.join(', ') + '\n';
         hostWarnings.forEach(w => report += '- ' + w + '\n');
         report += '\n';
@@ -804,7 +838,7 @@ function generateTextReport() {
     const conflictScan = r.directive_conflicts || {};
     const conflictDetails = conflictScan.details || [];
     if (conflictDetails.length > 0) {
-        report += 'DIRECTIVE CONFLICTS\n' + '-'.repeat(30) + '\n';
+        report += 'КОНФЛИКТЫ ДИРЕКТИВ\n' + '-'.repeat(30) + '\n';
         conflictDetails.forEach(c => {
             const marker = c.path || c.groups || '';
             report += `- ${c.type || 'conflict'} | ua=${c.user_agent || ''}${marker ? ` | ${marker}` : ''}\n`;
@@ -815,21 +849,21 @@ function generateTextReport() {
     const longestMatch = r.longest_match_analysis || {};
     const longestNotes = longestMatch.notes || [];
     if (longestNotes.length > 0) {
-        report += 'LONGEST-MATCH NOTES\n' + '-'.repeat(30) + '\n';
+        report += 'ПРИМЕЧАНИЯ LONGEST-MATCH\n' + '-'.repeat(30) + '\n';
         longestNotes.forEach(n => report += '- ' + n + '\n');
         report += '\n';
     }
 
     const paramRecs = r.param_recommendations || [];
     if (paramRecs.length > 0) {
-        report += 'YANDEX CLEAN-PARAM RECOMMENDATIONS\n' + '-'.repeat(30) + '\n';
+        report += 'РЕКОМЕНДАЦИИ ПО YANDEX CLEAN-PARAM\n' + '-'.repeat(30) + '\n';
         paramRecs.forEach(n => report += '- ' + n + '\n');
         report += '\n';
     }
 
     const rawContent = r.raw_content || '';
     if (rawContent) {
-        report += 'RAW ROBOTS.TXT\n' + '-'.repeat(30) + '\n';
+        report += 'СЫРОЙ ROBOTS.TXT\n' + '-'.repeat(30) + '\n';
         report += rawContent + '\n';
     }
 
@@ -1337,7 +1371,7 @@ function copyBotPlaybooksAsJira() {
         const priority = Number(p.priority_score || 0);
         const owner = p.owner || 'Команда';
         const blockerCode = p.blocker_code || 'general';
-        const title = p.title || `Bot accessibility fix ${idx + 1}`;
+        const title = p.title || `Исправление доступности ботов ${idx + 1}`;
         return [
             `Сводка: [Проверка доступности ботов] ${title}`,
             `Labels: bot-check,${String(blockerCode).toLowerCase().replace(/[^a-z0-9_-]+/g, '-')},${bucketName(priority).toLowerCase()}`,
@@ -2722,8 +2756,8 @@ function generateBotHTML(result) {
     const categoryOptions = ['all', ...Array.from(categorySet).sort()];
 
     const botRowsHtml = botRows.map((row) => {
-        const statusText = row.status || row.error || 'n/a';
-        const responseMs = row.response_time_ms ? `${row.response_time_ms} ms` : 'n/a';
+        const statusText = row.status || row.error || 'н/д';
+        const responseMs = row.response_time_ms ? `${row.response_time_ms} ms` : 'н/д';
         const reachableLabel = row.accessible ? 'да' : 'нет';
         const indexable = (typeof row.indexable === 'boolean')
             ? row.indexable
@@ -2855,7 +2889,7 @@ function generateBotHTML(result) {
     const evidenceTableRows = evidenceRows.slice(0, 20).map((e) => `
         <tr class="border-b">
             <td class="py-2 pr-2 text-sm">${escapeHtml(e.bot || '')}</td>
-            <td class="py-2 pr-2 text-sm">${e.status ?? 'n/a'}</td>
+            <td class="py-2 pr-2 text-sm">${e.status ?? 'н/д'}</td>
             <td class="py-2 pr-2 text-sm">${escapeHtml(e.indexability_reason || '')}</td>
             <td class="py-2 pr-2 text-sm">${e.waf_detected ? 'да' : 'нет'} (${e.waf_confidence ?? 0})</td>
             <td class="py-2 pr-2 text-xs text-gray-600">${escapeHtml(e.response_sample || '')}</td>
@@ -2909,8 +2943,8 @@ function generateBotHTML(result) {
                 ${summary.total ? `<div><span class="text-gray-600">Индексируемо:</span> <span class="font-medium">${summary.indexable || 0}/${summary.total}</span></div>` : ''}
                 ${summary.total ? `<div><span class="text-gray-600">Не индексируемо:</span> <span class="font-medium">${summary.non_indexable || 0}</span></div>` : ''}
                 ${summary.avg_response_time_ms ? `<div><span class="text-gray-600">Средний ответ:</span> <span class="font-medium">${summary.avg_response_time_ms} ms</span></div>` : ''}
-                <div><span class="text-gray-600">Профиль ретраев:</span> <span class="font-medium">${r.retry_profile || 'standard'}</span></div>
-                <div><span class="text-gray-600">Критичность/SLA:</span> <span class="font-medium">${r.criticality_profile || 'balanced'} / ${r.sla_profile || 'standard'}</span></div>
+                <div><span class="text-gray-600">Профиль ретраев:</span> <span class="font-medium">${formatPolicyProfile(r.retry_profile || 'standard', 'retry')}</span></div>
+                <div><span class="text-gray-600">Критичность/SLA:</span> <span class="font-medium">${formatPolicyProfile(r.criticality_profile || 'balanced', 'criticality')} / ${formatPolicyProfile(r.sla_profile || 'standard', 'sla')}</span></div>
                 <div><span class="text-gray-600">Режим AI-политики:</span> <span class="font-medium">${r.ai_block_expected ? 'намеренные блокировки AI' : 'строгая доступность'}</span></div>
                 ${r.ai_block_expected ? `<div><span class="text-gray-600">Ожидаемо заблокировано AI:</span> <span class="font-medium">${summary.expected_ai_policy_blocked || 0}</span></div>` : ''}
                 ${latestTrend ? `<div><span class="text-gray-600">Снимков тренда:</span> <span class="font-medium">${trendSnapshots.length}</span></div>` : ''}
@@ -3391,9 +3425,9 @@ function generateRenderAuditHTML(result) {
     const severityRank = { critical: 0, warning: 1, info: 2 };
     const severityLabel = (sev) => {
         const s = String(sev || 'info').toLowerCase();
-        if (s === 'critical') return 'CRITICAL';
-        if (s === 'warning') return 'WARNING';
-        return 'INFO';
+        if (s === 'critical') return 'КРИТИЧНО';
+        if (s === 'warning') return 'ПРЕДУПРЕЖДЕНИЕ';
+        return 'ИНФО';
     };
     const severityBadge = (sev) => {
         const s = String(sev || 'info').toLowerCase();
@@ -3431,7 +3465,7 @@ function generateRenderAuditHTML(result) {
         const shots = Object.keys(v.screenshots || {});
         return {
             label: v.variant_label || v.variant_id || '-',
-            profile: v.profile_type || (v.mobile ? 'mobile' : 'desktop'),
+            profile: formatProfileLabel(v.profile_type || (v.mobile ? 'mobile' : 'desktop')),
             score: Number(m.score ?? 0),
             missingTotal: Number(m.total_missing ?? 0),
             missingPct: Number(m.missing_pct ?? 0),
@@ -3461,7 +3495,7 @@ function generateRenderAuditHTML(result) {
         const text = normalizeText(value);
         if (!text) return '<span class="text-slate-400">-</span>';
         const preview = text.length > 70 ? `${text.slice(0, 70)}...` : text;
-        return `<div class="font-medium text-slate-800">${escapeHtml(preview)}</div><div class="text-[11px] text-slate-500">len: ${escapeHtml(text.length)}</div>`;
+        return `<div class="font-medium text-slate-800">${escapeHtml(preview)}</div><div class="text-[11px] text-slate-500">длина: ${escapeHtml(text.length)}</div>`;
     };
     const toCount = (value) => {
         const n = Number(value ?? 0);
@@ -3500,7 +3534,7 @@ function generateRenderAuditHTML(result) {
         const rowClass = impactScore >= 4 ? 'bg-rose-50/40' : impactScore >= 2 ? 'bg-amber-50/40' : '';
         return {
             variantLabel: v.variant_label || v.variant_id || '-',
-            profile: v.profile_type || (v.mobile ? 'mobile' : 'desktop'),
+            profile: formatProfileLabel(v.profile_type || (v.mobile ? 'mobile' : 'desktop')),
             raw,
             rendered,
             impactScore,
@@ -3540,7 +3574,7 @@ function generateRenderAuditHTML(result) {
                         ${impactBadge(row.impactScore)}
                     </div>
                     <div class="text-xs text-slate-500 mt-1">${escapeHtml(row.profile)}</div>
-                    <div class="text-xs text-slate-700 mt-1">Changed: ${escapeHtml(changedFields.join(', ') || '-')}</div>
+                    <div class="text-xs text-slate-700 mt-1">Изменения: ${escapeHtml(changedFields.map(renderFieldName).join(', ') || '-')}</div>
                 </div>
             `;
         }).join('');
@@ -3576,7 +3610,7 @@ function generateRenderAuditHTML(result) {
         const key = text.toLowerCase();
         if (text && !recSeen.has(key)) {
             recSeen.add(key);
-            recommendations.push({ text, source: 'summary' });
+            recommendations.push({ text, source: 'сводка' });
         }
     });
     issues
@@ -3588,7 +3622,7 @@ function generateRenderAuditHTML(result) {
             const key = action.toLowerCase();
             if (!recSeen.has(key)) {
                 recSeen.add(key);
-                recommendations.push({ text: action, source: 'issue' });
+                recommendations.push({ text: action, source: 'проблема' });
             }
         });
     const recommendationCardsHtml = recommendations.slice(0, 10).map((row) => `
@@ -3613,7 +3647,7 @@ function generateRenderAuditHTML(result) {
                 <div class="flex flex-wrap items-center gap-2 mb-1">
                     <span class="px-2 py-0.5 rounded-full text-xs ${severityBadge(i.severity)}">${severityLabel(i.severity)}</span>
                     <span class="font-medium text-slate-800">${escapeHtml(i.code || 'issue')}</span>
-                    <span class="text-xs text-slate-500">${escapeHtml(i.variant || 'profile')}</span>
+                    <span class="text-xs text-slate-500">${escapeHtml(i.variant || 'профиль')}</span>
                 </div>
                 <div class="text-slate-800">${escapeHtml(i.title || '')}</div>
                 <div class="text-slate-600">${escapeHtml(i.details || '')}</div>
@@ -3626,7 +3660,7 @@ function generateRenderAuditHTML(result) {
             return `
                 <div class="bg-white rounded-2xl shadow-lg border border-rose-200 p-6">
                     <h4 class="font-semibold text-rose-700 mb-2">Профиль недоступен</h4>
-                    <div class="text-sm text-rose-700">В результате render отсутствует payload вариантов.</div>
+                    <div class="text-sm text-rose-700">В результате render отсутствуют данные по вариантам.</div>
                 </div>
             `;
         }
@@ -3654,7 +3688,7 @@ function generateRenderAuditHTML(result) {
                 <div class="flex items-start justify-between mb-3">
                     <div>
                         <h4 class="text-lg font-semibold text-slate-800">${escapeHtml(v.variant_label || v.variant_id || 'Вариант')}</h4>
-                        <div class="mt-1 inline-flex text-[11px] px-2 py-1 rounded-full ${profilePill}">${escapeHtml(v.profile_type || (v.mobile ? 'mobile' : 'desktop'))}</div>
+                        <div class="mt-1 inline-flex text-[11px] px-2 py-1 rounded-full ${profilePill}">${escapeHtml(formatProfileLabel(v.profile_type || (v.mobile ? 'mobile' : 'desktop')))}</div>
                     </div>
                     <span class="text-xs px-2 py-1 rounded-full ${scoreBadgeClass(scoreValue)}">Оценка ${escapeHtml(scoreValue.toFixed(1))}</span>
                 </div>
@@ -3691,13 +3725,23 @@ function generateRenderAuditHTML(result) {
         </tr>
     `).join('');
 
+    const renderFieldName = (name) => {
+        const n = String(name || '').toLowerCase();
+        if (n === 'title') return 'title';
+        if (n === 'description') return 'description';
+        if (n === 'h1') return 'h1';
+        if (n === 'images') return 'изображения';
+        if (n === 'links') return 'ссылки';
+        return name || '';
+    };
+
     const diagnosticsHtml = variants.length
         ? `<ul class="list-disc pl-5 text-xs text-slate-700">${variants.map(v => {
             const dShots = Object.keys(v.screenshots || {});
-            const pType = String(v.profile_type || (v.mobile ? 'mobile' : 'desktop'));
-            return `<li>${escapeHtml(v.variant_id || '-')} | ${escapeHtml(v.variant_label || '-')} | profile=${escapeHtml(pType)} | issues=${escapeHtml((v.issues || []).length)} | screenshots=${escapeHtml(dShots.join(',') || '-')}</li>`;
+            const pType = formatProfileLabel(v.profile_type || (v.mobile ? 'mobile' : 'desktop'));
+            return `<li>${escapeHtml(v.variant_id || '-')} | ${escapeHtml(v.variant_label || '-')} | профиль=${escapeHtml(pType)} | проблем=${escapeHtml((v.issues || []).length)} | скриншотов=${escapeHtml(dShots.join(',') || '-')}</li>`;
         }).join('')}</ul>`
-        : '<div class="text-xs text-slate-500">В payload нет диагностики по вариантам.</div>';
+        : '<div class="text-xs text-slate-500">В данных нет диагностики по вариантам.</div>';
 
     return `
         <div class="space-y-6 renderpro-results">
@@ -3735,7 +3779,7 @@ function generateRenderAuditHTML(result) {
                     <div class="rounded-xl border bg-slate-50 p-3">
                         <div class="text-xs text-slate-500">Средний JS-рендер</div>
                         <div class="text-xl font-semibold text-slate-900">${escapeHtml(Math.round(Number(summary.avg_js_load_ms || 0)))} мс</div>
-                        <div class="mt-1 text-xs text-slate-600">Движок: ${escapeHtml(r.engine || 'legacy')}</div>
+                        <div class="mt-1 text-xs text-slate-600">Движок: ${escapeHtml(formatEngineLabel(r.engine || 'legacy'))}</div>
                     </div>
                 </div>
                 <div class="grid grid-cols-3 gap-2 mt-3 text-sm">
@@ -3763,13 +3807,13 @@ function generateRenderAuditHTML(result) {
                         </tr>
                     </thead>
                     <tbody>
-                        ${renderGapRowsHtml || '<tr><td colspan="9" class="py-3 text-sm text-slate-500">В payload нет строк вариантов.</td></tr>'}
+                        ${renderGapRowsHtml || '<tr><td colspan="9" class="py-3 text-sm text-slate-500">В данных нет строк вариантов.</td></tr>'}
                     </tbody>
                 </table>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
-                <h4 class="font-semibold mb-3">Дифф контента JS vs no-JS</h4>
+                <h4 class="font-semibold mb-3">Сравнение контента JS и no-JS</h4>
                 <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 mb-4">
                     <div class="rounded-lg border bg-slate-50 p-2">
                         <div class="text-[11px] uppercase tracking-wide text-slate-500">Title изменен</div>
@@ -3805,10 +3849,10 @@ function generateRenderAuditHTML(result) {
                 <div class="mb-4">
                     <div class="flex items-center justify-between mb-2">
                         <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Топ вариантов с расхождениями</div>
-                        <div class="text-[11px] text-slate-500">Delta: положительное значение значит JS добавляет контент, отрицательное - теряет</div>
+                        <div class="text-[11px] text-slate-500">Изменение: положительное значение значит JS добавляет контент, отрицательное - теряет</div>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
-                        ${topDivergencesHtml || '<div class="text-sm text-slate-500">Нет значимых расхождений JS/no-JS.</div>'}
+                        ${topDivergencesHtml || '<div class="text-sm text-slate-500">Нет значимых расхождений JS и no-JS.</div>'}
                     </div>
                 </div>
                 <table class="w-full min-w-[1900px]">
@@ -3826,16 +3870,16 @@ function generateRenderAuditHTML(result) {
                             <th class="py-2 pr-2">H1 (no-JS)</th>
                             <th class="py-2 pr-2">H1 (JS)</th>
                             <th class="py-2 pr-2">Дельта</th>
-                            <th class="py-2 pr-2">Images (no-JS)</th>
-                            <th class="py-2 pr-2">Images (JS)</th>
+                            <th class="py-2 pr-2">Изобр. (no-JS)</th>
+                            <th class="py-2 pr-2">Изобр. (JS)</th>
                             <th class="py-2 pr-2">Дельта</th>
-                            <th class="py-2 pr-2">Links (no-JS)</th>
-                            <th class="py-2 pr-2">Links (JS)</th>
+                            <th class="py-2 pr-2">Ссылки (no-JS)</th>
+                            <th class="py-2 pr-2">Ссылки (JS)</th>
                             <th class="py-2 pr-2">Дельта</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${contentDiffRowsHtml || '<tr><td colspan="18" class="py-3 text-sm text-slate-500">В payload нет статистики raw/rendered контента.</td></tr>'}
+                            ${contentDiffRowsHtml || '<tr><td colspan="18" class="py-3 text-sm text-slate-500">В данных нет статистики по raw/rendered контенту.</td></tr>'}
                     </tbody>
                 </table>
             </div>
@@ -3877,7 +3921,7 @@ function generateRenderAuditHTML(result) {
             </div>
 
             <details class="bg-white rounded-xl shadow-md p-4 border border-gray-100">
-                            <summary class="cursor-pointer text-sm font-medium">Диагностика вариантов (debug)</summary>
+                            <summary class="cursor-pointer text-sm font-medium">Диагностика вариантов (отладка)</summary>
                 <div class="mt-3">${diagnosticsHtml}</div>
             </details>
         </div>
@@ -3944,7 +3988,7 @@ function generateMobileCheckHTML(result) {
                 </p>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
-                    <div><span class="text-gray-600">Движок:</span> <span class="font-medium">${r.engine || 'legacy'}</span></div>
+                    <div><span class="text-gray-600">Движок:</span> <span class="font-medium">${formatEngineLabel(r.engine || 'legacy')}</span></div>
                     <div><span class="text-gray-600">Устройств:</span> <span class="font-medium">${summary.total_devices || (r.devices_tested || []).length}</span></div>
                     <div><span class="text-gray-600">Оценка:</span> <span class="font-medium">${r.score ?? 'н/д'}</span></div>
                     <div><span class="text-gray-600">Мобильно-дружелюбно:</span> <span class="font-medium ${r.mobile_friendly ? 'text-green-600' : 'text-red-600'}">${r.mobile_friendly ? 'Да' : 'Нет'}</span></div>
@@ -5206,13 +5250,13 @@ function generateSiteAuditProHTML(result) {
                 <h4 class="font-semibold mb-2">Скачивания</h4>
                 ${artifactsMeta.payload_compacted ? `
                     <div class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-3">
-                        Включен компактный режим payload. Полные данные доступны через скачивание частей ниже.
+                        Включен компактный режим данных. Полные данные доступны через скачивание частей ниже.
                     </div>
                     <div class="text-xs text-gray-600 mb-3">
-                        Пропущено в inline payload:
-                        issues=${escapeHtml((artifactsMeta.omitted_counts || {}).issues ?? 0)},
-                        semantic=${escapeHtml((artifactsMeta.omitted_counts || {}).semantic_linking_map ?? 0)},
-                        pages=${escapeHtml((artifactsMeta.omitted_counts || {}).pages ?? 0)}
+                        Пропущено в inline данных:
+                        проблемы=${escapeHtml((artifactsMeta.omitted_counts || {}).issues ?? 0)},
+                        семантика=${escapeHtml((artifactsMeta.omitted_counts || {}).semantic_linking_map ?? 0)},
+                        страницы=${escapeHtml((artifactsMeta.omitted_counts || {}).pages ?? 0)}
                     </div>
                 ` : ''}
                 ${downloadsHtml || '<div class="text-sm text-gray-500">Chunk-артефакты для этого запуска недоступны.</div>'}
