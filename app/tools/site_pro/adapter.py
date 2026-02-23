@@ -14,6 +14,8 @@ from urllib.parse import parse_qs, urljoin, urldefrag, urlparse
 import requests
 from bs4 import BeautifulSoup
 
+from app.tools.http_text import decode_response_text
+
 from .schema import (
     NormalizedSiteAuditPayload,
     SiteAuditProIssue,
@@ -1895,6 +1897,7 @@ class SiteAuditProAdapter:
 
             try:
                 response = session.get(current, timeout=timeout, allow_redirects=True)
+                raw_html = decode_response_text(response)
                 final_url = self._normalize_url(response.url or current)
                 reason = str(getattr(response, "reason", "") or "").strip()
                 status_line = f"{response.status_code} {reason}".strip()
@@ -1904,13 +1907,13 @@ class SiteAuditProAdapter:
                         float(getattr(getattr(response, "elapsed", None), "total_seconds", lambda: 0.0)()) * 1000.0,
                     )
                 )
-                html_size_bytes = len((response.text or "").encode("utf-8", errors="ignore"))
+                html_size_bytes = len((raw_html or "").encode("utf-8", errors="ignore"))
                 row, links, page_text, weak_anchor_count, anchor_total = self._build_row(
                     source_url=current,
                     final_url=final_url,
                     status_code=response.status_code,
                     status_line=status_line,
-                    html=response.text or "",
+                    html=raw_html or "",
                     base_host=base_host,
                     headers=dict(getattr(response, "headers", {}) or {}),
                     response_time_ms=response_time_ms,
@@ -2320,5 +2323,4 @@ class SiteAuditProAdapter:
             "pipeline": pipeline,
             "artifacts": normalized.artifacts,
         }
-
 

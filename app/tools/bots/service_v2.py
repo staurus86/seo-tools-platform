@@ -20,6 +20,8 @@ from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from app.tools.http_text import decode_response_text
+
 
 @dataclass(frozen=True)
 class BotDefinition:
@@ -719,7 +721,7 @@ class BotAccessibilityServiceV2:
             resp = self.session.get(url, headers=headers, timeout=max(3, min(self.timeout, 10)), allow_redirects=True)
             content_type = resp.headers.get("content-type", "")
             is_html = "text/html" in content_type.lower()
-            html_head = (resp.text or "")[:120000] if is_html else ""
+            html_head = (decode_response_text(resp) or "")[:120000] if is_html else ""
             return {
                 "ok": True,
                 "status": resp.status_code,
@@ -744,7 +746,7 @@ class BotAccessibilityServiceV2:
         try:
             resp = self.session.get(robots_url, timeout=self.timeout)
             if resp.status_code == 200:
-                return resp.text, resp.status_code
+                return decode_response_text(resp), resp.status_code
             return None, resp.status_code
         except Exception:
             return None, None
@@ -781,7 +783,7 @@ class BotAccessibilityServiceV2:
 
             content_type = response.headers.get("content-type", "")
             is_html = "text/html" in content_type.lower()
-            html_head = (response.text or "")[:120000] if is_html else ""
+            html_head = (decode_response_text(response) or "")[:120000] if is_html else ""
             meta_robots = _extract_meta_robots(html_head) if is_html else None
             x_robots = response.headers.get("X-Robots-Tag") or response.headers.get("X-Robots")
             final_parsed = urlparse(response.url or url)

@@ -15,6 +15,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from app.config import settings
+from app.tools.http_text import decode_response_text
 
 
 UA_DESKTOP = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
@@ -605,7 +606,7 @@ class RenderAuditServiceV2:
                 try:
                     try:
                         r = requests.get(url, timeout=self.timeout, headers={"User-Agent": ua}, allow_redirects=True)
-                        raw = self._parse_raw(r.text, r.status_code)
+                        raw = self._parse_raw(decode_response_text(r), r.status_code)
                     except Exception:
                         raw = self._parse_raw("", None)
 

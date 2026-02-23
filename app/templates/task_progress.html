@@ -1735,7 +1735,7 @@ function generateRobotsHTML(data) {
         sitemapChecksHTML = sitemapChecks.map(check => {
             const ok = check.ok;
             const badge = ok === true ? 'bg-green-100 text-green-700' : (ok === null ? 'bg-gray-100 text-gray-700' : 'bg-red-100 text-red-700');
-            const status = ok === true ? '' : (ok === null ? 'РџР РћРџРЈР©Р•' : 'РћРЁРР‘');
+            const status = ok === true ? '' : (ok === null ? 'ПРОПУЩЕНО' : 'ОШИБКА');
             return `
                 <div class="border rounded-lg p-3 mb-2">
                     <div class="flex items-center justify-between">
@@ -1819,11 +1819,11 @@ function generateRobotsHTML(data) {
             <div class="bg-white rounded-xl shadow-md p-4 flex flex-wrap gap-3">
                 <button onclick="downloadTextReport()" class="inline-flex items-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition cursor-pointer">
                     <i class="fas fa-file-download mr-2"></i>
-                    РЎРєР°С‡Р°С‚СЊ РѕС‚С‡РµС‚ (.txt)
+                    Скачать РѕС‚С‡РµС‚ (.txt)
                 </button>
                 <button onclick="downloadWordReport()" class="inline-flex items-center bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition cursor-pointer">
                     <i class="fas fa-file-word mr-2"></i>
-                    РЎРєР°С‡Р°С‚СЊ РѕС‚С‡РµС‚ (.docx)
+                    Скачать РѕС‚С‡РµС‚ (.docx)
                 </button>
                 <button onclick="copyToClipboard(JSON.stringify(robotsData, null, 2))" class="inline-flex items-center bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition">
                     <i class="fas fa-copy mr-2"></i>
@@ -2020,7 +2020,7 @@ function generateRobotsHTML(data) {
             ${recommendationsHTML ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-blue-600 mb-3">
-                        <i class="fas fa-lightbulb mr-2"></i>Р РµРєРѕРјРµРЅРґР°С†РёРё
+                        <i class="fas fa-lightbulb mr-2"></i>Рекомендации
                     </h4>
                     ${recommendationsHTML}
                 </div>
@@ -2113,7 +2113,7 @@ function generateSitemapHTMLV2(result) {
                             </button>
                         ` : ''}
                         <button onclick="downloadSitemapXlsxReport()" class="text-indigo-600 hover:text-indigo-800 text-sm">
-                            <i class="fas fa-file-excel mr-1"></i>РЎРєР°С‡Р°С‚СЊ XLSX
+                            <i class="fas fa-file-excel mr-1"></i>Скачать XLSX
                         </button>
                         <button onclick="copyToClipboard(JSON.stringify(lastTaskResult, null, 2))" class="text-blue-600 hover:text-blue-800 text-sm">
                             <i class="fas fa-code mr-1"></i>JSON
@@ -2146,7 +2146,7 @@ function generateSitemapHTMLV2(result) {
                 </div>
                 ${r.error ? `<div class="mt-3 text-red-600 font-medium">РћС€РёР±РєР°: ${r.error}</div>` : ''}
                 ${r.urls_export_truncated ? `<div class="mt-3 text-amber-700 text-sm">Р­РєСЃРїРѕСЂС‚ РѕРіСЂР°РЅРёС‡РµРЅ РґРѕ ${r.max_export_urls || 0} URL.</div>` : ''}
-                ${(r.export_parts_count || 0) > 1 ? `<div class="mt-2 text-gray-600 text-sm">Р РµРєРѕРјРµРЅРґСѓРµРјРѕРµ С‡РёСЃР»Рѕ С‡Р°СЃС‚РµР№: ${r.export_parts_count} ( ${exportChunkSize} URL).</div>` : ''}
+                ${(r.export_parts_count || 0) > 1 ? `<div class="mt-2 text-gray-600 text-sm">Рекомендуемое число частей: ${r.export_parts_count} ( ${exportChunkSize} URL).</div>` : ''}
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
@@ -2244,7 +2244,7 @@ function generateSitemapHTMLV2(result) {
                             <i class="fas fa-file-download mr-1"></i>Р­РєСЃРїРѕСЂС‚ РґСѓР±Р»РµР№
                         </button>
                     </div>
-                    ${r.duplicate_details_truncated ? `<div class="text-xs text-amber-700 mb-2">РЎРїРёСЃРѕРє СЃРѕРєСЂР°С‰РµРЅ.</div>` : ''}
+                    ${r.duplicate_details_truncated ? `<div class="text-xs text-amber-700 mb-2">Список сокращен.</div>` : ''}
                     <div class="max-h-72 overflow-auto border rounded">
                         ${duplicateDetails.slice(0, 500).map(d => `
                             <div class="text-xs border-b p-2">
@@ -2259,7 +2259,7 @@ function generateSitemapHTMLV2(result) {
 
             ${recommendations.length > 0 ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold text-blue-600 mb-2">Р РµРєРѕРјРµРЅРґР°С†РёРё</h4>
+                    <h4 class="font-semibold text-blue-600 mb-2">Рекомендации</h4>
                     ${recommendations.map(rec => `<div class="text-sm text-blue-700 mb-1">- ${escapeHtml(rec)}</div>`).join('')}
                 </div>
             ` : ''}
@@ -2278,7 +2278,7 @@ function generateSitemapHTMLV2(result) {
                         <div class="border rounded-lg p-3">
                             <div class="flex justify-between items-center mb-1">
                                 <div class="text-sm font-medium break-all">${escapeHtml(f.sitemap_url)}</div>
-                                <div class="text-xs ${f.ok ? 'text-green-600' : 'text-red-600'}">${f.ok ? '' : 'РћРЁРР‘'}</div>
+                                <div class="text-xs ${f.ok ? 'text-green-600' : 'text-red-600'}">${f.ok ? '' : 'ОШИБКА'}</div>
                             </div>
                             <div class="text-xs text-gray-600 mb-2">С‚РёРї: ${escapeHtml(f.type || 'РЅРµРёР·РІРµСЃС‚РЅРѕ')} | HTTP: ${f.status_code || 'РЅ/Рґ'} | URL: ${f.urls_count || 0}</div>
                             ${f.duplicate_count > 0 ? `<div class="text-xs text-rose-700 mb-2">РґСѓР±Р»РёРєР°С‚ РІ СЌС‚ sitemap: ${f.duplicate_count}</div>` : ''}
@@ -2886,7 +2886,7 @@ function generateSiteAnalysisHTML(result) {
     if (info.length > 0) {
         issuesHTML += `
             <div class="mb-4">
-                <h4 class="font-semibold text-blue-600 mb-2"><i class="fas fa-info-circle mr-2"></i>Р РµРєРѕРјРµРЅРґР°С†РёРё (${info.length}):</h4>
+                <h4 class="font-semibold text-blue-600 mb-2"><i class="fas fa-info-circle mr-2"></i>Рекомендации (${info.length}):</h4>
                 <ul class="list-disc pl-5 text-sm text-blue-700 space-y-1">
                     ${info.slice(0, 5).map(i => `<li>${i.issue}</li>`).join('')}
                 </ul>
@@ -3036,7 +3036,7 @@ function generateSiteAnalysisHTML(result) {
                         <span class="font-medium ml-2">${(content.average_load_time || 0) * 1000}ms</span>
                     </div>
                     <div class="p-2 bg-gray-50 rounded">
-                        <span class="text-gray-600">Р РµРґРёСЂРµРєС‚С‹:</span>
+                        <span class="text-gray-600">Редиректы:</span>
                         <span class="font-medium ml-2">${summary.redirects_count || 0}</span>
                     </div>
                 </div>
@@ -3058,7 +3058,7 @@ function generateSiteAnalysisHTML(result) {
             
             <!-- Recommendations -->
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h3 class="text-lg font-semibold mb-4"><i class="fas fa-lightbulb mr-2 text-yellow-500"></i>Р РµРєРѕРјРµРЅРґР°С†РёРё</h3>
+                <h3 class="text-lg font-semibold mb-4"><i class="fas fa-lightbulb mr-2 text-yellow-500"></i>Рекомендации</h3>
                 ${recsHTML}
             </div>
         </div>
@@ -3591,7 +3591,7 @@ function generateMobileCheckHTML(result) {
                 <div class="rounded-lg overflow-hidden border cursor-zoom-in" onclick="openMobileLightbox(${idx})">
                     <img src="${d.screenshot_url}" alt="${d.device_name}" class="w-full h-44 object-cover">
                 </div>
-            ` : `<div class="text-sm text-gray-500">РЎРєСЂРёРЅС€РѕС‚ РѕС‚СЃСѓС‚СЃС‚РІСѓРµС‚</div>`}
+            ` : `<div class="text-sm text-gray-500">Скриншот отсутствует</div>`}
             ${(d.issues || []).length ? `
                 <div class="mt-3 text-sm">
                     <div class="font-medium mb-1">РљР»СЋС‡РµРІС‹Рµ РїСЂРѕР±Р»РµРјС‹:</div>
@@ -3621,9 +3621,9 @@ function generateMobileCheckHTML(result) {
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="text-lg font-semibold">РџСЂРѕРІРµСЂРєР° РјРѕР±РёР»СЊРЅРѕР№ РІРµСЂСЃРёРё</h3>
                     <div class="flex gap-3">
-                        <button onclick="downloadMobileDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>РЎРєР°С‡Р°С‚СЊ DOCX</button>
-                        <button onclick="downloadMobileXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>РЎРєР°С‡Р°С‚СЊ XLSX (РѕС€РёР±РєРё)</button>
-                        <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>РљРѕРїРёСЂРѕРІР°С‚СЊ JSON</button>
+                        <button onclick="downloadMobileDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>Скачать DOCX</button>
+                        <button onclick="downloadMobileXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>Скачать XLSX (ошибки)</button>
+                        <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Copy JSON</button>
                     </div>
                 </div>
                 <p class="text-sm text-gray-600 mb-4">
@@ -3651,8 +3651,8 @@ function generateMobileCheckHTML(result) {
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-2">Р РµРєРѕРјРµРЅРґР°С†РёРё</h4>
-                <ul class="list-disc pl-5 text-sm text-gray-700">${recommendationsHtml || '<li>Р РµРєРѕРјРµРЅРґР°С†РёР№ РЅРµС‚.</li>'}</ul>
+                <h4 class="font-semibold mb-2">Рекомендации</h4>
+                <ul class="list-disc pl-5 text-sm text-gray-700">${recommendationsHtml || '<li>Рекомендаций нет.</li>'}</ul>
             </div>
         </div>
     `;
@@ -3821,8 +3821,8 @@ function generateOnPageAuditHTML(result) {
                         <p class="text-sm text-gray-500 break-all">${result.url || ''}</p>
                     </div>
                     <div class="flex flex-wrap items-center gap-3">
-                        <button onclick="downloadOnpageDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>РЎРєР°С‡Р°С‚СЊ DOCX</button>
-                        <button onclick="downloadOnpageXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>РЎРєР°С‡Р°С‚СЊ XLSX</button>
+                        <button onclick="downloadOnpageDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>Скачать DOCX</button>
+                        <button onclick="downloadOnpageXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>Скачать XLSX</button>
                         <button onclick="copyOnpageTopFixes()" class="text-rose-700 hover:text-rose-900 text-sm"><i class="fas fa-bolt mr-1"></i>Copy Top Fixes</button>
                         <button onclick="copyOnpageRecommendations()" class="text-indigo-700 hover:text-indigo-900 text-sm"><i class="fas fa-list-check mr-1"></i>Copy Recommendations</button>
                         <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>РљРѕРїРёСЂРѕРІР°С‚СЊ JSON</button>
@@ -3830,7 +3830,7 @@ function generateOnPageAuditHTML(result) {
                 </div>
                 <div class="grid grid-cols-2 md:grid-cols-7 gap-3 text-sm">
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Score</div><div class="text-xl font-semibold">${r.score ?? summary.score ?? 0}</div></div>
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Р РЋР В»Р С•Р Р†</div><div class="text-xl font-semibold">${content.word_count ?? 0}</div></div>
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Слова</div><div class="text-xl font-semibold">${content.word_count ?? 0}</div></div>
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Spam Score</div><div class="text-xl font-semibold">${scores.spam_score ?? summary.spam_score ?? 0}</div></div>
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">KW Coverage</div><div class="text-xl font-semibold">${keywordCoverage.coverage_pct ?? summary.keyword_coverage_pct ?? 0}%</div></div>
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">AI Risk</div><div class="text-xl font-semibold">${ai.ai_risk_composite ?? summary.ai_risk_composite ?? 0}</div></div>
@@ -3889,7 +3889,7 @@ function generateOnPageAuditHTML(result) {
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="font-semibold mb-3">Top Fixes (Quick Actions)</h4>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        ${quickActions || '<div class="text-sm text-gray-500">РќРµС‚ РґР°РЅРЅС‹С….</div>'}
+                        ${quickActions || '<div class="text-sm text-gray-500">No data.</div>'}
                     </div>
                 </div>
             </div>
@@ -3897,7 +3897,7 @@ function generateOnPageAuditHTML(result) {
             <div class="bg-white rounded-xl shadow-md p-6">
                 <h4 class="font-semibold mb-3">Severity Heatmap</h4>
                 <div class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3">
-                    ${heatmapCards || '<div class="text-sm text-gray-500">РќРµС‚ РґР°РЅРЅС‹С….</div>'}
+                    ${heatmapCards || '<div class="text-sm text-gray-500">No data.</div>'}
                 </div>
             </div>
 
@@ -3915,7 +3915,7 @@ function generateOnPageAuditHTML(result) {
                         </tr>
                     </thead>
                     <tbody>
-                        ${queueRows || '<tr><td class="py-2 text-sm text-gray-500" colspan="6">РќРµС‚ РґР°РЅРЅС‹С….</td></tr>'}
+                        ${queueRows || '<tr><td class="py-2 text-sm text-gray-500" colspan="6">No data.</td></tr>'}
                     </tbody>
                 </table>
             </div>
@@ -3932,14 +3932,14 @@ function generateOnPageAuditHTML(result) {
                         </tr>
                     </thead>
                     <tbody>
-                        ${targetRows || '<tr><td class="py-2 text-sm text-gray-500" colspan="4">РќРµС‚ РґР°РЅРЅС‹С….</td></tr>'}
+                        ${targetRows || '<tr><td class="py-2 text-sm text-gray-500" colspan="4">No data.</td></tr>'}
                     </tbody>
                 </table>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-3">Р РµРєРѕРјРµРЅРґР°С†РёРё</h4>
-                    <ul class="list-disc pl-5 text-sm text-gray-700">${recsHtml || '<li>Р РµРєРѕРјРµРЅРґР°С†РёР№ РЅРµС‚.</li>'}</ul>
+                <h4 class="font-semibold mb-3">Рекомендации</h4>
+                    <ul class="list-disc pl-5 text-sm text-gray-700">${recsHtml || '<li>Рекомендаций нет.</li>'}</ul>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
@@ -3954,7 +3954,7 @@ function generateOnPageAuditHTML(result) {
                 </div>
                 <div class="text-xs text-slate-500 mb-2">Shown: <span id="onpage-issues-count">${Math.min(25, issues.length)} / ${Math.min(25, issues.length)}</span></div>
                 <div id="onpage-issues-list">
-                    ${issuesHtml || '<div class="text-sm text-gray-500">РџСЂРѕР±Р»РµРј РЅРµ РѕР±РЅР°СЂСѓР¶РµРЅРѕ.</div>'}
+                    ${issuesHtml || '<div class="text-sm text-gray-500">No issues found.</div>'}
                 </div>
             </div>
         </div>
@@ -4530,8 +4530,8 @@ function generateSiteAuditProHTML(result) {
                         </div>
                     </div>
                     <div class="flex gap-3">
-                        <button onclick="downloadSiteAuditProDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>РЎРєР°С‡Р°С‚СЊ DOCX</button>
-                        <button onclick="downloadSiteAuditProXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>РЎРєР°С‡Р°С‚СЊ XLSX</button>
+                        <button onclick="downloadSiteAuditProDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>Скачать DOCX</button>
+                        <button onclick="downloadSiteAuditProXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>Скачать XLSX</button>
                         <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>РљРѕРїРёСЂРѕРІР°С‚СЊ JSON</button>
                     </div>
                 </div>

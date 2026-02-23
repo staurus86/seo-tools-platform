@@ -13,6 +13,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from app.config import settings
+from app.tools.http_text import decode_response_text
 
 
 @dataclass(frozen=True)
@@ -135,7 +136,7 @@ class MobileCheckServiceV2:
     def _http_prefetch(self, url: str) -> Dict[str, Any]:
         try:
             resp = requests.get(url, timeout=self.timeout, headers={"User-Agent": "Mozilla/5.0"})
-            soup = BeautifulSoup(resp.text, "html.parser")
+            soup = BeautifulSoup(decode_response_text(resp), "html.parser")
             viewport = _extract_meta_viewport(soup)
             return {
                 "ok": True,

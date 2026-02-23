@@ -12,6 +12,8 @@ import re
 import requests
 from bs4 import BeautifulSoup
 
+from app.tools.http_text import decode_response_text
+
 
 _TOKEN_RE = re.compile(r"[A-Za-zА-Яа-яЁё0-9]+", re.IGNORECASE)
 _SENTENCE_SPLIT_RE = re.compile(r"[.!?]+")
@@ -656,7 +658,7 @@ class OnPageAuditServiceV1:
             response = requests.get(clean_url, timeout=self.timeout, headers={"User-Agent": "Mozilla/5.0"})
             final_url = response.url or clean_url
             status_code = response.status_code
-            raw_html = response.text
+            raw_html = decode_response_text(response)
             soup = BeautifulSoup(raw_html, "html.parser")
         except Exception as exc:
             return {
