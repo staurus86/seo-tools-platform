@@ -1208,6 +1208,13 @@ def check_sitemap_full(url: str) -> Dict[str, Any]:
                 return (child.text or "").strip()
         return ""
 
+    def find_children(node: ET.Element, child_name: str) -> List[ET.Element]:
+        out: List[ET.Element] = []
+        for child in list(node):
+            if local_name(child.tag).lower() == child_name.lower():
+                out.append(child)
+        return out
+
     def is_http_url(value: str) -> bool:
         try:
             v = str(value or "").strip()
