@@ -65,8 +65,13 @@ def _decode_text(payload: bytes) -> str:
 
 def _read_csv_rows(payload: bytes) -> List[Dict[str, Any]]:
     text = _decode_text(payload)
-    stream = io.StringIO(text)
-    reader = csv.DictReader(stream)
+    stream = io.StringIO(text, newline="")
+    sample = text[:8192]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+    except Exception:
+        dialect = csv.excel
+    reader = csv.DictReader(stream, dialect=dialect)
     rows: List[Dict[str, Any]] = []
     for row in reader:
         rows.append(dict(row))
