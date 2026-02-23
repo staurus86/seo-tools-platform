@@ -1977,6 +1977,8 @@ function generateLinkProfileAuditHTML(data) {
         ['Дубликаты с нашим сайтом', summary.duplicates_with_our_site ?? '-'],
         ['Priority scored domains', summary.priority_domains_scored ?? '-'],
         ['Dofollow / Nofollow', `${summary.dofollow ?? 0} / ${summary.nofollow ?? 0}`],
+        ['Dofollow %', summary.dofollow_pct ?? '-'],
+        ['Lost links %', summary.lost_links_pct ?? '-'],
         ['Средний DR', summary.avg_dr ?? '-'],
     ];
 
@@ -2154,7 +2156,9 @@ function generateLinkProfileAuditHTML(data) {
                 </div>
                 <div data-lp-subscope="additional" data-lp-subpanel="follow" class="space-y-6 hidden">
                     ${renderTableGroup({ title: 'Follow / Nofollow', rows: tables.follow_types || [] }, 'Нет данных follow')}
+                    ${renderTableGroup({ title: 'Follow / Nofollow %', rows: tables.follow_mix_pct || [] }, 'Нет данных follow')}
                     ${renderTableGroup({ title: 'Follow / Nofollow detailed', rows: tables.follow_types_detailed || [] }, 'Нет данных follow')}
+                    ${renderTableGroup({ title: 'Lost status mix', rows: tables.lost_status_mix || [] }, 'Нет данных по потерянным ссылкам')}
                 </div>
                 <div data-lp-subscope="additional" data-lp-subpanel="domains" class="space-y-6 hidden">
                     ${renderTableGroup({ title: 'Domain zones', rows: tables.zones || [] }, 'Нет данных по доменным зонам')}
@@ -2167,6 +2171,9 @@ function generateLinkProfileAuditHTML(data) {
                     ${renderTableGroup({ title: 'Donors from homepage', rows: tables.donors_homepage || [] }, 'Нет доноров с главной страницы')}
                 </div>
                 <div data-lp-subscope="additional" data-lp-subpanel="techmix" class="space-y-6 hidden">
+                    ${renderTableGroup({ title: 'HTTP class mix', rows: tables.http_class_mix || [] }, 'Нет данных по классам HTTP')}
+                    ${renderTableGroup({ title: 'Link type mix', rows: tables.link_type_mix || [] }, 'Нет данных по типам ссылок')}
+                    ${renderTableGroup({ title: 'Language mix', rows: tables.language_mix || [] }, 'Нет данных по языкам')}
                     ${renderTableGroup({ title: 'Link types by competitor', rows: tables.link_types_by_competitor || [] }, 'Нет данных по типам ссылок')}
                     ${renderTableGroup({ title: 'HTTP codes by competitor', rows: tables.http_codes_by_competitor || [] }, 'Нет данных по HTTP кодам')}
                     ${renderTableGroup({ title: 'Languages by competitor', rows: tables.languages_by_competitor || [] }, 'Нет данных по языкам')}

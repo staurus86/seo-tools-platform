@@ -339,6 +339,24 @@ def _flatten_breakdown_rows(rows: List[Dict[str, Any]], *, dim: str, value_key: 
     return out[:row_limit]
 
 
+def _pct(part: float, total: float) -> float:
+    return round((float(part) / max(1.0, float(total))) * 100.0, 2)
+
+
+def _counter_to_pct_rows(counter: Counter[str], *, value_key: str, limit: int = 50) -> List[Dict[str, Any]]:
+    total = sum(counter.values()) or 1
+    rows: List[Dict[str, Any]] = []
+    for k, v in counter.most_common(limit):
+        rows.append(
+            {
+                value_key: k,
+                "count": int(v),
+                "pct": _pct(v, total),
+            }
+        )
+    return rows
+
+
 def _normalize_backlink_row(row: Dict[str, Any]) -> Dict[str, Any]:
     source = _pick_value(
         row,
@@ -396,6 +414,10 @@ def _normalize_backlink_row(row: Dict[str, Any]) -> Dict[str, Any]:
         row,
         ("language", "lang"),
     )
+    lost_status = _pick_value(
+        row,
+        ("lost status", "drop reason", "discovered status"),
+    )
     ur_value = _pick_value(
         row,
         ("ur", "url rating"),
@@ -428,6 +450,7 @@ def _normalize_backlink_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "link_type": str(link_type or "").strip().lower(),
         "http_code": str(http_code or "").strip(),
         "language": str(language or "").strip().lower(),
+        "lost_status": str(lost_status or "").strip().lower(),
         "ur": _to_float(ur_value),
         "dr": _to_float(domain_rating),
         "traffic": _to_float(traffic),
@@ -438,8 +461,47 @@ def _normalize_batch_row(row: Dict[str, Any]) -> Tuple[str, Dict[str, Optional[f
     domain = _pick_value(row, ("domain", "target", "referring_domain", "site", "host"))
     dr = _pick_value(row, ("dr", "domain rating", "domain_rating", "ahrefs_dr"))
     traffic = _pick_value(row, ("traffic", "organic / traffic", "domain traffic", "organic_traffic", "ahrefs_traffic"))
+    backlinks_all = _pick_value(row, ("backlinks / all", "backlinks_all", "total backlinks"))
+    backlinks_followed = _pick_value(row, ("backlinks / followed", "backlinks_followed"))
+    backlinks_not_followed = _pick_value(row, ("backlinks / not followed", "backlinks_not_followed"))
+    backlinks_redirects = _pick_value(row, ("backlinks / redirects", "backlinks_redirects"))
+    backlinks_internal = _pick_value(row, ("backlinks / internal", "backlinks_internal"))
+    ref_domains_all = _pick_value(row, ("ref. domains / all", "ref domains all", "ref_domains_all"))
+    ref_domains_followed = _pick_value(row, ("ref. domains / followed", "ref_domains_followed"))
+    ref_domains_not_followed = _pick_value(row, ("ref. domains / not followed", "ref_domains_not_followed"))
+    organic_keywords_total = _pick_value(row, ("organic / total keywords", "organic_keywords_total"))
+    organic_keywords_top3 = _pick_value(row, ("organic / keywords (top 3)", "organic_keywords_top3"))
+    organic_keywords_4_10 = _pick_value(row, ("organic / keywords (4-10)", "organic_keywords_4_10"))
+    organic_keywords_11_20 = _pick_value(row, ("organic / keywords (11-20)", "organic_keywords_11_20"))
+    paid_keywords = _pick_value(row, ("paid / keywords", "paid_keywords"))
+    paid_traffic = _pick_value(row, ("paid / traffic", "paid_traffic"))
+    outgoing_domains_followed = _pick_value(row, ("outgoing domains / followed", "outgoing_domains_followed"))
+    outgoing_domains_all_time = _pick_value(row, ("outgoing domains / all time", "outgoing_domains_all_time"))
+    outgoing_links_followed = _pick_value(row, ("outgoing links / followed", "outgoing_links_followed"))
+    outgoing_links_all_time = _pick_value(row, ("outgoing links / all time", "outgoing_links_all_time"))
     d = _normalize_domain(str(domain or ""))
-    return d, {"dr": _to_float(dr), "traffic": _to_float(traffic)}
+    return d, {
+        "dr": _to_float(dr),
+        "traffic": _to_float(traffic),
+        "backlinks_all": _to_float(backlinks_all),
+        "backlinks_followed": _to_float(backlinks_followed),
+        "backlinks_not_followed": _to_float(backlinks_not_followed),
+        "backlinks_redirects": _to_float(backlinks_redirects),
+        "backlinks_internal": _to_float(backlinks_internal),
+        "ref_domains_all": _to_float(ref_domains_all),
+        "ref_domains_followed": _to_float(ref_domains_followed),
+        "ref_domains_not_followed": _to_float(ref_domains_not_followed),
+        "organic_keywords_total": _to_float(organic_keywords_total),
+        "organic_keywords_top3": _to_float(organic_keywords_top3),
+        "organic_keywords_4_10": _to_float(organic_keywords_4_10),
+        "organic_keywords_11_20": _to_float(organic_keywords_11_20),
+        "paid_keywords": _to_float(paid_keywords),
+        "paid_traffic": _to_float(paid_traffic),
+        "outgoing_domains_followed": _to_float(outgoing_domains_followed),
+        "outgoing_domains_all_time": _to_float(outgoing_domains_all_time),
+        "outgoing_links_followed": _to_float(outgoing_links_followed),
+        "outgoing_links_all_time": _to_float(outgoing_links_all_time),
+    }
 
 
 def run_link_profile_audit(
@@ -555,8 +617,25 @@ def run_link_profile_audit(
     zone_counter: Counter[str] = Counter()
     redirect_301_counter: Counter[str] = Counter()
     homepage_donor_counter: Counter[str] = Counter()
-    source_domain_stats: Dict[str, Dict[str, float]] = defaultdict(lambda: {"count": 0.0, "dr_sum": 0.0, "dr_n": 0.0, "ur_sum": 0.0, "ur_n": 0.0, "traffic_sum": 0.0, "traffic_n": 0.0, "nofollow_n": 0.0})
-    target_agg: Dict[str, Dict[str, Any]] = defaultdict(lambda: {"total": 0, "follow": 0, "nofollow": 0, "unknown": 0, "target_home": 0, "home_follow": 0, "home_nofollow": 0, "int_follow": 0, "int_nofollow": 0, "dr_counts": Counter(), "zone_counts": Counter()})
+    lost_status_counter: Counter[str] = Counter()
+    http_class_counter: Counter[str] = Counter()
+    language_counter: Counter[str] = Counter()
+    link_type_counter: Counter[str] = Counter()
+    source_domain_stats: Dict[str, Dict[str, float]] = defaultdict(
+        lambda: {
+            "count": 0.0,
+            "dr_sum": 0.0,
+            "dr_n": 0.0,
+            "ur_sum": 0.0,
+            "ur_n": 0.0,
+            "traffic_sum": 0.0,
+            "traffic_n": 0.0,
+            "nofollow_n": 0.0,
+            "lost_n": 0.0,
+            "http2xx_n": 0.0,
+        }
+    )
+    target_agg: Dict[str, Dict[str, Any]] = defaultdict(lambda: {"total": 0, "follow": 0, "nofollow": 0, "unknown": 0, "target_home": 0, "home_follow": 0, "home_nofollow": 0, "int_follow": 0, "int_nofollow": 0, "lost": 0, "dr_counts": Counter(), "zone_counts": Counter(), "http_class": Counter(), "link_type": Counter(), "language": Counter()})
 
     dr_values: List[float] = []
     traffic_values: List[float] = []
@@ -569,13 +648,30 @@ def run_link_profile_audit(
     for row in normalized_rows:
         src = row["source_domain"]
         trg = row["target_domain"]
+        sd = source_domain_stats[src]
         source_to_targets[src].add(trg)
         zone_counter[_extract_zone(src)] += 1
         if row.get("has_redirect_301"):
             redirect_301_counter[src] += 1
         if row.get("source_is_homepage"):
             homepage_donor_counter[src] += 1
-        sd = source_domain_stats[src]
+        if row.get("lost_status"):
+            lost_status_counter[row.get("lost_status")] += 1
+            sd["lost_n"] += 1
+        code = str(row.get("http_code") or "")
+        if code.startswith("2"):
+            http_class_counter["2xx"] += 1
+            sd["http2xx_n"] += 1
+        elif code.startswith("3"):
+            http_class_counter["3xx"] += 1
+        elif code.startswith("4"):
+            http_class_counter["4xx"] += 1
+        elif code.startswith("5"):
+            http_class_counter["5xx"] += 1
+        else:
+            http_class_counter["unknown"] += 1
+        link_type_counter[str(row.get("link_type") or "unknown")] += 1
+        language_counter[str(row.get("language") or "unknown")] += 1
         sd["count"] += 1
         if row.get("dr") is not None:
             sd["dr_sum"] += float(row.get("dr"))
@@ -664,6 +760,11 @@ def run_link_profile_audit(
         if row.get("dr") is not None:
             ta["dr_counts"][_dr_bucket(row.get("dr"))] += 1
         ta["zone_counts"][_extract_zone(src)] += 1
+        if row.get("lost_status"):
+            ta["lost"] += 1
+        ta["http_class"]["2xx" if str(row.get("http_code") or "").startswith("2") else "3xx" if str(row.get("http_code") or "").startswith("3") else "4xx" if str(row.get("http_code") or "").startswith("4") else "5xx" if str(row.get("http_code") or "").startswith("5") else "unknown"] += 1
+        ta["link_type"][str(row.get("link_type") or "unknown")] += 1
+        ta["language"][str(row.get("language") or "unknown")] += 1
 
     duplicates_with_our: List[Dict[str, Any]] = []
     duplicates_without_our: List[Dict[str, Any]] = []
@@ -719,8 +820,12 @@ def run_link_profile_audit(
             "homepage_nofollow_pct": round((home_nofollow / max(1, nofollow)) * 100, 2),
             "internal_follow_pct": round((int_follow / max(1, follow)) * 100, 2),
             "internal_nofollow_pct": round((int_nofollow / max(1, nofollow)) * 100, 2),
+            "lost_pct": round((int(agg.get("lost", 0)) / max(1, total)) * 100, 2),
             "dr_counts": dr_counts,
             "zone_counts": zone_counts,
+            "http_class": agg.get("http_class", Counter()),
+            "link_type": agg.get("link_type", Counter()),
+            "language": agg.get("language", Counter()),
         }
 
     competitors_list = [d for d in per_target_metrics.keys() if not _is_our_target(str(d), domain)]
@@ -736,6 +841,7 @@ def run_link_profile_audit(
             "homepage_nofollow_pct",
             "internal_follow_pct",
             "internal_nofollow_pct",
+            "lost_pct",
         ]
         for key in keys:
             vals = [float(per_target_metrics[d].get(key, 0.0)) for d in competitors_list]
@@ -775,6 +881,14 @@ def run_link_profile_audit(
         metrics = batch_metrics.get(competitor, {})
         comp_refs = competitor_ref_domains.get(competitor, set())
         shared = len(comp_refs & our_ref_domains)
+        backlinks_all = float(metrics.get("backlinks_all") or 0.0)
+        backlinks_followed = float(metrics.get("backlinks_followed") or 0.0)
+        backlinks_not_followed = float(metrics.get("backlinks_not_followed") or 0.0)
+        backlinks_redirects = float(metrics.get("backlinks_redirects") or 0.0)
+        backlinks_internal = float(metrics.get("backlinks_internal") or 0.0)
+        ref_domains_all = float(metrics.get("ref_domains_all") or 0.0)
+        ref_domains_followed = float(metrics.get("ref_domains_followed") or 0.0)
+        ref_domains_not_followed = float(metrics.get("ref_domains_not_followed") or 0.0)
         competitor_rows.append(
             {
                 "competitor_domain": competitor,
@@ -783,10 +897,22 @@ def run_link_profile_audit(
                 "shared_with_our_site": shared,
                 "batch_dr": metrics.get("dr"),
                 "batch_traffic": metrics.get("traffic"),
+                "batch_backlinks_all": backlinks_all,
+                "batch_ref_domains_all": ref_domains_all,
+                "batch_backlinks_followed_pct": round((backlinks_followed / max(1.0, backlinks_all)) * 100, 2) if backlinks_all else None,
+                "batch_backlinks_nofollow_pct": round((backlinks_not_followed / max(1.0, backlinks_all)) * 100, 2) if backlinks_all else None,
+                "batch_backlinks_redirect_pct": round((backlinks_redirects / max(1.0, backlinks_all)) * 100, 2) if backlinks_all else None,
+                "batch_backlinks_internal_pct": round((backlinks_internal / max(1.0, backlinks_all)) * 100, 2) if backlinks_all else None,
+                "batch_ref_domains_followed_pct": round((ref_domains_followed / max(1.0, ref_domains_all)) * 100, 2) if ref_domains_all else None,
+                "batch_ref_domains_nofollow_pct": round((ref_domains_not_followed / max(1.0, ref_domains_all)) * 100, 2) if ref_domains_all else None,
+                "batch_organic_keywords_total": metrics.get("organic_keywords_total"),
             }
         )
 
     comparison_rows: List[Dict[str, Any]] = []
+    our_follow_pct = float(our_metrics.get("follow_pct", 0.0) or 0.0)
+    our_lost_pct = float(our_metrics.get("lost_pct", 0.0) or 0.0)
+    our_http2xx_pct = _pct((our_metrics.get("http_class", Counter()) or Counter()).get("2xx", 0), max(1, int((our_metrics.get("total_links", 0) or 0))))
     for row in competitor_rows:
         competitor = str(row.get("competitor_domain") or "")
         comp_refs = competitor_ref_domains.get(competitor, set())
@@ -794,6 +920,10 @@ def run_link_profile_audit(
         comp_only = len(comp_refs - our_ref_domains)
         our_only = len(our_ref_domains - comp_refs)
         overlap_pct = round((shared / max(1, len(comp_refs))) * 100, 2)
+        comp_metrics = per_target_metrics.get(competitor, {})
+        comp_follow_pct = float(comp_metrics.get("follow_pct", 0.0) or 0.0)
+        comp_lost_pct = float(comp_metrics.get("lost_pct", 0.0) or 0.0)
+        comp_http2xx_pct = _pct((comp_metrics.get("http_class", Counter()) or Counter()).get("2xx", 0), max(1, int((comp_metrics.get("total_links", 0) or 0))))
         comparison_rows.append(
             {
                 "competitor_domain": competitor,
@@ -801,8 +931,48 @@ def run_link_profile_audit(
                 "competitor_only_domains": comp_only,
                 "our_only_domains": our_only,
                 "overlap_pct": overlap_pct,
+                "coverage_of_our_ref_domains_pct": round((shared / max(1, len(our_ref_domains))) * 100, 2),
+                "donor_gap_pct": round((comp_only / max(1, len(comp_refs))) * 100, 2),
+                "competitor_follow_pct": comp_follow_pct,
+                "our_follow_pct": our_follow_pct,
+                "follow_gap_pp": round(comp_follow_pct - our_follow_pct, 2),
+                "competitor_lost_pct": comp_lost_pct,
+                "our_lost_pct": our_lost_pct,
+                "lost_gap_pp": round(comp_lost_pct - our_lost_pct, 2),
+                "competitor_http_2xx_pct": comp_http2xx_pct,
+                "our_http_2xx_pct": our_http2xx_pct,
+                "http_2xx_gap_pp": round(comp_http2xx_pct - our_http2xx_pct, 2),
             }
         )
+
+    competitor_quality_rows: List[Dict[str, Any]] = []
+    for row in competitor_rows:
+        comp = str(row.get("competitor_domain") or "")
+        comp_metrics = per_target_metrics.get(comp, {})
+        total_links = int(comp_metrics.get("total_links", 0) or 0)
+        http2xx_pct = _pct((comp_metrics.get("http_class", Counter()) or Counter()).get("2xx", 0), max(1, total_links))
+        follow_pct = float(comp_metrics.get("follow_pct", 0.0) or 0.0)
+        lost_pct = float(comp_metrics.get("lost_pct", 0.0) or 0.0)
+        homepage_pct = float(comp_metrics.get("homepage_pct", 0.0) or 0.0)
+        quality_score = round(
+            (follow_pct * 0.35)
+            + (http2xx_pct * 0.25)
+            + ((100.0 - lost_pct) * 0.25)
+            + ((100.0 - homepage_pct) * 0.15),
+            2,
+        )
+        competitor_quality_rows.append(
+            {
+                "competitor_domain": comp,
+                "links_in_dataset": total_links,
+                "follow_pct": round(follow_pct, 2),
+                "lost_pct": round(lost_pct, 2),
+                "http_2xx_pct": round(http2xx_pct, 2),
+                "homepage_target_pct": round(homepage_pct, 2),
+                "quality_score_0_100": quality_score,
+            }
+        )
+    competitor_quality_rows.sort(key=lambda x: float(x.get("quality_score_0_100", 0.0)), reverse=True)
 
     top_anchors = [{"anchor": a, "count": c} for a, c in anchor_counter.most_common(30)]
     anchor_word_rows = [{"word": w, "count": c} for w, c in anchor_word_counter.most_common(30)]
@@ -868,6 +1038,44 @@ def run_link_profile_audit(
                 key=lambda x: float(x.get("priority_score") or 0.0),
                 reverse=True,
             )[:500]
+    opportunity_domains_rows: List[Dict[str, Any]] = []
+    total_competitors = max(1, len(competitor_counter))
+    for d in candidate_domains:
+        stats = source_domain_stats.get(str(d), {})
+        competitors_hit = len(source_to_competitors.get(str(d), set()))
+        total = float(stats.get("count", 0.0))
+        if total <= 0:
+            continue
+        avg_dr = float(stats.get("dr_sum", 0.0)) / max(1.0, float(stats.get("dr_n", 0.0)))
+        avg_traffic = float(stats.get("traffic_sum", 0.0)) / max(1.0, float(stats.get("traffic_n", 0.0)))
+        nofollow_rate = float(stats.get("nofollow_n", 0.0)) / total
+        lost_rate = float(stats.get("lost_n", 0.0)) / total
+        http2xx_rate = float(stats.get("http2xx_n", 0.0)) / total
+        coverage_pct = _pct(competitors_hit, total_competitors)
+        opportunity_score = round(
+            (coverage_pct * 0.35)
+            + (avg_dr * 0.35)
+            + (min(avg_traffic, 10000.0) / 100.0 * 0.15)
+            + ((1.0 - nofollow_rate) * 100.0 * 0.1)
+            + ((1.0 - lost_rate) * 100.0 * 0.05),
+            2,
+        )
+        opportunity_domains_rows.append(
+            {
+                "domain": d,
+                "competitors_covered": competitors_hit,
+                "competitors_covered_pct": coverage_pct,
+                "links_in_dataset": int(total),
+                "avg_dr": round(avg_dr, 2),
+                "avg_traffic": round(avg_traffic, 2),
+                "follow_pct": round((1.0 - nofollow_rate) * 100.0, 2),
+                "lost_pct": round(lost_rate * 100.0, 2),
+                "http_2xx_pct": round(http2xx_rate * 100.0, 2),
+                "opportunity_score": opportunity_score,
+            }
+        )
+    opportunity_domains_rows.sort(key=lambda x: (float(x.get("opportunity_score", 0.0)), float(x.get("competitors_covered", 0))), reverse=True)
+    opportunity_domains_rows = opportunity_domains_rows[:500]
     dr_bucket_rows = [{"dr_bucket": k, "links": v} for k, v in sorted(dr_bucket_counter.items(), key=lambda x: str(x[0]))]
     dr_bucket_our_rows = []
     dr_bucket_comp_rows = []
@@ -882,6 +1090,11 @@ def run_link_profile_audit(
         {"type": "nofollow", "count": follow_counter.get("nofollow", 0)},
         {"type": "unknown", "count": follow_counter.get("unknown", 0)},
     ]
+    follow_mix_rows = _counter_to_pct_rows(follow_counter, value_key="type", limit=10)
+    lost_status_rows = _counter_to_pct_rows(lost_status_counter, value_key="lost_status", limit=20)
+    http_class_rows = _counter_to_pct_rows(http_class_counter, value_key="http_class", limit=10)
+    link_type_mix_rows = _counter_to_pct_rows(link_type_counter, value_key="link_type", limit=20)
+    language_mix_rows = _counter_to_pct_rows(language_counter, value_key="language", limit=20)
     follow_detail_rows = [
         {
             "segment": "our_site",
@@ -972,6 +1185,10 @@ def run_link_profile_audit(
         "donors_homepage": len(homepage_donor_counter),
         "avg_our_dr": round(mean(our_dr_values), 2) if our_dr_values else None,
         "avg_our_traffic": round(mean(our_traffic_values), 2) if our_traffic_values else None,
+        "dofollow_pct": _pct(follow_counter.get("dofollow", 0), sum(follow_counter.values())),
+        "nofollow_pct": _pct(follow_counter.get("nofollow", 0), sum(follow_counter.values())),
+        "lost_links_pct": _pct(sum(lost_status_counter.values()), len(normalized_rows)),
+        "http_2xx_pct": _pct(http_class_counter.get("2xx", 0), sum(http_class_counter.values())),
     }
 
     prompts = {
@@ -1033,7 +1250,12 @@ def run_link_profile_audit(
                 "dr_buckets_competitors": dr_bucket_comp_rows,
                 "zones": zone_rows,
                 "follow_types": follow_rows,
+                "follow_mix_pct": follow_mix_rows,
                 "follow_types_detailed": follow_detail_rows,
+                "lost_status_mix": lost_status_rows,
+                "http_class_mix": http_class_rows,
+                "link_type_mix": link_type_mix_rows,
+                "language_mix": language_mix_rows,
                 "donors_with_redirect_301": redirect_301_rows,
                 "donors_homepage": homepage_donor_rows,
                 "brand_keywords_auto": brand_rows,
@@ -1041,15 +1263,19 @@ def run_link_profile_audit(
                 "link_types_by_competitor": link_types_by_competitor,
                 "http_codes_by_competitor": http_codes_by_competitor,
                 "languages_by_competitor": languages_by_competitor,
+                "competitor_quality": competitor_quality_rows,
+                "opportunity_domains": opportunity_domains_rows,
                 "ourSiteTables": [
                     {"title": "Наш сайт: доноры", "rows": our_site_rows},
                 ],
                 "competitorTables": [
                     {"title": "Конкуренты", "rows": competitor_rows},
+                    {"title": "Качество профиля конкурентов (0-100)", "rows": competitor_quality_rows},
                 ],
                 "comparisonTables": [
                     {"title": "Сравнение с конкурентами", "rows": comparison_rows},
                     {"title": "Бенчмарк avg/median по конкурентам", "rows": benchmark_rows},
+                    {"title": "Матрица возможностей доноров", "rows": opportunity_domains_rows},
                 ],
                 "additionalTables": [
                     {"title": "DR статистика", "rows": dr_stats_rows},
@@ -1058,7 +1284,12 @@ def run_link_profile_audit(
                     {"title": "DR buckets: конкуренты", "rows": dr_bucket_comp_rows},
                     {"title": "Domain zones", "rows": zone_rows},
                     {"title": "Follow / Nofollow", "rows": follow_rows},
+                    {"title": "Follow / Nofollow %", "rows": follow_mix_rows},
                     {"title": "Follow / Nofollow detailed", "rows": follow_detail_rows},
+                    {"title": "Lost status mix", "rows": lost_status_rows},
+                    {"title": "HTTP class mix", "rows": http_class_rows},
+                    {"title": "Link type mix", "rows": link_type_mix_rows},
+                    {"title": "Language mix", "rows": language_mix_rows},
                     {"title": "Donors with redirect 301", "rows": redirect_301_rows},
                     {"title": "Donors from homepage", "rows": homepage_donor_rows},
                     {"title": "Link types by competitor", "rows": link_types_by_competitor},

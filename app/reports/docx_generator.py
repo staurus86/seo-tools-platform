@@ -1813,6 +1813,10 @@ class DOCXGenerator:
             ["Dofollow", summary.get("dofollow", 0)],
             ["Nofollow", summary.get("nofollow", 0)],
             ["Unknown follow", summary.get("unknown_follow", 0)],
+            ["Dofollow %", summary.get("dofollow_pct", "н/д")],
+            ["Nofollow %", summary.get("nofollow_pct", "н/д")],
+            ["Lost links %", summary.get("lost_links_pct", "н/д")],
+            ["HTTP 2xx %", summary.get("http_2xx_pct", "н/д")],
             ["Средний DR", summary.get("avg_dr", "н/д")],
         ]
         self._add_table(doc, ["Метрика", "Значение"], summary_rows)
@@ -1823,12 +1827,53 @@ class DOCXGenerator:
             self._add_heading(doc, "2.1 Конкуренты (топ)", level=2)
             rows = [[x.get("competitor_domain", ""), x.get("links", 0), x.get("shared_with_our_site", 0)] for x in top_comp[:20]]
             self._add_table(doc, ["Домен", "Ссылки", "Общие доноры"], rows)
+        comp_quality = tables.get("competitor_quality", []) or []
+        if comp_quality:
+            self._add_heading(doc, "2.2 Качество профиля конкурентов", level=2)
+            rows = [
+                [
+                    x.get("competitor_domain", ""),
+                    x.get("quality_score_0_100", ""),
+                    x.get("follow_pct", ""),
+                    x.get("lost_pct", ""),
+                ]
+                for x in comp_quality[:30]
+            ]
+            self._add_table(doc, ["Домен", "Quality score", "Follow %", "Lost %"], rows)
 
         top_prio = tables.get("priority_domains", []) or []
         if top_prio:
-            self._add_heading(doc, "2.2 Priority domains", level=2)
+            self._add_heading(doc, "2.3 Priority domains", level=2)
             rows = [[x.get("domain", ""), x.get("targets_count", 0), x.get("competitors_count", 0)] for x in top_prio[:30]]
             self._add_table(doc, ["Донор", "Targets", "Конкуренты"], rows)
+        comparison = tables.get("comparison_overview", []) or []
+        if comparison:
+            self._add_heading(doc, "2.4 Сравнение с конкурентами", level=2)
+            rows = [
+                [
+                    x.get("competitor_domain", ""),
+                    x.get("shared_ref_domains", 0),
+                    x.get("donor_gap_pct", 0),
+                    x.get("follow_gap_pp", 0),
+                    x.get("lost_gap_pp", 0),
+                ]
+                for x in comparison[:30]
+            ]
+            self._add_table(doc, ["Домен", "Общие доноры", "Donor gap %", "Follow gap п.п.", "Lost gap п.п."], rows)
+        opportunities = tables.get("opportunity_domains", []) or []
+        if opportunities:
+            self._add_heading(doc, "2.5 Матрица возможностей доноров", level=2)
+            rows = [
+                [
+                    x.get("domain", ""),
+                    x.get("competitors_covered", 0),
+                    x.get("competitors_covered_pct", 0),
+                    x.get("avg_dr", 0),
+                    x.get("opportunity_score", 0),
+                ]
+                for x in opportunities[:40]
+            ]
+            self._add_table(doc, ["Донор", "Покрытие конкурентов", "Покрытие %", "Avg DR", "Opportunity score"], rows)
 
         self._add_heading(doc, "3. Анкоры", level=1)
         anchor_types = results.get("anchor_breakdown", {}) or {}
@@ -1840,6 +1885,16 @@ class DOCXGenerator:
             self._add_heading(doc, "3.1 Топ анкоров", level=2)
             rows = [[x.get("anchor", ""), x.get("count", 0)] for x in top_anchors[:30]]
             self._add_table(doc, ["Анкор", "Количество"], rows)
+        follow_mix = tables.get("follow_mix_pct", []) or []
+        if follow_mix:
+            self._add_heading(doc, "3.2 Follow/Nofollow mix (%)", level=2)
+            rows = [[x.get("type", ""), x.get("count", 0), x.get("pct", 0)] for x in follow_mix[:10]]
+            self._add_table(doc, ["Тип", "Кол-во", "%"], rows)
+        lost_mix = tables.get("lost_status_mix", []) or []
+        if lost_mix:
+            self._add_heading(doc, "3.3 Потерянные ссылки по статусам", level=2)
+            rows = [[x.get("lost_status", ""), x.get("count", 0), x.get("pct", 0)] for x in lost_mix[:20]]
+            self._add_table(doc, ["Статус", "Кол-во", "%"], rows)
 
         self._add_heading(doc, "4. Рекомендации и предупреждения", level=1)
         if errors:

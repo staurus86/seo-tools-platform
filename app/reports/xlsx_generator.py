@@ -4241,6 +4241,10 @@ class XLSXGenerator:
             ("Dofollow", summary.get("dofollow", 0)),
             ("Nofollow", summary.get("nofollow", 0)),
             ("Unknown follow", summary.get("unknown_follow", 0)),
+            ("Dofollow %", summary.get("dofollow_pct", "")),
+            ("Nofollow %", summary.get("nofollow_pct", "")),
+            ("Lost links %", summary.get("lost_links_pct", "")),
+            ("HTTP 2xx %", summary.get("http_2xx_pct", "")),
             ("Средний DR", summary.get("avg_dr", "")),
         ]
         ws["A5"] = "Метрика"
@@ -4281,8 +4285,17 @@ class XLSXGenerator:
         _write_sheet("Слова анкоров", tables.get("anchor_word_analysis", []) or [])
         _write_sheet("Дубликаты с нами", tables.get("duplicates_with_our_site", []) or [])
         _write_sheet("Priority domains", tables.get("priority_domains", []) or [])
+        _write_sheet("Priority score", tables.get("priority_score_domains", []) or [])
         _write_sheet("DR buckets", tables.get("dr_buckets", []) or [])
         _write_sheet("Доменные зоны", tables.get("zones", []) or [])
+        _write_sheet("Качество конкурентов", tables.get("competitor_quality", []) or [])
+        _write_sheet("Сравнение GAP", tables.get("comparison_overview", []) or [])
+        _write_sheet("Матрица возможностей", tables.get("opportunity_domains", []) or [])
+        _write_sheet("Follow mix %", tables.get("follow_mix_pct", []) or [])
+        _write_sheet("Lost status mix", tables.get("lost_status_mix", []) or [])
+        _write_sheet("HTTP class mix", tables.get("http_class_mix", []) or [])
+        _write_sheet("Link type mix", tables.get("link_type_mix", []) or [])
+        _write_sheet("Language mix", tables.get("language_mix", []) or [])
 
         notes_ws = wb.create_sheet("Warnings")
         notes_ws["A1"] = "Тип"
