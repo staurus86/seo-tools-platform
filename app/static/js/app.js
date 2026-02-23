@@ -195,6 +195,61 @@ async function startTask(event, endpoint) {
     }
 }
 
+async function startLinkProfileTask(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+
+    const button = form.querySelector('button[type="submit"]');
+    const originalText = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Starting...';
+
+    try {
+        const response = await fetch(`${API_BASE}/tasks/link-profile-audit`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (response.status === 429) {
+            const errorData = await response.json();
+            showRateLimitModal(errorData.detail);
+            return;
+        }
+
+        if (!response.ok) {
+            let errorMessage = `HTTP ${response.status}`;
+            try {
+                const errorPayload = await response.json();
+                errorMessage = errorPayload?.detail || errorPayload?.error || errorPayload?.message || errorMessage;
+            } catch (_) {
+                // Keep default status message.
+            }
+            throw new Error(errorMessage);
+        }
+
+        const result = await response.json();
+        addToHistory({
+            taskId: result.task_id,
+            tool: 'link-profile-audit',
+            url: String(formData.get('our_domain') || ''),
+            status: result.status,
+            timestamp: new Date().toISOString()
+        });
+
+        showToast('Task created successfully! Redirecting...', 'success');
+        setTimeout(() => {
+            window.location.href = `/results/${result.task_id}`;
+        }, 1000);
+    } catch (error) {
+        console.error('Error starting link profile task:', error);
+        showToast(error?.message || 'Failed to create task. Try again later.', 'error');
+    } finally {
+        button.disabled = false;
+        button.innerHTML = originalText;
+    }
+}
+
 function initSiteAuditProBatchUI() {
     const form = document.querySelector('form[data-tool="site-audit-pro"]');
     if (!form) return;
@@ -318,6 +373,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Export functions for use in other scripts
+window.startLinkProfileTask = startLinkProfileTask;
 window.startTask = startTask;
 window.showToast = showToast;
 window.showRateLimitModal = showRateLimitModal;

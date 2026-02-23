@@ -644,6 +644,12 @@ function showResults(data) {
             task_id: result.task_id || taskId,
             url: result.url || ''
         };
+    } else if (result.task_type === 'link_profile_audit') {
+        linkProfileData = {
+            ...result,
+            task_id: result.task_id || taskId,
+            url: result.url || ''
+        };
     }
     
     const resultsContent = document.getElementById('results-content');
@@ -669,6 +675,8 @@ function showResults(data) {
     } else if (result.task_type === 'onpage_audit') {
         resultsContent.innerHTML = generateOnPageAuditHTML(result);
         filterOnpageIssues('all');
+    } else if (result.task_type === 'link_profile_audit') {
+        resultsContent.innerHTML = generateLinkProfileAuditHTML(result);
     } else {
         resultsContent.innerHTML = generateGenericHTML(result);
     }
@@ -689,6 +697,7 @@ let renderData = null;
 let siteAuditProData = null;
 let siteAuditProIssuesState = { issues: [], filtered: [], filter: 'all', query: '', limit: 20, sort: 'severity', owner: 'all' };
 let onpageData = null;
+let linkProfileData = null;
 let lastTaskResult = null;
 let sitemapExportUrls = [];
 let sitemapDuplicateLines = [];
@@ -1778,6 +1787,120 @@ function openMobileLightbox(index) {
     showMobileLightboxImage(index);
     overlay.classList.remove('hidden');
     overlay.classList.add('flex');
+}
+
+function renderSimpleTable(rows, emptyText = 'Нет данных') {
+    if (!Array.isArray(rows) || rows.length === 0) {
+        return `<div class="text-sm text-gray-500">${escapeHtml(emptyText)}</div>`;
+    }
+    const cols = Object.keys(rows[0] || {});
+    if (!cols.length) {
+        return `<div class="text-sm text-gray-500">${escapeHtml(emptyText)}</div>`;
+    }
+    return `
+        <div class="overflow-auto">
+            <table class="w-full min-w-[640px]">
+                <thead>
+                    <tr class="text-left text-xs text-slate-500 border-b">
+                        ${cols.map((c) => `<th class="py-2 pr-3">${escapeHtml(c)}</th>`).join('')}
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map((row) => `
+                        <tr class="border-b border-slate-100">
+                            ${cols.map((c) => `<td class="py-2 pr-3 text-sm">${escapeHtml(row[c] ?? '')}</td>`).join('')}
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function generateLinkProfileAuditHTML(data) {
+    const resultData = data.result || data;
+    const r = resultData.results || {};
+    const summary = r.summary || {};
+    const tables = r.tables || {};
+    const warnings = Array.isArray(r.warnings) ? r.warnings : [];
+    const errors = Array.isArray(r.errors) ? r.errors : [];
+    const anchorBreakdown = r.anchor_breakdown || {};
+
+    const summaryCards = [
+        ['Домен', summary.our_domain || resultData.url || data.url || '-'],
+        ['Строк ссылок', summary.rows_total ?? '-'],
+        ['Уникальных доноров', summary.unique_ref_domains ?? '-'],
+        ['Уникальных конкурентов', summary.unique_competitors ?? '-'],
+        ['Ссылок на наш домен', summary.our_links ?? '-'],
+        ['Дубликаты с нашим сайтом', summary.duplicates_with_our_site ?? '-'],
+        ['Dofollow / Nofollow', `${summary.dofollow ?? 0} / ${summary.nofollow ?? 0}`],
+        ['Средний DR', summary.avg_dr ?? '-'],
+    ];
+
+    const breakdownRows = Object.entries(anchorBreakdown).map(([k, v]) => ({ type: k, count: v }));
+    const planText = (r.prompts || {}).plan || '';
+
+    return `
+        <div class="space-y-6">
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h3 class="text-xl font-semibold mb-2">Аудит ссылочного профиля</h3>
+                <p class="text-sm text-slate-600">Базовые результаты этапа 1 интеграции. На следующем этапе добавим расширенные вкладки и экспорт DOCX/XLSX.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                ${summaryCards.map(([label, value]) => `
+                    <div class="bg-white rounded-xl shadow-md p-4">
+                        <div class="text-xs text-slate-500 mb-1">${escapeHtml(label)}</div>
+                        <div class="text-lg font-semibold text-slate-900">${escapeHtml(value)}</div>
+                    </div>
+                `).join('')}
+            </div>
+
+            ${errors.length ? `
+                <div class="bg-white rounded-xl shadow-md p-6 border border-red-200">
+                    <h4 class="font-semibold text-red-700 mb-2">Ошибки</h4>
+                    <ul class="list-disc pl-5 text-sm text-red-700">${errors.map((x) => `<li>${escapeHtml(x)}</li>`).join('')}</ul>
+                </div>
+            ` : ''}
+
+            ${warnings.length ? `
+                <div class="bg-white rounded-xl shadow-md p-6 border border-amber-200">
+                    <h4 class="font-semibold text-amber-700 mb-2">Предупреждения</h4>
+                    <ul class="list-disc pl-5 text-sm text-amber-700">${warnings.map((x) => `<li>${escapeHtml(x)}</li>`).join('')}</ul>
+                </div>
+            ` : ''}
+
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h4 class="font-semibold mb-3">Распределение анкоров</h4>
+                ${renderSimpleTable(breakdownRows, 'Нет данных по классификации анкоров')}
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h4 class="font-semibold mb-3">Конкуренты (топ)</h4>
+                ${renderSimpleTable(tables.competitor_analysis || [], 'Нет данных по конкурентам')}
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h4 class="font-semibold mb-3">Priority domains</h4>
+                ${renderSimpleTable(tables.priority_domains || [], 'Нет приоритетных доменов')}
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h4 class="font-semibold mb-3">План действий</h4>
+                <p class="text-sm text-slate-700">${escapeHtml(planText || 'План не сформирован')}</p>
+            </div>
+        </div>
+    `;
+}
+
+function generateGenericHTML(result) {
+    const safe = result || {};
+    return `
+        <div class="bg-white rounded-xl shadow-md p-6">
+            <h3 class="text-lg font-semibold mb-3">Результат</h3>
+            <pre class="text-xs bg-slate-50 border rounded p-3 overflow-auto">${escapeHtml(JSON.stringify(safe, null, 2))}</pre>
+        </div>
+    `;
 }
 
 function generateRobotsHTML(data) {
