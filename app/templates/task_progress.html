@@ -1919,7 +1919,16 @@ function renderSimpleTable(rows, emptyText = 'Нет данных') {
     if (!Array.isArray(rows) || rows.length === 0) {
         return `<div class="text-sm text-gray-500">${escapeHtml(emptyText)}</div>`;
     }
-    const cols = Object.keys(rows[0] || {});
+    const cleanRows = rows.filter((row) => {
+        if (!row || typeof row !== 'object') return false;
+        return Object.values(row).some((value) => value !== null && value !== undefined && String(value).trim() !== '');
+    });
+    if (!cleanRows.length) {
+        return `<div class="text-sm text-gray-500">${escapeHtml(emptyText)}</div>`;
+    }
+    const cols = Array.from(
+        new Set(cleanRows.flatMap((row) => Object.keys(row || {})).filter((name) => String(name || '').trim() !== ''))
+    );
     if (!cols.length) {
         return `<div class="text-sm text-gray-500">${escapeHtml(emptyText)}</div>`;
     }
@@ -1932,7 +1941,7 @@ function renderSimpleTable(rows, emptyText = 'Нет данных') {
                     </tr>
                 </thead>
                 <tbody>
-                    ${rows.map((row) => `
+                    ${cleanRows.map((row) => `
                         <tr class="border-b border-slate-100">
                             ${cols.map((c) => `<td class="py-2 pr-3 text-sm">${escapeHtml(row[c] ?? '')}</td>`).join('')}
                         </tr>
@@ -1955,6 +1964,32 @@ function renderTableGroup(group, fallback = 'Нет данных', maxRows = 100
             ${isTruncated ? `<div class="mt-2 text-xs text-slate-500">Показаны первые ${limitedRows.length} строк. Все данные в выгрузке XLSX, где обрабатываются строки по лимиту.</div>` : ''}
         </div>
     `;
+}
+
+function renderTableGroups(groups, fallback = 'Нет данных', maxRows = 100) {
+    const ready = (Array.isArray(groups) ? groups : []).filter((group) => Array.isArray(group?.rows) && group.rows.length > 0);
+    if (!ready.length) {
+        return `
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <div class="text-sm text-slate-500">${escapeHtml(fallback)}</div>
+            </div>
+        `;
+    }
+    return ready.map((group) => renderTableGroup(group, fallback, maxRows)).join('');
+}
+
+function normalizeLinkProfileRedirectRows(rows) {
+    if (!Array.isArray(rows) || !rows.length) return [];
+    return rows.map((row) => ({
+        'Referring page URL': row?.['Referring page URL'] ?? row?.['referring page url'] ?? '',
+        'Target URL': row?.['Target URL'] ?? row?.['target url'] ?? '',
+        'Anchor': row?.['Anchor'] ?? row?.['anchor'] ?? '',
+        'Domain Rating': row?.['Domain Rating'] ?? row?.['Domain rating'] ?? row?.['domain rating'] ?? row?.['dr'] ?? '',
+        'UR': row?.['UR'] ?? row?.['ur'] ?? row?.['URL Rating'] ?? row?.['url rating'] ?? '',
+        'Domain traffic': row?.['Domain traffic'] ?? row?.['domain traffic'] ?? row?.['traffic'] ?? '',
+        'Nofollow': row?.['Nofollow'] ?? row?.['nofollow'] ?? '',
+        'Lost status': row?.['Lost status'] ?? row?.['lost status'] ?? '',
+    }));
 }
 
 function switchLinkProfileAuditTab(tabId) {
@@ -1993,6 +2028,7 @@ function generateLinkProfileAuditHTML(data) {
     const resultData = data.result || data;
     const r = resultData.results || {};
     const summary = r.summary || {};
+    const validationSummary = ((r.validation || {}).summary) || {};
     const tables = r.tables || {};
     const warnings = Array.isArray(r.warnings) ? r.warnings : [];
     const errors = Array.isArray(r.errors) ? r.errors : [];
@@ -2048,7 +2084,7 @@ function generateLinkProfileAuditHTML(data) {
     const lossGroups = [
         { title: 'Loss & recovery', rows: tables.loss_recovery || [] },
         { title: 'Lost status mix', rows: tables.lost_status_mix || [] },
-        { title: 'Ссылки с редиректов', rows: tables.raw_redirect_links || [] },
+        { title: 'Ссылки с редиректов', rows: normalizeLinkProfileRedirectRows(tables.raw_redirect_links || []) },
         { title: 'Ссылки с главных', rows: tables.raw_homepage_links || [] },
     ];
     const riskGroups = [
@@ -2064,6 +2100,7 @@ function generateLinkProfileAuditHTML(data) {
         `Конкуренты: ${summary.unique_competitors ?? 0}`,
         `Dofollow: ${summary.dofollow ?? 0}`,
         `Nofollow: ${summary.nofollow ?? 0}`,
+        `Валидация: ok ${validationSummary.ok ?? 0} / warn ${validationSummary.warning ?? 0} / err ${validationSummary.error ?? 0}`,
     ];
 
     return `
@@ -2133,11 +2170,11 @@ function generateLinkProfileAuditHTML(data) {
             ` : ''}
 
             <div data-lp-panel="executive" class="space-y-6">
-                ${executiveGroups.map((group) => renderTableGroup(group, 'Нет executive-данных')).join('')}
+                ${renderTableGroups(executiveGroups, 'Нет executive-данных')}
             </div>
 
             <div data-lp-panel="competitors" class="space-y-6 hidden">
-                ${competitorGroups.map((group) => renderTableGroup(group, 'Нет данных конкурентов')).join('')}
+                ${renderTableGroups(competitorGroups, 'Нет данных конкурентов')}
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="font-semibold mb-3">Промпт: конкуренты</h4>
                     <p class="text-sm text-slate-700">${escapeHtml(prompts.competitors || 'Нет данных')}</p>
@@ -2145,7 +2182,7 @@ function generateLinkProfileAuditHTML(data) {
             </div>
 
             <div data-lp-panel="gap" class="space-y-6 hidden">
-                ${gapGroups.map((group) => renderTableGroup(group, 'Нет gap-данных')).join('')}
+                ${renderTableGroups(gapGroups, 'Нет gap-данных')}
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="font-semibold mb-3">Промпт: сравнение</h4>
                     <p class="text-sm text-slate-700">${escapeHtml(prompts.comparison || 'Нет данных')}</p>
@@ -2153,23 +2190,23 @@ function generateLinkProfileAuditHTML(data) {
             </div>
 
             <div data-lp-panel="quality" class="space-y-6 hidden">
-                ${qualityGroups.map((group) => renderTableGroup(group, 'Нет quality-данных')).join('')}
+                ${renderTableGroups(qualityGroups, 'Нет quality-данных')}
             </div>
 
             <div data-lp-panel="loss" class="space-y-6 hidden">
-                ${lossGroups.map((group) => renderTableGroup(group, 'Нет данных по потерям')).join('')}
+                ${renderTableGroups(lossGroups, 'Нет данных по потерям')}
             </div>
 
             <div data-lp-panel="anchors" class="space-y-6 hidden">
-                ${anchorTables.map((group) => renderTableGroup(group, 'Нет данных по анкорам')).join('')}
+                ${renderTableGroups(anchorTables, 'Нет данных по анкорам')}
             </div>
 
             <div data-lp-panel="risks" class="space-y-6 hidden">
-                ${riskGroups.map((group) => renderTableGroup(group, 'Нет риск-данных')).join('')}
+                ${renderTableGroups(riskGroups, 'Нет риск-данных')}
             </div>
 
             <div data-lp-panel="plan" class="space-y-6 hidden">
-                ${planGroups.map((group) => renderTableGroup(group, 'Нет данных по плану')).join('')}
+                ${renderTableGroups(planGroups, 'Нет данных по плану')}
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="font-semibold mb-3">План действий (NLP-подсказка)</h4>
                     <p class="text-sm text-slate-700">${escapeHtml(prompts.plan || 'План не сформирован')}</p>
