@@ -358,6 +358,36 @@ def _to_follow_bool(value: Any) -> Optional[bool]:
     return None
 
 
+def _to_flag_bool(value: Any) -> Optional[bool]:
+    if value is None:
+        return None
+    raw = str(value).strip().lower()
+    if not raw:
+        return None
+    if raw in {"1", "true", "yes", "y", "on"}:
+        return True
+    if raw in {"0", "false", "no", "n", "off"}:
+        return False
+    if raw in {"nofollow", "ugc", "sponsored"}:
+        return True
+    return None
+
+
+def _to_iso_date(value: Any) -> str:
+    if value is None:
+        return ""
+    raw = str(value).strip()
+    if not raw:
+        return ""
+    # Accept ISO-like formats and keep only date part for consistent aggregation.
+    if len(raw) >= 10 and re.match(r"^\d{4}-\d{2}-\d{2}", raw):
+        return raw[:10]
+    if len(raw) >= 10 and re.match(r"^\d{2}\.\d{2}\.\d{4}", raw):
+        d, m, y = raw[:10].split(".")
+        return f"{y}-{m}-{d}"
+    return raw[:10]
+
+
 def _classify_anchor(anchor: str, keywords: Dict[str, List[str]]) -> str:
     text = (anchor or "").lower()
     if not text:
@@ -511,6 +541,10 @@ def _counter_to_pct_rows(counter: Counter[str], *, value_key: str, limit: int = 
 
 
 def _normalize_backlink_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    page_title = _pick_value(
+        row,
+        ("referring page title", "page title", "title"),
+    )
     source = _pick_value(
         row,
         (
@@ -559,6 +593,10 @@ def _normalize_backlink_row(row: Dict[str, Any]) -> Dict[str, Any]:
         row,
         ("type", "link type"),
     )
+    platform = _pick_value(
+        row,
+        ("platform",),
+    )
     http_code = _pick_value(
         row,
         ("referring page http code", "http code", "status"),
@@ -570,6 +608,90 @@ def _normalize_backlink_row(row: Dict[str, Any]) -> Dict[str, Any]:
     lost_status = _pick_value(
         row,
         ("lost status", "drop reason", "discovered status"),
+    )
+    drop_reason = _pick_value(
+        row,
+        ("drop reason",),
+    )
+    discovered_status = _pick_value(
+        row,
+        ("discovered status",),
+    )
+    first_seen = _pick_value(
+        row,
+        ("first seen",),
+    )
+    last_seen = _pick_value(
+        row,
+        ("last seen",),
+    )
+    lost_flag = _pick_value(
+        row,
+        ("lost",),
+    )
+    content = _pick_value(
+        row,
+        ("content",),
+    )
+    ugc_flag = _pick_value(
+        row,
+        ("ugc",),
+    )
+    sponsored_flag = _pick_value(
+        row,
+        ("sponsored",),
+    )
+    rendered_flag = _pick_value(
+        row,
+        ("rendered",),
+    )
+    raw_flag = _pick_value(
+        row,
+        ("raw",),
+    )
+    external_links_value = _pick_value(
+        row,
+        ("external links",),
+    )
+    linked_domains_value = _pick_value(
+        row,
+        ("linked domains",),
+    )
+    referring_domains_value = _pick_value(
+        row,
+        ("referring domains",),
+    )
+    page_traffic_value = _pick_value(
+        row,
+        ("page traffic",),
+    )
+    keywords_count_value = _pick_value(
+        row,
+        ("keywords",),
+    )
+    author = _pick_value(
+        row,
+        ("author",),
+    )
+    links_in_group_value = _pick_value(
+        row,
+        ("links in group",),
+    )
+    left_context = _pick_value(
+        row,
+        ("left context",),
+    )
+    right_context = _pick_value(
+        row,
+        ("right context",),
+    )
+    redirect_chain_urls = _pick_value(
+        row,
+        ("redirect chain urls",),
+    )
+    redirect_chain_status = _pick_value(
+        row,
+        ("redirect chain status codes",),
     )
     ur_value = _pick_value(
         row,
@@ -603,7 +725,30 @@ def _normalize_backlink_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "link_type": str(link_type or "").strip().lower(),
         "http_code": str(http_code or "").strip(),
         "language": str(language or "").strip().lower(),
+        "platform": str(platform or "").strip().lower(),
+        "page_title": str(page_title or "").strip(),
         "lost_status": str(lost_status or "").strip().lower(),
+        "drop_reason": str(drop_reason or "").strip().lower(),
+        "discovered_status": str(discovered_status or "").strip().lower(),
+        "first_seen": _to_iso_date(first_seen),
+        "last_seen": _to_iso_date(last_seen),
+        "lost_flag": _to_flag_bool(lost_flag),
+        "content": str(content or "").strip().lower(),
+        "ugc": _to_flag_bool(ugc_flag),
+        "sponsored": _to_flag_bool(sponsored_flag),
+        "rendered": _to_flag_bool(rendered_flag),
+        "raw_flag": _to_flag_bool(raw_flag),
+        "external_links": _to_float(external_links_value),
+        "linked_domains": _to_float(linked_domains_value),
+        "referring_domains_count": _to_float(referring_domains_value),
+        "page_traffic": _to_float(page_traffic_value),
+        "keywords_count": _to_float(keywords_count_value),
+        "author": str(author or "").strip(),
+        "links_in_group": _to_float(links_in_group_value),
+        "left_context": str(left_context or "").strip(),
+        "right_context": str(right_context or "").strip(),
+        "redirect_chain_urls": str(redirect_chain_urls or "").strip(),
+        "redirect_chain_status": str(redirect_chain_status or "").strip(),
         "ur": _to_float(ur_value),
         "dr": _to_float(domain_rating),
         "traffic": _to_float(traffic),
@@ -873,9 +1018,14 @@ def run_link_profile_audit(
     redirect_301_counter: Counter[str] = Counter()
     homepage_donor_counter: Counter[str] = Counter()
     lost_status_counter: Counter[str] = Counter()
+    drop_reason_counter: Counter[str] = Counter()
+    discovered_status_counter: Counter[str] = Counter()
     http_class_counter: Counter[str] = Counter()
     language_counter: Counter[str] = Counter()
+    platform_counter: Counter[str] = Counter()
     link_type_counter: Counter[str] = Counter()
+    content_counter: Counter[str] = Counter()
+    attr_counter: Counter[str] = Counter()
     source_domain_stats: Dict[str, Dict[str, float]] = defaultdict(
         lambda: {
             "count": 0.0,
@@ -888,6 +1038,16 @@ def run_link_profile_audit(
             "nofollow_n": 0.0,
             "lost_n": 0.0,
             "http2xx_n": 0.0,
+            "ugc_n": 0.0,
+            "sponsored_n": 0.0,
+            "rendered_n": 0.0,
+            "raw_n": 0.0,
+            "external_links_sum": 0.0,
+            "external_links_n": 0.0,
+            "page_traffic_sum": 0.0,
+            "page_traffic_n": 0.0,
+            "keywords_sum": 0.0,
+            "keywords_n": 0.0,
         }
     )
     target_agg: Dict[str, Dict[str, Any]] = defaultdict(
@@ -908,7 +1068,13 @@ def run_link_profile_audit(
             "http_class": Counter(),
             "link_type": Counter(),
             "language": Counter(),
+            "platform": Counter(),
+            "content": Counter(),
             "anchor_type": Counter(),
+            "ugc": 0,
+            "sponsored": 0,
+            "rendered": 0,
+            "raw_flag": 0,
         }
     )
     source_follow_profile: Dict[str, Counter[str]] = defaultdict(Counter)
@@ -934,6 +1100,10 @@ def run_link_profile_audit(
         if row.get("lost_status"):
             lost_status_counter[row.get("lost_status")] += 1
             sd["lost_n"] += 1
+        if row.get("drop_reason"):
+            drop_reason_counter[str(row.get("drop_reason"))] += 1
+        if row.get("discovered_status"):
+            discovered_status_counter[str(row.get("discovered_status"))] += 1
         code = str(row.get("http_code") or "")
         if code.startswith("2"):
             http_class_counter["2xx"] += 1
@@ -948,6 +1118,8 @@ def run_link_profile_audit(
             http_class_counter["unknown"] += 1
         link_type_counter[str(row.get("link_type") or "unknown")] += 1
         language_counter[str(row.get("language") or "unknown")] += 1
+        platform_counter[str(row.get("platform") or "unknown")] += 1
+        content_counter[str(row.get("content") or "unknown")] += 1
         sd["count"] += 1
         if row.get("dr") is not None:
             sd["dr_sum"] += float(row.get("dr"))
@@ -958,6 +1130,43 @@ def run_link_profile_audit(
         if row.get("traffic") is not None:
             sd["traffic_sum"] += float(row.get("traffic"))
             sd["traffic_n"] += 1
+        if row.get("external_links") is not None:
+            sd["external_links_sum"] += float(row.get("external_links"))
+            sd["external_links_n"] += 1
+        if row.get("page_traffic") is not None:
+            sd["page_traffic_sum"] += float(row.get("page_traffic"))
+            sd["page_traffic_n"] += 1
+        if row.get("keywords_count") is not None:
+            sd["keywords_sum"] += float(row.get("keywords_count"))
+            sd["keywords_n"] += 1
+        if row.get("ugc") is True:
+            sd["ugc_n"] += 1
+            attr_counter["ugc_true"] += 1
+        elif row.get("ugc") is False:
+            attr_counter["ugc_false"] += 1
+        else:
+            attr_counter["ugc_unknown"] += 1
+        if row.get("sponsored") is True:
+            sd["sponsored_n"] += 1
+            attr_counter["sponsored_true"] += 1
+        elif row.get("sponsored") is False:
+            attr_counter["sponsored_false"] += 1
+        else:
+            attr_counter["sponsored_unknown"] += 1
+        if row.get("rendered") is True:
+            sd["rendered_n"] += 1
+            attr_counter["rendered_true"] += 1
+        elif row.get("rendered") is False:
+            attr_counter["rendered_false"] += 1
+        else:
+            attr_counter["rendered_unknown"] += 1
+        if row.get("raw_flag") is True:
+            sd["raw_n"] += 1
+            attr_counter["raw_true"] += 1
+        elif row.get("raw_flag") is False:
+            attr_counter["raw_false"] += 1
+        else:
+            attr_counter["raw_unknown"] += 1
 
         if _is_our_target(trg, domain):
             our_links += 1
@@ -1046,7 +1255,17 @@ def run_link_profile_audit(
         ta["http_class"]["2xx" if str(row.get("http_code") or "").startswith("2") else "3xx" if str(row.get("http_code") or "").startswith("3") else "4xx" if str(row.get("http_code") or "").startswith("4") else "5xx" if str(row.get("http_code") or "").startswith("5") else "unknown"] += 1
         ta["link_type"][str(row.get("link_type") or "unknown")] += 1
         ta["language"][str(row.get("language") or "unknown")] += 1
+        ta["platform"][str(row.get("platform") or "unknown")] += 1
+        ta["content"][str(row.get("content") or "unknown")] += 1
         ta["anchor_type"][anchor_type] += 1
+        if row.get("ugc") is True:
+            ta["ugc"] += 1
+        if row.get("sponsored") is True:
+            ta["sponsored"] += 1
+        if row.get("rendered") is True:
+            ta["rendered"] += 1
+        if row.get("raw_flag") is True:
+            ta["raw_flag"] += 1
 
     duplicates_with_our: List[Dict[str, Any]] = []
     duplicates_without_our: List[Dict[str, Any]] = []
@@ -1210,12 +1429,18 @@ def run_link_profile_audit(
             "internal_follow_pct": round((int_follow / max(1, follow)) * 100, 2),
             "internal_nofollow_pct": round((int_nofollow / max(1, nofollow)) * 100, 2),
             "lost_pct": round((int(agg.get("lost", 0)) / max(1, total)) * 100, 2),
+            "ugc_pct": round((int(agg.get("ugc", 0)) / max(1, total)) * 100, 2),
+            "sponsored_pct": round((int(agg.get("sponsored", 0)) / max(1, total)) * 100, 2),
+            "rendered_pct": round((int(agg.get("rendered", 0)) / max(1, total)) * 100, 2),
+            "raw_pct": round((int(agg.get("raw_flag", 0)) / max(1, total)) * 100, 2),
             "dr_counts": dr_counts,
             "dr10_counts": agg.get("dr10_counts", Counter()),
             "zone_counts": zone_counts,
             "http_class": agg.get("http_class", Counter()),
             "link_type": agg.get("link_type", Counter()),
             "language": agg.get("language", Counter()),
+            "platform": agg.get("platform", Counter()),
+            "content": agg.get("content", Counter()),
             "anchor_type": agg.get("anchor_type", Counter()),
         }
 
@@ -2131,6 +2356,205 @@ def run_link_profile_audit(
         ]
     )
 
+    # Stage-1 data layer for structured UI/DOCX/XLSX sections.
+    competitor_benchmark_rows: List[Dict[str, Any]] = []
+    for d in summary_domains_order:
+        m = per_target_metrics.get(d, {}) or {}
+        bm = batch_metrics.get(d, {}) or {}
+        if not m and not bm:
+            continue
+        total_links = max(1, int(m.get("total_links", 0) or 0))
+        http2xx = _pct((m.get("http_class", Counter()) or Counter()).get("2xx", 0), total_links)
+        quality_score = round(
+            (float(m.get("follow_pct", 0.0) or 0.0) * 0.35)
+            + (http2xx * 0.25)
+            + ((100.0 - float(m.get("lost_pct", 0.0) or 0.0)) * 0.25)
+            + ((100.0 - float(m.get("homepage_pct", 0.0) or 0.0)) * 0.15),
+            2,
+        )
+        competitor_benchmark_rows.append(
+            {
+                "Домен": d,
+                "Domain Rating": bm.get("dr"),
+                "Total Backlinks": bm.get("backlinks_all"),
+                "Referring Domains": bm.get("ref_domains_all"),
+                "Follow %": m.get("follow_pct"),
+                "Lost %": m.get("lost_pct"),
+                "HTTP 2xx %": round(http2xx, 2),
+                "Homepage %": m.get("homepage_pct"),
+                "UGC %": m.get("ugc_pct"),
+                "Sponsored %": m.get("sponsored_pct"),
+                "Rendered %": m.get("rendered_pct"),
+                "Quality Score": quality_score,
+            }
+        )
+    if competitor_benchmark_rows:
+        numeric_cols = [
+            "Domain Rating",
+            "Total Backlinks",
+            "Referring Domains",
+            "Follow %",
+            "Lost %",
+            "HTTP 2xx %",
+            "Homepage %",
+            "UGC %",
+            "Sponsored %",
+            "Rendered %",
+            "Quality Score",
+        ]
+        comp_only = [r for r in competitor_benchmark_rows if not _is_our_target(str(r.get("Домен") or ""), domain)]
+        if comp_only:
+            avg_row: Dict[str, Any] = {"Домен": "Средние"}
+            med_row: Dict[str, Any] = {"Домен": "Медиана"}
+            for col in numeric_cols:
+                vals = [float(x.get(col)) for x in comp_only if isinstance(x.get(col), (int, float))]
+                avg_row[col] = round(mean(vals), 2) if vals else None
+                med_row[col] = round(median(vals), 2) if vals else None
+            competitor_benchmark_rows.extend([avg_row, med_row])
+
+    gap_donors_priority_rows: List[Dict[str, Any]] = []
+    for row in opportunity_domains_rows[:800]:
+        gap_donors_priority_rows.append(
+            {
+                "Domain": row.get("domain"),
+                "Competitors Covered": row.get("competitors_covered"),
+                "Coverage %": row.get("competitors_covered_pct"),
+                "Avg DR": row.get("avg_dr"),
+                "Avg Traffic": row.get("avg_traffic"),
+                "Follow %": row.get("follow_pct"),
+                "Lost %": row.get("lost_pct"),
+                "Opportunity Score": row.get("opportunity_score"),
+            }
+        )
+
+    donor_overlap_matrix_rows: List[Dict[str, Any]] = []
+    for src, targets in source_to_targets.items():
+        if not targets:
+            continue
+        sorted_targets = sorted(targets)
+        has_our = any(_is_our_target(t, domain) for t in sorted_targets)
+        competitors = [t for t in sorted_targets if not _is_our_target(t, domain)]
+        donor_overlap_matrix_rows.append(
+            {
+                "Domain": src,
+                "Has Our Site": 1 if has_our else 0,
+                "Competitors Count": len(competitors),
+                "Competitors": ", ".join(competitors[:8]),
+                "Targets Total": len(sorted_targets),
+                "Gap Type": "gap" if (not has_our and len(competitors) >= 2) else "shared" if has_our and competitors else "single",
+            }
+        )
+    donor_overlap_matrix_rows.sort(
+        key=lambda x: (int(x.get("Has Our Site") or 0), int(x.get("Competitors Count") or 0), int(x.get("Targets Total") or 0)),
+        reverse=True,
+    )
+    donor_overlap_matrix_rows = donor_overlap_matrix_rows[:3000]
+
+    total_attr = max(1, len(normalized_rows))
+    link_attributes_rows = [
+        {"Attribute": "dofollow", "Count": follow_counter.get("dofollow", 0), "Pct": _pct(follow_counter.get("dofollow", 0), total_attr)},
+        {"Attribute": "nofollow", "Count": follow_counter.get("nofollow", 0), "Pct": _pct(follow_counter.get("nofollow", 0), total_attr)},
+        {"Attribute": "unknown_follow", "Count": follow_counter.get("unknown", 0), "Pct": _pct(follow_counter.get("unknown", 0), total_attr)},
+        {"Attribute": "ugc_true", "Count": attr_counter.get("ugc_true", 0), "Pct": _pct(attr_counter.get("ugc_true", 0), total_attr)},
+        {"Attribute": "sponsored_true", "Count": attr_counter.get("sponsored_true", 0), "Pct": _pct(attr_counter.get("sponsored_true", 0), total_attr)},
+        {"Attribute": "rendered_true", "Count": attr_counter.get("rendered_true", 0), "Pct": _pct(attr_counter.get("rendered_true", 0), total_attr)},
+        {"Attribute": "raw_true", "Count": attr_counter.get("raw_true", 0), "Pct": _pct(attr_counter.get("raw_true", 0), total_attr)},
+    ]
+
+    loss_recovery_rows: List[Dict[str, Any]] = []
+    for k, c in lost_status_counter.most_common(50):
+        loss_recovery_rows.append({"Group": "Lost status", "Value": k, "Count": c, "Pct": _pct(c, total_attr)})
+    for k, c in drop_reason_counter.most_common(50):
+        loss_recovery_rows.append({"Group": "Drop reason", "Value": k, "Count": c, "Pct": _pct(c, total_attr)})
+    for k, c in discovered_status_counter.most_common(50):
+        loss_recovery_rows.append({"Group": "Discovered status", "Value": k, "Count": c, "Pct": _pct(c, total_attr)})
+
+    http_type_lang_platform_rows: List[Dict[str, Any]] = []
+    for k, c in http_class_counter.most_common():
+        http_type_lang_platform_rows.append({"Dimension": "HTTP class", "Value": k, "Count": c, "Pct": _pct(c, total_attr)})
+    for k, c in link_type_counter.most_common(20):
+        http_type_lang_platform_rows.append({"Dimension": "Link type", "Value": k, "Count": c, "Pct": _pct(c, total_attr)})
+    for k, c in language_counter.most_common(20):
+        http_type_lang_platform_rows.append({"Dimension": "Language", "Value": k, "Count": c, "Pct": _pct(c, total_attr)})
+    for k, c in platform_counter.most_common(20):
+        http_type_lang_platform_rows.append({"Dimension": "Platform", "Value": k, "Count": c, "Pct": _pct(c, total_attr)})
+
+    target_structure_rows: List[Dict[str, Any]] = []
+    for d in summary_domains_order:
+        m = per_target_metrics.get(d, {}) or {}
+        if not m:
+            continue
+        target_structure_rows.append(
+            {
+                "Domain": d,
+                "Homepage %": m.get("homepage_pct"),
+                "Internal %": m.get("internal_pct"),
+                "Follow %": m.get("follow_pct"),
+                "Nofollow %": m.get("nofollow_pct"),
+                "UGC %": m.get("ugc_pct"),
+                "Sponsored %": m.get("sponsored_pct"),
+                "Rendered %": m.get("rendered_pct"),
+                "Raw %": m.get("raw_pct"),
+            }
+        )
+
+    risk_signals_rows: List[Dict[str, Any]] = []
+    for src, stats in source_domain_stats.items():
+        total = max(1.0, float(stats.get("count", 0.0)))
+        if total < 2:
+            continue
+        avg_dr = float(stats.get("dr_sum", 0.0)) / max(1.0, float(stats.get("dr_n", 0.0)))
+        avg_traffic = float(stats.get("traffic_sum", 0.0)) / max(1.0, float(stats.get("traffic_n", 0.0)))
+        ext_avg = float(stats.get("external_links_sum", 0.0)) / max(1.0, float(stats.get("external_links_n", 0.0)))
+        lost_rate = float(stats.get("lost_n", 0.0)) / total
+        nofollow_rate = float(stats.get("nofollow_n", 0.0)) / total
+        sponsored_rate = float(stats.get("sponsored_n", 0.0)) / total
+        risk_score = round(
+            (max(0.0, 35.0 - avg_dr) * 1.2)
+            + (min(ext_avg, 1000.0) / 20.0)
+            + (lost_rate * 45.0)
+            + (nofollow_rate * 30.0)
+            + (sponsored_rate * 20.0),
+            2,
+        )
+        risk_level = "high" if risk_score >= 55 else "medium" if risk_score >= 30 else "low"
+        risk_signals_rows.append(
+            {
+                "Domain": src,
+                "Links": int(total),
+                "Avg DR": round(avg_dr, 2),
+                "Avg Traffic": round(avg_traffic, 2),
+                "Avg External Links": round(ext_avg, 2),
+                "Lost %": round(lost_rate * 100.0, 2),
+                "Nofollow %": round(nofollow_rate * 100.0, 2),
+                "Sponsored %": round(sponsored_rate * 100.0, 2),
+                "Risk Score": risk_score,
+                "Risk Level": risk_level,
+            }
+        )
+    risk_signals_rows.sort(key=lambda x: float(x.get("Risk Score") or 0.0), reverse=True)
+    risk_signals_rows = risk_signals_rows[:2000]
+
+    action_queue_90d_rows: List[Dict[str, Any]] = [
+        {"Phase": "0-30", "Priority": "P1", "Action": "Стабилизировать качество доноров", "Target KPI": "Lost % и HTTP 4xx/5xx", "Owner": "SEO"},
+        {"Phase": "0-30", "Priority": "P1", "Action": "Поднять долю follow", "Target KPI": "Follow %", "Owner": "SEO/Outreach"},
+        {"Phase": "31-60", "Priority": "P2", "Action": "Закрыть donor-gap из приоритетных", "Target KPI": "Competitor coverage %", "Owner": "Outreach"},
+        {"Phase": "31-60", "Priority": "P2", "Action": "Скорректировать анкор-лист", "Target KPI": "Spam anchor % / Brand %", "Owner": "SEO"},
+        {"Phase": "61-90", "Priority": "P2", "Action": "Расширить качественные типы/платформы", "Target KPI": "Link type/platform diversity", "Owner": "SEO"},
+        {"Phase": "61-90", "Priority": "P3", "Action": "Пересчитать риск-профиль и исключить токсичные домены", "Target KPI": "Risk score median", "Owner": "SEO"},
+    ]
+
+    executive_overview_rows = [
+        {"Metric": "Rows total", "Value": len(normalized_rows)},
+        {"Metric": "Unique donors", "Value": len(source_to_targets)},
+        {"Metric": "Unique competitors", "Value": len(competitor_counter)},
+        {"Metric": "Follow %", "Value": summary.get("dofollow_pct")},
+        {"Metric": "Lost %", "Value": summary.get("lost_links_pct")},
+        {"Metric": "HTTP 2xx %", "Value": summary.get("http_2xx_pct")},
+        {"Metric": "Ready-buy domains", "Value": len(ready_buy_rows)},
+        {"Metric": "High-risk donors", "Value": sum(1 for x in risk_signals_rows if str(x.get("Risk Level")) == "high")},
+    ]
+
     prompts = {
         "ourSite": (
             f"У сайта {domain} {summary['our_unique_ref_domains']} уникальных доноров. "
@@ -2231,14 +2655,27 @@ def run_link_profile_audit(
                 "raw_redirect_links": _cap_rows(raw_redirect_links_rows),
                 "raw_duplicates_without_our": _cap_rows(raw_duplicates_without_our_rows),
                 "executive_kpi": _cap_rows(executive_kpi_rows),
+                "executive_overview": _cap_rows(executive_overview_rows),
                 "profile_structure": _cap_rows(profile_structure_rows),
                 "priority_dashboard": _cap_rows(priority_dashboard_rows),
                 "action_queue": _cap_rows(action_queue_rows),
+                "action_queue_90d": _cap_rows(action_queue_90d_rows),
+                "competitor_benchmark": _cap_rows(competitor_benchmark_rows),
+                "gap_donors_priority": _cap_rows(gap_donors_priority_rows),
+                "donor_overlap_matrix": _cap_rows(donor_overlap_matrix_rows),
+                "link_attributes": _cap_rows(link_attributes_rows),
+                "loss_recovery": _cap_rows(loss_recovery_rows),
+                "http_type_lang_platform": _cap_rows(http_type_lang_platform_rows),
+                "target_structure": _cap_rows(target_structure_rows),
+                "risk_signals": _cap_rows(risk_signals_rows),
                 "ourSiteTables": [
                     {"title": "Приоритеты SEO (первый экран)", "rows": _cap_rows(priority_dashboard_rows)},
                     {"title": "Очередь действий (что делать первым)", "rows": _cap_rows(action_queue_rows)},
+                    {"title": "План 30/60/90", "rows": _cap_rows(action_queue_90d_rows)},
                     {"title": "KPI по нашему сайту vs среднее конкурентов", "rows": _cap_rows(executive_kpi_rows)},
+                    {"title": "Executive overview", "rows": _cap_rows(executive_overview_rows)},
                     {"title": "Структура ссылочного профиля (наш сайт)", "rows": _cap_rows(profile_structure_rows)},
+                    {"title": "Target structure (наш сайт vs конкуренты)", "rows": _cap_rows(target_structure_rows)},
                     {"title": "Наш сайт: доноры", "rows": _cap_rows(our_site_rows)},
                     {"title": "Ссылки с главных (raw)", "rows": _cap_rows(raw_homepage_links_rows)},
                     {"title": "Ссылки с конкурентов (raw)", "rows": _cap_rows(raw_competitor_links_rows)},
@@ -2247,6 +2684,7 @@ def run_link_profile_audit(
                 ],
                 "competitorTables": [
                     {"title": "Конкуренты", "rows": _cap_rows(competitor_rows)},
+                    {"title": "Competitor benchmark", "rows": _cap_rows(competitor_benchmark_rows)},
                     {"title": "Рейтинг конкурентов (DR / Backlinks / Follow%)", "rows": _cap_rows(competitor_rank_rows)},
                     {"title": "Качество профиля конкурентов (0-100)", "rows": _cap_rows(competitor_quality_rows)},
                 ],
@@ -2260,6 +2698,8 @@ def run_link_profile_audit(
                     {"title": "DR распределение доноров по доменам (%)", "rows": _cap_rows(dr_distribution_matrix_rows)},
                     {"title": "Матрица возможностей доноров", "rows": _cap_rows(opportunity_domains_rows)},
                     {"title": "Ready-to-buy доноры (GGL/Miralinks)", "rows": _cap_rows(ready_buy_rows)},
+                    {"title": "Gap donors priority", "rows": _cap_rows(gap_donors_priority_rows)},
+                    {"title": "Donor overlap matrix", "rows": _cap_rows(donor_overlap_matrix_rows)},
                     *[{"title": str(s.get("title") or "Анализ"), "rows": _cap_rows(s.get("rows") or [])} for s in imported_analysis_sections],
                 ],
                 "additionalTables": [
@@ -2282,6 +2722,10 @@ def run_link_profile_audit(
                     {"title": "Link types by competitor", "rows": _cap_rows(link_types_by_competitor)},
                     {"title": "HTTP codes by competitor", "rows": _cap_rows(http_codes_by_competitor)},
                     {"title": "Languages by competitor", "rows": _cap_rows(languages_by_competitor)},
+                    {"title": "Link attributes", "rows": _cap_rows(link_attributes_rows)},
+                    {"title": "Loss & recovery", "rows": _cap_rows(loss_recovery_rows)},
+                    {"title": "HTTP/Type/Lang/Platform", "rows": _cap_rows(http_type_lang_platform_rows)},
+                    {"title": "Risk signals", "rows": _cap_rows(risk_signals_rows)},
                     {"title": "Auto brand keywords", "rows": _cap_rows(brand_rows)},
                     {"title": "Source files", "rows": _cap_rows(file_summaries)},
                 ],
