@@ -1993,6 +1993,7 @@ function generateLinkProfileAuditHTML(data) {
         { title: 'Anchor Summary', rows: tables.anchor_analysis || [] },
         { title: 'Word Analysis', rows: tables.anchor_word_analysis || [] },
         { title: 'Anchor Types', rows: breakdownRows },
+        { title: 'Anchor Mix %', rows: tables.anchor_mix_pct || [] },
     ];
     const badgePairs = [
         `Доноры: ${summary.unique_ref_domains ?? 0}`,
@@ -2100,6 +2101,7 @@ function generateLinkProfileAuditHTML(data) {
                         <button type="button" data-lp-subscope="anchors" data-lp-subtab="summary" onclick="switchLinkProfileSubTab('anchors','summary')" class="px-3 py-1 rounded-md text-sm font-medium bg-slate-900 text-white">Summary</button>
                         <button type="button" data-lp-subscope="anchors" data-lp-subtab="words" onclick="switchLinkProfileSubTab('anchors','words')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Word Analysis</button>
                         <button type="button" data-lp-subscope="anchors" data-lp-subtab="types" onclick="switchLinkProfileSubTab('anchors','types')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Types</button>
+                        <button type="button" data-lp-subscope="anchors" data-lp-subtab="mix" onclick="switchLinkProfileSubTab('anchors','mix')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Mix %</button>
                     </div>
                 </div>
                 <div data-lp-subscope="anchors" data-lp-subpanel="summary">
@@ -2110,6 +2112,9 @@ function generateLinkProfileAuditHTML(data) {
                 </div>
                 <div data-lp-subscope="anchors" data-lp-subpanel="types" class="hidden">
                     ${renderTableGroup(anchorTables[2], 'Нет данных по типам анкоров')}
+                </div>
+                <div data-lp-subscope="anchors" data-lp-subpanel="mix" class="hidden">
+                    ${renderTableGroup(anchorTables[3], 'Нет данных по mix анкоров')}
                 </div>
             </div>
 
@@ -2130,6 +2135,7 @@ function generateLinkProfileAuditHTML(data) {
                 <div data-lp-subscope="duplicates" data-lp-subpanel="priority" class="hidden space-y-6">
                     ${renderTableGroup({ title: 'Priority domains', rows: tables.priority_domains || [] }, 'Нет данных')}
                     ${renderTableGroup({ title: 'Priority score domains', rows: tables.priority_score_domains || [] }, 'Нет данных')}
+                    ${renderTableGroup({ title: 'Ready-to-buy domains (GGL/Miralinks)', rows: tables.ready_buy_domains || [] }, 'Нет данных')}
                     ${renderTableGroup({ title: 'Single competitor domains', rows: tables.single_competitor_domains || [] }, 'Нет данных')}
                     ${renderTableGroup({ title: 'Single our domains', rows: tables.single_our_domains || [] }, 'Нет данных')}
                 </div>
@@ -2157,6 +2163,7 @@ function generateLinkProfileAuditHTML(data) {
                 <div data-lp-subscope="additional" data-lp-subpanel="follow" class="space-y-6 hidden">
                     ${renderTableGroup({ title: 'Follow / Nofollow', rows: tables.follow_types || [] }, 'Нет данных follow')}
                     ${renderTableGroup({ title: 'Follow / Nofollow %', rows: tables.follow_mix_pct || [] }, 'Нет данных follow')}
+                    ${renderTableGroup({ title: 'Follow/Nofollow domains %', rows: tables.follow_domain_mix_pct || [] }, 'Нет данных follow по доменам')}
                     ${renderTableGroup({ title: 'Follow / Nofollow detailed', rows: tables.follow_types_detailed || [] }, 'Нет данных follow')}
                     ${renderTableGroup({ title: 'Lost status mix', rows: tables.lost_status_mix || [] }, 'Нет данных по потерянным ссылкам')}
                 </div>

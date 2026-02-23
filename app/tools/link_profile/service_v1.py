@@ -663,8 +663,10 @@ def run_link_profile_audit(
             "http_class": Counter(),
             "link_type": Counter(),
             "language": Counter(),
+            "anchor_type": Counter(),
         }
     )
+    source_follow_profile: Dict[str, Counter[str]] = defaultdict(Counter)
 
     dr_values: List[float] = []
     traffic_values: List[float] = []
@@ -723,6 +725,7 @@ def run_link_profile_audit(
         follow = row.get("follow")
         if follow is True:
             follow_counter["dofollow"] += 1
+            source_follow_profile[src]["dofollow"] += 1
             if _is_our_target(trg, domain):
                 follow_our_counter["dofollow"] += 1
             else:
@@ -730,12 +733,14 @@ def run_link_profile_audit(
         elif follow is False:
             follow_counter["nofollow"] += 1
             sd["nofollow_n"] += 1
+            source_follow_profile[src]["nofollow"] += 1
             if _is_our_target(trg, domain):
                 follow_our_counter["nofollow"] += 1
             else:
                 follow_comp_counter["nofollow"] += 1
         else:
             follow_counter["unknown"] += 1
+            source_follow_profile[src]["unknown"] += 1
             if _is_our_target(trg, domain):
                 follow_our_counter["unknown"] += 1
             else:
@@ -796,6 +801,7 @@ def run_link_profile_audit(
         ta["http_class"]["2xx" if str(row.get("http_code") or "").startswith("2") else "3xx" if str(row.get("http_code") or "").startswith("3") else "4xx" if str(row.get("http_code") or "").startswith("4") else "5xx" if str(row.get("http_code") or "").startswith("5") else "unknown"] += 1
         ta["link_type"][str(row.get("link_type") or "unknown")] += 1
         ta["language"][str(row.get("language") or "unknown")] += 1
+        ta["anchor_type"][anchor_type] += 1
 
     duplicates_with_our: List[Dict[str, Any]] = []
     duplicates_without_our: List[Dict[str, Any]] = []
@@ -858,6 +864,7 @@ def run_link_profile_audit(
             "http_class": agg.get("http_class", Counter()),
             "link_type": agg.get("link_type", Counter()),
             "language": agg.get("language", Counter()),
+            "anchor_type": agg.get("anchor_type", Counter()),
         }
 
     competitors_list = [d for d in per_target_metrics.keys() if not _is_our_target(str(d), domain)]
@@ -940,6 +947,25 @@ def run_link_profile_audit(
                 "batch_organic_keywords_total": metrics.get("organic_keywords_total"),
             }
         )
+
+    competitor_rank_rows: List[Dict[str, Any]] = []
+    for row in competitor_rows:
+        dr_v = float(row.get("batch_dr") or 0.0)
+        backlinks_v = float(row.get("batch_backlinks_all") or 0.0)
+        follow_v = float(row.get("batch_backlinks_followed_pct") or 0.0)
+        score = round((dr_v * 0.45) + (min(backlinks_v, 200000.0) / 2000.0 * 0.3) + (follow_v * 0.25), 2)
+        competitor_rank_rows.append(
+            {
+                "competitor_domain": row.get("competitor_domain"),
+                "batch_dr": row.get("batch_dr"),
+                "batch_backlinks_all": row.get("batch_backlinks_all"),
+                "batch_backlinks_followed_pct": row.get("batch_backlinks_followed_pct"),
+                "rank_score": score,
+            }
+        )
+    competitor_rank_rows.sort(key=lambda x: float(x.get("rank_score") or 0.0), reverse=True)
+    for idx, item in enumerate(competitor_rank_rows, start=1):
+        item["rank"] = idx
 
     comparison_rows: List[Dict[str, Any]] = []
     our_batch_dr = _to_float((batch_metrics.get(domain) or {}).get("dr"))
@@ -1058,6 +1084,50 @@ def run_link_profile_audit(
         our_row[bucket] = _pct(our_dr10.get(bucket, 0), our_total)
     dr_distribution_matrix_rows.append(our_row)
 
+    def _build_mix_benchmark(
+        value_getter: Callable[[Dict[str, Any]], Counter[str]],
+        categories: List[str],
+        title_prefix: str = "",
+    ) -> List[Dict[str, Any]]:
+        rows: List[Dict[str, Any]] = []
+        for cat in categories:
+            comp_vals: List[float] = []
+            for comp in competitors_list:
+                m = per_target_metrics.get(comp, {})
+                cnt = value_getter(m) or Counter()
+                total_links = max(1, int(m.get("total_links", 0) or 0))
+                comp_vals.append(_pct(cnt.get(cat, 0), total_links))
+            our_cnt = value_getter(our_metrics or {}) or Counter()
+            our_val = _pct(our_cnt.get(cat, 0), max(1, int((our_metrics or {}).get("total_links", 0) or 0)))
+            rows.append(
+                {
+                    "metric": f"{title_prefix}{cat}",
+                    "our_site_pct": our_val,
+                    "competitors_avg_pct": round(mean(comp_vals), 2) if comp_vals else 0.0,
+                    "competitors_median_pct": round(median(comp_vals), 2) if comp_vals else 0.0,
+                }
+            )
+        return rows
+
+    anchor_mix_benchmark_rows = _build_mix_benchmark(
+        lambda m: m.get("anchor_type", Counter()) or Counter(),
+        ["empty", "brand", "commercial", "informational", "spam", "other"],
+        "anchor:",
+    )
+    link_type_categories = sorted(set(link_type_counter.keys()))[:20]
+    link_type_benchmark_rows = _build_mix_benchmark(
+        lambda m: m.get("link_type", Counter()) or Counter(),
+        link_type_categories,
+        "type:",
+    )
+    http_categories = ["2xx", "3xx", "4xx", "5xx", "unknown"]
+    http_benchmark_rows = _build_mix_benchmark(
+        lambda m: m.get("http_class", Counter()) or Counter(),
+        http_categories,
+        "http:",
+    )
+    follow_home_internal_benchmark_rows = benchmark_rows[:]
+
     top_anchors = [{"anchor": a, "count": c} for a, c in anchor_counter.most_common(30)]
     anchor_word_rows = [{"word": w, "count": c} for w, c in anchor_word_counter.most_common(30)]
     priority_domains = sorted(
@@ -1160,6 +1230,14 @@ def run_link_profile_audit(
         )
     opportunity_domains_rows.sort(key=lambda x: (float(x.get("opportunity_score", 0.0)), float(x.get("competitors_covered", 0))), reverse=True)
     opportunity_domains_rows = opportunity_domains_rows[:500]
+    ready_buy_rows = [
+        x
+        for x in opportunity_domains_rows
+        if float(x.get("avg_dr") or 0.0) >= 30.0
+        and float(x.get("avg_traffic") or 0.0) >= 50.0
+        and float(x.get("follow_pct") or 0.0) >= 60.0
+        and float(x.get("lost_pct") or 100.0) <= 40.0
+    ][:300]
     dr_bucket_rows = [{"dr_bucket": k, "links": v} for k, v in sorted(dr_bucket_counter.items(), key=lambda x: str(x[0]))]
     dr_bucket_our_rows = []
     dr_bucket_comp_rows = []
@@ -1175,10 +1253,25 @@ def run_link_profile_audit(
         {"type": "unknown", "count": follow_counter.get("unknown", 0)},
     ]
     follow_mix_rows = _counter_to_pct_rows(follow_counter, value_key="type", limit=10)
+    follow_domain_class_counter: Counter[str] = Counter()
+    for d, fc in source_follow_profile.items():
+        has_do = int(fc.get("dofollow", 0)) > 0
+        has_no = int(fc.get("nofollow", 0)) > 0
+        has_un = int(fc.get("unknown", 0)) > 0
+        if has_do and not has_no:
+            follow_domain_class_counter["follow_only_domains"] += 1
+        elif has_no and not has_do:
+            follow_domain_class_counter["nofollow_only_domains"] += 1
+        elif has_do and has_no:
+            follow_domain_class_counter["mixed_follow_nofollow_domains"] += 1
+        elif has_un:
+            follow_domain_class_counter["unknown_only_domains"] += 1
+    follow_domain_mix_rows = _counter_to_pct_rows(follow_domain_class_counter, value_key="segment", limit=10)
     lost_status_rows = _counter_to_pct_rows(lost_status_counter, value_key="lost_status", limit=20)
     http_class_rows = _counter_to_pct_rows(http_class_counter, value_key="http_class", limit=10)
     link_type_mix_rows = _counter_to_pct_rows(link_type_counter, value_key="link_type", limit=20)
     language_mix_rows = _counter_to_pct_rows(language_counter, value_key="language", limit=20)
+    anchor_mix_rows = _counter_to_pct_rows(anchor_type_counter, value_key="anchor_type", limit=20)
     follow_detail_rows = [
         {
             "segment": "our_site",
@@ -1335,11 +1428,13 @@ def run_link_profile_audit(
                 "zones": zone_rows,
                 "follow_types": follow_rows,
                 "follow_mix_pct": follow_mix_rows,
+                "follow_domain_mix_pct": follow_domain_mix_rows,
                 "follow_types_detailed": follow_detail_rows,
                 "lost_status_mix": lost_status_rows,
                 "http_class_mix": http_class_rows,
                 "link_type_mix": link_type_mix_rows,
                 "language_mix": language_mix_rows,
+                "anchor_mix_pct": anchor_mix_rows,
                 "donors_with_redirect_301": redirect_301_rows,
                 "donors_homepage": homepage_donor_rows,
                 "brand_keywords_auto": brand_rows,
@@ -1348,20 +1443,28 @@ def run_link_profile_audit(
                 "http_codes_by_competitor": http_codes_by_competitor,
                 "languages_by_competitor": languages_by_competitor,
                 "competitor_quality": competitor_quality_rows,
+                "competitor_ranking": competitor_rank_rows,
                 "opportunity_domains": opportunity_domains_rows,
+                "ready_buy_domains": ready_buy_rows,
                 "dr_distribution_matrix": dr_distribution_matrix_rows,
                 "ourSiteTables": [
                     {"title": "Наш сайт: доноры", "rows": our_site_rows},
                 ],
                 "competitorTables": [
                     {"title": "Конкуренты", "rows": competitor_rows},
+                    {"title": "Рейтинг конкурентов (DR / Backlinks / Follow%)", "rows": competitor_rank_rows},
                     {"title": "Качество профиля конкурентов (0-100)", "rows": competitor_quality_rows},
                 ],
                 "comparisonTables": [
                     {"title": "Сравнение с конкурентами", "rows": comparison_rows},
                     {"title": "Бенчмарк avg/median по конкурентам", "rows": benchmark_rows},
+                    {"title": "Бенчмарк по анкорам (avg/median)", "rows": anchor_mix_benchmark_rows},
+                    {"title": "Бенчмарк по типам ссылок (avg/median)", "rows": link_type_benchmark_rows},
+                    {"title": "Бенчмарк по HTTP кодам (avg/median)", "rows": http_benchmark_rows},
+                    {"title": "Бенчмарк follow/home/internal (avg/median)", "rows": follow_home_internal_benchmark_rows},
                     {"title": "DR распределение доноров по доменам (%)", "rows": dr_distribution_matrix_rows},
                     {"title": "Матрица возможностей доноров", "rows": opportunity_domains_rows},
+                    {"title": "Ready-to-buy доноры (GGL/Miralinks)", "rows": ready_buy_rows},
                 ],
                 "additionalTables": [
                     {"title": "DR статистика", "rows": dr_stats_rows},
@@ -1371,7 +1474,9 @@ def run_link_profile_audit(
                     {"title": "Domain zones", "rows": zone_rows},
                     {"title": "Follow / Nofollow", "rows": follow_rows},
                     {"title": "Follow / Nofollow %", "rows": follow_mix_rows},
+                    {"title": "Follow/Nofollow по доменам %", "rows": follow_domain_mix_rows},
                     {"title": "Follow / Nofollow detailed", "rows": follow_detail_rows},
+                    {"title": "Anchor mix %", "rows": anchor_mix_rows},
                     {"title": "Lost status mix", "rows": lost_status_rows},
                     {"title": "HTTP class mix", "rows": http_class_rows},
                     {"title": "Link type mix", "rows": link_type_mix_rows},
