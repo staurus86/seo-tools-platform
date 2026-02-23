@@ -2386,9 +2386,9 @@ function generateSitemapHTMLV2(result) {
                             <div class="text-xs text-slate-500">ссылок: ${hreflang.links_count || 0}, некорректных: ${(hreflang.invalid_code_count || 0) + (hreflang.invalid_href_count || 0)}</div>
                         </div>
                         <div class="rounded-lg border border-slate-200 p-3">
-                            <div class="text-xs text-slate-500">Актуальность</div>
-                            <div class="font-semibold">устаревших: ${freshness.stale_lastmod_count || 0}</div>
-                            <div class="text-xs text-slate-500">без lastmod: ${freshness.lastmod_missing_count || 0}, будущих: ${freshness.lastmod_future_count || 0}</div>
+                            <div class="text-xs text-slate-500">Актуальность lastmod</div>
+                            <div class="font-semibold">Устаревших URL: ${freshness.stale_lastmod_count || 0}</div>
+                            <div class="text-xs text-slate-500">Без lastmod: ${freshness.lastmod_missing_count || 0}, с датой в будущем: ${freshness.lastmod_future_count || 0}</div>
                         </div>
                         <div class="rounded-lg border border-slate-200 p-3">
                             <div class="text-xs text-slate-500">Media-расширения</div>
