@@ -273,11 +273,35 @@
         --lp-hero: linear-gradient(120deg, #0f766e 0%, #0f4c81 50%, #1d4ed8 100%);
         --lp-chip-bg: rgba(255, 255, 255, 0.16);
         --lp-chip-br: rgba(255, 255, 255, 0.28);
+        --lp-glass: rgba(255, 255, 255, 0.14);
     }
     .linkpro-results .lp-hero {
         background: var(--lp-hero);
         color: #f8fafc;
         border: 1px solid rgba(255, 255, 255, 0.14);
+        position: relative;
+        overflow: hidden;
+    }
+    .linkpro-results .lp-hero::before {
+        content: "";
+        position: absolute;
+        inset: -40% auto auto -20%;
+        width: 320px;
+        height: 320px;
+        border-radius: 999px;
+        background: radial-gradient(circle, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.01) 70%);
+        pointer-events: none;
+    }
+    .linkpro-results .lp-hero::after {
+        content: "";
+        position: absolute;
+        right: -90px;
+        bottom: -90px;
+        width: 240px;
+        height: 240px;
+        border-radius: 999px;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.22) 0%, rgba(56, 189, 248, 0.02) 72%);
+        pointer-events: none;
     }
     .linkpro-results .lp-chip {
         display: inline-flex;
@@ -296,11 +320,39 @@
         background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
         box-shadow: 0 8px 22px rgba(2, 6, 23, 0.05);
     }
+    .linkpro-results .lp-glass {
+        border: 1px solid rgba(255, 255, 255, 0.26);
+        background: var(--lp-glass);
+        backdrop-filter: blur(6px);
+    }
+    .linkpro-results .lp-health {
+        border-radius: 1rem;
+        min-width: 180px;
+        text-align: center;
+        padding: 0.9rem 1rem;
+    }
+    .linkpro-results .lp-health .score {
+        font-size: 2rem;
+        line-height: 1;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+    }
     .linkpro-results [data-lp-tab] {
         transition: all 0.2s ease;
+        border: 1px solid #dbe4f0;
     }
     .linkpro-results [data-lp-tab]:hover {
         transform: translateY(-1px);
+    }
+    .linkpro-results .lp-tab-badge {
+        display: inline-flex;
+        margin-left: 0.4rem;
+        padding: 0.05rem 0.45rem;
+        border-radius: 999px;
+        font-size: 0.7rem;
+        border: 1px solid #cbd5e1;
+        background: #f8fafc;
+        color: #334155;
     }
     @keyframes auditpro-fade-in {
         from {
@@ -1933,7 +1985,7 @@ function renderSimpleTable(rows, emptyText = 'Нет данных') {
         return `<div class="text-sm text-gray-500">${escapeHtml(emptyText)}</div>`;
     }
     return `
-        <div class="overflow-auto">
+        <div class="overflow-auto max-h-[560px] rounded-lg border border-slate-200">
             <table class="w-full min-w-[640px]">
                 <thead>
                     <tr class="text-left text-xs text-slate-500 border-b">
@@ -1959,7 +2011,7 @@ function renderTableGroup(group, fallback = 'Нет данных', maxRows = 100
     const isTruncated = limitedRows.length < rows.length;
     return `
         <div class="bg-white rounded-xl shadow-md p-6">
-            ${title ? `<h4 class="font-semibold mb-3">${escapeHtml(title)}</h4>` : ''}
+            ${title ? `<div class="mb-3 flex items-center justify-between gap-3"><h4 class="font-semibold">${escapeHtml(title)}</h4><span class="text-xs text-slate-500">Строк: ${escapeHtml(rows.length)}</span></div>` : ''}
             ${renderSimpleTable(limitedRows, fallback)}
             ${isTruncated ? `<div class="mt-2 text-xs text-slate-500">Показаны первые ${limitedRows.length} строк. Все данные в выгрузке XLSX, где обрабатываются строки по лимиту.</div>` : ''}
         </div>
@@ -1992,6 +2044,10 @@ function normalizeLinkProfileRedirectRows(rows) {
     }));
 }
 
+function countGroupRows(groups) {
+    return (Array.isArray(groups) ? groups : []).reduce((acc, group) => acc + (Array.isArray(group?.rows) ? group.rows.length : 0), 0);
+}
+
 function switchLinkProfileAuditTab(tabId) {
     const root = document.getElementById('link-profile-tabs-root');
     if (!root) return;
@@ -2001,6 +2057,15 @@ function switchLinkProfileAuditTab(tabId) {
         btn.classList.toggle('text-white', active);
         btn.classList.toggle('bg-white', !active);
         btn.classList.toggle('text-slate-700', !active);
+        const badge = btn.querySelector('.lp-tab-badge');
+        if (badge) {
+            badge.classList.toggle('bg-white/20', active);
+            badge.classList.toggle('text-white', active);
+            badge.classList.toggle('border-white/30', active);
+            badge.classList.toggle('bg-slate-50', !active);
+            badge.classList.toggle('text-slate-700', !active);
+            badge.classList.toggle('border-slate-300', !active);
+        }
     });
     root.querySelectorAll('[data-lp-panel]').forEach((panel) => {
         const show = panel.getAttribute('data-lp-panel') === tabId;
@@ -2102,6 +2167,22 @@ function generateLinkProfileAuditHTML(data) {
         `Nofollow: ${summary.nofollow ?? 0}`,
         `Валидация: ok ${validationSummary.ok ?? 0} / warn ${validationSummary.warning ?? 0} / err ${validationSummary.error ?? 0}`,
     ];
+    const validationErrors = Number(validationSummary.error || 0);
+    const validationWarnings = Number(validationSummary.warning || 0);
+    const lostPct = Number(summary.lost_links_pct || 0);
+    const nofollowPct = Number(summary.nofollow_pct || 0);
+    const healthScore = Math.max(0, Math.min(100, Math.round(100 - (lostPct * 0.6) - (nofollowPct * 0.35) - (validationWarnings * 2) - (validationErrors * 8))));
+    const healthTone = healthScore >= 80 ? 'text-emerald-100' : healthScore >= 60 ? 'text-amber-100' : 'text-rose-100';
+    const tabCounters = {
+        executive: countGroupRows(executiveGroups),
+        competitors: countGroupRows(competitorGroups),
+        gap: countGroupRows(gapGroups),
+        quality: countGroupRows(qualityGroups),
+        loss: countGroupRows(lossGroups),
+        anchors: countGroupRows(anchorTables),
+        risks: countGroupRows(riskGroups),
+        plan: countGroupRows(planGroups),
+    };
 
     return `
         <div class="space-y-6 auditpro-results linkpro-results" id="link-profile-tabs-root">
@@ -2114,13 +2195,20 @@ function generateLinkProfileAuditHTML(data) {
                             ${badgePairs.map((x) => `<span class="lp-chip">${escapeHtml(x)}</span>`).join('')}
                         </div>
                     </div>
-                    <div class="flex flex-wrap gap-2">
-                        <button onclick="downloadLinkProfileDocxReport()" class="px-4 py-2 bg-white/15 border border-white/30 text-white rounded-lg hover:bg-white/25 transition text-sm">
-                            <i class="fas fa-file-word mr-1"></i>DOCX
-                        </button>
-                        <button onclick="downloadLinkProfileXlsxReport()" class="px-4 py-2 bg-white/15 border border-white/30 text-white rounded-lg hover:bg-white/25 transition text-sm">
-                            <i class="fas fa-file-excel mr-1"></i>XLSX
-                        </button>
+                    <div class="flex flex-col items-end gap-2">
+                        <div class="lp-glass lp-health">
+                            <div class="text-xs uppercase tracking-wide text-slate-100/90">Profile Health</div>
+                            <div class="score ${healthTone}">${escapeHtml(healthScore)}</div>
+                            <div class="text-xs text-slate-100/90">validation err: ${escapeHtml(validationErrors)} | warn: ${escapeHtml(validationWarnings)}</div>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <button onclick="downloadLinkProfileDocxReport()" class="px-4 py-2 bg-white/15 border border-white/30 text-white rounded-lg hover:bg-white/25 transition text-sm">
+                                <i class="fas fa-file-word mr-1"></i>DOCX
+                            </button>
+                            <button onclick="downloadLinkProfileXlsxReport()" class="px-4 py-2 bg-white/15 border border-white/30 text-white rounded-lg hover:bg-white/25 transition text-sm">
+                                <i class="fas fa-file-excel mr-1"></i>XLSX
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2144,14 +2232,14 @@ function generateLinkProfileAuditHTML(data) {
 
             <div class="bg-white rounded-xl shadow-md p-4">
                 <div class="flex flex-wrap gap-2">
-                    <button type="button" data-lp-tab="executive" onclick="switchLinkProfileAuditTab('executive')" class="px-4 py-2 rounded-lg text-sm font-medium bg-amber-600 text-white">Executive</button>
-                    <button type="button" data-lp-tab="competitors" onclick="switchLinkProfileAuditTab('competitors')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Competitors</button>
-                    <button type="button" data-lp-tab="gap" onclick="switchLinkProfileAuditTab('gap')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Gap-доноры</button>
-                    <button type="button" data-lp-tab="quality" onclick="switchLinkProfileAuditTab('quality')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Quality</button>
-                    <button type="button" data-lp-tab="loss" onclick="switchLinkProfileAuditTab('loss')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Loss</button>
-                    <button type="button" data-lp-tab="anchors" onclick="switchLinkProfileAuditTab('anchors')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Anchors</button>
-                    <button type="button" data-lp-tab="risks" onclick="switchLinkProfileAuditTab('risks')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Risks</button>
-                    <button type="button" data-lp-tab="plan" onclick="switchLinkProfileAuditTab('plan')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Plan</button>
+                    <button type="button" data-lp-tab="executive" onclick="switchLinkProfileAuditTab('executive')" class="px-4 py-2 rounded-lg text-sm font-medium bg-amber-600 text-white">Executive <span class="lp-tab-badge bg-white/20 text-white border-white/30">${escapeHtml(tabCounters.executive)}</span></button>
+                    <button type="button" data-lp-tab="competitors" onclick="switchLinkProfileAuditTab('competitors')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Competitors <span class="lp-tab-badge">${escapeHtml(tabCounters.competitors)}</span></button>
+                    <button type="button" data-lp-tab="gap" onclick="switchLinkProfileAuditTab('gap')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Gap-доноры <span class="lp-tab-badge">${escapeHtml(tabCounters.gap)}</span></button>
+                    <button type="button" data-lp-tab="quality" onclick="switchLinkProfileAuditTab('quality')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Quality <span class="lp-tab-badge">${escapeHtml(tabCounters.quality)}</span></button>
+                    <button type="button" data-lp-tab="loss" onclick="switchLinkProfileAuditTab('loss')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Loss <span class="lp-tab-badge">${escapeHtml(tabCounters.loss)}</span></button>
+                    <button type="button" data-lp-tab="anchors" onclick="switchLinkProfileAuditTab('anchors')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Anchors <span class="lp-tab-badge">${escapeHtml(tabCounters.anchors)}</span></button>
+                    <button type="button" data-lp-tab="risks" onclick="switchLinkProfileAuditTab('risks')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Risks <span class="lp-tab-badge">${escapeHtml(tabCounters.risks)}</span></button>
+                    <button type="button" data-lp-tab="plan" onclick="switchLinkProfileAuditTab('plan')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Plan <span class="lp-tab-badge">${escapeHtml(tabCounters.plan)}</span></button>
                 </div>
             </div>
 

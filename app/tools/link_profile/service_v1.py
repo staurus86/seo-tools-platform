@@ -135,7 +135,28 @@ def _is_our_target(target_domain: str, our_domain: str) -> bool:
 
 
 def _decode_text(payload: bytes) -> str:
-    for enc in ("utf-16", "utf-16-le", "utf-8-sig", "utf-8", "cp1251", "latin-1"):
+    if payload.startswith(b"\xef\xbb\xbf"):
+        try:
+            return payload.decode("utf-8-sig")
+        except Exception:
+            pass
+    if payload.startswith((b"\xff\xfe", b"\xfe\xff")):
+        try:
+            return payload.decode("utf-16")
+        except Exception:
+            pass
+
+    # Heuristic: frequent NUL bytes usually indicate UTF-16 payloads.
+    head = payload[:4096]
+    nul_ratio = (head.count(b"\x00") / max(1, len(head)))
+    if nul_ratio > 0.1:
+        for enc in ("utf-16", "utf-16-le"):
+            try:
+                return payload.decode(enc)
+            except Exception:
+                continue
+
+    for enc in ("utf-8-sig", "utf-8", "cp1251", "latin-1", "utf-16", "utf-16-le"):
         try:
             return payload.decode(enc)
         except Exception:
@@ -178,7 +199,9 @@ def _read_csv_rows(payload: bytes, max_rows: Optional[int] = None) -> List[Dict[
         lines = text.splitlines()
         if not lines:
             return []
-        delim = "\t" if lines[0].count("\t") >= lines[0].count(",") else ","
+        header = lines[0]
+        delim_candidates = [("\t", header.count("\t")), (";", header.count(";")), (",", header.count(",")), ("|", header.count("|"))]
+        delim = max(delim_candidates, key=lambda x: x[1])[0]
         headers = [h.strip() for h in lines[0].split(delim)]
         rows: List[Dict[str, Any]] = []
         for line in lines[1:]:
@@ -1075,6 +1098,8 @@ def run_link_profile_audit(
     our_traffic_values: List[float] = []
     comp_dr_values: List[float] = []
     comp_traffic_values: List[float] = []
+    our_dr_unknown = 0
+    comp_dr_unknown = 0
 
     our_links = 0
     for row in normalized_rows:
@@ -1210,6 +1235,12 @@ def run_link_profile_audit(
                 our_dr_values.append(float(effective_dr))
             else:
                 comp_dr_values.append(float(effective_dr))
+        else:
+            dr_bucket_counter["unknown"] += 1
+            if _is_our_target(trg, domain):
+                our_dr_unknown += 1
+            else:
+                comp_dr_unknown += 1
         if effective_traffic is not None:
             traffic_values.append(float(effective_traffic))
             if _is_our_target(trg, domain):
@@ -1993,8 +2024,12 @@ def run_link_profile_audit(
     dr_bucket_our_rows = []
     dr_bucket_comp_rows = []
     for bucket in ["0-9", "10-29", "30-49", "50-69", "70+", "unknown"]:
-        dr_bucket_our_rows.append({"dr_bucket": bucket, "links": sum(1 for x in our_dr_values if _dr_bucket(x) == bucket) if bucket != "unknown" else 0})
-        dr_bucket_comp_rows.append({"dr_bucket": bucket, "links": sum(1 for x in comp_dr_values if _dr_bucket(x) == bucket) if bucket != "unknown" else 0})
+        if bucket == "unknown":
+            dr_bucket_our_rows.append({"dr_bucket": bucket, "links": our_dr_unknown})
+            dr_bucket_comp_rows.append({"dr_bucket": bucket, "links": comp_dr_unknown})
+        else:
+            dr_bucket_our_rows.append({"dr_bucket": bucket, "links": sum(1 for x in our_dr_values if _dr_bucket(x) == bucket)})
+            dr_bucket_comp_rows.append({"dr_bucket": bucket, "links": sum(1 for x in comp_dr_values if _dr_bucket(x) == bucket)})
     zone_rows = [{"zone": z, "links": c} for z, c in zone_counter.most_common(20)]
     redirect_301_rows = [{"domain": d, "links_with_301": c} for d, c in redirect_301_counter.most_common(200)]
     homepage_donor_rows = [{"domain": d, "links_from_homepage": c} for d, c in homepage_donor_counter.most_common(200)]
@@ -2099,6 +2134,7 @@ def run_link_profile_audit(
     if (
         len(raw_homepage_links_rows) >= MAX_RAW_TABLE_ROWS
         or len(raw_redirect_links_rows) >= MAX_RAW_TABLE_ROWS
+        or len(raw_competitor_links_rows) >= MAX_RAW_TABLE_ROWS
         or len(raw_duplicates_without_our_rows) >= MAX_RAW_TABLE_ROWS
     ):
         warnings.append(
@@ -2565,12 +2601,13 @@ def run_link_profile_audit(
     raw_caps_hit = (
         len(raw_homepage_links_rows) >= MAX_RAW_TABLE_ROWS
         or len(raw_redirect_links_rows) >= MAX_RAW_TABLE_ROWS
+        or len(raw_competitor_links_rows) >= MAX_RAW_TABLE_ROWS
         or len(raw_duplicates_without_our_rows) >= MAX_RAW_TABLE_ROWS
     )
     _add_check(
         "raw_tables_capped",
         not raw_caps_hit,
-        f"home={len(raw_homepage_links_rows)}, redirect={len(raw_redirect_links_rows)}, duplicates={len(raw_duplicates_without_our_rows)}, cap={MAX_RAW_TABLE_ROWS}",
+        f"home={len(raw_homepage_links_rows)}, redirect={len(raw_redirect_links_rows)}, competitor={len(raw_competitor_links_rows)}, duplicates={len(raw_duplicates_without_our_rows)}, cap={MAX_RAW_TABLE_ROWS}",
         severity="warning",
     )
 
