@@ -707,6 +707,7 @@ def run_link_profile_audit(
         progress_callback(35, "Чтение файлов бэклинков")
 
     normalized_rows: List[Dict[str, Any]] = []
+    raw_competitor_links_rows: List[Dict[str, Any]] = []
     raw_homepage_links_rows: List[Dict[str, Any]] = []
     raw_redirect_links_rows: List[Dict[str, Any]] = []
     raw_duplicates_without_our_rows: List[Dict[str, Any]] = []
@@ -754,16 +755,56 @@ def run_link_profile_audit(
                             "Lost status": _pick_value(row, ("lost status",)) or "",
                         }
                     )
+            elif sheet_name == "Ссылки с конкурентов":
+                if len(raw_competitor_links_rows) < MAX_RAW_TABLE_ROWS:
+                    raw_competitor_links_rows.append(
+                        {
+                            "Referring page URL": _pick_value(row, ("referring page url",)) or "",
+                            "Target URL": _pick_value(row, ("target url",)) or "",
+                            "Anchor": _pick_value(row, ("anchor",)) or "",
+                            "Domain Rating": _pick_value(row, ("domain rating", "dr")) or "",
+                            "UR": _pick_value(row, ("ur", "url rating")) or "",
+                            "Domain traffic": _pick_value(row, ("domain traffic", "traffic")) or "",
+                            "Nofollow": _pick_value(row, ("nofollow",)) or "",
+                            "Lost status": _pick_value(row, ("lost status",)) or "",
+                        }
+                    )
             elif sheet_name == "Ссылки с редиректов":
                 if len(raw_redirect_links_rows) < MAX_RAW_TABLE_ROWS:
                     raw_redirect_links_rows.append(
                         {
                             "Referring page URL": _pick_value(row, ("referring page url",)) or "",
+                            "": "",
                             "Referring page HTTP code": _pick_value(row, ("referring page http code", "http code", "status")) or "",
                             "Domain rating": _pick_value(row, ("domain rating", "dr")) or "",
                             "UR": _pick_value(row, ("ur", "url rating")) or "",
                             "Domain traffic": _pick_value(row, ("domain traffic", "traffic")) or "",
+                            "Referring domains": _pick_value(row, ("referring domains",)) or "",
+                            "Linked domains": _pick_value(row, ("linked domains",)) or "",
+                            "External links": _pick_value(row, ("external links",)) or "",
+                            "Page traffic": _pick_value(row, ("page traffic",)) or "",
+                            "Keywords": _pick_value(row, ("keywords",)) or "",
                             "Target URL": _pick_value(row, ("target url",)) or "",
+                            "Left context": _pick_value(row, ("left context",)) or "",
+                            "Anchor": _pick_value(row, ("anchor",)) or "",
+                            "Right context": _pick_value(row, ("right context",)) or "",
+                            "Redirect Chain URLs": _pick_value(row, ("redirect chain urls",)) or "",
+                            "Redirect Chain status codes": _pick_value(row, ("redirect chain status codes",)) or "",
+                            "Type": _pick_value(row, ("type",)) or "",
+                            "Content": _pick_value(row, ("content",)) or "",
+                            "Nofollow": _pick_value(row, ("nofollow",)) or "",
+                            "UGC": _pick_value(row, ("ugc",)) or "",
+                            "Sponsored": _pick_value(row, ("sponsored",)) or "",
+                            "Rendered": _pick_value(row, ("rendered",)) or "",
+                            "Raw": _pick_value(row, ("raw",)) or "",
+                            "Lost status": _pick_value(row, ("lost status",)) or "",
+                            "Drop reason": _pick_value(row, ("drop reason",)) or "",
+                            "Discovered status": _pick_value(row, ("discovered status",)) or "",
+                            "First seen": _pick_value(row, ("first seen",)) or "",
+                            "Last seen": _pick_value(row, ("last seen",)) or "",
+                            "Lost": _pick_value(row, ("lost",)) or "",
+                            "Author": _pick_value(row, ("author",)) or "",
+                            "Links in group": _pick_value(row, ("links in group",)) or "",
                         }
                     )
             elif sheet_name == "Дубли без нашего сайта":
@@ -1042,6 +1083,8 @@ def run_link_profile_audit(
         for row in normalized_rows:
             if not row.get("source_is_homepage"):
                 continue
+            if len(raw_homepage_links_rows) >= MAX_RAW_TABLE_ROWS:
+                break
             raw_homepage_links_rows.append(
                 {
                     "Referring page URL": row.get("source_url") or "",
@@ -1059,14 +1102,42 @@ def run_link_profile_audit(
             code = str(row.get("http_code") or "")
             if not row.get("has_redirect_301") and not code.startswith("3"):
                 continue
+            if len(raw_redirect_links_rows) >= MAX_RAW_TABLE_ROWS:
+                break
             raw_redirect_links_rows.append(
                 {
                     "Referring page URL": row.get("source_url") or "",
+                    "": "",
                     "Referring page HTTP code": row.get("http_code") or "",
                     "Domain rating": row.get("dr"),
                     "UR": row.get("ur"),
                     "Domain traffic": row.get("traffic"),
+                    "Referring domains": "",
+                    "Linked domains": "",
+                    "External links": "",
+                    "Page traffic": "",
+                    "Keywords": "",
                     "Target URL": row.get("target_url") or "",
+                    "Left context": "",
+                    "Anchor": row.get("anchor") or "",
+                    "Right context": "",
+                    "Redirect Chain URLs": "",
+                    "Redirect Chain status codes": "",
+                    "Type": row.get("link_type") or "",
+                    "Content": "",
+                    "Nofollow": "nofollow" if row.get("follow") is False else "dofollow" if row.get("follow") is True else "",
+                    "UGC": "",
+                    "Sponsored": "",
+                    "Rendered": "",
+                    "Raw": "",
+                    "Lost status": row.get("lost_status") or "",
+                    "Drop reason": "",
+                    "Discovered status": "",
+                    "First seen": "",
+                    "Last seen": "",
+                    "Lost": "",
+                    "Author": "",
+                    "Links in group": "",
                 }
             )
     if not raw_duplicates_without_our_rows:
@@ -1078,7 +1149,30 @@ def run_link_profile_audit(
                 continue
             if _is_our_target(trg, domain):
                 continue
+            if len(raw_duplicates_without_our_rows) >= MAX_RAW_TABLE_ROWS:
+                break
             raw_duplicates_without_our_rows.append(
+                {
+                    "Referring page URL": row.get("source_url") or "",
+                    "Target URL": row.get("target_url") or "",
+                    "Anchor": row.get("anchor") or "",
+                    "Domain Rating": row.get("dr"),
+                    "UR": row.get("ur"),
+                    "Domain traffic": row.get("traffic"),
+                    "Nofollow": "nofollow" if row.get("follow") is False else "dofollow" if row.get("follow") is True else "",
+                    "Lost status": row.get("lost_status") or "",
+                }
+            )
+    if not raw_competitor_links_rows:
+        for row in normalized_rows:
+            trg = str(row.get("target_domain") or "")
+            if _is_our_target(trg, domain):
+                continue
+            if row.get("source_is_homepage") or row.get("has_redirect_301"):
+                continue
+            if len(raw_competitor_links_rows) >= MAX_RAW_TABLE_ROWS:
+                break
+            raw_competitor_links_rows.append(
                 {
                     "Referring page URL": row.get("source_url") or "",
                     "Target URL": row.get("target_url") or "",
@@ -2071,6 +2165,7 @@ def run_link_profile_audit(
                 "report_anchor_matrix": _cap_rows(report_anchor_matrix_rows),
                 "analysis_data_sections": [{"title": s.get("title"), "rows": _cap_rows(s.get("rows") or [])} for s in imported_analysis_sections],
                 "raw_homepage_links": _cap_rows(raw_homepage_links_rows),
+                "raw_competitor_links": _cap_rows(raw_competitor_links_rows),
                 "raw_redirect_links": _cap_rows(raw_redirect_links_rows),
                 "raw_duplicates_without_our": _cap_rows(raw_duplicates_without_our_rows),
                 "executive_kpi": _cap_rows(executive_kpi_rows),
@@ -2084,6 +2179,7 @@ def run_link_profile_audit(
                     {"title": "Структура ссылочного профиля (наш сайт)", "rows": _cap_rows(profile_structure_rows)},
                     {"title": "Наш сайт: доноры", "rows": _cap_rows(our_site_rows)},
                     {"title": "Ссылки с главных (raw)", "rows": _cap_rows(raw_homepage_links_rows)},
+                    {"title": "Ссылки с конкурентов (raw)", "rows": _cap_rows(raw_competitor_links_rows)},
                     {"title": "Ссылки с редиректов (raw)", "rows": _cap_rows(raw_redirect_links_rows)},
                     {"title": "Дубликаты без нашего сайта (raw)", "rows": _cap_rows(raw_duplicates_without_our_rows)},
                 ],

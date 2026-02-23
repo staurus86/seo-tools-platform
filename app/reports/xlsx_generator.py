@@ -4211,204 +4211,372 @@ class XLSXGenerator:
         return filepath
 
     def generate_link_profile_report(self, task_id: str, data: Dict[str, Any]) -> str:
-        """Generate XLSX report for link_profile_audit."""
+        """Generate XLSX report for link_profile_audit with fixed template sheets."""
         wb = Workbook()
-        ws = wb.active
-        ws.title = "Итого"
+        ws_ru = wb.active
+        ws_ru.title = "RU"
 
         header_style = self._create_header_style()
         cell_style = self._create_cell_style()
 
         results = data.get("results", {}) or {}
-        summary = results.get("summary", {}) or {}
         tables = results.get("tables", {}) or {}
-        warnings = results.get("warnings", []) or []
-        errors = results.get("errors", []) or []
-        analysis_sections = tables.get("analysis_data_sections", []) or []
 
-        ws["A1"] = "Отчет: Аудит ссылочного профиля (Итого)"
-        self._apply_style(ws["A1"], header_style)
-        ws.merge_cells("A1:F1")
-        ws["A2"] = "Домен"
-        ws["B2"] = data.get("url", summary.get("our_domain", ""))
-        ws["A3"] = "Дата"
-        ws["B3"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        ws.column_dimensions["A"].width = 34
-        ws.column_dimensions["B"].width = 18
-        ws.column_dimensions["C"].width = 18
-        ws.column_dimensions["D"].width = 18
-        ws.column_dimensions["E"].width = 18
-        ws.column_dimensions["F"].width = 18
-
-        def _write_sheet(title: str, rows: List[Dict[str, Any]]) -> None:
-            sheet = wb.create_sheet(title[:31])
-            if not rows:
-                sheet["A1"] = "Нет данных"
-                return
-            cols = list((rows[0] or {}).keys())
-            for col_idx, col_name in enumerate(cols, start=1):
-                c = sheet.cell(row=1, column=col_idx, value=col_name)
+        def _write_header_row(sheet, row_idx: int, headers: List[str], total_cols: int | None = None) -> None:
+            final_cols = max(len(headers), int(total_cols or len(headers)))
+            for col_idx in range(1, final_cols + 1):
+                value = headers[col_idx - 1] if col_idx <= len(headers) else ""
+                c = sheet.cell(row=row_idx, column=col_idx, value=value)
                 self._apply_style(c, header_style)
-                sheet.column_dimensions[get_column_letter(col_idx)].width = min(60, max(12, len(str(col_name)) + 4))
-            for r_idx, item in enumerate(rows, start=2):
-                for c_idx, col_name in enumerate(cols, start=1):
-                    c = sheet.cell(row=r_idx, column=c_idx, value=item.get(col_name))
-                    self._apply_style(c, cell_style)
+                if col_idx <= len(headers):
+                    sheet.column_dimensions[get_column_letter(col_idx)].width = min(36, max(10, len(str(value)) + 2))
 
-        def _pick_analysis_section(*needles: str) -> List[Dict[str, Any]]:
-            lowered_needles = [n.lower() for n in needles]
-            for section in analysis_sections:
+        def _write_dict_rows(
+            sheet,
+            start_row: int,
+            headers: List[str],
+            rows: List[Dict[str, Any]],
+            percent_headers: Set[str] | None = None,
+            max_rows: int | None = None,
+        ) -> None:
+            limit = len(rows) if max_rows is None else min(len(rows), max_rows)
+            percent_headers = percent_headers or set()
+            for idx in range(limit):
+                item = rows[idx] or {}
+                norm_item = {str(k).strip().lower(): v for k, v in item.items()} if isinstance(item, dict) else {}
+                r = start_row + idx
+                for c_idx, h in enumerate(headers, start=1):
+                    val = item.get(h) if isinstance(item, dict) else None
+                    if val is None:
+                        val = norm_item.get(str(h).strip().lower())
+                    cell = sheet.cell(row=r, column=c_idx, value=val)
+                    self._apply_style(cell, cell_style)
+                    if h in percent_headers and isinstance(val, (int, float)):
+                        cell.number_format = "0%"
+
+        def _pick_value(row: Dict[str, Any], *keys: str) -> Any:
+            if not isinstance(row, dict):
+                return None
+            for key in keys:
+                if key in row:
+                    return row.get(key)
+            lower = {str(k).strip().lower(): v for k, v in row.items()}
+            for key in keys:
+                k = str(key).strip().lower()
+                if k in lower:
+                    return lower[k]
+            return None
+
+        def _as_fraction(value: Any) -> Any:
+            if isinstance(value, (int, float)):
+                v = float(value)
+                if v > 1:
+                    return v / 100.0
+                return v
+            return value
+
+        def _pivot_breakdown(
+            rows: List[Dict[str, Any]],
+            key_field: str,
+            value_field: str,
+            value_alias: str,
+        ) -> Dict[str, Dict[str, float]]:
+            out: Dict[str, Dict[str, float]] = defaultdict(dict)
+            for row in rows or []:
+                comp = str(_pick_value(row, key_field, "competitor_domain", "competitor", "Домен") or "").strip()
+                key = str(_pick_value(row, value_field, "value", "type") or "").strip()
+                if not comp or not key:
+                    continue
+                out[comp][f"{key}_count"] = float(_pick_value(row, "count") or 0.0)
+                out[comp][f"{key}_pct"] = float(_pick_value(row, "pct", "percent") or 0.0)
+            return out
+
+        def _pick_rows(primary_key: str, fallback_titles: List[str]) -> List[Dict[str, Any]]:
+            rows = tables.get(primary_key, []) or []
+            if rows:
+                return rows
+            sections = tables.get("analysis_data_sections", []) or []
+            for section in sections:
                 title = str((section or {}).get("title") or "").lower()
-                if all(n in title for n in lowered_needles):
+                if all(token in title for token in fallback_titles):
                     return (section or {}).get("rows") or []
             return []
 
-        def _pick_report_rows(table_key: str, *needles: str) -> List[Dict[str, Any]]:
-            direct = tables.get(table_key, []) or []
-            if direct:
-                return direct
-            return _pick_analysis_section(*needles)
+        # Sheet 1: RU
+        ru_headers = [
+            "#", "Target", "IP", "URL Rating", "Domain Rating", "Ahrefs Rank",
+            "Organic / Total Keywords", "Organic / Keywords (Top 3)", "Organic / Keywords (4-10)",
+            "Organic / Keywords (11-20)", "Organic / Keywords (21-50)", "Organic / Keywords (51+)",
+            "Organic / Traffic", "Organic / Value", "Organic / Top Countries",
+            "Ref. domains / All", "Ref. domains / Followed", "Ref. domains / Not followed",
+            "Ref. IPs / IPs", "Ref. IPs / Subnets",
+            "Backlinks / All", "Backlinks / Followed", "Backlinks / Not followed",
+            "Backlinks / Redirects", "Backlinks / Internal",
+            "Outgoing domains / Followed", "Outgoing domains / All time",
+            "Outgoing links / Followed", "Outgoing links / All time",
+        ]
+        _write_header_row(ws_ru, 1, ru_headers)
+        core_rows = tables.get("report_core_metrics", []) or []
+        competitor_rows = tables.get("competitor_analysis", []) or []
+        competitor_idx = {}
+        for r in competitor_rows:
+            name = str(_pick_value(r, "competitor_domain", "domain", "target", "Домен", "Конкурент") or "").strip()
+            if name:
+                competitor_idx[name] = r
+        ru_rows: List[Dict[str, Any]] = []
+        idx = 1
+        for row in core_rows:
+            target = str(_pick_value(row, "Конкурент", "Домен", "domain", "target") or "").strip()
+            if not target or target.lower() in {"средние", "медиана"}:
+                continue
+            extra = competitor_idx.get(target, {}) or {}
+            ru_rows.append(
+                {
+                    "#": idx,
+                    "Target": target,
+                    "IP": _pick_value(extra, "IP", "ip"),
+                    "URL Rating": _pick_value(extra, "URL Rating", "UR", "ur", "batch_ur"),
+                    "Domain Rating": _pick_value(row, "Domain Rating") or _pick_value(extra, "Domain Rating", "DR", "dr", "batch_dr"),
+                    "Ahrefs Rank": _pick_value(extra, "Ahrefs Rank", "ahrefs rank", "ahrefs_rank"),
+                    "Organic / Total Keywords": _pick_value(extra, "Organic / Total Keywords", "organic_keywords_total", "batch_organic_keywords_total"),
+                    "Organic / Keywords (Top 3)": _pick_value(extra, "Organic / Keywords (Top 3)", "organic_keywords_top3", "batch_organic_keywords_top3"),
+                    "Organic / Keywords (4-10)": _pick_value(extra, "Organic / Keywords (4-10)", "organic_keywords_4_10", "batch_organic_keywords_4_10"),
+                    "Organic / Keywords (11-20)": _pick_value(extra, "Organic / Keywords (11-20)", "organic_keywords_11_20", "batch_organic_keywords_11_20"),
+                    "Organic / Keywords (21-50)": _pick_value(extra, "Organic / Keywords (21-50)", "organic_keywords_21_50", "batch_organic_keywords_21_50"),
+                    "Organic / Keywords (51+)": _pick_value(extra, "Organic / Keywords (51+)", "organic_keywords_51_plus", "batch_organic_keywords_51_plus"),
+                    "Organic / Traffic": _pick_value(extra, "Organic / Traffic", "organic_traffic"),
+                    "Organic / Value": _pick_value(extra, "Organic / Value", "organic_value"),
+                    "Organic / Top Countries": _pick_value(extra, "Organic / Top Countries", "top_countries", "organic_top_countries"),
+                    "Ref. domains / All": _pick_value(row, "Referring Domains") or _pick_value(extra, "ref_domains_all", "batch_ref_domains_all"),
+                    "Ref. domains / Followed": _pick_value(extra, "ref_domains_followed", "batch_ref_domains_followed"),
+                    "Ref. domains / Not followed": _pick_value(extra, "ref_domains_not_followed", "batch_ref_domains_not_followed"),
+                    "Ref. IPs / IPs": _pick_value(extra, "Ref. IPs / IPs", "ref_ips_ips"),
+                    "Ref. IPs / Subnets": _pick_value(extra, "Ref. IPs / Subnets", "ref_ips_subnets"),
+                    "Backlinks / All": _pick_value(row, "Total Backlinks") or _pick_value(extra, "backlinks_all", "batch_backlinks_all"),
+                    "Backlinks / Followed": _pick_value(extra, "backlinks_followed", "batch_backlinks_followed"),
+                    "Backlinks / Not followed": _pick_value(extra, "backlinks_not_followed", "batch_backlinks_not_followed"),
+                    "Backlinks / Redirects": _pick_value(extra, "backlinks_redirects", "batch_backlinks_redirects"),
+                    "Backlinks / Internal": _pick_value(extra, "backlinks_internal", "batch_backlinks_internal"),
+                    "Outgoing domains / Followed": _pick_value(extra, "outgoing_domains_followed"),
+                    "Outgoing domains / All time": _pick_value(extra, "outgoing_domains_all_time"),
+                    "Outgoing links / Followed": _pick_value(extra, "outgoing_links_followed"),
+                    "Outgoing links / All time": _pick_value(extra, "outgoing_links_all_time"),
+                }
+            )
+            idx += 1
+        if not ru_rows and competitor_idx:
+            idx = 1
+            for target, extra in sorted(competitor_idx.items()):
+                ru_rows.append(
+                    {
+                        "#": idx,
+                        "Target": target,
+                        "Domain Rating": _pick_value(extra, "Domain Rating", "DR", "dr", "batch_dr"),
+                        "Ref. domains / All": _pick_value(extra, "ref_domains_all", "batch_ref_domains_all"),
+                        "Backlinks / All": _pick_value(extra, "backlinks_all", "batch_backlinks_all"),
+                    }
+                )
+                idx += 1
+        _write_dict_rows(ws_ru, 2, ru_headers, ru_rows)
 
-        def _write_block(
-            sheet,
-            start_row: int,
-            title: str,
-            rows: List[Dict[str, Any]],
-            percent_mode: bool = False,
-        ) -> int:
-            sheet.cell(row=start_row, column=1, value=title)
-            self._apply_style(sheet.cell(row=start_row, column=1), header_style)
-            if not rows:
-                sheet.cell(row=start_row + 1, column=1, value="Нет данных")
-                self._apply_style(sheet.cell(row=start_row + 1, column=1), cell_style)
-                return start_row + 3
-            cols = list((rows[0] or {}).keys())
-            row_h = start_row + 1
-            for col_idx, col_name in enumerate(cols, start=1):
-                c = sheet.cell(row=row_h, column=col_idx, value=col_name)
-                self._apply_style(c, header_style)
-                sheet.column_dimensions[get_column_letter(col_idx)].width = min(38, max(12, len(str(col_name)) + 4))
-            row_ptr = row_h + 1
-            for item in rows:
-                for col_idx, col_name in enumerate(cols, start=1):
-                    value = item.get(col_name)
-                    c = sheet.cell(row=row_ptr, column=col_idx, value=value)
-                    self._apply_style(c, cell_style)
-                    if (
-                        percent_mode
-                        and col_idx > 1
-                        and isinstance(value, (int, float))
-                        and 0 <= float(value) <= 1
-                    ):
-                        c.number_format = "0%"
-                row_ptr += 1
-            return row_ptr + 1
+        # Sheet 2: Анализ данных
+        ws_analysis = wb.create_sheet("Анализ данных")
+        total_analysis_cols = 500
 
-        row_ptr = 5
-        row_ptr = _write_block(
-            ws,
-            row_ptr,
-            "Основные метрики",
-            _pick_report_rows("report_core_metrics", "domain rating", "total backlinks"),
-            percent_mode=False,
-        )
-        row_ptr = _write_block(
-            ws,
-            row_ptr,
-            "Соотношение Dofollow/Nofollow",
-            _pick_report_rows("report_follow_nofollow", "follow (false)", "nofollow (true)"),
-            percent_mode=True,
-        )
-        row_ptr = _write_block(
-            ws,
-            row_ptr,
-            "Соотношение главная/внутренние",
-            _pick_report_rows("report_home_internal", "главная страница", "внутренние страницы"),
-            percent_mode=True,
-        )
-        row_ptr = _write_block(
-            ws,
-            row_ptr,
-            "Dofollow/Nofollow на главную/внутренние",
-            _pick_report_rows("report_follow_split", "follow на главную", "nofollow на главную"),
-            percent_mode=True,
-        )
-        row_ptr = _write_block(
-            ws,
-            row_ptr,
-            "Распределение по DR",
-            _pick_report_rows("report_dr_distribution", "dr 0-9", "dr 10-19"),
-            percent_mode=True,
-        )
-        row_ptr = _write_block(
-            ws,
-            row_ptr,
-            "Географическое распределение",
-            _pick_report_rows("report_geo_distribution", ".ru", ".com"),
-            percent_mode=True,
-        )
+        b1_headers = ["Домен", "Domain Rating", "Total Backlinks", "Referring Domains"]
+        b2_headers = ["Домен", "Follow (False)", "Nofollow (True)"]
+        b3_headers = ["Домен", "Главная страница", "Внутренние страницы"]
+        b4_headers = ["Домен", "Follow на главную", "Nofollow на главную", "Follow на внутренние", "Nofollow на внутренние"]
+        b5_headers = ["Домен", "DR 0-9", "DR 10-19", "DR 20-29", "DR 30-39", "DR 40-49", "DR 50-59", "DR 60-69", "DR 70-79", "DR 80-89", "DR 90-100"]
+        b6_headers = ["Домен", ".ru", ".com"]
+        b7_headers = ["Домен", "безанкорный", "брендовый", "инфо", "коммерция", "навигационный", "спам"]
+        b8_headers = ["Competitor", "text", "image", "redirect", "form", "frame", "rss", "canonical", "Total", "text %", "image %", "redirect %", "form %", "frame %", "rss %", "canonical %"]
 
-        anchor_matrix_rows = _pick_report_rows("report_anchor_matrix", "безанкорный", "брендовый")
-        _write_sheet("Анкоры", anchor_matrix_rows or [])
+        http_rows = tables.get("http_codes_by_competitor", []) or []
+        preferred_codes = ["200", "401", "0", "404", "302", "403", "301", "409", "410", "303", "307", "436", "413", "405", "406", "308", "427", "429", "204", "415", "424", "423", "477", "451", "402", "202", "412", "447", "670", "490", "442", "418", "468", "400", "408", "456", "421", "465", "470", "428", "304", "444"]
+        http_seen = {
+            str(_pick_value(r, "http_code", "HTTP code", "status", "code") or "").strip()
+            for r in http_rows
+            if str(_pick_value(r, "http_code", "HTTP code", "status", "code") or "").strip()
+        }
+        ordered_http_codes = preferred_codes + sorted([c for c in http_seen if c not in set(preferred_codes)], key=lambda x: (len(x), x))
+        b9_headers = ["Competitor"] + ordered_http_codes + ["Total"] + [f"{c} %" for c in ordered_http_codes]
 
-        _write_sheet("Приоритеты SEO", tables.get("priority_dashboard", []) or [])
-        _write_sheet("Очередь действий", tables.get("action_queue", []) or [])
-        _write_sheet("KPI сводка", tables.get("executive_kpi", []) or [])
-        _write_sheet("Структура профиля", tables.get("profile_structure", []) or [])
-        _write_sheet("Ссылки с главных raw", tables.get("raw_homepage_links", []) or [])
-        _write_sheet("Ссылки с редиректов raw", tables.get("raw_redirect_links", []) or [])
-        _write_sheet("Дубли без нас raw", tables.get("raw_duplicates_without_our", []) or [])
-        _write_sheet("Конкуренты", tables.get("competitor_analysis", []) or [])
-        _write_sheet("Рейтинг конкурентов", tables.get("competitor_ranking", []) or [])
-        _write_sheet("Сравнение", tables.get("comparison_overview", []) or [])
-        _write_sheet("Ready-buy доноры", tables.get("ready_buy_domains", []) or [])
-        _write_sheet("Топ анкоры", tables.get("anchor_analysis", []) or [])
-        _write_sheet("Слова анкоров", tables.get("anchor_word_analysis", []) or [])
-        _write_sheet("Anchor mix %", tables.get("anchor_mix_pct", []) or [])
-        _write_sheet("Дубликаты с нами", tables.get("duplicates_with_our_site", []) or [])
-        _write_sheet("2+ конкурента без нас", tables.get("duplicates_with_two_competitors", []) or [])
-        _write_sheet("Priority domains", tables.get("priority_domains", []) or [])
-        _write_sheet("Priority score", tables.get("priority_score_domains", []) or [])
-        _write_sheet("DR buckets", tables.get("dr_buckets", []) or [])
-        _write_sheet("Доменные зоны", tables.get("zones", []) or [])
-        _write_sheet("Качество конкурентов", tables.get("competitor_quality", []) or [])
-        _write_sheet("Сравнение GAP", tables.get("comparison_overview", []) or [])
-        _write_sheet("DR по доменам %", tables.get("dr_distribution_matrix", []) or [])
-        _write_sheet("Матрица возможностей", tables.get("opportunity_domains", []) or [])
-        _write_sheet("Follow mix %", tables.get("follow_mix_pct", []) or [])
-        _write_sheet("Follow domains %", tables.get("follow_domain_mix_pct", []) or [])
-        _write_sheet("Lost status mix", tables.get("lost_status_mix", []) or [])
-        _write_sheet("HTTP class mix", tables.get("http_class_mix", []) or [])
-        _write_sheet("Link type mix", tables.get("link_type_mix", []) or [])
-        _write_sheet("Language mix", tables.get("language_mix", []) or [])
-        for idx, section in enumerate(analysis_sections, start=1):
-            title = str((section or {}).get("title") or f"Анализ-{idx:02d}")
-            rows = (section or {}).get("rows") or []
-            base = title.replace("/", "-").replace(":", "-").strip() if title else ""
-            safe_title = (f"A{idx:02d}-{base}" if base else f"A{idx:02d}-Анализ")[:31]
-            _write_sheet(safe_title, rows)
+        block_starts = [1, 11, 21, 31, 41, 51, 61, 71, 79]
+        next_starts = [11, 21, 31, 41, 51, 61, 71, 79, None]
 
-        notes_ws = wb.create_sheet("Warnings")
-        notes_ws["A1"] = "Тип"
-        notes_ws["B1"] = "Текст"
-        self._apply_style(notes_ws["A1"], header_style)
-        self._apply_style(notes_ws["B1"], header_style)
-        cur = 2
-        for item in errors:
-            notes_ws.cell(row=cur, column=1, value="error")
-            notes_ws.cell(row=cur, column=2, value=item)
-            self._apply_style(notes_ws.cell(row=cur, column=1), cell_style)
-            self._apply_style(notes_ws.cell(row=cur, column=2), cell_style)
-            cur += 1
-        for item in warnings:
-            notes_ws.cell(row=cur, column=1, value="warning")
-            notes_ws.cell(row=cur, column=2, value=item)
-            self._apply_style(notes_ws.cell(row=cur, column=1), cell_style)
-            self._apply_style(notes_ws.cell(row=cur, column=2), cell_style)
-            cur += 1
-        notes_ws.column_dimensions["A"].width = 14
-        notes_ws.column_dimensions["B"].width = 120
+        b1_rows = [
+            {
+                "Домен": _pick_value(r, "Конкурент", "Домен", "domain", "target"),
+                "Domain Rating": _pick_value(r, "Domain Rating"),
+                "Total Backlinks": _pick_value(r, "Total Backlinks"),
+                "Referring Domains": _pick_value(r, "Referring Domains"),
+            }
+            for r in (_pick_rows("report_core_metrics", ["domain rating", "total backlinks"]) or [])
+        ]
+        b2_rows = [
+            {
+                "Домен": _pick_value(r, "Конкурент", "Домен", "domain"),
+                "Follow (False)": _as_fraction(_pick_value(r, "Follow (False)")),
+                "Nofollow (True)": _as_fraction(_pick_value(r, "Nofollow (True)")),
+            }
+            for r in (_pick_rows("report_follow_nofollow", ["follow (false)", "nofollow (true)"]) or [])
+        ]
+        b3_rows = [
+            {
+                "Домен": _pick_value(r, "Конкурент", "Домен", "domain"),
+                "Главная страница": _as_fraction(_pick_value(r, "Главная страница")),
+                "Внутренние страницы": _as_fraction(_pick_value(r, "Внутренние страницы")),
+            }
+            for r in (_pick_rows("report_home_internal", ["главная страница", "внутренние страницы"]) or [])
+        ]
+        b4_rows = [
+            {
+                "Домен": _pick_value(r, "Конкурент", "Домен", "domain"),
+                "Follow на главную": _as_fraction(_pick_value(r, "Follow на главную")),
+                "Nofollow на главную": _as_fraction(_pick_value(r, "Nofollow на главную")),
+                "Follow на внутренние": _as_fraction(_pick_value(r, "Follow на внутренние")),
+                "Nofollow на внутренние": _as_fraction(_pick_value(r, "Nofollow на внутренние")),
+            }
+            for r in (_pick_rows("report_follow_split", ["follow на главную", "nofollow на главную"]) or [])
+        ]
+        b5_rows = [
+            {"Домен": _pick_value(r, "Конкурент", "Домен", "domain"), **{k: _as_fraction(_pick_value(r, k)) for k in b5_headers[1:]}}
+            for r in (_pick_rows("report_dr_distribution", ["dr 0-9", "dr 10-19"]) or [])
+        ]
+        b6_rows = [
+            {"Домен": _pick_value(r, "Конкурент", "Домен", "domain"), ".ru": _as_fraction(_pick_value(r, ".ru")), ".com": _as_fraction(_pick_value(r, ".com"))}
+            for r in (_pick_rows("report_geo_distribution", [".ru", ".com"]) or [])
+        ]
+        b7_rows = [
+            {
+                "Домен": _pick_value(r, "Домен", "Конкурент", "domain"),
+                "безанкорный": _pick_value(r, "безанкорный"),
+                "брендовый": _pick_value(r, "брендовый"),
+                "инфо": _pick_value(r, "инфо"),
+                "коммерция": _pick_value(r, "коммерция"),
+                "навигационный": _pick_value(r, "навигационный"),
+                "спам": _pick_value(r, "спам"),
+            }
+            for r in (_pick_rows("report_anchor_matrix", ["безанкорный", "брендовый"]) or [])
+        ]
+
+        link_rows = tables.get("link_types_by_competitor", []) or []
+        link_pivot = _pivot_breakdown(link_rows, "competitor_domain", "link_type", "link_type")
+        b8_rows: List[Dict[str, Any]] = []
+        for comp, values in link_pivot.items():
+            total = sum(values.get(f"{x}_count", 0.0) for x in ["text", "image", "redirect", "form", "frame", "rss", "canonical"])
+            row = {
+                "Competitor": comp,
+                "text": int(values.get("text_count", 0.0)),
+                "image": int(values.get("image_count", 0.0)),
+                "redirect": int(values.get("redirect_count", 0.0)),
+                "form": int(values.get("form_count", 0.0)),
+                "frame": int(values.get("frame_count", 0.0)),
+                "rss": int(values.get("rss_count", 0.0)),
+                "canonical": int(values.get("canonical_count", 0.0)),
+                "Total": int(total),
+                "text %": (values.get("text_count", 0.0) / max(1.0, total)),
+                "image %": (values.get("image_count", 0.0) / max(1.0, total)),
+                "redirect %": (values.get("redirect_count", 0.0) / max(1.0, total)),
+                "form %": (values.get("form_count", 0.0) / max(1.0, total)),
+                "frame %": (values.get("frame_count", 0.0) / max(1.0, total)),
+                "rss %": (values.get("rss_count", 0.0) / max(1.0, total)),
+                "canonical %": (values.get("canonical_count", 0.0) / max(1.0, total)),
+            }
+            b8_rows.append(row)
+
+        http_pivot = _pivot_breakdown(http_rows, "competitor_domain", "http_code", "http_code")
+        b9_rows: List[Dict[str, Any]] = []
+        for comp, values in http_pivot.items():
+            row: Dict[str, Any] = {"Competitor": comp}
+            total = 0.0
+            for code in ordered_http_codes:
+                cnt = float(values.get(f"{code}_count", 0.0))
+                total += cnt
+                row[code] = int(cnt)
+            row["Total"] = int(total)
+            for code in ordered_http_codes:
+                row[f"{code} %"] = float(row.get(code, 0) or 0) / max(1.0, total)
+            b9_rows.append(row)
+
+        blocks = [
+            (block_starts[0], next_starts[0], b1_headers, b1_rows, {"DR 0-9"}),
+            (block_starts[1], next_starts[1], b2_headers, b2_rows, {"Follow (False)", "Nofollow (True)"}),
+            (block_starts[2], next_starts[2], b3_headers, b3_rows, {"Главная страница", "Внутренние страницы"}),
+            (block_starts[3], next_starts[3], b4_headers, b4_rows, {"Follow на главную", "Nofollow на главную", "Follow на внутренние", "Nofollow на внутренние"}),
+            (block_starts[4], next_starts[4], b5_headers, b5_rows, set(b5_headers[1:])),
+            (block_starts[5], next_starts[5], b6_headers, b6_rows, {".ru", ".com"}),
+            (block_starts[6], next_starts[6], b7_headers, b7_rows, set()),
+            (block_starts[7], next_starts[7], b8_headers, b8_rows, {"text %", "image %", "redirect %", "form %", "frame %", "rss %", "canonical %"}),
+            (block_starts[8], next_starts[8], b9_headers, b9_rows, set([f"{c} %" for c in ordered_http_codes])),
+        ]
+
+        for start, next_start, headers, rows, pct_headers in blocks:
+            _write_header_row(ws_analysis, start, headers, total_cols=total_analysis_cols)
+            max_rows = len(rows)
+            if next_start is not None:
+                max_rows = max(0, next_start - start - 1)
+            _write_dict_rows(ws_analysis, start + 1, headers, rows, percent_headers=pct_headers, max_rows=max_rows)
+
+        # Sheet 3: Приоритетные доноры
+        ws_priority = wb.create_sheet("Приоритетные доноры")
+        pr_headers = ["Domain", "Domain Rating", "UR", "Domain traffic", "Nofollow", "Priority Score"]
+        _write_header_row(ws_priority, 1, pr_headers)
+        pr_rows_src = tables.get("priority_score_domains", []) or []
+        pr_rows = [
+            {
+                "Domain": _pick_value(r, "domain", "Domain"),
+                "Domain Rating": _pick_value(r, "avg_dr", "Domain Rating", "dr"),
+                "UR": _pick_value(r, "avg_ur", "UR", "ur"),
+                "Domain traffic": _pick_value(r, "avg_traffic", "Domain traffic", "traffic"),
+                "Nofollow": _as_fraction(_pick_value(r, "nofollow_rate", "Nofollow", "nofollow")),
+                "Priority Score": _pick_value(r, "priority_score", "Priority Score"),
+            }
+            for r in pr_rows_src
+        ]
+        _write_dict_rows(ws_priority, 2, pr_headers, pr_rows, percent_headers={"Nofollow"})
+
+        # Sheet 4-6 common headers
+        common_headers = ["Referring page URL", "Target URL", "Anchor", "Domain Rating", "UR", "Domain traffic", "Nofollow", "Lost status"]
+        ws_dup = wb.create_sheet("Дубли без нашего сайта")
+        _write_header_row(ws_dup, 1, common_headers)
+        _write_dict_rows(ws_dup, 2, common_headers, tables.get("raw_duplicates_without_our", []) or [])
+
+        ws_comp = wb.create_sheet("Ссылки с конкурентов")
+        _write_header_row(ws_comp, 1, common_headers)
+        _write_dict_rows(ws_comp, 2, common_headers, tables.get("raw_competitor_links", []) or [])
+
+        ws_home = wb.create_sheet("Ссылки с главных")
+        _write_header_row(ws_home, 1, common_headers)
+        _write_dict_rows(ws_home, 2, common_headers, tables.get("raw_homepage_links", []) or [])
+
+        # Sheet 7: Ссылки с редиректов
+        ws_redir = wb.create_sheet("Ссылки с редиректов")
+        redir_headers = [
+            "Referring page URL", "", "Referring page HTTP code", "Domain rating", "UR", "Domain traffic",
+            "Referring domains", "Linked domains", "External links", "Page traffic", "Keywords", "Target URL",
+            "Left context", "Anchor", "Right context", "Redirect Chain URLs", "Redirect Chain status codes",
+            "Type", "Content", "Nofollow", "UGC", "Sponsored", "Rendered", "Raw", "Lost status", "Drop reason",
+            "Discovered status", "First seen", "Last seen", "Lost", "Author", "Links in group",
+        ]
+        _write_header_row(ws_redir, 1, redir_headers)
+        redir_rows = tables.get("raw_redirect_links", []) or []
+        for idx, item in enumerate(redir_rows, start=2):
+            row_values = {h: _pick_value(item, h) for h in redir_headers}
+            row_values[""] = ""
+            row_values["Referring page URL"] = _pick_value(item, "Referring page URL", "referring page url")
+            row_values["Referring page HTTP code"] = _pick_value(item, "Referring page HTTP code", "referring page http code", "HTTP code", "http code", "status")
+            row_values["Domain rating"] = _pick_value(item, "Domain rating", "domain rating", "Domain Rating", "DR", "dr")
+            row_values["UR"] = _pick_value(item, "UR", "ur", "URL Rating", "url rating")
+            row_values["Domain traffic"] = _pick_value(item, "Domain traffic", "domain traffic", "traffic")
+            row_values["Target URL"] = _pick_value(item, "Target URL", "target url")
+            row_values["Anchor"] = _pick_value(item, "Anchor", "anchor")
+            row_values["Lost status"] = _pick_value(item, "Lost status", "lost status")
+            for c_idx, h in enumerate(redir_headers, start=1):
+                val = row_values.get(h)
+                cell = ws_redir.cell(row=idx, column=c_idx, value=val)
+                self._apply_style(cell, cell_style)
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         self._save_workbook(wb, filepath)
