@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import re
 from pathlib import Path
-from typing import Dict, List, Set
+from typing import Dict, List, Optional, Set
 
 
 SYNONYMS: Dict[str, str] = {
@@ -38,13 +38,57 @@ SYNONYMS: Dict[str, str] = {
 def extract_analyze_page_keys(seopro_path: Path) -> List[str]:
     text = seopro_path.read_text(encoding="utf-8", errors="ignore")
     lines = text.splitlines()
-    # Known return block bounds in legacy file; robust fallback via markers.
-    start = next((i for i, line in enumerate(lines) if "return {" in line and "analyze_page" in "\n".join(lines[max(0, i - 120):i + 1])), None)
-    if start is None:
-        start = 2113
-    end = next((i for i in range(start + 1, min(len(lines), start + 300)) if lines[i].startswith("    def _calculate_internal_pagerank")), start + 120)
+    start = _find_analyze_page_return_block_start(lines)
+    end = min(len(lines), start + 500)
+    # Stop at the next method definition on the same or lower indentation level.
+    base_indent = _line_indent(lines[start]) if start < len(lines) else 0
+    for i in range(start + 1, min(len(lines), start + 500)):
+        line = lines[i]
+        if re.match(r"^\s*def\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\(", line):
+            if _line_indent(line) <= base_indent:
+                end = i
+                break
     block = "\n".join(lines[start:end])
     return re.findall(r"^\s*'([a-zA-Z0-9_]+)'\s*:", block, flags=re.M)
+
+
+def _line_indent(line: str) -> int:
+    return len(line) - len(line.lstrip())
+
+
+def _find_analyze_page_return_block_start(lines: List[str]) -> int:
+    analyze_start: Optional[int] = next(
+        (i for i, line in enumerate(lines) if re.match(r"^\s*def\s+analyze_page\s*\(", line)),
+        None,
+    )
+    if analyze_start is not None:
+        next_def = next(
+            (
+                i
+                for i in range(analyze_start + 1, len(lines))
+                if re.match(r"^\s*def\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\(", lines[i])
+                and _line_indent(lines[i]) <= _line_indent(lines[analyze_start])
+            ),
+            len(lines),
+        )
+        return_start = next(
+            (i for i in range(analyze_start, next_def) if "return {" in lines[i]),
+            None,
+        )
+        if return_start is not None:
+            return return_start
+    # Backward-compatible fallback for older snapshots.
+    fallback = next(
+        (
+            i
+            for i, line in enumerate(lines)
+            if "return {" in line and "analyze_page" in "\n".join(lines[max(0, i - 120):i + 1])
+        ),
+        None,
+    )
+    if fallback is not None:
+        return fallback
+    raise ValueError("Could not locate analyze_page return block in legacy seopro file")
 
 
 def extract_schema_fields(schema_path: Path) -> Set[str]:
@@ -59,13 +103,51 @@ def extract_schema_fields(schema_path: Path) -> Set[str]:
     return set(re.findall(r"^\s{4}([a-zA-Z0-9_]+):", block, flags=re.M))
 
 
+def resolve_legacy_seopro_path(root: Path, explicit_legacy_path: str = "") -> Path:
+    if explicit_legacy_path:
+        explicit = Path(explicit_legacy_path)
+        if explicit.exists() and explicit.is_file():
+            return explicit
+        raise FileNotFoundError(f"Legacy file not found: {explicit}")
+
+    direct_candidates = [
+        root / "Py scripts" / "seopro.py",
+        root / "seopro.py",
+        root / "seopro-Old.py",
+    ]
+    for candidate in direct_candidates:
+        if candidate.exists() and candidate.is_file():
+            return candidate
+
+    for search_dir in [root / "Py scripts", root / "scripts", root]:
+        if not search_dir.exists():
+            continue
+        for pattern in ("seopro.py", "seopro-Old.py"):
+            found = next(search_dir.rglob(pattern), None)
+            if found and found.is_file():
+                return found
+
+    raise FileNotFoundError(
+        "Legacy seopro file not found. Checked: 'Py scripts/seopro.py', 'seopro.py', and 'seopro-Old.py'."
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Site Pro gap report")
     parser.add_argument("--strict", action="store_true", help="Exit with non-zero code when missing keys exist")
+    parser.add_argument(
+        "--legacy-path",
+        default="",
+        help="Optional explicit path to legacy seopro source file (e.g. seopro.py or seopro-Old.py)",
+    )
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parents[1]
-    seopro_path = next((root / "Py scripts").rglob("seopro.py"))
+    try:
+        seopro_path = resolve_legacy_seopro_path(root, explicit_legacy_path=args.legacy_path)
+    except FileNotFoundError as exc:
+        print(f"[error] {exc}")
+        return 2
     schema_path = root / "app" / "tools" / "site_pro" / "schema.py"
 
     keys = extract_analyze_page_keys(seopro_path)
