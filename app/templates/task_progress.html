@@ -319,6 +319,9 @@
 <script>
 const taskId = "{{ task_id }}";
 let pollInterval;
+let taskTerminalHandled = false;
+let statusRequestInFlight = false;
+let lastProgressStateKey = '';
 
 function addTaskToLocalHistory(item) {
     try {
@@ -548,25 +551,49 @@ function normalizeMojibakeDeep(input) {
 
 document.addEventListener('DOMContentLoaded', () => {
     checkTaskStatus();
-    pollInterval = setInterval(checkTaskStatus, 1000);
+    pollInterval = setInterval(checkTaskStatus, 1500);
 });
 
 async function checkTaskStatus() {
+    if (taskTerminalHandled || statusRequestInFlight) {
+        return;
+    }
+    statusRequestInFlight = true;
     try {
         const response = await fetch(`/api/tasks/${taskId}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
         const data = normalizeMojibakeDeep(await response.json());
         
-        updateProgress(data);
+        const progressMeta = data.progress_meta || {};
+        const nextProgressKey = [
+            data.status || '',
+            String(data.progress ?? ''),
+            data.status_message || '',
+            String(progressMeta.processed_pages ?? ''),
+            String(progressMeta.total_pages ?? ''),
+            String(progressMeta.queue_size ?? ''),
+            progressMeta.current_url || '',
+        ].join('|');
+        if (nextProgressKey !== lastProgressStateKey) {
+            updateProgress(data);
+            lastProgressStateKey = nextProgressKey;
+        }
         
         if (data.status === 'SUCCESS') {
+            taskTerminalHandled = true;
             clearInterval(pollInterval);
             showResults(data.result);
         } else if (data.status === 'FAILURE') {
+            taskTerminalHandled = true;
             clearInterval(pollInterval);
             showError(data);
         }
     } catch (error) {
         console.error('Error checking task status:', error);
+    } finally {
+        statusRequestInFlight = false;
     }
 }
 
