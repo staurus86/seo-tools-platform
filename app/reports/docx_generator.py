@@ -1888,7 +1888,7 @@ class DOCXGenerator:
         self._add_heading(doc, "9. Plan", level=1)
         _add_dict_table("9.1 План 30/60/90", tables.get("action_queue_90d", []) or [], level=2)
         _add_dict_table("9.2 Очередь действий", tables.get("action_queue", []) or [], level=2)
-        for key in ("ourSite", "competitors", "comparison", "plan"):
+        for key in ("ourSite", "competitors", "comparison", "plan", "anchorTemplate", "riskTemplate", "outreachTemplate", "rowReviewTemplate"):
             text = prompts.get(key)
             if text:
                 doc.add_paragraph(f"{key}: {text}")

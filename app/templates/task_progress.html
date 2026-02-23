@@ -2265,7 +2265,7 @@ function generateLinkProfileAuditHTML(data) {
                 ${renderTableGroups(competitorGroups, 'Нет данных конкурентов')}
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="font-semibold mb-3">Промпт: конкуренты</h4>
-                    <p class="text-sm text-slate-700">${escapeHtml(prompts.competitors || 'Нет данных')}</p>
+                    <p class="text-sm text-slate-700 whitespace-pre-line">${escapeHtml(prompts.competitors || 'Нет данных')}</p>
                 </div>
             </div>
 
@@ -2273,7 +2273,11 @@ function generateLinkProfileAuditHTML(data) {
                 ${renderTableGroups(gapGroups, 'Нет gap-данных')}
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="font-semibold mb-3">Промпт: сравнение</h4>
-                    <p class="text-sm text-slate-700">${escapeHtml(prompts.comparison || 'Нет данных')}</p>
+                    <p class="text-sm text-slate-700 whitespace-pre-line">${escapeHtml(prompts.comparison || 'Нет данных')}</p>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Шаблон outreach</h4>
+                    <p class="text-sm text-slate-700 whitespace-pre-line">${escapeHtml(prompts.outreachTemplate || 'Нет данных')}</p>
                 </div>
             </div>
 
@@ -2287,17 +2291,29 @@ function generateLinkProfileAuditHTML(data) {
 
             <div data-lp-panel="anchors" class="space-y-6 hidden">
                 ${renderTableGroups(anchorTables, 'Нет данных по анкорам')}
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Шаблон по анкорному профилю</h4>
+                    <p class="text-sm text-slate-700 whitespace-pre-line">${escapeHtml(prompts.anchorTemplate || 'Нет данных')}</p>
+                </div>
             </div>
 
             <div data-lp-panel="risks" class="space-y-6 hidden">
                 ${renderTableGroups(riskGroups, 'Нет риск-данных')}
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Шаблон риск-анализа</h4>
+                    <p class="text-sm text-slate-700 whitespace-pre-line">${escapeHtml(prompts.riskTemplate || 'Нет данных')}</p>
+                </div>
             </div>
 
             <div data-lp-panel="plan" class="space-y-6 hidden">
                 ${renderTableGroups(planGroups, 'Нет данных по плану')}
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="font-semibold mb-3">План действий (NLP-подсказка)</h4>
-                    <p class="text-sm text-slate-700">${escapeHtml(prompts.plan || 'План не сформирован')}</p>
+                    <p class="text-sm text-slate-700 whitespace-pre-line">${escapeHtml(prompts.plan || 'План не сформирован')}</p>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Шаблон проверки строки ссылки</h4>
+                    <p class="text-sm text-slate-700 whitespace-pre-line">${escapeHtml(prompts.rowReviewTemplate || 'Нет данных')}</p>
                 </div>
             </div>
         </div>

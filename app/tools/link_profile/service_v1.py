@@ -61,6 +61,18 @@ DEFAULT_SPAM_KEYWORDS = [
     "get rich", "lottery", "free gift", "win prize", "survey", "spam", "↑↑↑", "??????",
 ]
 
+DEFAULT_NAVIGATIONAL_KEYWORDS = [
+    "официальный сайт", "официальный", "сайт", "homepage", "home", "главная", "main page",
+    "контакты", "contact", "contacts", "вход", "login", "sign in", "signin", "личный кабинет",
+    "кабинет", "профиль", "account", "profile", "каталог", "catalog", "раздел", "поддержка",
+    "support", "help", "faq", "about", "about us", "о компании", "menu",
+]
+
+DEFAULT_GENERIC_KEYWORDS = [
+    "тут", "здесь", "подробнее", "читать", "далее", "перейти", "ссылка", "линк", "here", "click",
+    "click here", "read more", "learn more", "more", "source", "website", "site", "visit",
+]
+
 
 def _to_registrable_domain(host: str) -> str:
     value = (host or "").strip().lower().rstrip(".")
@@ -426,21 +438,39 @@ def _to_iso_date(value: Any) -> str:
 
 
 def _classify_anchor(anchor: str, keywords: Dict[str, List[str]]) -> str:
-    text = (anchor or "").lower()
+    text = re.sub(r"\s+", " ", str(anchor or "").strip().lower())
     if not text:
         return "empty"
+
+    if re.match(r"^(https?://|www\.)", text) or re.fullmatch(r"[a-z0-9.-]+\.[a-z]{2,}(?:/[^\s]*)?", text):
+        return "naked_url"
 
     def _has_any(items: List[str]) -> bool:
         return any(k and k in text for k in items)
 
-    if _has_any(keywords.get("spam", [])):
+    has_spam = _has_any(keywords.get("spam", []))
+    has_brand = _has_any(keywords.get("brand", []))
+    has_commercial = _has_any(keywords.get("commercial", []))
+    has_info = _has_any(keywords.get("informational", []))
+    has_nav = _has_any(keywords.get("navigational", []))
+    has_generic = _has_any(keywords.get("generic", []))
+
+    if has_spam:
         return "spam"
-    if _has_any(keywords.get("brand", [])):
+    if has_brand and has_commercial:
+        return "brand_commercial"
+    if has_brand and has_nav:
+        return "brand_navigational"
+    if has_brand:
         return "brand"
-    if _has_any(keywords.get("commercial", [])):
+    if has_nav:
+        return "navigational"
+    if has_commercial:
         return "commercial"
-    if _has_any(keywords.get("informational", [])):
+    if has_info:
         return "informational"
+    if has_generic or len(text) <= 3:
+        return "generic"
     return "other"
 
 
@@ -860,6 +890,8 @@ def run_link_profile_audit(
         "commercial": _merge_keywords(DEFAULT_COMMERCIAL_KEYWORDS, _parse_keywords(commercial_keywords)),
         "informational": _merge_keywords(DEFAULT_INFORMATIONAL_KEYWORDS, _parse_keywords(informational_keywords)),
         "spam": _merge_keywords(DEFAULT_SPAM_KEYWORDS, _parse_keywords(spam_keywords)),
+        "navigational": list(DEFAULT_NAVIGATIONAL_KEYWORDS),
+        "generic": list(DEFAULT_GENERIC_KEYWORDS),
         "brand": _parse_keywords(brand_keywords),
     }
     auto_brand_tokens: List[str] = _derive_brand_keywords(domain)
@@ -1518,11 +1550,11 @@ def run_link_profile_audit(
         report_anchor_matrix_rows.append(
             {
                 "Домен": d,
-                "безанкорный": int(ac.get("empty", 0)),
-                "брендовый": int(ac.get("brand", 0)),
+                "безанкорный": int(ac.get("empty", 0) + ac.get("naked_url", 0)),
+                "брендовый": int(ac.get("brand", 0) + ac.get("brand_navigational", 0)),
                 "инфо": int(ac.get("informational", 0)),
-                "коммерция": int(ac.get("commercial", 0)),
-                "навигационный": int(ac.get("other", 0)),
+                "коммерция": int(ac.get("commercial", 0) + ac.get("brand_commercial", 0)),
+                "навигационный": int(ac.get("navigational", 0) + ac.get("generic", 0) + ac.get("other", 0)),
                 "спам": int(ac.get("spam", 0)),
             }
         )
@@ -1879,7 +1911,7 @@ def run_link_profile_audit(
 
     anchor_mix_benchmark_rows = _build_mix_benchmark(
         lambda m: m.get("anchor_type", Counter()) or Counter(),
-        ["empty", "brand", "commercial", "informational", "spam", "other"],
+        ["empty", "naked_url", "brand", "brand_commercial", "brand_navigational", "commercial", "informational", "navigational", "generic", "spam", "other"],
         "anchor:",
     )
     link_type_categories = sorted(set(link_type_counter.keys()))[:20]
@@ -2222,11 +2254,19 @@ def run_link_profile_audit(
         },
     ]
 
+    anchor_total = sum(anchor_type_counter.values()) or 1
+    anchor_naked = int(anchor_type_counter.get("empty", 0) + anchor_type_counter.get("naked_url", 0))
+    anchor_brand = int(anchor_type_counter.get("brand", 0) + anchor_type_counter.get("brand_navigational", 0))
+    anchor_commercial = int(anchor_type_counter.get("commercial", 0) + anchor_type_counter.get("brand_commercial", 0))
+    anchor_navigational = int(anchor_type_counter.get("navigational", 0) + anchor_type_counter.get("generic", 0) + anchor_type_counter.get("other", 0))
+    anchor_spam = int(anchor_type_counter.get("spam", 0))
+
     profile_structure_rows = [
-        {"Метрика": "Анкоры: безанкорные, %", "Значение": _pct(anchor_type_counter.get("empty", 0), sum(anchor_type_counter.values()))},
-        {"Метрика": "Анкоры: брендовые, %", "Значение": _pct(anchor_type_counter.get("brand", 0), sum(anchor_type_counter.values()))},
-        {"Метрика": "Анкоры: коммерческие, %", "Значение": _pct(anchor_type_counter.get("commercial", 0), sum(anchor_type_counter.values()))},
-        {"Метрика": "Анкоры: спам, %", "Значение": _pct(anchor_type_counter.get("spam", 0), sum(anchor_type_counter.values()))},
+        {"Метрика": "Анкоры: безанкорные/URL, %", "Значение": _pct(anchor_naked, anchor_total)},
+        {"Метрика": "Анкоры: брендовые, %", "Значение": _pct(anchor_brand, anchor_total)},
+        {"Метрика": "Анкоры: коммерческие, %", "Значение": _pct(anchor_commercial, anchor_total)},
+        {"Метрика": "Анкоры: навигационные/генерик, %", "Значение": _pct(anchor_navigational, anchor_total)},
+        {"Метрика": "Анкоры: спам, %", "Значение": _pct(anchor_spam, anchor_total)},
         {"Метрика": "Follow-ссылки на главную, %", "Значение": round(float(our_metrics.get("homepage_follow_pct", 0.0) or 0.0), 2)},
         {"Метрика": "Follow-ссылки на внутренние, %", "Значение": round(float(our_metrics.get("internal_follow_pct", 0.0) or 0.0), 2)},
     ]
@@ -2234,7 +2274,7 @@ def run_link_profile_audit(
     priority_dashboard_rows: List[Dict[str, Any]] = []
     action_queue_rows: List[Dict[str, Any]] = []
 
-    spam_pct = _pct(anchor_type_counter.get("spam", 0), sum(anchor_type_counter.values()))
+    spam_pct = _pct(anchor_spam, anchor_total)
     nofollow_pct = float(summary.get("nofollow_pct") or 0.0)
     lost_pct = float(summary.get("lost_links_pct") or 0.0)
     http_bad_pct = round(
@@ -2617,24 +2657,148 @@ def run_link_profile_audit(
         "error": sum(1 for x in validation_checks if x.get("status") == "error"),
     }
 
+    def _row_get(row: Dict[str, Any], *keys: str) -> Any:
+        if not isinstance(row, dict):
+            return None
+        for key in keys:
+            if key in row and row.get(key) not in (None, ""):
+                return row.get(key)
+        lower = {str(k).strip().lower(): v for k, v in row.items()}
+        for key in keys:
+            lk = str(key).strip().lower()
+            if lk in lower and lower.get(lk) not in (None, ""):
+                return lower.get(lk)
+        return None
+
+    def _sample_link_rows(rows: List[Dict[str, Any]], limit: int = 3) -> List[Dict[str, Any]]:
+        prepared: List[Tuple[float, float, float, Dict[str, Any]]] = []
+        for row in rows or []:
+            ref_url = str(_row_get(row, "Referring page URL", "source_url", "referring page url") or "").strip()
+            target_url = str(_row_get(row, "Target URL", "target_url", "target url") or "").strip()
+            if not ref_url or not target_url:
+                continue
+            dr = _to_float(_row_get(row, "Domain Rating", "Domain rating", "dr")) or 0.0
+            ur = _to_float(_row_get(row, "UR", "ur", "URL Rating", "url rating")) or 0.0
+            traffic = _to_float(_row_get(row, "Domain traffic", "domain traffic", "traffic")) or 0.0
+            prepared.append(
+                (
+                    dr,
+                    traffic,
+                    ur,
+                    {
+                        "Referring page URL": ref_url,
+                        "Target URL": target_url,
+                        "Anchor": str(_row_get(row, "Anchor", "anchor") or "").strip(),
+                        "Domain Rating": round(dr, 2) if dr else "",
+                        "UR": round(ur, 2) if ur else "",
+                        "Domain traffic": round(traffic, 2) if traffic else "",
+                        "Nofollow": str(_row_get(row, "Nofollow", "nofollow", "follow") or "").strip(),
+                        "Lost status": str(_row_get(row, "Lost status", "lost status") or "").strip(),
+                    },
+                )
+            )
+        prepared.sort(key=lambda x: (x[0], x[1], x[2]), reverse=True)
+        return [x[3] for x in prepared[:limit]]
+
+    def _format_samples_block(title: str, rows: List[Dict[str, Any]]) -> str:
+        if not rows:
+            return f"{title}\nНет подходящих примеров."
+        lines = [title]
+        for idx, row in enumerate(rows, start=1):
+            lines.append(
+                f"{idx}) Referring page URL: {row.get('Referring page URL')}\n"
+                f"   Target URL: {row.get('Target URL')}\n"
+                f"   Anchor: {row.get('Anchor') or '-'}\n"
+                f"   Domain Rating: {row.get('Domain Rating') or '-'} | UR: {row.get('UR') or '-'} | Domain traffic: {row.get('Domain traffic') or '-'}\n"
+                f"   Nofollow: {row.get('Nofollow') or '-'} | Lost status: {row.get('Lost status') or '-'}"
+            )
+        return "\n".join(lines)
+
+    top_gap = (gap_donors_priority_rows or [{}])[0] if gap_donors_priority_rows else {}
+    redirect_samples = _sample_link_rows(raw_redirect_links_rows, limit=3)
+    competitor_samples = _sample_link_rows(raw_competitor_links_rows, limit=3)
+    duplicates_samples = _sample_link_rows(raw_duplicates_without_our_rows, limit=3)
+
+    anchor_brand_pct = _pct(anchor_brand, anchor_total)
+    anchor_commercial_pct = _pct(anchor_commercial, anchor_total)
+    anchor_naked_pct = _pct(anchor_naked, anchor_total)
+    anchor_nav_pct = _pct(anchor_navigational, anchor_total)
+
+    anchor_actions: List[str] = []
+    if spam_pct > 8:
+        anchor_actions.append("Снизить спам-анкоры: целевой уровень <= 8%.")
+    if anchor_brand_pct < 15:
+        anchor_actions.append("Увеличить долю брендовых анкоров до 15-30%.")
+    if anchor_commercial_pct > 30:
+        anchor_actions.append("Снизить долю коммерческих анкоров, разбавить брендом и URL-анкорами.")
+    if anchor_naked_pct < 30:
+        anchor_actions.append("Добавить безанкорные/URL-ссылки для естественности профиля.")
+    if not anchor_actions:
+        anchor_actions.append("Анкорный профиль сбалансирован, поддерживайте текущие пропорции.")
+
     prompts = {
         "ourSite": (
-            f"У сайта {domain} {summary['our_unique_ref_domains']} уникальных доноров. "
-            "Сфокусируйтесь на доменах из priority_domains и увеличьте долю dofollow-ссылок."
+            f"Наш домен: {domain}\n"
+            f"Уникальных доноров: {summary.get('our_unique_ref_domains', 0)}\n"
+            f"Dofollow/Nofollow: {summary.get('dofollow_pct', 0)}% / {summary.get('nofollow_pct', 0)}%\n"
+            f"Lost links: {summary.get('lost_links_pct', 0)}%\n"
+            "Фокус: усиление доли качественных dofollow и снижение доли lost."
         ),
         "competitors": (
-            f"Обнаружено {summary['unique_competitors']} конкурентных доменов в ссылочном профиле. "
-            "Приоритет: конкуренты с высоким shared_ref_domains и высоким batch_dr."
+            f"Конкурентов в датасете: {summary.get('unique_competitors', 0)}\n"
+            f"Топ-конкурент по quality score: {(competitor_quality_rows[0].get('competitor_domain') if competitor_quality_rows else 'н/д')}\n"
+            "Приоритет анализа: конкуренты с высоким quality score и пересечением доноров с нашим доменом."
         ),
         "comparison": (
-            "Используйте таблицу comparison для поиска donor-gap: competitor_only_domains "
-            "показывает зоны быстрого расширения профиля."
+            f"Средний donor gap: {donor_gap_avg}%\n"
+            f"Top gap domain: {top_gap.get('Domain', 'н/д')} (opportunity score: {top_gap.get('Opportunity Score', 'н/д')})\n"
+            "Используйте comparison/gap таблицы, чтобы закрыть доноров конкурентов, которых у нас нет."
         ),
         "plan": (
-            "План на 90 дней: 1) закрыть 20 приоритетных доменов, 2) выровнять anchor mix (brand/commercial), "
-            "3) снизить долю unknown follow, 4) ежемесячно пересчитывать overlap с конкурентами."
+            "План 30/60/90:\n"
+            "1) Очистить риски качества (lost, 4xx/5xx, спам).\n"
+            "2) Добрать priority/gap доноры с высоким DR и трафиком.\n"
+            "3) Нормализовать анкорный микс и закрепить рост follow-ссылок."
+        ),
+        "anchorTemplate": (
+            "Шаблон по анкорам:\n"
+            f"- Безанкорные/URL: {anchor_naked_pct}%\n"
+            f"- Брендовые: {anchor_brand_pct}%\n"
+            f"- Коммерческие: {anchor_commercial_pct}%\n"
+            f"- Навигационные/генерик: {anchor_nav_pct}%\n"
+            f"- Спам: {spam_pct}%\n"
+            "Рекомендации:\n- " + "\n- ".join(anchor_actions)
+        ),
+        "riskTemplate": (
+            "Шаблон анализа риск-ссылок:\n"
+            f"- Lost links: {summary.get('lost_links_pct', 0)}%\n"
+            f"- Nofollow: {summary.get('nofollow_pct', 0)}%\n"
+            f"- HTTP 2xx: {summary.get('http_2xx_pct', 0)}%\n"
+            + "\n\n"
+            + _format_samples_block("Примеры риск-ссылок (redirect/lost):", redirect_samples)
+        ),
+        "outreachTemplate": (
+            "Шаблон для outreach и закупки:\n"
+            + _format_samples_block("Примеры доноров конкурентов:", competitor_samples)
+            + "\n\n"
+            + _format_samples_block("Примеры дублей без нашего сайта:", duplicates_samples)
+        ),
+        "rowReviewTemplate": (
+            "Шаблон проверки строки ссылки:\n"
+            "Referring page URL\nTarget URL\nAnchor\nDomain Rating\nUR\nDomain traffic\nNofollow\nLost status\n"
+            "Используйте этот шаблон для ручной валидации доноров перед закупкой."
         ),
     }
+    prompt_templates_rows = [
+        {"template": "ourSite", "text": prompts.get("ourSite", "")},
+        {"template": "competitors", "text": prompts.get("competitors", "")},
+        {"template": "comparison", "text": prompts.get("comparison", "")},
+        {"template": "plan", "text": prompts.get("plan", "")},
+        {"template": "anchorTemplate", "text": prompts.get("anchorTemplate", "")},
+        {"template": "riskTemplate", "text": prompts.get("riskTemplate", "")},
+        {"template": "outreachTemplate", "text": prompts.get("outreachTemplate", "")},
+        {"template": "rowReviewTemplate", "text": prompts.get("rowReviewTemplate", "")},
+    ]
 
     def _cap_rows(rows: List[Dict[str, Any]], limit: int = MAX_RESULT_TABLE_ROWS) -> List[Dict[str, Any]]:
         if not isinstance(rows, list):
@@ -2735,6 +2899,7 @@ def run_link_profile_audit(
                 "target_structure": _cap_rows(target_structure_rows),
                 "risk_signals": _cap_rows(risk_signals_rows),
                 "validation_checks": _cap_rows(validation_checks, 200),
+                "prompt_templates": _cap_rows(prompt_templates_rows, 50),
                 "ourSiteTables": [
                     {"title": "Приоритеты SEO (первый экран)", "rows": _cap_rows(priority_dashboard_rows)},
                     {"title": "Очередь действий (что делать первым)", "rows": _cap_rows(action_queue_rows)},
@@ -2794,6 +2959,7 @@ def run_link_profile_audit(
                     {"title": "Loss & recovery", "rows": _cap_rows(loss_recovery_rows)},
                     {"title": "HTTP/Type/Lang/Platform", "rows": _cap_rows(http_type_lang_platform_rows)},
                     {"title": "Risk signals", "rows": _cap_rows(risk_signals_rows)},
+                    {"title": "Prompt templates", "rows": _cap_rows(prompt_templates_rows, 50)},
                     {"title": "Auto brand keywords", "rows": _cap_rows(brand_rows)},
                     {"title": "Source files", "rows": _cap_rows(file_summaries)},
                 ],

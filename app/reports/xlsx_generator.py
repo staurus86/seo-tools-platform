@@ -4698,6 +4698,11 @@ class XLSXGenerator:
             tables.get("validation_checks", []) or [],
             preferred_headers=["check", "status", "details"],
         )
+        _write_dynamic_sheet(
+            "19_Prompt_Templates",
+            tables.get("prompt_templates", []) or [],
+            preferred_headers=["template", "text"],
+        )
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         self._save_workbook(wb, filepath)
