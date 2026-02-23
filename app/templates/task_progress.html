@@ -1,24 +1,24 @@
 ﻿{% extends "base.html" %}
 
-{% block title %}Analysis Results - SEO Tools{% endblock %}
+{% block title %}Результаты анализа - SEO Tools{% endblock %}
 
 {% block content %}
 <div class="max-w-6xl mx-auto">
     <!-- Header -->
     <div class="mb-6">
         <a href="/" class="text-blue-600 hover:text-blue-800 mb-2 inline-block">
-            <i class="fas fa-arrow-left mr-1"></i>Back to tools
+            <i class="fas fa-arrow-left mr-1"></i>Назад к инструментам
         </a>
-        <h2 class="text-2xl font-bold text-gray-800">Analysis Results</h2>
-        <p class="text-gray-600">Task ID: <span id="task-id">{{ task_id }}</span></p>
+        <h2 class="text-2xl font-bold text-gray-800">Результаты анализа</h2>
+        <p class="text-gray-600">ID задачи: <span id="task-id">{{ task_id }}</span></p>
     </div>
 
     <!-- Progress Section -->
     <div id="progress-section" class="bg-white rounded-xl shadow-md p-6 mb-6">
         <div class="flex items-center justify-between mb-4">
             <div>
-                <h3 class="text-lg font-semibold" id="status-title">Running...</h3>
-                <p class="text-gray-600" id="status-message">Initializing...</p>
+                <h3 class="text-lg font-semibold" id="status-title">Выполняется...</h3>
+                <p class="text-gray-600" id="status-message">Инициализация...</p>
             </div>
             <div id="status-icon" class="text-4xl">
                 <i class="fas fa-spinner fa-spin text-blue-500"></i>
@@ -31,19 +31,19 @@
         </div>
         <div id="progress-meta" class="hidden mt-3 grid grid-cols-1 md:grid-cols-4 gap-2 text-sm">
             <div class="bg-slate-50 border border-slate-200 rounded px-3 py-2">
-                <div class="text-slate-500">Processed</div>
+                <div class="text-slate-500">Обработано</div>
                 <div id="progress-processed" class="font-semibold text-slate-800">0</div>
             </div>
             <div class="bg-slate-50 border border-slate-200 rounded px-3 py-2">
-                <div class="text-slate-500">Total</div>
+                <div class="text-slate-500">Всего</div>
                 <div id="progress-total" class="font-semibold text-slate-800">0</div>
             </div>
             <div class="bg-slate-50 border border-slate-200 rounded px-3 py-2">
-                <div class="text-slate-500">Queue</div>
+                <div class="text-slate-500">Очередь</div>
                 <div id="progress-queue" class="font-semibold text-slate-800">0</div>
             </div>
             <div class="bg-slate-50 border border-slate-200 rounded px-3 py-2">
-                <div class="text-slate-500">Current URL</div>
+                <div class="text-slate-500">Текущий URL</div>
                 <div id="progress-current-url" class="font-semibold text-slate-800 truncate">-</div>
             </div>
         </div>
@@ -62,7 +62,7 @@
         <div class="flex items-start">
             <i class="fas fa-exclamation-triangle text-red-500 text-xl mr-3 mt-1"></i>
             <div>
-                <h3 class="text-red-800 font-semibold mb-2">Execution Error</h3>
+                <h3 class="text-red-800 font-semibold mb-2">Ошибка выполнения</h3>
                 <p id="error-message" class="text-red-700"></p>
             </div>
         </div>
@@ -70,7 +70,7 @@
 
     <!-- Copy Notification -->
     <div id="copy-notification" class="fixed bottom-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg transform translate-y-20 transition-transform duration-300 z-50">
-        <i class="fas fa-check mr-2"></i>Copied to clipboard
+        <i class="fas fa-check mr-2"></i>Скопировано в буфер обмена
     </div>
 </div>
 {% endblock %}
@@ -461,8 +461,8 @@ function updateProgress(data) {
     const progressMeta = data.progress_meta || {};
 
     if (data.status === 'SUCCESS') {
-        statusTitle.textContent = 'Completed';
-        statusMessage.textContent = data.status_message || 'Analysis completed successfully';
+        statusTitle.textContent = 'Готово';
+        statusMessage.textContent = data.status_message || 'Анализ успешно завершен';
         progressBar.style.width = '100%';
         progressBar.classList.remove('bg-blue-500');
         progressBar.classList.add('bg-green-500');
@@ -472,8 +472,8 @@ function updateProgress(data) {
     }
 
     if (data.status === 'FAILURE') {
-        statusTitle.textContent = 'Error';
-        statusMessage.textContent = data.error || data.status_message || 'Analysis finished with an error';
+        statusTitle.textContent = 'Ошибка';
+        statusMessage.textContent = data.error || data.status_message || 'Анализ завершился с ошибкой';
         progressBar.style.width = `${data.progress || 100}%`;
         progressBar.classList.remove('bg-blue-500');
         progressBar.classList.add('bg-red-500');
@@ -483,8 +483,8 @@ function updateProgress(data) {
     }
 
     const p = Number.isFinite(Number(data.progress)) ? Number(data.progress) : 10;
-    statusTitle.textContent = data.status === 'RUNNING' ? 'Running...' : 'Queued...';
-    statusMessage.textContent = data.status_message || (data.status === 'RUNNING' ? 'Analysis in progress' : 'Task is waiting in queue');
+    statusTitle.textContent = data.status === 'RUNNING' ? 'Выполняется...' : 'В очереди...';
+    statusMessage.textContent = data.status_message || (data.status === 'RUNNING' ? 'Идет анализ' : 'Задача ожидает в очереди');
     progressBar.style.width = `${Math.max(5, Math.min(95, p))}%`;
     progressBar.classList.remove('bg-green-500', 'bg-red-500');
     progressBar.classList.add('bg-blue-500');
@@ -606,7 +606,7 @@ let sitemapDuplicateLines = [];
 let sitemapFilePreviewUrls = [];
 
 function generateTextReport() {
-    if (!robotsData) return 'No data for report';
+    if (!robotsData) return 'Нет данных для отчета';
     const r = robotsData.results || robotsData;
     const groups = r.groups_detail || r.groups || [];
 
@@ -627,36 +627,36 @@ function generateTextReport() {
     report += 'robots.txt found: ' + (r.robots_txt_found ? 'yes' : 'no') + '\n';
     report += 'HTTP status: ' + (r.status_code ?? 'n/a') + '\n';
     report += 'Quality score: ' + (r.quality_score ?? 'n/a') + ' (' + (r.quality_grade || 'n/a') + ')\n';
-    report += 'Production ready: ' + (r.production_ready ? 'yes' : 'no') + '\n';
+    report += 'Готово к продакшну: ' + (r.production_ready ? 'да' : 'нет') + '\n';
     report += 'User-Agents: ' + (r.user_agents || 0) + '\n';
-    report += 'Disallow rules: ' + totalDisallow + '\n';
-    report += 'Allow rules: ' + totalAllow + '\n';
-    report += 'File size: ' + (r.content_length || 0) + ' bytes\n';
-    report += 'Lines: ' + (r.lines_count || 0) + '\n\n';
+    report += 'Правила Disallow: ' + totalDisallow + '\n';
+    report += 'Правила Allow: ' + totalAllow + '\n';
+    report += 'Размер файла: ' + (r.content_length || 0) + ' байт\n';
+    report += 'Строк: ' + (r.lines_count || 0) + '\n\n';
 
     const severity = r.severity_counts || {};
-    report += 'SEVERITY\n' + '-'.repeat(30) + '\n';
-    report += 'Critical: ' + (severity.critical ?? (r.critical_issues || r.issues || []).length) + '\n';
-    report += 'Warning: ' + (severity.warning ?? (r.warning_issues || r.warnings || []).length) + '\n';
-    report += 'Info: ' + (severity.info ?? (r.info_issues || []).length) + '\n\n';
+    report += 'КРИТИЧНОСТЬ\n' + '-'.repeat(30) + '\n';
+    report += 'Критично: ' + (severity.critical ?? (r.critical_issues || r.issues || []).length) + '\n';
+    report += 'Предупреждений: ' + (severity.warning ?? (r.warning_issues || r.warnings || []).length) + '\n';
+    report += 'Инфо: ' + (severity.info ?? (r.info_issues || []).length) + '\n\n';
 
     const issues = r.critical_issues || r.issues || [];
     if (issues.length > 0) {
-        report += 'CRITICAL ISSUES\n' + '-'.repeat(30) + '\n';
+        report += 'КРИТИЧЕСКИЕ ПРОБЛЕМЫ\n' + '-'.repeat(30) + '\n';
         issues.forEach(i => report += '! ' + i + '\n');
         report += '\n';
     }
 
     const warnings = r.warning_issues || r.warnings || [];
     if (warnings.length > 0) {
-        report += 'WARNINGS\n' + '-'.repeat(30) + '\n';
+        report += 'ПРЕДУПРЕЖДЕНИЯ\n' + '-'.repeat(30) + '\n';
         warnings.forEach(w => report += '- ' + w + '\n');
         report += '\n';
     }
 
     const infoIssues = r.info_issues || [];
     if (infoIssues.length > 0) {
-        report += 'INFO\n' + '-'.repeat(30) + '\n';
+        report += 'ИНФО\n' + '-'.repeat(30) + '\n';
         infoIssues.forEach(i => report += '- ' + i + '\n');
         report += '\n';
     }
@@ -712,8 +712,8 @@ function generateTextReport() {
         report += 'TOP FIXES\n' + '-'.repeat(30) + '\n';
         topFixes.forEach(fix => {
             report += '[' + String((fix.priority || 'medium')).toUpperCase() + '] ' + (fix.title || 'Fix') + '\n';
-            if (fix.why) report += '  Why: ' + fix.why + '\n';
-            if (fix.action) report += '  Action: ' + fix.action + '\n';
+            if (fix.why) report += '  Почему: ' + fix.why + '\n';
+            if (fix.action) report += '  Действие: ' + fix.action + '\n';
         });
         report += '\n';
     }
@@ -722,7 +722,7 @@ function generateTextReport() {
     const httpNotes = httpStatusAnalysis.notes || [];
     if (httpNotes.length > 0) {
         report += 'HTTP STATUS ANALYSIS\n' + '-'.repeat(30) + '\n';
-        report += 'Status: ' + (httpStatusAnalysis.status_code ?? r.status_code ?? 'n/a') + '\n';
+        report += 'Статус: ' + (httpStatusAnalysis.status_code ?? r.status_code ?? 'н/д') + '\n';
         httpNotes.forEach(note => report += '- ' + note + '\n');
         report += '\n';
     }
@@ -825,7 +825,7 @@ function formatRobotsRawWithLineNumbers(rawText) {
 
 function copyCurrentTaskJson() {
     if (!lastTaskResult) {
-        alert('No data available to copy');
+        alert('Нет данных для копирования');
         return;
     }
     copyToClipboard(JSON.stringify(lastTaskResult, null, 2));
@@ -833,13 +833,13 @@ function copyCurrentTaskJson() {
 
 function copyOnpageRecommendations() {
     if (!lastTaskResult || lastTaskResult.task_type !== 'onpage_audit') {
-        alert('No OnPage data available to copy');
+        alert('Нет данных OnPage для копирования');
         return;
     }
     const r = (lastTaskResult.results || {});
     const recs = (r.recommendations || []);
     if (!recs.length) {
-        alert('No recommendations yet');
+        alert('Пока нет рекомендаций');
         return;
     }
     const lines = recs.map((item, idx) => `${idx + 1}. ${item}`);
@@ -848,7 +848,7 @@ function copyOnpageRecommendations() {
 
 function copyOnpageTopFixes() {
     if (!lastTaskResult || lastTaskResult.task_type !== 'onpage_audit') {
-        alert('No OnPage data available to copy');
+        alert('Нет данных OnPage для копирования');
         return;
     }
     const r = (lastTaskResult.results || {});
@@ -856,13 +856,13 @@ function copyOnpageTopFixes() {
     const fallbackFixes = (r.top_fixes || []);
     const list = queue.length > 0
         ? queue.slice(0, 10).map((q, idx) =>
-            `${idx + 1}. [${(q.bucket || 'Later').toUpperCase()}] ${(q.title || q.code || 'Issue')} | Severity: ${(q.severity || 'info').toUpperCase()} | Priority: ${q.priority_score ?? 0} | Effort: ${q.effort ?? 0}`
+            `${idx + 1}. [${(q.bucket || 'Later').toUpperCase()}] ${(q.title || q.code || 'Issue')} | Критичность: ${(q.severity || 'info').toUpperCase()} | Приоритет: ${q.priority_score ?? 0} | Трудозатраты: ${q.effort ?? 0}`
         )
         : fallbackFixes.slice(0, 10).map((f, idx) =>
-            `${idx + 1}. [${String((f.priority || 'medium')).toUpperCase()}] ${f.title || 'Fix'}${f.action ? ` | Action: ${f.action}` : ''}`
+            `${idx + 1}. [${String((f.priority || 'medium')).toUpperCase()}] ${f.title || 'Исправление'}${f.action ? ` | Действие: ${f.action}` : ''}`
         );
     if (!list.length) {
-        alert('Top fixes are not available yet');
+        alert('Топ исправлений пока недоступен');
         return;
     }
     copyToClipboard(list.join('\n'));
@@ -957,7 +957,7 @@ function renderSiteAuditProIssuesExplorer() {
     });
 
     if (!visible.length) {
-        wrapper.innerHTML = '<div class="text-sm text-gray-500">No issues found for the selected filters.</div>';
+        wrapper.innerHTML = '<div class="text-sm text-gray-500">По выбранным фильтрам проблемы не найдены.</div>';
         return;
     }
 
@@ -1196,7 +1196,7 @@ async function runSitemapCheckFromRobots(sitemapUrl) {
 
 async function downloadBotXlsxReport() {
     if (!botData) {
-        alert('No bot check data available');
+        alert('Нет данных проверки ботов');
         return;
     }
     try {
@@ -1221,14 +1221,14 @@ async function downloadBotXlsxReport() {
         document.body.removeChild(a);
         URL.revokeObjectURL(href);
     } catch (error) {
-        console.error('Error downloading bot xlsx:', error);
-        alert('Failed to download bot XLSX report');
+        console.error('Ошибка скачивания bot XLSX:', error);
+        alert('Не удалось скачать XLSX-отчет по ботам');
     }
 }
 
 async function downloadBotDocxReport() {
     if (!botData) {
-        alert('No bot check data available');
+        alert('Нет данных проверки ботов');
         return;
     }
     try {
@@ -1253,46 +1253,46 @@ async function downloadBotDocxReport() {
         document.body.removeChild(a);
         URL.revokeObjectURL(href);
     } catch (error) {
-        console.error('Error downloading bot docx:', error);
-        alert('Failed to download bot DOCX report');
+        console.error('Ошибка скачивания bot DOCX:', error);
+        alert('Не удалось скачать DOCX-отчет по ботам');
     }
 }
 
 function copyBotPlaybooksAsJira() {
     if (!botData) {
-        alert('No bot check data available');
+        alert('Нет данных проверки ботов');
         return;
     }
     const r = botData.results || botData;
     const playbooks = r.playbooks || [];
     if (playbooks.length === 0) {
-        alert('No playbooks available for Jira export');
+        alert('Нет плейбуков для экспорта в Jira');
         return;
     }
 
     const bucketName = (score) => {
         const n = Number(score || 0);
-        if (n >= 20) return 'Now';
-        if (n >= 12) return 'Next';
-        return 'Later';
+        if (n >= 20) return 'Сейчас';
+        if (n >= 12) return 'Далее';
+        return 'Позже';
     };
 
     const blocks = playbooks.slice(0, 20).map((p, idx) => {
-        const actions = (p.actions || []).slice(0, 6).map((a) => `- ${a}`).join('\n') || '- Define implementation steps';
+        const actions = (p.actions || []).slice(0, 6).map((a) => `- ${a}`).join('\n') || '- Определить шаги внедрения';
         const priority = Number(p.priority_score || 0);
-        const owner = p.owner || 'Team';
+        const owner = p.owner || 'Команда';
         const blockerCode = p.blocker_code || 'general';
         const title = p.title || `Bot accessibility fix ${idx + 1}`;
         return [
-            `Summary: [Bot Access Check] ${title}`,
+            `Сводка: [Проверка доступности ботов] ${title}`,
             `Labels: bot-check,${String(blockerCode).toLowerCase().replace(/[^a-z0-9_-]+/g, '-')},${bucketName(priority).toLowerCase()}`,
-            `Priority Score: ${priority}`,
-            `Owner: ${owner}`,
-            'Description:',
-            `- Source: Bot Access Check`,
-            `- Blocker code: ${blockerCode}`,
-            `- Sprint bucket: ${bucketName(priority)}`,
-            '- Action plan:',
+            `Приоритет: ${priority}`,
+            `Владелец: ${owner}`,
+            'Описание:',
+            `- Источник: Проверка доступности ботов`,
+            `- Код блокера: ${blockerCode}`,
+            `- Бакет спринта: ${bucketName(priority)}`,
+            '- План действий:',
             actions,
         ].join('\n');
     });
@@ -1303,32 +1303,32 @@ function copyBotPlaybooksAsJira() {
 
 function copyBotOwnerTasks(owner) {
     if (!botData) {
-        alert('No bot check data available');
+        alert('Нет данных проверки ботов');
         return;
     }
     const r = botData.results || botData;
     const byOwner = ((r.action_center || {}).by_owner || {});
     const rows = byOwner[owner] || [];
     if (!rows.length) {
-        alert('No tasks for selected owner');
+        alert('Нет задач для выбранного владельца');
         return;
     }
     const text = rows.map((p, idx) => {
         const actions = (p.actions || []).map((a) => `- ${a}`).join('\n');
-        return `${idx + 1}. ${p.title || 'Action'} (priority ${p.priority_score || 0})\n${actions}`;
+        return `${idx + 1}. ${p.title || 'Действие'} (приоритет ${p.priority_score || 0})\n${actions}`;
     }).join('\n\n');
     copyToClipboard(text);
 }
 
 function downloadBotTrendHistoryJson() {
     if (!botData) {
-        alert('No bot check data available');
+        alert('Нет данных проверки ботов');
         return;
     }
     const url = botData.url || '';
     const snapshots = getBotSnapshotsForUrl(url);
     if (!snapshots.length) {
-        alert('No trend history available for this domain');
+        alert('Для этого домена нет истории тренда');
         return;
     }
     const payload = {
@@ -1350,7 +1350,7 @@ function downloadBotTrendHistoryJson() {
 
 async function downloadWordReport() {
     if (!robotsData) {
-        alert('No report data available');
+        alert('Нет данных отчета');
         return;
     }
     
@@ -1375,17 +1375,17 @@ async function downloadWordReport() {
             URL.revokeObjectURL(url);
         } else {
             const error = await response.json();
-            alert('Report generation error: ' + (error.error || response.statusText));
+            alert('Ошибка генерации отчета: ' + (error.error || response.statusText));
         }
     } catch (error) {
-        console.error('Error downloading Word report:', error);
-        alert('Error downloading report');
+        console.error('Ошибка скачивания Word-отчета:', error);
+        alert('Ошибка скачивания отчета');
     }
 }
 
 async function downloadMobileDocxReport() {
     if (!mobileData) {
-        alert('No mobile check data available');
+        alert('Нет данных мобильной проверки');
         return;
     }
     try {
@@ -1415,14 +1415,14 @@ async function downloadMobileDocxReport() {
         document.body.removeChild(a);
         URL.revokeObjectURL(href);
     } catch (error) {
-        console.error('Error downloading mobile DOCX:', error);
-        alert('Failed to download DOCX report');
+        console.error('Ошибка скачивания mobile DOCX:', error);
+        alert('Не удалось скачать DOCX-отчет');
     }
 }
 
 async function downloadMobileXlsxReport() {
     if (!mobileData) {
-        alert('No mobile check data available');
+        alert('Нет данных мобильной проверки');
         return;
     }
     try {
@@ -1586,7 +1586,7 @@ async function downloadSiteAuditProDocxReport() {
 
 async function downloadOnpageDocxReport() {
     if (!onpageData) {
-        alert('Нет данных OnPage Audit');
+        alert('Нет данных OnPage-аудита');
         return;
     }
     try {
@@ -1619,7 +1619,7 @@ async function downloadOnpageDocxReport() {
 
 async function downloadOnpageXlsxReport() {
     if (!onpageData) {
-        alert('Нет данных OnPage Audit');
+        alert('Нет данных OnPage-аудита');
         return;
     }
     try {
@@ -1700,7 +1700,7 @@ function generateRobotsHTML(data) {
     if (Array.isArray(r.user_agents)) {
         userAgents = r.user_agents.join(', ');
     } else if (typeof r.user_agents === 'number') {
-        userAgents = `${r.user_agents} pcs.`;
+        userAgents = `${r.user_agents} шт.`;
     } else if (r.user_agents) {
         userAgents = String(r.user_agents);
     }
@@ -1843,9 +1843,9 @@ function generateRobotsHTML(data) {
     if (topFixes.length > 0) {
         topFixesHTML = topFixes.map(fix => `
             <div class="border rounded-lg p-3 mb-2 bg-indigo-50 border-indigo-200">
-                <div class="text-sm font-semibold text-indigo-700">[${(fix.priority || 'medium').toUpperCase()}] ${fix.title || 'Fix'}</div>
-                ${fix.why ? `<div class="text-sm text-indigo-700 mt-1">Why: ${fix.why}</div>` : ''}
-                ${fix.action ? `<div class="text-sm text-indigo-800 mt-1">Action: ${fix.action}</div>` : ''}
+                <div class="text-sm font-semibold text-indigo-700">[${(fix.priority || 'medium').toUpperCase()}] ${fix.title || 'Исправление'}</div>
+                ${fix.why ? `<div class="text-sm text-indigo-700 mt-1">Почему: ${fix.why}</div>` : ''}
+                ${fix.action ? `<div class="text-sm text-indigo-800 mt-1">Действие: ${fix.action}</div>` : ''}
             </div>
         `).join('');
     }
@@ -1863,7 +1863,7 @@ function generateRobotsHTML(data) {
                         <span class="text-xs px-2 py-1 rounded ${badge}">${status}</span>
                     </div>
                     <div class="text-xs text-gray-500 mt-1">
-                        ${check.status_code ? `HTTP ${check.status_code}` : ''} ${check.error ? `вЂў ${check.error}` : ''}
+                        ${check.status_code ? `HTTP ${check.status_code}` : ''} ${check.error ? `• ${check.error}` : ''}
                     </div>
                 </div>
             `;
@@ -1906,7 +1906,7 @@ function generateRobotsHTML(data) {
                 <span class="font-semibold">${item.type || 'conflict'}</span>
                 ${item.user_agent ? ` | UA: ${item.user_agent}` : ''}
                 ${item.path ? ` | Path: ${item.path}` : ''}
-                ${item.groups ? ` | Groups: ${item.groups}` : ''}
+                ${item.groups ? ` | Группы: ${item.groups}` : ''}
             </div>
         `).join('');
     }
@@ -1921,7 +1921,7 @@ function generateRobotsHTML(data) {
     let httpStatusAnalysisHTML = '';
     if (httpStatusNotes.length > 0) {
         httpStatusAnalysisHTML = `
-            <div class="text-sm text-gray-700 mb-2"><span class="font-semibold">HTTP status context:</span> ${httpStatusAnalysis.status_code ?? r.status_code ?? 'n/a'}</div>
+            <div class="text-sm text-gray-700 mb-2"><span class="font-semibold">Контекст HTTP-статуса:</span> ${httpStatusAnalysis.status_code ?? r.status_code ?? 'н/д'}</div>
             ${httpStatusNotes.map(note => `<div class="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-2 text-slate-700 text-sm">${note}</div>`).join('')}
         `;
     }
@@ -1947,12 +1947,12 @@ function generateRobotsHTML(data) {
                 </button>
                 <button onclick="copyToClipboard(JSON.stringify(robotsData, null, 2))" class="inline-flex items-center bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition">
                     <i class="fas fa-copy mr-2"></i>
-                    Copy JSON
+                    Копировать JSON
                 </button>
 
                 <button onclick='copyToClipboard(${JSON.stringify(rawContent)})' class="inline-flex items-center bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition">
                     <i class="fas fa-file-alt mr-2"></i>
-                    Copy robots.txt
+                    Копировать robots.txt
                 </button>
 
             </div>
@@ -1986,7 +1986,7 @@ function generateRobotsHTML(data) {
                     </div>
                     <div class="text-center p-3 bg-gray-50 rounded-lg">
                         <div class="text-2xl font-bold text-gray-600">${r.lines_count || 0}</div>
-                        <div class="text-xs text-gray-500">Lines</div>
+                        <div class="text-xs text-gray-500">Строки</div>
                     </div>
                 </div>
                 
@@ -2032,7 +2032,7 @@ function generateRobotsHTML(data) {
             ${httpStatusAnalysisHTML ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-slate-700 mb-3">
-                        <i class="fas fa-server mr-2"></i>HTTP Status Analysis
+                        <i class="fas fa-server mr-2"></i>Анализ HTTP-статуса
                     </h4>
                     ${httpStatusAnalysisHTML}
                 </div>
@@ -2041,7 +2041,7 @@ function generateRobotsHTML(data) {
             ${unsupportedDirectivesHTML ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-amber-700 mb-3">
-                        <i class="fas fa-ban mr-2"></i>Unsupported Directives (${unsupportedDirectives.length})
+                        <i class="fas fa-ban mr-2"></i>Неподдерживаемые директивы (${unsupportedDirectives.length})
                     </h4>
                     ${unsupportedDirectivesHTML}
                 </div>
@@ -2050,7 +2050,7 @@ function generateRobotsHTML(data) {
             ${syntaxErrorsHTML ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-rose-700 mb-3">
-                        <i class="fas fa-code-branch mr-2"></i>Syntax Errors (${syntaxErrors.length})
+                        <i class="fas fa-code-branch mr-2"></i>Синтаксические ошибки (${syntaxErrors.length})
                     </h4>
                     ${syntaxErrorsHTML}
                 </div>
@@ -2059,7 +2059,7 @@ function generateRobotsHTML(data) {
             ${hostValidationHTML ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-yellow-700 mb-3">
-                        <i class="fas fa-network-wired mr-2"></i>Host Validation
+                        <i class="fas fa-network-wired mr-2"></i>Проверка host
                     </h4>
                     ${hostValidationHTML}
                 </div>
@@ -2068,7 +2068,7 @@ function generateRobotsHTML(data) {
             ${conflictDetailsHTML ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-orange-700 mb-3">
-                        <i class="fas fa-random mr-2"></i>Directive Conflicts (${conflictDetails.length})
+                        <i class="fas fa-random mr-2"></i>Конфликты директив (${conflictDetails.length})
                     </h4>
                     ${conflictDetailsHTML}
                 </div>
@@ -2077,7 +2077,7 @@ function generateRobotsHTML(data) {
             ${longestMatchHTML ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-blue-700 mb-3">
-                        <i class="fas fa-ruler-combined mr-2"></i>Longest Match Notes (${longestMatchNotes.length})
+                        <i class="fas fa-ruler-combined mr-2"></i>Примечания longest-match (${longestMatchNotes.length})
                     </h4>
                     ${longestMatchHTML}
                 </div>
@@ -2086,7 +2086,7 @@ function generateRobotsHTML(data) {
             ${paramRecommendationsHTML ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="text-lg font-semibold text-cyan-700 mb-3">
-                        <i class="fas fa-filter mr-2"></i>Yandex Clean-param Recommendations (${paramRecommendations.length})
+                        <i class="fas fa-filter mr-2"></i>Рекомендации Yandex Clean-param (${paramRecommendations.length})
                     </h4>
                     ${paramRecommendationsHTML}
                 </div>
@@ -2128,9 +2128,9 @@ function generateRobotsHTML(data) {
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <div class="flex justify-between items-center mb-3">
                         <h4 class="text-lg font-semibold text-gray-700">
-                            <i class="fas fa-file-code mr-2"></i>Robots.txt (Raw)
+                            <i class="fas fa-file-code mr-2"></i>Robots.txt (raw)
                         </h4>
-                        <div class="text-xs text-gray-500">Line numbers are visual only</div>
+                        <div class="text-xs text-gray-500">Номера строк отображаются только визуально</div>
                     </div>
                     <div class="text-xs bg-gray-900 text-gray-100 p-4 rounded-lg overflow-auto max-h-96 font-mono">${rawWithLineNumbers}</div>
                 </div>
@@ -2719,19 +2719,19 @@ function generateBotHTML(result) {
                 <div class="text-amber-700">Sample bots: ${(b.sample_bots || []).join(', ') || '-'}</div>
             </div>
         `).join('')
-        : '<div class="text-sm text-gray-500">No prioritized blockers found.</div>';
+        : '<div class="text-sm text-gray-500">Приоритетные блокеры не найдены.</div>';
 
     const playbooksHtml = playbooks.length > 0
         ? playbooks.slice(0, 12).map((p) => `
             <div class="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm">
-                <div class="font-semibold text-sky-900">${p.title || 'Action plan'}</div>
-                <div class="text-sky-800">Owner: ${p.owner || 'team'} | Type: ${p.type || 'general'}</div>
+                <div class="font-semibold text-sky-900">${p.title || 'План действий'}</div>
+                <div class="text-sky-800">Владелец: ${p.owner || 'team'} | Тип: ${p.type || 'general'}</div>
                 <ul class="list-disc pl-5 mt-2 text-sky-900">
-                    ${(p.actions || []).slice(0, 5).map((a) => `<li>${a}</li>`).join('') || '<li>No actions listed.</li>'}
+                    ${(p.actions || []).slice(0, 5).map((a) => `<li>${a}</li>`).join('') || '<li>Список действий пуст.</li>'}
                 </ul>
             </div>
         `).join('')
-        : '<div class="text-sm text-gray-500">No playbooks generated.</div>';
+        : '<div class="text-sm text-gray-500">Плейбуки не сформированы.</div>';
 
     const issueRows = issues.slice(0, 20).map(i => `
         <div class="py-2 border-b text-sm">
@@ -2784,14 +2784,14 @@ function generateBotHTML(result) {
     `).join('');
     const ownerBlocks = Object.keys(actionCenter).sort().map((owner) => {
         const rows = actionCenter[owner] || [];
-        const top = rows.slice(0, 3).map((x) => `<li>${escapeHtml(x.title || 'Action')} (p${x.priority_score || 0})</li>`).join('');
+        const top = rows.slice(0, 3).map((x) => `<li>${escapeHtml(x.title || 'Действие')} (p${x.priority_score || 0})</li>`).join('');
         return `
             <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm">
                 <div class="flex items-center justify-between mb-2">
                     <div class="font-semibold text-indigo-900">${escapeHtml(owner)}</div>
-                    <button onclick='copyBotOwnerTasks(${JSON.stringify(owner)})' class="text-indigo-700 hover:text-indigo-900 text-xs"><i class="fas fa-copy mr-1"></i>Copy</button>
+                    <button onclick='copyBotOwnerTasks(${JSON.stringify(owner)})' class="text-indigo-700 hover:text-indigo-900 text-xs"><i class="fas fa-copy mr-1"></i>Копировать</button>
                 </div>
-                <ul class="list-disc pl-5 text-indigo-900">${top || '<li>No actions</li>'}</ul>
+                <ul class="list-disc pl-5 text-indigo-900">${top || '<li>Нет действий</li>'}</ul>
             </div>
         `;
     }).join('');
@@ -2820,50 +2820,50 @@ function generateBotHTML(result) {
     return `
         <div class="bg-white rounded-xl shadow-md p-6">
             <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-semibold">Bot Access Check</h3>
+                <h3 class="text-lg font-semibold">Проверка доступности ботов</h3>
                 <div class="flex gap-3">
                     <button onclick="downloadBotDocxReport()" class="text-indigo-600 hover:text-indigo-800 text-sm">
-                        <i class="fas fa-file-word mr-1"></i>Download DOCX
+                        <i class="fas fa-file-word mr-1"></i>Скачать DOCX
                     </button>
                     <button onclick="downloadBotXlsxReport()" class="text-green-600 hover:text-green-800 text-sm">
-                        <i class="fas fa-file-excel mr-1"></i>Download XLSX
+                        <i class="fas fa-file-excel mr-1"></i>Скачать XLSX
                     </button>
                     <button onclick="copyBotPlaybooksAsJira()" class="text-sky-600 hover:text-sky-800 text-sm">
-                        <i class="fas fa-list-check mr-1"></i>Copy Jira Tasks
+                        <i class="fas fa-list-check mr-1"></i>Копировать задачи Jira
                     </button>
                     <button onclick="downloadBotTrendHistoryJson()" class="text-emerald-600 hover:text-emerald-800 text-sm">
-                        <i class="fas fa-chart-line mr-1"></i>Export Trends JSON
+                        <i class="fas fa-chart-line mr-1"></i>Экспорт трендов JSON
                     </button>
                     <button onclick="copyToClipboard('${result.url}')" class="text-blue-600 hover:text-blue-800 text-sm">
-                        <i class="fas fa-copy mr-1"></i>Copy URL
+                        <i class="fas fa-copy mr-1"></i>Копировать URL
                     </button>
                 </div>
             </div>
             <p class="text-sm text-gray-600 mb-4">
-                Matrix view for reachable/indexable bot states with criticality-based blocker prioritization.
+                Матричный вид доступности/индексации ботов с приоритизацией блокеров по критичности.
             </p>
             <div class="grid grid-cols-2 gap-4 text-sm mb-4">
                 <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
-                <div><span class="text-gray-600">Bots checked:</span> <span class="font-medium">${(r.bots_checked || []).length}</span></div>
-                ${summary.total ? `<div><span class="text-gray-600">Crawlable:</span> <span class="font-medium">${summary.crawlable || 0}/${summary.total}</span></div>` : ''}
-                ${summary.total ? `<div><span class="text-gray-600">Renderable:</span> <span class="font-medium">${summary.renderable || 0}/${summary.total}</span></div>` : ''}
-                ${summary.total ? `<div><span class="text-gray-600">Available:</span> <span class="font-medium">${summary.accessible || 0}/${summary.total}</span></div>` : ''}
-                ${summary.total ? `<div><span class="text-gray-600">Indexable:</span> <span class="font-medium">${summary.indexable || 0}/${summary.total}</span></div>` : ''}
-                ${summary.total ? `<div><span class="text-gray-600">Non-indexable:</span> <span class="font-medium">${summary.non_indexable || 0}</span></div>` : ''}
-                ${summary.avg_response_time_ms ? `<div><span class="text-gray-600">Avg response:</span> <span class="font-medium">${summary.avg_response_time_ms} ms</span></div>` : ''}
-                <div><span class="text-gray-600">Retry profile:</span> <span class="font-medium">${r.retry_profile || 'standard'}</span></div>
-                <div><span class="text-gray-600">Criticality/SLA:</span> <span class="font-medium">${r.criticality_profile || 'balanced'} / ${r.sla_profile || 'standard'}</span></div>
-                <div><span class="text-gray-600">AI policy mode:</span> <span class="font-medium">${r.ai_block_expected ? 'intentional AI blocks' : 'strict availability'}</span></div>
-                ${r.ai_block_expected ? `<div><span class="text-gray-600">Expected AI blocked:</span> <span class="font-medium">${summary.expected_ai_policy_blocked || 0}</span></div>` : ''}
-                ${latestTrend ? `<div><span class="text-gray-600">Trend snapshots:</span> <span class="font-medium">${trendSnapshots.length}</span></div>` : ''}
-                ${previousTrend ? `<div><span class="text-gray-600">Delta indexable:</span> <span class="font-medium">${formatTrendDelta(latestTrend.indexable || 0, previousTrend.indexable || 0)}</span></div>` : ''}
-                ${previousTrend ? `<div><span class="text-gray-600">Delta critical issues:</span> <span class="font-medium">${formatTrendDelta(latestTrend.critical_issues || 0, previousTrend.critical_issues || 0)}</span></div>` : ''}
-                ${previousTrend ? `<div><span class="text-gray-600">Delta avg response (ms):</span> <span class="font-medium">${formatTrendDelta(latestTrend.avg_response_time_ms || 0, previousTrend.avg_response_time_ms || 0)}</span></div>` : ''}
+                <div><span class="text-gray-600">Ботов проверено:</span> <span class="font-medium">${(r.bots_checked || []).length}</span></div>
+                ${summary.total ? `<div><span class="text-gray-600">Сканируемо:</span> <span class="font-medium">${summary.crawlable || 0}/${summary.total}</span></div>` : ''}
+                ${summary.total ? `<div><span class="text-gray-600">Рендерится:</span> <span class="font-medium">${summary.renderable || 0}/${summary.total}</span></div>` : ''}
+                ${summary.total ? `<div><span class="text-gray-600">Доступно:</span> <span class="font-medium">${summary.accessible || 0}/${summary.total}</span></div>` : ''}
+                ${summary.total ? `<div><span class="text-gray-600">Индексируемо:</span> <span class="font-medium">${summary.indexable || 0}/${summary.total}</span></div>` : ''}
+                ${summary.total ? `<div><span class="text-gray-600">Не индексируемо:</span> <span class="font-medium">${summary.non_indexable || 0}</span></div>` : ''}
+                ${summary.avg_response_time_ms ? `<div><span class="text-gray-600">Средний ответ:</span> <span class="font-medium">${summary.avg_response_time_ms} ms</span></div>` : ''}
+                <div><span class="text-gray-600">Профиль ретраев:</span> <span class="font-medium">${r.retry_profile || 'standard'}</span></div>
+                <div><span class="text-gray-600">Критичность/SLA:</span> <span class="font-medium">${r.criticality_profile || 'balanced'} / ${r.sla_profile || 'standard'}</span></div>
+                <div><span class="text-gray-600">Режим AI-политики:</span> <span class="font-medium">${r.ai_block_expected ? 'намеренные блокировки AI' : 'строгая доступность'}</span></div>
+                ${r.ai_block_expected ? `<div><span class="text-gray-600">Ожидаемо заблокировано AI:</span> <span class="font-medium">${summary.expected_ai_policy_blocked || 0}</span></div>` : ''}
+                ${latestTrend ? `<div><span class="text-gray-600">Снимков тренда:</span> <span class="font-medium">${trendSnapshots.length}</span></div>` : ''}
+                ${previousTrend ? `<div><span class="text-gray-600">Дельта индексируемых:</span> <span class="font-medium">${formatTrendDelta(latestTrend.indexable || 0, previousTrend.indexable || 0)}</span></div>` : ''}
+                ${previousTrend ? `<div><span class="text-gray-600">Дельта критических проблем:</span> <span class="font-medium">${formatTrendDelta(latestTrend.critical_issues || 0, previousTrend.critical_issues || 0)}</span></div>` : ''}
+                ${previousTrend ? `<div><span class="text-gray-600">Дельта среднего ответа (мс):</span> <span class="font-medium">${formatTrendDelta(latestTrend.avg_response_time_ms || 0, previousTrend.avg_response_time_ms || 0)}</span></div>` : ''}
             </div>
 
             ${r.batch_mode ? `
             <div class="border-t pt-4 mt-4">
-                <h4 class="font-semibold mb-2">Batch Runs</h4>
+                <h4 class="font-semibold mb-2">Пакетные прогоны</h4>
                 <div class="overflow-auto">
                     <table class="w-full min-w-[980px]">
                         <thead>
@@ -2873,41 +2873,41 @@ function generateBotHTML(result) {
                                 <th class="py-2 pr-2">Indexable</th>
                                 <th class="py-2 pr-2">Crawlable</th>
                                 <th class="py-2 pr-2">Renderable</th>
-                                <th class="py-2 pr-2">Avg ms</th>
-                                <th class="py-2 pr-2">Critical</th>
-                                <th class="py-2 pr-2">Warnings</th>
+                                <th class="py-2 pr-2">Среднее, мс</th>
+                                <th class="py-2 pr-2">Критично</th>
+                                <th class="py-2 pr-2">Предупреждения</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${batchRows || '<tr><td colspan="8" class="py-3 text-gray-500">No batch rows available.</td></tr>'}
+                            ${batchRows || '<tr><td colspan="8" class="py-3 text-gray-500">Нет строк пакетных прогонов.</td></tr>'}
                         </tbody>
                     </table>
                 </div>
             </div>` : ''}
 
             <div class="border-t pt-4 mt-4">
-                <h4 class="font-semibold mb-2">Alerts</h4>
-                ${alertRows || '<div class="text-sm text-gray-500">No active alerts.</div>'}
+                <h4 class="font-semibold mb-2">Алерты</h4>
+                ${alertRows || '<div class="text-sm text-gray-500">Активных алертов нет.</div>'}
             </div>
 
             <div class="border-t pt-4 mt-4">
-                <h4 class="font-semibold mb-2">Run History (domain trend)</h4>
+                <h4 class="font-semibold mb-2">История запусков (тренд домена)</h4>
                 <div class="overflow-auto">
                     <table class="w-full min-w-[920px] text-sm">
                         <thead>
                             <tr class="text-left text-xs text-slate-500 border-b">
                                 <th class="py-2 pr-2">#</th>
-                                <th class="py-2 pr-2">Run time</th>
+                                <th class="py-2 pr-2">Время запуска</th>
                                 <th class="py-2 pr-2">Indexable</th>
                                 <th class="py-2 pr-2">Crawlable</th>
                                 <th class="py-2 pr-2">Renderable</th>
-                                <th class="py-2 pr-2">Avg ms</th>
-                                <th class="py-2 pr-2">Critical</th>
-                                <th class="py-2 pr-2">Warnings</th>
+                                <th class="py-2 pr-2">Среднее, мс</th>
+                                <th class="py-2 pr-2">Критично</th>
+                                <th class="py-2 pr-2">Предупреждения</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${trendRows || '<tr><td colspan="8" class="py-3 text-gray-500">No history for this domain yet.</td></tr>'}
+                            ${trendRows || '<tr><td colspan="8" class="py-3 text-gray-500">Для этого домена пока нет истории.</td></tr>'}
                         </tbody>
                     </table>
                 </div>
@@ -2915,25 +2915,25 @@ function generateBotHTML(result) {
 
             <div class="border-t pt-4">
                 <div class="flex items-center justify-between mb-2">
-                    <h4 class="font-semibold">Bot Results</h4>
+                    <h4 class="font-semibold">Результаты по ботам</h4>
                     <div class="flex items-center gap-2 text-sm">
-                        <label for="bot-quick-filter" class="text-gray-600">Quick:</label>
+                        <label for="bot-quick-filter" class="text-gray-600">Быстрый фильтр:</label>
                         <select id="bot-quick-filter" class="border rounded px-2 py-1" onchange="applyBotTableControls()">
-                            <option value="all">all</option>
-                            <option value="critical">critical bots only</option>
-                            <option value="search">search only</option>
-                            <option value="ai">ai only</option>
+                            <option value="all">все</option>
+                            <option value="critical">только критичные боты</option>
+                            <option value="search">только поисковые</option>
+                            <option value="ai">только AI</option>
                         </select>
-                        <label for="bot-category-filter" class="text-gray-600">Filter:</label>
+                        <label for="bot-category-filter" class="text-gray-600">Фильтр:</label>
                         <select id="bot-category-filter" class="border rounded px-2 py-1" onchange="applyBotTableControls()">
                             ${categoryOptions.map((cat) => `<option value="${cat}">${cat}</option>`).join('')}
                         </select>
-                        <label for="bot-sort-select" class="text-gray-600">Sort:</label>
+                        <label for="bot-sort-select" class="text-gray-600">Сортировка:</label>
                         <select id="bot-sort-select" class="border rounded px-2 py-1" onchange="applyBotTableControls()">
-                            <option value="bot_az">bot A-Z</option>
-                            <option value="indexable_first">non-indexable first</option>
-                            <option value="response_asc">response asc</option>
-                            <option value="response_desc">response desc</option>
+                            <option value="bot_az">бот A-Z</option>
+                            <option value="indexable_first">сначала неиндексируемые</option>
+                            <option value="response_asc">ответ по возрастанию</option>
+                            <option value="response_desc">ответ по убыванию</option>
                         </select>
                     </div>
                 </div>
@@ -2942,129 +2942,129 @@ function generateBotHTML(result) {
                         <thead>
                             <tr class="text-left text-xs text-slate-500 border-b">
                                 <th class="py-2 pr-2">Bot</th>
-                                <th class="py-2 pr-2">Category</th>
+                                <th class="py-2 pr-2">Категория</th>
                                 <th class="py-2 pr-2">HTTP/Error</th>
-                                <th class="py-2 pr-2">Response</th>
-                                <th class="py-2 pr-2">Reachable</th>
-                                <th class="py-2 pr-2">Indexable</th>
-                                <th class="py-2 pr-2">Reason</th>
+                                <th class="py-2 pr-2">Ответ</th>
+                                <th class="py-2 pr-2">Доступен</th>
+                                <th class="py-2 pr-2">Индексируемо</th>
+                                <th class="py-2 pr-2">Причина</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${botRowsHtml || '<tr><td colspan="7" class="py-3 text-gray-500">No bot rows available.</td></tr>'}
+                            ${botRowsHtml || '<tr><td colspan="7" class="py-3 text-gray-500">Нет строк по ботам.</td></tr>'}
                         </tbody>
                     </table>
                 </div>
             </div>
 
             <div class="border-t pt-4 mt-4">
-                <h4 class="font-semibold mb-2">Category Matrix</h4>
+                <h4 class="font-semibold mb-2">Матрица категорий</h4>
                 <div class="overflow-auto">
                     <table class="w-full min-w-[760px]">
                         <thead>
                             <tr class="text-left text-xs text-slate-500 border-b">
-                                <th class="py-2 pr-2">Category</th>
-                                <th class="py-2 pr-2">Total</th>
-                                <th class="py-2 pr-2">Reachable</th>
-                                <th class="py-2 pr-2">Indexable</th>
-                                <th class="py-2 pr-2">Non-indexable</th>
-                                <th class="py-2 pr-2">Indexable %</th>
-                                <th class="py-2 pr-2">Risk score</th>
+                                <th class="py-2 pr-2">Категория</th>
+                                <th class="py-2 pr-2">Всего</th>
+                                <th class="py-2 pr-2">Доступно</th>
+                                <th class="py-2 pr-2">Индексируемо</th>
+                                <th class="py-2 pr-2">Не индексируемо</th>
+                                <th class="py-2 pr-2">Индексируемо, %</th>
+                                <th class="py-2 pr-2">Оценка риска</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${matrixRows || '<tr><td colspan="7" class="py-3 text-gray-500">No category stats available.</td></tr>'}
+                            ${matrixRows || '<tr><td colspan="7" class="py-3 text-gray-500">Нет статистики по категориям.</td></tr>'}
                         </tbody>
                     </table>
                 </div>
             </div>
 
             <div class="border-t pt-4 mt-4">
-                <h4 class="font-semibold mb-2">Priority Blockers (by bot criticality)</h4>
+                <h4 class="font-semibold mb-2">Приоритетные блокеры (по критичности ботов)</h4>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     ${blockersHtml}
                 </div>
             </div>
 
             <div class="border-t pt-4 mt-4">
-                <h4 class="font-semibold mb-2">Playbooks</h4>
+                <h4 class="font-semibold mb-2">Плейбуки</h4>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     ${playbooksHtml}
                 </div>
             </div>
 
             <div class="border-t pt-4 mt-4">
-                <h4 class="font-semibold mb-2">Action Center (by owner)</h4>
+                <h4 class="font-semibold mb-2">Центр действий (по владельцу)</h4>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    ${ownerBlocks || '<div class="text-sm text-gray-500">No owner actions.</div>'}
+                    ${ownerBlocks || '<div class="text-sm text-gray-500">Нет действий по владельцам.</div>'}
                 </div>
             </div>
 
             <div class="border-t pt-4 mt-4">
-                <h4 class="font-semibold mb-2">Robots Policy Linter</h4>
+                <h4 class="font-semibold mb-2">Линтер Robots Policy</h4>
                 <div class="overflow-auto">
                     <table class="w-full min-w-[760px]">
-                        <thead><tr class="text-left text-xs text-slate-500 border-b"><th class="py-2 pr-2">Severity</th><th class="py-2 pr-2">Code</th><th class="py-2 pr-2">Message</th></tr></thead>
-                        <tbody>${linterRows || '<tr><td colspan="3" class="py-3 text-gray-500">No linter findings.</td></tr>'}</tbody>
+                        <thead><tr class="text-left text-xs text-slate-500 border-b"><th class="py-2 pr-2">Критичность</th><th class="py-2 pr-2">Код</th><th class="py-2 pr-2">Сообщение</th></tr></thead>
+                        <tbody>${linterRows || '<tr><td colspan="3" class="py-3 text-gray-500">Линтер не нашел замечаний.</td></tr>'}</tbody>
                     </table>
                 </div>
             </div>
 
             <div class="border-t pt-4 mt-4">
-                <h4 class="font-semibold mb-2">Allowlist Simulator</h4>
+                <h4 class="font-semibold mb-2">Симулятор allowlist</h4>
                 <div class="overflow-auto">
                     <table class="w-full min-w-[760px]">
-                        <thead><tr class="text-left text-xs text-slate-500 border-b"><th class="py-2 pr-2">Category</th><th class="py-2 pr-2">Affected bots</th><th class="py-2 pr-2">Delta renderable</th><th class="py-2 pr-2">Delta indexable</th><th class="py-2 pr-2">Projected indexable</th></tr></thead>
-                        <tbody>${allowlistRows || '<tr><td colspan="5" class="py-3 text-gray-500">No simulation data.</td></tr>'}</tbody>
+                        <thead><tr class="text-left text-xs text-slate-500 border-b"><th class="py-2 pr-2">Категория</th><th class="py-2 pr-2">Затронуто ботов</th><th class="py-2 pr-2">Дельта рендеринга</th><th class="py-2 pr-2">Дельта индексации</th><th class="py-2 pr-2">Прогноз индексируемых</th></tr></thead>
+                        <tbody>${allowlistRows || '<tr><td colspan="5" class="py-3 text-gray-500">Нет данных симуляции.</td></tr>'}</tbody>
                     </table>
                 </div>
             </div>
 
             <div class="border-t pt-4 mt-4">
-                <h4 class="font-semibold mb-2">Top Issues</h4>
-                ${issueRows || '<div class="text-sm text-gray-500">No issues detected</div>'}
+                <h4 class="font-semibold mb-2">Топ проблем</h4>
+                ${issueRows || '<div class="text-sm text-gray-500">Проблем не обнаружено</div>'}
             </div>
 
             <div class="border-t pt-4 mt-4">
-                <h4 class="font-semibold mb-2">Response Example: Bot vs WAF Bypass Probe</h4>
+                <h4 class="font-semibold mb-2">Пример ответа: бот vs WAF bypass</h4>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                     <div class="rounded-lg border border-rose-200 bg-rose-50 p-3">
-                        <div class="font-semibold text-rose-900 mb-2">Bot response sample ${sampleRow ? `(${escapeHtml(sampleRow.bot_name || 'bot')})` : ''}</div>
-                        <div class="text-rose-700 mb-2">HTTP: ${sampleRow?.status ?? 'n/a'} | WAF: ${(sampleRow?.waf_cdn_signal || {}).detected ? 'detected' : 'no'}</div>
-                        <div class="text-rose-900 whitespace-pre-wrap break-words">${escapeHtml(botSample || 'No bot sample available.')}</div>
+                        <div class="font-semibold text-rose-900 mb-2">Пример ответа бота ${sampleRow ? `(${escapeHtml(sampleRow.bot_name || 'bot')})` : ''}</div>
+                        <div class="text-rose-700 mb-2">HTTP: ${sampleRow?.status ?? 'н/д'} | WAF: ${(sampleRow?.waf_cdn_signal || {}).detected ? 'обнаружен' : 'нет'}</div>
+                        <div class="text-rose-900 whitespace-pre-wrap break-words">${escapeHtml(botSample || 'Нет примера ответа бота.')}</div>
                     </div>
                     <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-                        <div class="font-semibold text-emerald-900 mb-2">Bypass probe sample (browser-like request)</div>
-                        <div class="text-emerald-700 mb-2">HTTP: ${bypassProbe.status ?? 'n/a'} | WAF: ${(bypassProbe.waf_cdn_signal || {}).detected ? 'detected' : 'no'}</div>
-                        <div class="text-emerald-900 whitespace-pre-wrap break-words">${escapeHtml(bypassSample || bypassProbe.error || 'No bypass sample available.')}</div>
+                        <div class="font-semibold text-emerald-900 mb-2">Пример bypass-запроса (как браузер)</div>
+                        <div class="text-emerald-700 mb-2">HTTP: ${bypassProbe.status ?? 'н/д'} | WAF: ${(bypassProbe.waf_cdn_signal || {}).detected ? 'обнаружен' : 'нет'}</div>
+                        <div class="text-emerald-900 whitespace-pre-wrap break-words">${escapeHtml(bypassSample || bypassProbe.error || 'Нет примера bypass-ответа.')}</div>
                     </div>
                 </div>
             </div>
 
             <div class="border-t pt-4 mt-4">
-                <h4 class="font-semibold mb-2">Host Consistency</h4>
+                <h4 class="font-semibold mb-2">Консистентность host</h4>
                 <div class="text-sm ${((r.host_consistency || {}).consistent === false) ? 'text-amber-700' : 'text-green-700'}">
-                    ${((r.host_consistency || {}).consistent === false) ? 'Inconsistencies detected across host variants.' : 'Host variants look consistent.'}
+                    ${((r.host_consistency || {}).consistent === false) ? 'Обнаружены расхождения между вариантами host.' : 'Варианты host выглядят консистентно.'}
                 </div>
                 ${((r.host_consistency || {}).notes || []).length ? `<ul class="list-disc pl-5 text-sm text-gray-700 mt-2">${(r.host_consistency.notes || []).map(n => `<li>${n}</li>`).join('')}</ul>` : ''}
             </div>
 
             <div class="border-t pt-4 mt-4">
-                <h4 class="font-semibold mb-2">Evidence Pack (problem bots)</h4>
+                <h4 class="font-semibold mb-2">Пакет доказательств (проблемные боты)</h4>
                 <div class="overflow-auto">
                     <table class="w-full min-w-[980px]">
-                        <thead><tr class="text-left text-xs text-slate-500 border-b"><th class="py-2 pr-2">Bot</th><th class="py-2 pr-2">HTTP</th><th class="py-2 pr-2">Reason</th><th class="py-2 pr-2">WAF</th><th class="py-2 pr-2">Sample</th></tr></thead>
-                        <tbody>${evidenceTableRows || '<tr><td colspan="5" class="py-3 text-gray-500">No evidence rows.</td></tr>'}</tbody>
+                        <thead><tr class="text-left text-xs text-slate-500 border-b"><th class="py-2 pr-2">Бот</th><th class="py-2 pr-2">HTTP</th><th class="py-2 pr-2">Причина</th><th class="py-2 pr-2">WAF</th><th class="py-2 pr-2">Пример</th></tr></thead>
+                        <tbody>${evidenceTableRows || '<tr><td colspan="5" class="py-3 text-gray-500">Нет строк доказательств.</td></tr>'}</tbody>
                     </table>
                 </div>
             </div>
 
             <div class="border-t pt-4 mt-4">
-                <h4 class="font-semibold mb-2">Diff vs Baseline</h4>
+                <h4 class="font-semibold mb-2">Сравнение с baseline</h4>
                 ${
                     (r.baseline_diff || {}).has_baseline
-                        ? `<div class="overflow-auto"><table class="w-full min-w-[520px] text-sm"><thead><tr class="text-left text-xs text-slate-500 border-b"><th class="py-2 pr-2">Metric</th><th class="py-2 pr-2">Current</th><th class="py-2 pr-2">Baseline</th><th class="py-2 pr-2">Delta</th></tr></thead><tbody>${((r.baseline_diff.metrics || []).map(m => `<tr class="border-b"><td class="py-2 pr-2">${m.metric || ''}</td><td class="py-2 pr-2">${m.current ?? ''}</td><td class="py-2 pr-2">${m.baseline ?? ''}</td><td class="py-2 pr-2">${m.delta ?? ''}</td></tr>`).join('') || '<tr><td colspan=\"4\" class=\"py-2 text-gray-500\">No metrics.</td></tr>')}</tbody></table></div>`
-                        : `<div class="text-sm text-gray-500">${(r.baseline_diff || {}).message || 'No baseline found.'}</div>`
+                        ? `<div class="overflow-auto"><table class="w-full min-w-[520px] text-sm"><thead><tr class="text-left text-xs text-slate-500 border-b"><th class="py-2 pr-2">Метрика</th><th class="py-2 pr-2">Текущее</th><th class="py-2 pr-2">Базовое</th><th class="py-2 pr-2">Дельта</th></tr></thead><tbody>${((r.baseline_diff.metrics || []).map(m => `<tr class="border-b"><td class="py-2 pr-2">${m.metric || ''}</td><td class="py-2 pr-2">${m.current ?? ''}</td><td class="py-2 pr-2">${m.baseline ?? ''}</td><td class="py-2 pr-2">${m.delta ?? ''}</td></tr>`).join('') || '<tr><td colspan=\"4\" class=\"py-2 text-gray-500\">Нет метрик.</td></tr>')}</tbody></table></div>`
+                        : `<div class="text-sm text-gray-500">${(r.baseline_diff || {}).message || 'Baseline не найден.'}</div>`
                 }
             </div>
         </div>
@@ -3079,7 +3079,7 @@ function generateSiteAnalysisHTML(result) {
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="text-lg font-semibold">Анализ сайта</h3>
                     <button onclick="copyCurrentTaskJson()" class="text-blue-600 hover:text-blue-800 text-sm">
-                        <i class="fas fa-copy mr-1"></i>Copy JSON
+                        <i class="fas fa-copy mr-1"></i>Копировать JSON
                     </button>
                 </div>
                 <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded-r">
@@ -3185,7 +3185,7 @@ function generateSiteAnalysisHTML(result) {
                         <p class="text-gray-500 text-sm break-all">${result.url}</p>
                     </div>
                     <button onclick="copyCurrentTaskJson()" class="text-blue-600 hover:text-blue-800 text-sm">
-                        <i class="fas fa-copy mr-1"></i>Copy JSON
+                        <i class="fas fa-copy mr-1"></i>Копировать JSON
                     </button>
                 </div>
                 
@@ -3424,10 +3424,10 @@ function generateRenderAuditHTML(result) {
         return deltaBadge(delta);
     };
     const impactBadge = (impactScore) => {
-        if (impactScore >= 4) return '<span class="px-2 py-0.5 rounded-full text-xs bg-rose-100 text-rose-700">high</span>';
-        if (impactScore >= 2) return '<span class="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700">medium</span>';
-        if (impactScore >= 1) return '<span class="px-2 py-0.5 rounded-full text-xs bg-sky-100 text-sky-700">low</span>';
-        return '<span class="px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-700">none</span>';
+        if (impactScore >= 4) return '<span class="px-2 py-0.5 rounded-full text-xs bg-rose-100 text-rose-700">высокое</span>';
+        if (impactScore >= 2) return '<span class="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700">среднее</span>';
+        if (impactScore >= 1) return '<span class="px-2 py-0.5 rounded-full text-xs bg-sky-100 text-sky-700">низкое</span>';
+        return '<span class="px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-700">нет</span>';
     };
     const contentDiffRowsData = variants.map((v) => {
         const raw = v.raw || {};
@@ -3566,8 +3566,8 @@ function generateRenderAuditHTML(result) {
         if (!v) {
             return `
                 <div class="bg-white rounded-2xl shadow-lg border border-rose-200 p-6">
-                    <h4 class="font-semibold text-rose-700 mb-2">Profile unavailable</h4>
-                    <div class="text-sm text-rose-700">Variant payload is missing in the render result.</div>
+                    <h4 class="font-semibold text-rose-700 mb-2">Профиль недоступен</h4>
+                    <div class="text-sm text-rose-700">В результате render отсутствует payload вариантов.</div>
                 </div>
             `;
         }
@@ -3594,30 +3594,30 @@ function generateRenderAuditHTML(result) {
             <div class="bg-gradient-to-br ${accentBox} rounded-2xl shadow-lg border p-6">
                 <div class="flex items-start justify-between mb-3">
                     <div>
-                        <h4 class="text-lg font-semibold text-slate-800">${escapeHtml(v.variant_label || v.variant_id || 'Variant')}</h4>
+                        <h4 class="text-lg font-semibold text-slate-800">${escapeHtml(v.variant_label || v.variant_id || 'Вариант')}</h4>
                         <div class="mt-1 inline-flex text-[11px] px-2 py-1 rounded-full ${profilePill}">${escapeHtml(v.profile_type || (v.mobile ? 'mobile' : 'desktop'))}</div>
                     </div>
-                    <span class="text-xs px-2 py-1 rounded-full ${scoreBadgeClass(scoreValue)}">Score ${escapeHtml(scoreValue.toFixed(1))}</span>
+                    <span class="text-xs px-2 py-1 rounded-full ${scoreBadgeClass(scoreValue)}">Оценка ${escapeHtml(scoreValue.toFixed(1))}</span>
                 </div>
                 <div class="grid grid-cols-2 gap-2 text-sm mb-3">
-                    <div class="bg-white/70 rounded-lg p-2"><span class="text-slate-600">Missing:</span> <span class="font-medium">${escapeHtml(miss)}</span></div>
-                    <div class="bg-white/70 rounded-lg p-2"><span class="text-slate-600">Missing %:</span> <span class="font-medium">${escapeHtml(missPctVal)}%</span></div>
-                    <div class="bg-white/70 rounded-lg p-2"><span class="text-slate-600">JS render:</span> <span class="font-medium">${escapeHtml(renderedMs)} ms</span></div>
+                    <div class="bg-white/70 rounded-lg p-2"><span class="text-slate-600">Потери:</span> <span class="font-medium">${escapeHtml(miss)}</span></div>
+                    <div class="bg-white/70 rounded-lg p-2"><span class="text-slate-600">Потери %:</span> <span class="font-medium">${escapeHtml(missPctVal)}%</span></div>
+                    <div class="bg-white/70 rounded-lg p-2"><span class="text-slate-600">JS-рендер:</span> <span class="font-medium">${escapeHtml(renderedMs)} мс</span></div>
                     <div class="bg-white/70 rounded-lg p-2"><span class="text-slate-600">SEO fail/warn:</span> <span class="font-medium">${escapeHtml(seoReq.fail || 0)}/${escapeHtml(seoReq.warn || 0)}</span></div>
-                    <div class="bg-white/70 rounded-lg p-2"><span class="text-slate-600">Screenshots:</span> <span class="font-medium">${escapeHtml(shotList.length)}</span></div>
+                    <div class="bg-white/70 rounded-lg p-2"><span class="text-slate-600">Скриншоты:</span> <span class="font-medium">${escapeHtml(shotList.length)}</span></div>
                     <div class="bg-white/70 rounded-lg p-2"><span class="text-slate-600">Viewport:</span> <span class="font-medium">${escapeHtml(emulation.viewport ? `${emulation.viewport.width}x${emulation.viewport.height}` : '-')}</span></div>
                 </div>
                 ${firstShot ? `
                     <div class="rounded-xl overflow-hidden border border-white/70 shadow cursor-zoom-in mb-3" onclick="openMobileLightbox(${Math.max(0, shotIndex)})">
-                        <img src="${escapeHtml(firstShot)}" alt="${escapeHtml(v.variant_label || v.variant_id || 'Variant')}" class="w-full h-44 object-cover">
+                        <img src="${escapeHtml(firstShot)}" alt="${escapeHtml(v.variant_label || v.variant_id || 'Вариант')}" class="w-full h-44 object-cover">
                     </div>
-                ` : '<div class="text-sm text-slate-500 mb-3">No screenshots available.</div>'}
+                ` : '<div class="text-sm text-slate-500 mb-3">Скриншоты недоступны.</div>'}
                 ${issuePreview ? `
                     <div class="text-sm">
-                        <div class="font-medium mb-1">Top variant issues</div>
+                        <div class="font-medium mb-1">Топ проблем варианта</div>
                         <ul class="list-disc pl-5 text-slate-700">${issuePreview}</ul>
                     </div>
-                ` : '<div class="text-sm text-emerald-700">No issues in this variant.</div>'}
+                ` : '<div class="text-sm text-emerald-700">В этом варианте проблем нет.</div>'}
             </div>
         `;
     };
@@ -3638,145 +3638,145 @@ function generateRenderAuditHTML(result) {
             const pType = String(v.profile_type || (v.mobile ? 'mobile' : 'desktop'));
             return `<li>${escapeHtml(v.variant_id || '-')} | ${escapeHtml(v.variant_label || '-')} | profile=${escapeHtml(pType)} | issues=${escapeHtml((v.issues || []).length)} | screenshots=${escapeHtml(dShots.join(',') || '-')}</li>`;
         }).join('')}</ul>`
-        : '<div class="text-xs text-slate-500">No variant diagnostics in payload.</div>';
+        : '<div class="text-xs text-slate-500">В payload нет диагностики по вариантам.</div>';
 
     return `
         <div class="space-y-6 renderpro-results">
             <div class="bg-white rounded-xl shadow-md p-6">
                 <div class="flex justify-between items-center mb-4">
                     <div>
-                        <h3 class="text-lg font-semibold">Render Audit</h3>
+                        <h3 class="text-lg font-semibold">Render-аудит</h3>
                         <div class="mt-2 flex flex-wrap gap-2">
-                            <span class="renderpro-chip">JS vs no-JS parity</span>
-                            <span class="renderpro-chip">Variant gap matrix</span>
-                            <span class="renderpro-chip">Actionable insights</span>
+                            <span class="renderpro-chip">Сравнение JS и no-JS</span>
+                            <span class="renderpro-chip">Матрица расхождений вариантов</span>
+                            <span class="renderpro-chip">Практические инсайты</span>
                         </div>
                     </div>
                     <div class="flex gap-3">
-                        <button onclick="downloadRenderDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>Download DOCX</button>
-                        <button onclick="downloadRenderXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>Download XLSX</button>
-                        <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Copy JSON</button>
+                        <button onclick="downloadRenderDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>Скачать DOCX</button>
+                        <button onclick="downloadRenderXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>Скачать XLSX</button>
+                        <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
                     </div>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
                     <div class="rounded-xl border bg-slate-50 p-3">
-                        <div class="text-xs text-slate-500">Variants</div>
+                        <div class="text-xs text-slate-500">Варианты</div>
                         <div class="text-xl font-semibold text-slate-900">${escapeHtml(summary.variants_total || variants.length || 0)}</div>
                     </div>
                     <div class="rounded-xl border bg-slate-50 p-3">
-                        <div class="text-xs text-slate-500">Render score</div>
-                        <div class="text-xl font-semibold ${score >= 80 ? 'text-emerald-700' : score >= 60 ? 'text-amber-700' : 'text-rose-700'}">${escapeHtml(summary.score ?? 'n/a')}</div>
+                        <div class="text-xs text-slate-500">Оценка рендера</div>
+                        <div class="text-xl font-semibold ${score >= 80 ? 'text-emerald-700' : score >= 60 ? 'text-amber-700' : 'text-rose-700'}">${escapeHtml(summary.score ?? 'н/д')}</div>
                         <div class="mt-1 h-1.5 bg-slate-200 rounded-full overflow-hidden"><div class="h-full ${score >= 80 ? 'bg-emerald-500' : score >= 60 ? 'bg-amber-500' : 'bg-rose-500'}" style="width:${scorePct}%"></div></div>
                     </div>
                     <div class="rounded-xl border bg-slate-50 p-3">
-                        <div class="text-xs text-slate-500">Missing content</div>
+                        <div class="text-xs text-slate-500">Потери контента</div>
                         <div class="text-xl font-semibold text-slate-900">${escapeHtml(summary.missing_total || 0)}</div>
-                        <div class="mt-1 text-xs text-slate-600">${escapeHtml(summary.avg_missing_pct || 0)}% avg</div>
+                        <div class="mt-1 text-xs text-slate-600">${escapeHtml(summary.avg_missing_pct || 0)}% в среднем</div>
                     </div>
                     <div class="rounded-xl border bg-slate-50 p-3">
-                        <div class="text-xs text-slate-500">Avg JS render</div>
-                        <div class="text-xl font-semibold text-slate-900">${escapeHtml(Math.round(Number(summary.avg_js_load_ms || 0)))} ms</div>
-                        <div class="mt-1 text-xs text-slate-600">Engine: ${escapeHtml(r.engine || 'legacy')}</div>
+                        <div class="text-xs text-slate-500">Средний JS-рендер</div>
+                        <div class="text-xl font-semibold text-slate-900">${escapeHtml(Math.round(Number(summary.avg_js_load_ms || 0)))} мс</div>
+                        <div class="mt-1 text-xs text-slate-600">Движок: ${escapeHtml(r.engine || 'legacy')}</div>
                     </div>
                 </div>
                 <div class="grid grid-cols-3 gap-2 mt-3 text-sm">
-                    <div class="rounded-lg border border-rose-200 bg-rose-50 p-2 text-center"><span class="text-rose-700">Critical</span><div class="font-semibold text-rose-800">${escapeHtml(summary.critical_issues || 0)}</div></div>
-                    <div class="rounded-lg border border-amber-200 bg-amber-50 p-2 text-center"><span class="text-amber-700">Warning</span><div class="font-semibold text-amber-800">${escapeHtml(summary.warning_issues || 0)}</div></div>
-                    <div class="rounded-lg border border-blue-200 bg-blue-50 p-2 text-center"><span class="text-blue-700">Info</span><div class="font-semibold text-blue-800">${escapeHtml(summary.info_issues || 0)}</div></div>
+                    <div class="rounded-lg border border-rose-200 bg-rose-50 p-2 text-center"><span class="text-rose-700">Критично</span><div class="font-semibold text-rose-800">${escapeHtml(summary.critical_issues || 0)}</div></div>
+                    <div class="rounded-lg border border-amber-200 bg-amber-50 p-2 text-center"><span class="text-amber-700">Предупреждение</span><div class="font-semibold text-amber-800">${escapeHtml(summary.warning_issues || 0)}</div></div>
+                    <div class="rounded-lg border border-blue-200 bg-blue-50 p-2 text-center"><span class="text-blue-700">Инфо</span><div class="font-semibold text-blue-800">${escapeHtml(summary.info_issues || 0)}</div></div>
                 </div>
                 <div class="mt-3 text-xs text-slate-500 break-all">URL: ${escapeHtml(result.url || '')}</div>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
-                <h4 class="font-semibold mb-3">Render Gap Matrix (JS vs no-JS)</h4>
+                <h4 class="font-semibold mb-3">Матрица расхождений рендера (JS vs no-JS)</h4>
                 <table class="w-full min-w-[940px]">
                     <thead>
                         <tr class="text-left text-xs text-slate-500 border-b">
-                            <th class="py-2 pr-2">Variant</th>
-                            <th class="py-2 pr-2">Profile</th>
-                            <th class="py-2 pr-2">Score</th>
-                            <th class="py-2 pr-2">Missing</th>
-                            <th class="py-2 pr-2">Missing %</th>
-                            <th class="py-2 pr-2">JS render</th>
+                            <th class="py-2 pr-2">Вариант</th>
+                            <th class="py-2 pr-2">Профиль</th>
+                                <th class="py-2 pr-2">Оценка</th>
+                            <th class="py-2 pr-2">Потери</th>
+                            <th class="py-2 pr-2">Потери %</th>
+                            <th class="py-2 pr-2">JS-рендер</th>
                             <th class="py-2 pr-2">SEO fail</th>
                             <th class="py-2 pr-2">SEO warn</th>
-                            <th class="py-2 pr-2">Shots</th>
+                            <th class="py-2 pr-2">Скриншоты</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${renderGapRowsHtml || '<tr><td colspan="9" class="py-3 text-sm text-slate-500">No variant rows in payload.</td></tr>'}
+                        ${renderGapRowsHtml || '<tr><td colspan="9" class="py-3 text-sm text-slate-500">В payload нет строк вариантов.</td></tr>'}
                     </tbody>
                 </table>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
-                <h4 class="font-semibold mb-3">JS vs no-JS Content Diff</h4>
+                <h4 class="font-semibold mb-3">Дифф контента JS vs no-JS</h4>
                 <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 mb-4">
                     <div class="rounded-lg border bg-slate-50 p-2">
-                        <div class="text-[11px] uppercase tracking-wide text-slate-500">Title changed</div>
+                        <div class="text-[11px] uppercase tracking-wide text-slate-500">Title изменен</div>
                         <div class="text-base font-semibold text-slate-900">${escapeHtml(diffSummary.titleChanged)}</div>
-                        <div class="text-[11px] text-slate-500">${escapeHtml(summaryRatio(diffSummary.titleChanged))} variants</div>
+                        <div class="text-[11px] text-slate-500">${escapeHtml(summaryRatio(diffSummary.titleChanged))} вариантов</div>
                     </div>
                     <div class="rounded-lg border bg-slate-50 p-2">
-                        <div class="text-[11px] uppercase tracking-wide text-slate-500">Description changed</div>
+                        <div class="text-[11px] uppercase tracking-wide text-slate-500">Description изменен</div>
                         <div class="text-base font-semibold text-slate-900">${escapeHtml(diffSummary.descChanged)}</div>
-                        <div class="text-[11px] text-slate-500">${escapeHtml(summaryRatio(diffSummary.descChanged))} variants</div>
+                        <div class="text-[11px] text-slate-500">${escapeHtml(summaryRatio(diffSummary.descChanged))} вариантов</div>
                     </div>
                     <div class="rounded-lg border bg-slate-50 p-2">
-                        <div class="text-[11px] uppercase tracking-wide text-slate-500">H1 changed</div>
+                        <div class="text-[11px] uppercase tracking-wide text-slate-500">H1 изменен</div>
                         <div class="text-base font-semibold text-slate-900">${escapeHtml(diffSummary.h1Changed)}</div>
-                        <div class="text-[11px] text-slate-500">${escapeHtml(summaryRatio(diffSummary.h1Changed))} variants</div>
+                        <div class="text-[11px] text-slate-500">${escapeHtml(summaryRatio(diffSummary.h1Changed))} вариантов</div>
                     </div>
                     <div class="rounded-lg border bg-slate-50 p-2">
-                        <div class="text-[11px] uppercase tracking-wide text-slate-500">Images changed</div>
+                        <div class="text-[11px] uppercase tracking-wide text-slate-500">Изображения изменены</div>
                         <div class="text-base font-semibold text-slate-900">${escapeHtml(diffSummary.imagesChanged)}</div>
-                        <div class="text-[11px] text-slate-500">${escapeHtml(summaryRatio(diffSummary.imagesChanged))} variants</div>
+                        <div class="text-[11px] text-slate-500">${escapeHtml(summaryRatio(diffSummary.imagesChanged))} вариантов</div>
                     </div>
                     <div class="rounded-lg border bg-slate-50 p-2">
-                        <div class="text-[11px] uppercase tracking-wide text-slate-500">Links changed</div>
+                        <div class="text-[11px] uppercase tracking-wide text-slate-500">Ссылки изменены</div>
                         <div class="text-base font-semibold text-slate-900">${escapeHtml(diffSummary.linksChanged)}</div>
-                        <div class="text-[11px] text-slate-500">${escapeHtml(summaryRatio(diffSummary.linksChanged))} variants</div>
+                        <div class="text-[11px] text-slate-500">${escapeHtml(summaryRatio(diffSummary.linksChanged))} вариантов</div>
                     </div>
                     <div class="rounded-lg border bg-rose-50 border-rose-200 p-2">
-                        <div class="text-[11px] uppercase tracking-wide text-rose-600">High impact</div>
+                        <div class="text-[11px] uppercase tracking-wide text-rose-600">Высокий импакт</div>
                         <div class="text-base font-semibold text-rose-800">${escapeHtml(diffSummary.highImpact)}</div>
-                        <div class="text-[11px] text-rose-600">>=4 changed metrics</div>
+                        <div class="text-[11px] text-rose-600">>=4 измененных метрик</div>
                     </div>
                 </div>
                 <div class="mb-4">
                     <div class="flex items-center justify-between mb-2">
-                        <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Top divergence variants</div>
-                        <div class="text-[11px] text-slate-500">Delta: positive means JS adds content, negative means JS loses content</div>
+                        <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Топ вариантов с расхождениями</div>
+                        <div class="text-[11px] text-slate-500">Delta: положительное значение значит JS добавляет контент, отрицательное - теряет</div>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
-                        ${topDivergencesHtml || '<div class="text-sm text-slate-500">No meaningful JS/no-JS divergences.</div>'}
+                        ${topDivergencesHtml || '<div class="text-sm text-slate-500">Нет значимых расхождений JS/no-JS.</div>'}
                     </div>
                 </div>
                 <table class="w-full min-w-[1900px]">
                     <thead>
                         <tr class="text-left text-xs text-slate-500 border-b">
-                            <th class="py-2 pr-2">Variant</th>
-                            <th class="py-2 pr-2">Profile</th>
-                            <th class="py-2 pr-2">Impact</th>
+                            <th class="py-2 pr-2">Вариант</th>
+                            <th class="py-2 pr-2">Профиль</th>
+                            <th class="py-2 pr-2">Импакт</th>
                             <th class="py-2 pr-2">Title (no-JS)</th>
                             <th class="py-2 pr-2">Title (JS)</th>
-                            <th class="py-2 pr-2">Delta</th>
+                            <th class="py-2 pr-2">Дельта</th>
                             <th class="py-2 pr-2">Description (no-JS)</th>
                             <th class="py-2 pr-2">Description (JS)</th>
-                            <th class="py-2 pr-2">Delta</th>
+                            <th class="py-2 pr-2">Дельта</th>
                             <th class="py-2 pr-2">H1 (no-JS)</th>
                             <th class="py-2 pr-2">H1 (JS)</th>
-                            <th class="py-2 pr-2">Delta</th>
+                            <th class="py-2 pr-2">Дельта</th>
                             <th class="py-2 pr-2">Images (no-JS)</th>
                             <th class="py-2 pr-2">Images (JS)</th>
-                            <th class="py-2 pr-2">Delta</th>
+                            <th class="py-2 pr-2">Дельта</th>
                             <th class="py-2 pr-2">Links (no-JS)</th>
                             <th class="py-2 pr-2">Links (JS)</th>
-                            <th class="py-2 pr-2">Delta</th>
+                            <th class="py-2 pr-2">Дельта</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${contentDiffRowsHtml || '<tr><td colspan="18" class="py-3 text-sm text-slate-500">No raw/rendered content stats in payload.</td></tr>'}
+                        ${contentDiffRowsHtml || '<tr><td colspan="18" class="py-3 text-sm text-slate-500">В payload нет статистики raw/rendered контента.</td></tr>'}
                     </tbody>
                 </table>
             </div>
@@ -3788,37 +3788,37 @@ function generateRenderAuditHTML(result) {
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
-                    <h4 class="font-semibold mb-3">Issue Type Overview</h4>
+                    <h4 class="font-semibold mb-3">Обзор типов проблем</h4>
                     <table class="w-full min-w-[520px]">
                         <thead>
                             <tr class="text-left text-xs text-slate-500 border-b">
-                                <th class="py-2 pr-2">Code</th>
-                                <th class="py-2 pr-2">Total</th>
-                                <th class="py-2 pr-2">Critical</th>
-                                <th class="py-2 pr-2">Warning</th>
-                                <th class="py-2 pr-2">Info</th>
+                                <th class="py-2 pr-2">Код</th>
+                                <th class="py-2 pr-2">Всего</th>
+                                <th class="py-2 pr-2">Критично</th>
+                                <th class="py-2 pr-2">Предупреждение</th>
+                                <th class="py-2 pr-2">Инфо</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${issueCodeRowsHtml || '<tr><td colspan="5" class="py-3 text-sm text-slate-500">No issue code stats.</td></tr>'}
+                            ${issueCodeRowsHtml || '<tr><td colspan="5" class="py-3 text-sm text-slate-500">Нет статистики по кодам проблем.</td></tr>'}
                         </tbody>
                     </table>
                 </div>
                 <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold mb-3">Actionable Recommendations</h4>
+                    <h4 class="font-semibold mb-3">Практические рекомендации</h4>
                     <div class="grid grid-cols-1 gap-3">
-                        ${recommendationCardsHtml || '<div class="text-sm text-slate-500">No recommendations available.</div>'}
+                        ${recommendationCardsHtml || '<div class="text-sm text-slate-500">Рекомендации недоступны.</div>'}
                     </div>
                 </div>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-2">Priority Issues</h4>
-                ${topIssuesHtml || '<div class="text-sm text-slate-500">No issues found.</div>'}
+                <h4 class="font-semibold mb-2">Приоритетные проблемы</h4>
+                ${topIssuesHtml || '<div class="text-sm text-slate-500">Проблемы не найдены.</div>'}
             </div>
 
             <details class="bg-white rounded-xl shadow-md p-4 border border-gray-100">
-                <summary class="cursor-pointer text-sm font-medium">Variant diagnostics (debug)</summary>
+                            <summary class="cursor-pointer text-sm font-medium">Диагностика вариантов (debug)</summary>
                 <div class="mt-3">${diagnosticsHtml}</div>
             </details>
         </div>
@@ -3832,7 +3832,7 @@ function generateMobileCheckHTML(result) {
 
     mobileLightboxItems = devices
         .filter(d => d.screenshot_url)
-        .map(d => ({ src: d.screenshot_url, caption: `${d.device_name} (${d.category || 'устройст'})` }));
+        .map(d => ({ src: d.screenshot_url, caption: `${d.device_name} (${d.category || 'устройство'})` }));
 
     const deviceCards = devices.map((d, idx) => `
         <div class="bg-white rounded-xl shadow-md p-4 border border-gray-100">
@@ -3840,7 +3840,7 @@ function generateMobileCheckHTML(result) {
                 <h4 class="font-semibold text-gray-800">${d.device_name}</h4>
                 <span class="text-xs px-2 py-1 rounded-full ${d.mobile_friendly ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}">${d.mobile_friendly ? '' : 'Проблемы'}</span>
             </div>
-            <div class="text-sm text-gray-600 mb-2">${d.viewport?.width || '-'}x${d.viewport?.height || '-'} | ${d.load_time_ms || 0}  | проблем: ${d.issues_count || 0}</div>
+            <div class="text-sm text-gray-600 mb-2">${d.viewport?.width || '-'}x${d.viewport?.height || '-'} | ${d.load_time_ms || 0} мс | проблем: ${d.issues_count || 0}</div>
             ${d.screenshot_url ? `
                 <div class="rounded-lg overflow-hidden border cursor-zoom-in" onclick="openMobileLightbox(${idx})">
                     <img src="${d.screenshot_url}" alt="${d.device_name}" class="w-full h-44 object-cover">
@@ -3860,7 +3860,7 @@ function generateMobileCheckHTML(result) {
     const topIssuesHtml = (issues || []).slice(0, 20).map(i => `
             <div class="py-2 border-b text-sm">
             <div class="font-medium ${i.severity === 'critical' ? 'text-red-700' : (i.severity === 'warning' ? 'text-amber-700' : 'text-blue-700')}">
-                ${(i.severity || 'info').toUpperCase()} | ${i.device || 'Устройст'}
+                ${(i.severity || 'info').toUpperCase()} | ${i.device || 'Устройство'}
             </div>
             <div class="text-gray-700">${i.title || ''}</div>
             <div class="text-gray-500">${i.details || ''}</div>
@@ -3877,7 +3877,7 @@ function generateMobileCheckHTML(result) {
                     <div class="flex gap-3">
                         <button onclick="downloadMobileDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>Скачать DOCX</button>
                         <button onclick="downloadMobileXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>Скачать XLSX (ошибки)</button>
-                        <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Copy JSON</button>
+                        <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
                     </div>
                 </div>
                 <p class="text-sm text-gray-600 mb-4">
@@ -3885,18 +3885,18 @@ function generateMobileCheckHTML(result) {
                 </p>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
-                    <div><span class="text-gray-600">Движ:</span> <span class="font-medium">${r.engine || 'legacy'}</span></div>
+                    <div><span class="text-gray-600">Движок:</span> <span class="font-medium">${r.engine || 'legacy'}</span></div>
                     <div><span class="text-gray-600">Устройств:</span> <span class="font-medium">${summary.total_devices || (r.devices_tested || []).length}</span></div>
                     <div><span class="text-gray-600">Оценка:</span> <span class="font-medium">${r.score ?? 'н/д'}</span></div>
                     <div><span class="text-gray-600">Мобильно-дружелюбно:</span> <span class="font-medium ${r.mobile_friendly ? 'text-green-600' : 'text-red-600'}">${r.mobile_friendly ? 'Да' : 'Нет'}</span></div>
                     <div><span class="text-gray-600">Критичных:</span> <span class="font-medium text-red-700">${summary.critical_issues || 0}</span></div>
                     <div><span class="text-gray-600">Предупреждений:</span> <span class="font-medium text-amber-700">${summary.warning_issues || 0}</span></div>
-                    <div><span class="text-gray-600">Сре загрузка:</span> <span class="font-medium">${summary.avg_load_time_ms || 0} </span></div>
+                    <div><span class="text-gray-600">Ср. загрузка:</span> <span class="font-medium">${summary.avg_load_time_ms || 0} мс</span></div>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                ${deviceCards || '<div class="text-sm text-gray-500">Нет результат  устройствам.</div>'}
+                ${deviceCards || '<div class="text-sm text-gray-500">Нет результатов по устройствам.</div>'}
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
@@ -4006,7 +4006,7 @@ function generateOnPageAuditHTML(result) {
         <div class="rounded-xl border p-3 ${v.score >= 80 ? 'bg-emerald-50 border-emerald-200' : (v.score >= 60 ? 'bg-amber-50 border-amber-200' : 'bg-rose-50 border-rose-200')}">
             <div class="text-xs uppercase tracking-wide text-gray-500">${k}</div>
             <div class="text-2xl font-semibold">${v.score ?? 0}</div>
-            <div class="text-xs text-gray-600">Issues: ${v.issues ?? 0}, C:${v.critical ?? 0}, W:${v.warning ?? 0}</div>
+            <div class="text-xs text-gray-600">Проблемы: ${v.issues ?? 0}, К:${v.critical ?? 0}, П:${v.warning ?? 0}</div>
         </div>
     `).join('');
     const queueRows = priorityQueue.slice(0, 12).map(q => `
@@ -4050,8 +4050,8 @@ function generateOnPageAuditHTML(result) {
         `;
     };
     const scoreBars = [
-        scoreBar('Overall Score', r.score ?? summary.score ?? 0, 'blue'),
-        scoreBar('Spam Score', scores.spam_score ?? summary.spam_score ?? 0, 'emerald'),
+        scoreBar('Общая оценка', r.score ?? summary.score ?? 0, 'blue'),
+        scoreBar('Spam-оценка', scores.spam_score ?? summary.spam_score ?? 0, 'emerald'),
         scoreBar('Keyword Coverage', keywordCoverage.coverage_pct ?? summary.keyword_coverage_pct ?? 0, 'indigo'),
         scoreBar('AI Risk', ai.ai_risk_composite ?? summary.ai_risk_composite ?? 0, 'rose'),
     ].join('');
@@ -4071,25 +4071,25 @@ function generateOnPageAuditHTML(result) {
             <div class="bg-white rounded-xl shadow-md p-6">
                 <div class="flex justify-between items-center mb-4">
                     <div>
-                        <h3 class="text-lg font-semibold">OnPage Audit</h3>
+                        <h3 class="text-lg font-semibold">OnPage-аудит</h3>
                         <p class="text-sm text-gray-500 break-all">${result.url || ''}</p>
                     </div>
                     <div class="flex flex-wrap items-center gap-3">
                         <button onclick="downloadOnpageDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>Скачать DOCX</button>
                         <button onclick="downloadOnpageXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>Скачать XLSX</button>
-                        <button onclick="copyOnpageTopFixes()" class="text-rose-700 hover:text-rose-900 text-sm"><i class="fas fa-bolt mr-1"></i>Copy Top Fixes</button>
-                        <button onclick="copyOnpageRecommendations()" class="text-indigo-700 hover:text-indigo-900 text-sm"><i class="fas fa-list-check mr-1"></i>Copy Recommendations</button>
-                        <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Copy JSON</button>
+                        <button onclick="copyOnpageTopFixes()" class="text-rose-700 hover:text-rose-900 text-sm"><i class="fas fa-bolt mr-1"></i>Копировать топ исправлений</button>
+                        <button onclick="copyOnpageRecommendations()" class="text-indigo-700 hover:text-indigo-900 text-sm"><i class="fas fa-list-check mr-1"></i>Копировать рекомендации</button>
+                        <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
                     </div>
                 </div>
                 <div class="grid grid-cols-2 md:grid-cols-7 gap-3 text-sm">
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Score</div><div class="text-xl font-semibold">${r.score ?? summary.score ?? 0}</div></div>
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Оценка</div><div class="text-xl font-semibold">${r.score ?? summary.score ?? 0}</div></div>
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Слова</div><div class="text-xl font-semibold">${content.word_count ?? 0}</div></div>
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Spam Score</div><div class="text-xl font-semibold">${scores.spam_score ?? summary.spam_score ?? 0}</div></div>
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">KW Coverage</div><div class="text-xl font-semibold">${keywordCoverage.coverage_pct ?? summary.keyword_coverage_pct ?? 0}%</div></div>
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">AI Risk</div><div class="text-xl font-semibold">${ai.ai_risk_composite ?? summary.ai_risk_composite ?? 0}</div></div>
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Critical</div><div class="text-xl font-semibold text-red-700">${summary.critical_issues ?? 0}</div></div>
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Warning</div><div class="text-xl font-semibold text-amber-700">${summary.warning_issues ?? 0}</div></div>
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Spam-оценка</div><div class="text-xl font-semibold">${scores.spam_score ?? summary.spam_score ?? 0}</div></div>
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Покрытие КС</div><div class="text-xl font-semibold">${keywordCoverage.coverage_pct ?? summary.keyword_coverage_pct ?? 0}%</div></div>
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">AI-риск</div><div class="text-xl font-semibold">${ai.ai_risk_composite ?? summary.ai_risk_composite ?? 0}</div></div>
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Критично</div><div class="text-xl font-semibold text-red-700">${summary.critical_issues ?? 0}</div></div>
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Предупреждение</div><div class="text-xl font-semibold text-amber-700">${summary.warning_issues ?? 0}</div></div>
                 </div>
             </div>
 
@@ -4097,19 +4097,19 @@ function generateOnPageAuditHTML(result) {
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="font-semibold mb-3">Schema</h4>
                     <div class="space-y-1 text-sm">
-                        <div><span class="text-gray-600">JSON-LD blocks:</span> <span class="font-medium">${schema.json_ld_blocks ?? 0}</span></div>
-                        <div><span class="text-gray-600">Valid JSON-LD:</span> <span class="font-medium">${schema.json_ld_valid_blocks ?? 0}</span></div>
-                        <div><span class="text-gray-600">Microdata items:</span> <span class="font-medium">${schema.microdata_items ?? 0}</span></div>
-                        <div><span class="text-gray-600">RDFa items:</span> <span class="font-medium">${schema.rdfa_items ?? 0}</span></div>
-                        <div><span class="text-gray-600">Types:</span> <span class="font-medium">${(schema.types || []).map(t => t.type).slice(0, 8).join(', ') || '-'}</span></div>
+                        <div><span class="text-gray-600">JSON-LD блоков:</span> <span class="font-medium">${schema.json_ld_blocks ?? 0}</span></div>
+                        <div><span class="text-gray-600">Валидных JSON-LD:</span> <span class="font-medium">${schema.json_ld_valid_blocks ?? 0}</span></div>
+                        <div><span class="text-gray-600">Элементов Microdata:</span> <span class="font-medium">${schema.microdata_items ?? 0}</span></div>
+                        <div><span class="text-gray-600">Элементов RDFa:</span> <span class="font-medium">${schema.rdfa_items ?? 0}</span></div>
+                        <div><span class="text-gray-600">Типы:</span> <span class="font-medium">${(schema.types || []).map(t => t.type).slice(0, 8).join(', ') || '-'}</span></div>
                     </div>
                 </div>
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="font-semibold mb-3">OpenGraph</h4>
                     <div class="space-y-1 text-sm">
-                        <div><span class="text-gray-600">Tags count:</span> <span class="font-medium">${opengraph.tags_count ?? 0}</span></div>
-                        <div><span class="text-gray-600">Required present:</span> <span class="font-medium">${opengraph.required_present_count ?? 0}/5</span></div>
-                        <div><span class="text-gray-600">Missing:</span> <span class="font-medium">${(opengraph.required_missing || []).join(', ') || '-'}</span></div>
+                        <div><span class="text-gray-600">Количество тегов:</span> <span class="font-medium">${opengraph.tags_count ?? 0}</span></div>
+                        <div><span class="text-gray-600">Обязательных найдено:</span> <span class="font-medium">${opengraph.required_present_count ?? 0}/5</span></div>
+                        <div><span class="text-gray-600">Отсутствует:</span> <span class="font-medium">${(opengraph.required_missing || []).join(', ') || '-'}</span></div>
                         <div><span class="text-gray-600">og:title:</span> <span class="font-medium">${(opengraph.tags || {})['og:title'] || '-'}</span></div>
                         <div><span class="text-gray-600">og:description:</span> <span class="font-medium">${(opengraph.tags || {})['og:description'] || '-'}</span></div>
                         <div><span class="text-gray-600">og:image:</span> <span class="font-medium break-all">${(opengraph.tags || {})['og:image'] || '-'}</span></div>
@@ -4118,7 +4118,7 @@ function generateOnPageAuditHTML(result) {
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-3">AI Signals</h4>
+                <h4 class="font-semibold mb-3">AI-сигналы</h4>
                 <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3 text-sm">
                     <div><span class="text-gray-600">AI marker density/1k:</span> <span class="font-medium">${ai.ai_marker_density_1k ?? 0}</span></div>
                     <div><span class="text-gray-600">Hedging ratio:</span> <span class="font-medium">${ai.hedging_ratio ?? 0}</span></div>
@@ -4135,58 +4135,58 @@ function generateOnPageAuditHTML(result) {
 
             <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold mb-3">Score Overview</h4>
+                    <h4 class="font-semibold mb-3">Обзор оценок</h4>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                         ${scoreBars}
                     </div>
                 </div>
                 <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold mb-3">Top Fixes (Quick Actions)</h4>
+                    <h4 class="font-semibold mb-3">Топ исправлений (быстрые действия)</h4>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        ${quickActions || '<div class="text-sm text-gray-500">No data.</div>'}
+                        ${quickActions || '<div class="text-sm text-gray-500">Нет данных.</div>'}
                     </div>
                 </div>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-3">Severity Heatmap</h4>
+                <h4 class="font-semibold mb-3">Тепловая карта критичности</h4>
                 <div class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3">
-                    ${heatmapCards || '<div class="text-sm text-gray-500">No data.</div>'}
+                    ${heatmapCards || '<div class="text-sm text-gray-500">Нет данных.</div>'}
                 </div>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
-                <h4 class="font-semibold mb-3">Priority Queue (Now / Next / Later)</h4>
+                <h4 class="font-semibold mb-3">Очередь приоритетов (Сейчас / Далее / Позже)</h4>
                 <table class="w-full min-w-[860px]">
                     <thead class="sticky top-0 z-10 bg-white">
                         <tr class="text-left text-xs text-gray-500 border-b">
-                            <th class="py-2 pr-2 bg-white">Bucket</th>
-                            <th class="py-2 pr-2 bg-white">Severity</th>
+                            <th class="py-2 pr-2 bg-white">Этап</th>
+                            <th class="py-2 pr-2 bg-white">Критичность</th>
                             <th class="py-2 pr-2 bg-white">Code</th>
-                            <th class="py-2 pr-2 bg-white">Issue</th>
-                            <th class="py-2 pr-2 bg-white">Priority</th>
+                            <th class="py-2 pr-2 bg-white">Проблема</th>
+                            <th class="py-2 pr-2 bg-white">Приоритет</th>
                             <th class="py-2 pr-2 bg-white">Effort</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${queueRows || '<tr><td class="py-2 text-sm text-gray-500" colspan="6">No data.</td></tr>'}
+                        ${queueRows || '<tr><td class="py-2 text-sm text-gray-500" colspan="6">Нет данных.</td></tr>'}
                     </tbody>
                 </table>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
-                <h4 class="font-semibold mb-3">Before / After Targets</h4>
+                <h4 class="font-semibold mb-3">Цели: до / после</h4>
                 <table class="w-full min-w-[640px]">
                     <thead class="sticky top-0 z-10 bg-white">
                         <tr class="text-left text-xs text-gray-500 border-b">
-                            <th class="py-2 pr-2 bg-white">Metric</th>
-                            <th class="py-2 pr-2 bg-white">Current</th>
-                            <th class="py-2 pr-2 bg-white">Target</th>
+                            <th class="py-2 pr-2 bg-white">Метрика</th>
+                            <th class="py-2 pr-2 bg-white">Текущее</th>
+                            <th class="py-2 pr-2 bg-white">Цель</th>
                             <th class="py-2 pr-2 bg-white">Delta</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${targetRows || '<tr><td class="py-2 text-sm text-gray-500" colspan="4">No data.</td></tr>'}
+                        ${targetRows || '<tr><td class="py-2 text-sm text-gray-500" colspan="4">Нет данных.</td></tr>'}
                     </tbody>
                 </table>
             </div>
@@ -4198,17 +4198,17 @@ function generateOnPageAuditHTML(result) {
 
             <div class="bg-white rounded-xl shadow-md p-6">
                 <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
-                    <h4 class="font-semibold">Issues</h4>
+                    <h4 class="font-semibold">Проблемы</h4>
                     <div class="inline-flex rounded-lg border border-slate-200 p-1 bg-slate-50 text-xs">
-                        <button type="button" data-onpage-issues-filter="all" onclick="filterOnpageIssues('all')" class="px-2 py-1 rounded-md bg-slate-900 text-white">All</button>
-                        <button type="button" data-onpage-issues-filter="critical" onclick="filterOnpageIssues('critical')" class="px-2 py-1 rounded-md text-slate-700">Critical</button>
-                        <button type="button" data-onpage-issues-filter="warning" onclick="filterOnpageIssues('warning')" class="px-2 py-1 rounded-md text-slate-700">Warning</button>
-                        <button type="button" data-onpage-issues-filter="info" onclick="filterOnpageIssues('info')" class="px-2 py-1 rounded-md text-slate-700">Info</button>
+                        <button type="button" data-onpage-issues-filter="all" onclick="filterOnpageIssues('all')" class="px-2 py-1 rounded-md bg-slate-900 text-white">Все</button>
+                        <button type="button" data-onpage-issues-filter="critical" onclick="filterOnpageIssues('critical')" class="px-2 py-1 rounded-md text-slate-700">Критично</button>
+                        <button type="button" data-onpage-issues-filter="warning" onclick="filterOnpageIssues('warning')" class="px-2 py-1 rounded-md text-slate-700">Предупреждение</button>
+                        <button type="button" data-onpage-issues-filter="info" onclick="filterOnpageIssues('info')" class="px-2 py-1 rounded-md text-slate-700">Инфо</button>
                     </div>
                 </div>
-                <div class="text-xs text-slate-500 mb-2">Shown: <span id="onpage-issues-count">${Math.min(25, issues.length)} / ${Math.min(25, issues.length)}</span></div>
+                <div class="text-xs text-slate-500 mb-2">Показано: <span id="onpage-issues-count">${Math.min(25, issues.length)} / ${Math.min(25, issues.length)}</span></div>
                 <div id="onpage-issues-list">
-                    ${issuesHtml || '<div class="text-sm text-gray-500">No issues found.</div>'}
+                    ${issuesHtml || '<div class="text-sm text-gray-500">Проблемы не найдены.</div>'}
                 </div>
             </div>
         </div>
@@ -4476,7 +4476,7 @@ function generateSiteAuditProHTML(result) {
     const issueLoadPct = pagesCount > 0 ? Math.min(100, Math.round((totalIssues / pagesCount) * 10)) : 0;
     const crawlRiskHigh = Number(metrics.crawl_budget_high_risk ?? 0);
     const crawlRiskMedium = Number(metrics.crawl_budget_medium_risk ?? 0);
-    const boolLabel = (value) => value === true ? 'Yes' : value === false ? 'No' : 'n/a';
+    const boolLabel = (value) => value === true ? 'Да' : value === false ? 'Нет' : 'н/д';
     const avgPerfLightFromPages = pages.length
         ? Number((pages.reduce((sum, p) => sum + Number(p.perf_light_score || 0), 0) / pages.length).toFixed(1))
         : 0;
@@ -4682,13 +4682,13 @@ function generateSiteAuditProHTML(result) {
     const duplicateTitleHtml = duplicateTitleGroups.slice(0, 5).map((g) => `
         <div class="text-sm py-2 border-b border-slate-100">
             <div class="font-medium truncate">${escapeHtml(g.value || '')}</div>
-            <div class="text-xs text-slate-500">URLs: ${escapeHtml((g.urls || []).length)}</div>
+            <div class="text-xs text-slate-500">URL: ${escapeHtml((g.urls || []).length)}</div>
         </div>
     `).join('');
     const duplicateDescriptionHtml = duplicateDescriptionGroups.slice(0, 5).map((g) => `
         <div class="text-sm py-2 border-b border-slate-100">
             <div class="font-medium truncate">${escapeHtml(g.value || '')}</div>
-            <div class="text-xs text-slate-500">URLs: ${escapeHtml((g.urls || []).length)}</div>
+            <div class="text-xs text-slate-500">URL: ${escapeHtml((g.urls || []).length)}</div>
         </div>
     `).join('');
     const issueTypeRowsHtml = issueCodeStats.map((row) => `
@@ -4719,7 +4719,7 @@ function generateSiteAuditProHTML(result) {
         <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
             <div class="text-xs uppercase tracking-wide text-slate-500">${escapeHtml(row.family)}</div>
             <div class="mt-1 text-lg font-semibold text-slate-900">${escapeHtml(row.count)}</div>
-            <div class="text-xs text-slate-600">${escapeHtml(row.sharePct)}% of all issues</div>
+            <div class="text-xs text-slate-600">${escapeHtml(row.sharePct)}% от всех проблем</div>
         </div>
     `).join('');
     const criticalPagesRowsHtml = criticalPages.map((row) => `
@@ -4731,10 +4731,10 @@ function generateSiteAuditProHTML(result) {
     `).join('');
     const recommendationCardsHtml = actionableRecommendations.map((row) => `
         <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <div class="inline-flex items-center px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[11px] mb-1">${escapeHtml(row.theme || 'General SEO')}</div>
+            <div class="inline-flex items-center px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[11px] mb-1">${escapeHtml(row.theme || 'Общее SEO')}</div>
             <div class="text-sm font-medium text-slate-900">${escapeHtml(row.action)}</div>
-            <div class="mt-1 text-xs text-slate-600">Affected pages: ${escapeHtml(row.affectedCount)} | C:${escapeHtml(row.critical)} W:${escapeHtml(row.warning)} I:${escapeHtml(row.info)}</div>
-            <div class="mt-1 text-xs text-slate-500">Issue types: ${escapeHtml(row.codesPreview.join(', ') || '-')}</div>
+            <div class="mt-1 text-xs text-slate-600">Затронутые страницы: ${escapeHtml(row.affectedCount)} | К:${escapeHtml(row.critical)} П:${escapeHtml(row.warning)} И:${escapeHtml(row.info)}</div>
+            <div class="mt-1 text-xs text-slate-500">Типы проблем: ${escapeHtml(row.codesPreview.join(', ') || '-')}</div>
             <div class="mt-2 text-xs text-slate-500">${row.urlsPreview.map((u) => `<div class="break-all">${escapeHtml(u)}</div>`).join('') || '<div>-</div>'}</div>
         </div>
     `).join('');
@@ -4764,7 +4764,7 @@ function generateSiteAuditProHTML(result) {
         .filter((row) => row.critical === 0 && row.warning === 0)
         .slice(0, 5);
     const roadmapList = (rows, emptyText) => rows.length
-        ? rows.map((row) => `<li class="mb-2"><div class="font-medium">${escapeHtml(row.action)}</div><div class="text-xs text-slate-500">Coverage: ${escapeHtml(row.affectedCount)} pages</div></li>`).join('')
+        ? rows.map((row) => `<li class="mb-2"><div class="font-medium">${escapeHtml(row.action)}</div><div class="text-xs text-slate-500">Охват: ${escapeHtml(row.affectedCount)} страниц</div></li>`).join('')
         : `<li class="text-slate-500">${escapeHtml(emptyText)}</li>`;
 
     return `
@@ -4774,33 +4774,33 @@ function generateSiteAuditProHTML(result) {
                     <div>
                         <h3 class="text-lg font-semibold">Site Audit Pro</h3>
                         <div class="mt-2 flex flex-wrap gap-2 text-xs">
-                            <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700">mode: ${escapeHtml(mode)}</span>
+                            <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700">режим: ${escapeHtml(mode)}</span>
                             <span class="inline-flex items-center px-2.5 py-1 rounded-full ${isBatchMode ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'}">
-                                ${isBatchMode ? 'batch mode' : 'crawl mode'}
+                                ${isBatchMode ? 'batch-режим' : 'режим обхода'}
                             </span>
-                            ${isBatchMode ? `<span class="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">URLs: ${escapeHtml(batchUrlsCount)}</span>` : ''}
+                            ${isBatchMode ? `<span class="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">URL: ${escapeHtml(batchUrlsCount)}</span>` : ''}
                             <span class="sitepro-chip">AI + Content Lens</span>
-                            <span class="sitepro-chip">Actionable Plan</span>
+                            <span class="sitepro-chip">План действий</span>
                         </div>
                     </div>
                     <div class="flex gap-3">
                         <button onclick="downloadSiteAuditProDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>Скачать DOCX</button>
                         <button onclick="downloadSiteAuditProXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>Скачать XLSX</button>
-                        <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Copy JSON</button>
+                        <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
                     </div>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
                     <div class="rounded-xl border bg-slate-50 p-3">
-                        <div class="text-xs text-slate-500">Pages</div>
+                        <div class="text-xs text-slate-500">Страницы</div>
                         <div class="text-xl font-semibold text-slate-900">${escapeHtml(pagesCount)}</div>
                     </div>
                     <div class="rounded-xl border bg-slate-50 p-3">
-                        <div class="text-xs text-slate-500">Score</div>
-                        <div class="text-xl font-semibold ${score >= 80 ? 'text-emerald-700' : score >= 60 ? 'text-amber-700' : 'text-rose-700'}">${escapeHtml(summary.score ?? 'n/a')}</div>
+                        <div class="text-xs text-slate-500">Оценка</div>
+                        <div class="text-xl font-semibold ${score >= 80 ? 'text-emerald-700' : score >= 60 ? 'text-amber-700' : 'text-rose-700'}">${escapeHtml(summary.score ?? 'н/д')}</div>
                         <div class="mt-1 h-1.5 bg-slate-200 rounded-full overflow-hidden"><div class="h-full ${score >= 80 ? 'bg-emerald-500' : score >= 60 ? 'bg-amber-500' : 'bg-rose-500'}" style="width:${scorePct}%"></div></div>
                     </div>
                     <div class="rounded-xl border bg-slate-50 p-3">
-                        <div class="text-xs text-slate-500">Issues</div>
+                        <div class="text-xs text-slate-500">Проблемы</div>
                         <div class="text-xl font-semibold text-slate-900">${escapeHtml(totalIssues)}</div>
                         <div class="mt-1 h-1.5 bg-slate-200 rounded-full overflow-hidden"><div class="h-full bg-indigo-500" style="width:${issueLoadPct}%"></div></div>
                     </div>
@@ -4810,14 +4810,14 @@ function generateSiteAuditProHTML(result) {
                     </div>
                 </div>
                 <div class="grid grid-cols-3 gap-2 mt-3 text-sm">
-                    <div class="rounded-lg border border-red-200 bg-red-50 p-2 text-center"><span class="text-red-700">Critical</span><div class="font-semibold text-red-800">${escapeHtml(summary.critical_issues || 0)}</div></div>
-                    <div class="rounded-lg border border-amber-200 bg-amber-50 p-2 text-center"><span class="text-amber-700">Warning</span><div class="font-semibold text-amber-800">${escapeHtml(summary.warning_issues || 0)}</div></div>
-                    <div class="rounded-lg border border-blue-200 bg-blue-50 p-2 text-center"><span class="text-blue-700">Info</span><div class="font-semibold text-blue-800">${escapeHtml(summary.info_issues || 0)}</div></div>
+                    <div class="rounded-lg border border-red-200 bg-red-50 p-2 text-center"><span class="text-red-700">Критично</span><div class="font-semibold text-red-800">${escapeHtml(summary.critical_issues || 0)}</div></div>
+                    <div class="rounded-lg border border-amber-200 bg-amber-50 p-2 text-center"><span class="text-amber-700">Предупреждение</span><div class="font-semibold text-amber-800">${escapeHtml(summary.warning_issues || 0)}</div></div>
+                    <div class="rounded-lg border border-blue-200 bg-blue-50 p-2 text-center"><span class="text-blue-700">Инфо</span><div class="font-semibold text-blue-800">${escapeHtml(summary.info_issues || 0)}</div></div>
                 </div>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-3">Quality Pillars</h4>
+                <h4 class="font-semibold mb-3">Ключевые направления качества</h4>
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
                     ${insightPillarsHtml}
                 </div>
@@ -4825,85 +4825,85 @@ function generateSiteAuditProHTML(result) {
 
             <div class="bg-white rounded-xl shadow-md p-6">
                 <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
-                    <h4 class="font-semibold">Issues explorer</h4>
+                    <h4 class="font-semibold">Обзор проблем</h4>
                     <div class="inline-flex rounded-lg border border-slate-200 p-1 bg-slate-50 text-xs">
-                        <button type="button" data-sitepro-issues-filter="all" onclick="setSiteAuditProIssuesFilter('all')" class="px-2 py-1 rounded-md bg-slate-900 text-white">All</button>
-                        <button type="button" data-sitepro-issues-filter="critical" onclick="setSiteAuditProIssuesFilter('critical')" class="px-2 py-1 rounded-md text-slate-700">Critical</button>
-                        <button type="button" data-sitepro-issues-filter="warning" onclick="setSiteAuditProIssuesFilter('warning')" class="px-2 py-1 rounded-md text-slate-700">Warning</button>
-                        <button type="button" data-sitepro-issues-filter="info" onclick="setSiteAuditProIssuesFilter('info')" class="px-2 py-1 rounded-md text-slate-700">Info</button>
+                        <button type="button" data-sitepro-issues-filter="all" onclick="setSiteAuditProIssuesFilter('all')" class="px-2 py-1 rounded-md bg-slate-900 text-white">Все</button>
+                        <button type="button" data-sitepro-issues-filter="critical" onclick="setSiteAuditProIssuesFilter('critical')" class="px-2 py-1 rounded-md text-slate-700">Критично</button>
+                        <button type="button" data-sitepro-issues-filter="warning" onclick="setSiteAuditProIssuesFilter('warning')" class="px-2 py-1 rounded-md text-slate-700">Предупреждение</button>
+                        <button type="button" data-sitepro-issues-filter="info" onclick="setSiteAuditProIssuesFilter('info')" class="px-2 py-1 rounded-md text-slate-700">Инфо</button>
                     </div>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-6 gap-2 mb-3">
-                    <input id="sitepro-issues-search" type="text" oninput="updateSiteAuditProIssuesQuery(this.value)" placeholder="Search code, title, URL..." class="md:col-span-3 px-3 py-2 border rounded-lg text-sm">
+                    <input id="sitepro-issues-search" type="text" oninput="updateSiteAuditProIssuesQuery(this.value)" placeholder="Поиск по коду, заголовку, URL..." class="md:col-span-3 px-3 py-2 border rounded-lg text-sm">
                     <select id="sitepro-issues-limit" onchange="updateSiteAuditProIssuesLimit(this.value)" class="px-3 py-2 border rounded-lg text-sm">
-                        <option value="20" selected>20 rows</option>
-                        <option value="50">50 rows</option>
-                        <option value="100">100 rows</option>
+                        <option value="20" selected>20 строк</option>
+                        <option value="50">50 строк</option>
+                        <option value="100">100 строк</option>
                     </select>
                     <select id="sitepro-issues-sort" onchange="updateSiteAuditProIssuesSort(this.value)" class="px-3 py-2 border rounded-lg text-sm">
-                        <option value="severity" selected>Sort: severity</option>
-                        <option value="url">Sort: URL</option>
+                        <option value="severity" selected>Сортировка: критичность</option>
+                        <option value="url">Сортировка: URL</option>
                     </select>
                     <select id="sitepro-issues-owner" onchange="updateSiteAuditProIssuesOwner(this.value)" class="px-3 py-2 border rounded-lg text-sm">
-                        <option value="all" selected>Owner: all</option>
-                        <option value="SEO">Owner: SEO</option>
-                        <option value="Content+SEO">Owner: Content+SEO</option>
-                        <option value="SEO+Dev">Owner: SEO+Dev</option>
-                        <option value="Dev+Infra">Owner: Dev+Infra</option>
+                        <option value="all" selected>Владелец: все</option>
+                        <option value="SEO">Владелец: SEO</option>
+                        <option value="Content+SEO">Владелец: Content+SEO</option>
+                        <option value="SEO+Dev">Владелец: SEO+Dev</option>
+                        <option value="Dev+Infra">Владелец: Dev+Infra</option>
                     </select>
                 </div>
-                <div class="text-xs text-slate-500 mb-2">Shown: <span id="sitepro-issues-count">0 / 0</span></div>
+                <div class="text-xs text-slate-500 mb-2">Показано: <span id="sitepro-issues-count">0 / 0</span></div>
                 <div id="sitepro-issues-list" class="max-h-[420px] overflow-auto pr-1"></div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold mb-3">AI Marker Risk Overview</h4>
+                    <h4 class="font-semibold mb-3">Обзор рисков AI-маркеров</h4>
                     <div class="grid grid-cols-2 gap-3 text-sm">
                         <div class="rounded-lg border border-rose-200 bg-rose-50 p-3">
-                            <div class="text-rose-700">High-risk pages</div>
+                            <div class="text-rose-700">Страницы высокого риска</div>
                             <div class="text-xl font-semibold text-rose-800">${escapeHtml(aiTotals.highRiskPages)}</div>
                         </div>
                         <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                            <div class="text-amber-700">Medium-risk pages</div>
+                            <div class="text-amber-700">Страницы среднего риска</div>
                             <div class="text-xl font-semibold text-amber-800">${escapeHtml(aiTotals.mediumRiskPages)}</div>
                         </div>
                         <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
-                            <div class="text-indigo-700">Marker hits</div>
+                            <div class="text-indigo-700">Срабатывания маркеров</div>
                             <div class="text-xl font-semibold text-indigo-800">${escapeHtml(aiTotals.markerHits)}</div>
                         </div>
                         <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                            <div class="text-slate-700">Avg risk / density</div>
+                            <div class="text-slate-700">Средний риск / плотность</div>
                             <div class="text-xl font-semibold text-slate-900">${escapeHtml(aiTotals.avgRisk)} / ${escapeHtml(aiTotals.avgDensity)}</div>
                         </div>
                     </div>
-                    <div class="mt-2 text-xs text-slate-500">False-positive guard active on ${escapeHtml(aiTotals.guardedPages)} pages.</div>
+                    <div class="mt-2 text-xs text-slate-500">Защита от false-positive активна на ${escapeHtml(aiTotals.guardedPages)} страницах.</div>
                 </div>
                 <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold mb-3">Content Quality Pressure</h4>
+                    <h4 class="font-semibold mb-3">Давление на качество контента</h4>
                     <div class="grid grid-cols-2 gap-3 text-sm">
                         <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                            <div class="text-amber-700">Low unique text</div>
+                            <div class="text-amber-700">Низкая уникальность текста</div>
                             <div class="text-xl font-semibold text-amber-800">${escapeHtml(contentSignals.lowUnique)}</div>
                         </div>
                         <div class="rounded-lg border border-rose-200 bg-rose-50 p-3">
-                            <div class="text-rose-700">High boilerplate</div>
+                            <div class="text-rose-700">Много boilerplate-контента</div>
                             <div class="text-xl font-semibold text-rose-800">${escapeHtml(contentSignals.highBoilerplate)}</div>
                         </div>
                         <div class="rounded-lg border border-rose-200 bg-rose-50 p-3">
-                            <div class="text-rose-700">Keyword stuffing risk</div>
+                            <div class="text-rose-700">Риск keyword stuffing</div>
                             <div class="text-xl font-semibold text-rose-800">${escapeHtml(contentSignals.keywordStuffing)}</div>
                         </div>
                         <div class="rounded-lg border border-sky-200 bg-sky-50 p-3">
-                            <div class="text-sky-700">Hidden content flags</div>
+                            <div class="text-sky-700">Флаги скрытого контента</div>
                             <div class="text-xl font-semibold text-sky-800">${escapeHtml(contentSignals.hiddenContent)}</div>
                         </div>
                         <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                            <div class="text-amber-700">High filler ratio</div>
+                            <div class="text-amber-700">Высокая доля filler-текста</div>
                             <div class="text-xl font-semibold text-amber-800">${escapeHtml(contentSignals.highFiller)}</div>
                         </div>
                         <div class="rounded-lg border border-rose-200 bg-rose-50 p-3">
-                            <div class="text-rose-700">Toxic wording flags</div>
+                            <div class="text-rose-700">Флаги токсичных формулировок</div>
                             <div class="text-xl font-semibold text-rose-800">${escapeHtml(contentSignals.toxicContent)}</div>
                         </div>
                     </div>
@@ -4911,14 +4911,14 @@ function generateSiteAuditProHTML(result) {
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-3">Pipeline Metrics</h4>
+                <h4 class="font-semibold mb-3">Метрики пайплайна</h4>
                 <table class="w-full min-w-[760px]">
                     <thead>
                         <tr class="text-left text-xs text-slate-500 border-b">
-                            <th class="py-2 pr-2">Metric</th>
-                            <th class="py-2 pr-2">Current</th>
-                            <th class="py-2 pr-2">Target</th>
-                            <th class="py-2 pr-2">Status</th>
+                            <th class="py-2 pr-2">Метрика</th>
+                            <th class="py-2 pr-2">Текущее</th>
+                            <th class="py-2 pr-2">Цель</th>
+                            <th class="py-2 pr-2">Статус</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -4929,35 +4929,35 @@ function generateSiteAuditProHTML(result) {
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold mb-3">Executive Risk Snapshot</h4>
+                    <h4 class="font-semibold mb-3">Краткий риск-снимок</h4>
                     <div class="grid grid-cols-2 gap-3 text-sm">
                         <div class="rounded-lg border border-rose-200 bg-rose-50 p-3">
-                            <div class="text-rose-700">Critical pages</div>
+                            <div class="text-rose-700">Критичные страницы</div>
                             <div class="text-xl font-semibold text-rose-800">${escapeHtml(criticalPagesAllCount)}</div>
-                            <div class="text-xs text-rose-700">${escapeHtml(criticalPagesPct)}% of scanned pages</div>
+                            <div class="text-xs text-rose-700">${escapeHtml(criticalPagesPct)}% от просканированных страниц</div>
                         </div>
                         <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                            <div class="text-amber-700">Parameterized URLs</div>
+                            <div class="text-amber-700">Параметризованные URL</div>
                             <div class="text-xl font-semibold text-amber-800">${escapeHtml(crawlBudgetSummary.parameterized_urls ?? 0)}</div>
-                            <div class="text-xs text-amber-700">Potential crawl waste</div>
+                            <div class="text-xs text-amber-700">Потенциальная трата crawl budget</div>
                         </div>
                         <div class="rounded-lg border border-sky-200 bg-sky-50 p-3">
-                            <div class="text-sky-700">Deep path URLs</div>
+                            <div class="text-sky-700">Глубокие URL</div>
                             <div class="text-xl font-semibold text-sky-800">${escapeHtml(crawlBudgetSummary.deep_path_urls ?? 0)}</div>
                             <div class="text-xs text-sky-700">Depth >= 4</div>
                         </div>
                         <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                            <div class="text-slate-700">High / Medium crawl risk</div>
+                            <div class="text-slate-700">Высокий / средний риск сканирования</div>
                             <div class="text-xl font-semibold text-slate-900">${escapeHtml(crawlBudgetSummary.high_risk_urls ?? 0)} / ${escapeHtml(crawlBudgetSummary.medium_risk_urls ?? 0)}</div>
-                            <div class="text-xs text-slate-600">From crawl budget model</div>
+                            <div class="text-xs text-slate-600">По модели crawl budget</div>
                         </div>
                     </div>
                 </div>
                 <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold mb-3">Homepage Security Snapshot</h4>
+                    <h4 class="font-semibold mb-3">Снимок безопасности главной</h4>
                     <div class="grid grid-cols-2 gap-3 text-sm">
-                        <div><span class="text-gray-600">Headers score:</span> <span class="font-medium">${escapeHtml(homepageSecurity.security_headers_score ?? 'n/a')}</span></div>
-                        <div><span class="text-gray-600">Mixed content:</span> <span class="font-medium">${escapeHtml(homepageSecurity.mixed_content_count ?? 0)}</span></div>
+                        <div><span class="text-gray-600">Оценка заголовков:</span> <span class="font-medium">${escapeHtml(homepageSecurity.security_headers_score ?? 'н/д')}</span></div>
+                        <div><span class="text-gray-600">Смешанный контент:</span> <span class="font-medium">${escapeHtml(homepageSecurity.mixed_content_count ?? 0)}</span></div>
                         <div><span class="text-gray-600">CSP:</span> <span class="font-medium">${boolLabel(homepageSecurity.csp_present)}</span></div>
                         <div><span class="text-gray-600">HSTS:</span> <span class="font-medium">${boolLabel(homepageSecurity.hsts_present)}</span></div>
                         <div><span class="text-gray-600">X-Frame-Options:</span> <span class="font-medium">${boolLabel(homepageSecurity.x_frame_options_present)}</span></div>
@@ -4970,119 +4970,119 @@ function generateSiteAuditProHTML(result) {
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
-                    <h4 class="font-semibold mb-3">Issue Types Overview</h4>
+                    <h4 class="font-semibold mb-3">Обзор типов проблем</h4>
                     <table class="w-full min-w-[620px]">
                         <thead>
                             <tr class="text-left text-xs text-slate-500 border-b">
-                                <th class="py-2 pr-2">Code</th>
-                                <th class="py-2 pr-2">Total</th>
-                                <th class="py-2 pr-2">Share</th>
-                                <th class="py-2 pr-2">Critical</th>
-                                <th class="py-2 pr-2">Warning</th>
-                                <th class="py-2 pr-2">Info</th>
+                                <th class="py-2 pr-2">Код</th>
+                                <th class="py-2 pr-2">Всего</th>
+                                <th class="py-2 pr-2">Доля</th>
+                                <th class="py-2 pr-2">Критично</th>
+                                <th class="py-2 pr-2">Предупреждение</th>
+                                <th class="py-2 pr-2">Инфо</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${issueTypeRowsHtml || '<tr><td colspan="6" class="py-3 text-sm text-slate-500">No issue codes in payload.</td></tr>'}
+                            ${issueTypeRowsHtml || '<tr><td colspan="6" class="py-3 text-sm text-slate-500">В payload нет кодов проблем.</td></tr>'}
                         </tbody>
                     </table>
                 </div>
                 <div class="space-y-6">
                     <div class="bg-white rounded-xl shadow-md p-6">
-                        <h4 class="font-semibold mb-3">Root Cause Clusters</h4>
-                        ${clusterRowsHtml || '<div class="text-sm text-slate-500">No clusters available.</div>'}
+                        <h4 class="font-semibold mb-3">Кластеры первопричин</h4>
+                        ${clusterRowsHtml || '<div class="text-sm text-slate-500">Кластеры недоступны.</div>'}
                     </div>
                     <div class="bg-white rounded-xl shadow-md p-6">
-                        <h4 class="font-semibold mb-3">Owner Distribution</h4>
-                        ${ownerRowsHtml || '<div class="text-sm text-slate-500">No owner breakdown available.</div>'}
+                        <h4 class="font-semibold mb-3">Распределение по владельцам</h4>
+                        ${ownerRowsHtml || '<div class="text-sm text-slate-500">Нет разбивки по владельцам.</div>'}
                     </div>
                 </div>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-3">Issue Family Distribution</h4>
+                <h4 class="font-semibold mb-3">Распределение семейств проблем</h4>
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-                    ${issueFamilyCardsHtml || '<div class="text-sm text-slate-500">No issue family stats available.</div>'}
+                    ${issueFamilyCardsHtml || '<div class="text-sm text-slate-500">Нет статистики по семействам проблем.</div>'}
                 </div>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
-                <h4 class="font-semibold mb-3">Action Plan by Issue Type</h4>
+                <h4 class="font-semibold mb-3">План действий по типам проблем</h4>
                 <table class="w-full min-w-[980px]">
                     <thead>
                         <tr class="text-left text-xs text-slate-500 border-b">
                             <th class="py-2 pr-2">#</th>
-                            <th class="py-2 pr-2">Issue code</th>
-                            <th class="py-2 pr-2">Severity</th>
-                            <th class="py-2 pr-2">Affected pages</th>
-                            <th class="py-2 pr-2">Impact</th>
-                            <th class="py-2 pr-2">Owner</th>
-                            <th class="py-2 pr-2">Sprint</th>
-                            <th class="py-2 pr-2">Recommendation</th>
+                            <th class="py-2 pr-2">Код проблемы</th>
+                            <th class="py-2 pr-2">Критичность</th>
+                            <th class="py-2 pr-2">Затронутые страницы</th>
+                            <th class="py-2 pr-2">Влияние</th>
+                            <th class="py-2 pr-2">Владелец</th>
+                            <th class="py-2 pr-2">Спринт</th>
+                            <th class="py-2 pr-2">Рекомендация</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${actionPlanRowsHtml || '<tr><td colspan="8" class="py-3 text-sm text-slate-500">No action plan rows available.</td></tr>'}
+                        ${actionPlanRowsHtml || '<tr><td colspan="8" class="py-3 text-sm text-slate-500">Нет строк плана действий.</td></tr>'}
                     </tbody>
                 </table>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
-                <h4 class="font-semibold mb-3">Top Critical Pages</h4>
+                <h4 class="font-semibold mb-3">Топ критичных страниц</h4>
                 <table class="w-full min-w-[680px]">
                     <thead>
                         <tr class="text-left text-xs text-slate-500 border-b">
                             <th class="py-2 pr-2">URL</th>
-                            <th class="py-2 pr-2">Critical</th>
-                            <th class="py-2 pr-2">Warning</th>
+                            <th class="py-2 pr-2">Критично</th>
+                            <th class="py-2 pr-2">Предупреждение</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${criticalPagesRowsHtml || '<tr><td colspan="3" class="py-3 text-sm text-slate-500">No critical/warning pages found.</td></tr>'}
+                        ${criticalPagesRowsHtml || '<tr><td colspan="3" class="py-3 text-sm text-slate-500">Критичные/предупредительные страницы не найдены.</td></tr>'}
                     </tbody>
                 </table>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
-                <h4 class="font-semibold mb-3">Top pages to fix</h4>
+                <h4 class="font-semibold mb-3">Топ страниц для исправления</h4>
                 <table class="w-full min-w-[720px]">
                     <thead>
                         <tr class="text-left text-xs text-slate-500 border-b">
                             <th class="py-2 pr-2">URL</th>
-                            <th class="py-2 pr-2">Health</th>
-                            <th class="py-2 pr-2">Issues</th>
-                            <th class="py-2 pr-2">Recommendation</th>
+                            <th class="py-2 pr-2">Состояние</th>
+                            <th class="py-2 pr-2">Проблемы</th>
+                            <th class="py-2 pr-2">Рекомендация</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${topFixRowsHtml || '<tr><td colspan="4" class="py-3 text-sm text-slate-500">No page-level rows available.</td></tr>'}
+                        ${topFixRowsHtml || '<tr><td colspan="4" class="py-3 text-sm text-slate-500">Нет постраничных данных.</td></tr>'}
                     </tbody>
                 </table>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold mb-3">Crawl Budget Risk</h4>
+                    <h4 class="font-semibold mb-3">Риски crawl budget</h4>
                     <div class="grid grid-cols-2 gap-3 text-sm">
                         <div class="rounded-lg border border-rose-200 bg-rose-50 p-3">
-                            <div class="text-rose-700">High risk pages</div>
+                            <div class="text-rose-700">Страницы высокого риска</div>
                             <div class="text-xl font-semibold text-rose-800">${escapeHtml(crawlRiskHigh)}</div>
                         </div>
                         <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                            <div class="text-amber-700">Medium risk pages</div>
+                            <div class="text-amber-700">Страницы среднего риска</div>
                             <div class="text-xl font-semibold text-amber-800">${escapeHtml(crawlRiskMedium)}</div>
                         </div>
                     </div>
                 </div>
                 <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold mb-3">Duplicate Groups</h4>
+                    <h4 class="font-semibold mb-3">Группы дублей</h4>
                     <div class="grid grid-cols-2 gap-3 text-sm">
                         <div class="rounded-lg border bg-slate-50 p-3 text-center">
-                            <div class="text-slate-500 text-xs">Title groups</div>
+                            <div class="text-slate-500 text-xs">Группы title</div>
                             <div class="text-lg font-semibold">${escapeHtml(duplicateTitleGroups.length)}</div>
                         </div>
                         <div class="rounded-lg border bg-slate-50 p-3 text-center">
-                            <div class="text-slate-500 text-xs">Description groups</div>
+                            <div class="text-slate-500 text-xs">Группы description</div>
                             <div class="text-lg font-semibold">${escapeHtml(duplicateDescriptionGroups.length)}</div>
                         </div>
                     </div>
@@ -5091,72 +5091,72 @@ function generateSiteAuditProHTML(result) {
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold mb-3">Top Duplicate Titles</h4>
-                    ${duplicateTitleHtml || '<div class="text-sm text-slate-500">No duplicate title groups.</div>'}
+                    <h4 class="font-semibold mb-3">Топ дублей title</h4>
+                    ${duplicateTitleHtml || '<div class="text-sm text-slate-500">Нет групп дублей title.</div>'}
                 </div>
                 <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="font-semibold mb-3">Top Duplicate Descriptions</h4>
-                    ${duplicateDescriptionHtml || '<div class="text-sm text-slate-500">No duplicate description groups.</div>'}
+                    <h4 class="font-semibold mb-3">Топ дублей description</h4>
+                    ${duplicateDescriptionHtml || '<div class="text-sm text-slate-500">Нет групп дублей description.</div>'}
                 </div>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
-                <h4 class="font-semibold mb-3">Spam Detector: Terms and Phrases</h4>
+                <h4 class="font-semibold mb-3">Spam Detector: термины и фразы</h4>
                 <table class="w-full min-w-[760px]">
                     <thead>
                         <tr class="text-left text-xs text-slate-500 border-b">
-                            <th class="py-2 pr-2">Term / Phrase</th>
-                            <th class="py-2 pr-2">Signal type</th>
-                            <th class="py-2 pr-2">Pages</th>
-                            <th class="py-2 pr-2">Share</th>
-                            <th class="py-2 pr-2">Risk score</th>
+                            <th class="py-2 pr-2">Термин / фраза</th>
+                            <th class="py-2 pr-2">Тип сигнала</th>
+                            <th class="py-2 pr-2">Страницы</th>
+                            <th class="py-2 pr-2">Доля</th>
+                            <th class="py-2 pr-2">Оценка риска</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${spamRowsHtml || '<tr><td colspan="5" class="py-3 text-sm text-slate-500">No spam signals detected in current payload.</td></tr>'}
+                        ${spamRowsHtml || '<tr><td colspan="5" class="py-3 text-sm text-slate-500">В текущем payload спам-сигналы не обнаружены.</td></tr>'}
                     </tbody>
                 </table>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-3">Roadmap: Now / Next / Later</h4>
+                <h4 class="font-semibold mb-3">Роадмап: Сейчас / Далее / Позже</h4>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                     <div class="rounded-lg border border-rose-200 bg-rose-50 p-3">
-                        <div class="font-semibold text-rose-800 mb-2">Now</div>
-                        <ul class="list-disc pl-4">${roadmapList(nowRoadmap, 'No critical actions queued.')}</ul>
+                        <div class="font-semibold text-rose-800 mb-2">Сейчас</div>
+                        <ul class="list-disc pl-4">${roadmapList(nowRoadmap, 'Критичные действия не запланированы.')}</ul>
                     </div>
                     <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                        <div class="font-semibold text-amber-800 mb-2">Next</div>
-                        <ul class="list-disc pl-4">${roadmapList(nextRoadmap, 'No warning actions queued.')}</ul>
+                        <div class="font-semibold text-amber-800 mb-2">Далее</div>
+                        <ul class="list-disc pl-4">${roadmapList(nextRoadmap, 'Действия по предупреждениям не запланированы.')}</ul>
                     </div>
                     <div class="rounded-lg border border-sky-200 bg-sky-50 p-3">
-                        <div class="font-semibold text-sky-800 mb-2">Later</div>
-                        <ul class="list-disc pl-4">${roadmapList(laterRoadmap, 'No backlog actions queued.')}</ul>
+                        <div class="font-semibold text-sky-800 mb-2">Позже</div>
+                        <ul class="list-disc pl-4">${roadmapList(laterRoadmap, 'Действия в backlog не запланированы.')}</ul>
                     </div>
                 </div>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-2">Actionable Recommendations</h4>
+                <h4 class="font-semibold mb-2">Практические рекомендации</h4>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    ${recommendationCardsHtml || '<div class="text-sm text-slate-500">No recommendations available.</div>'}
+                    ${recommendationCardsHtml || '<div class="text-sm text-slate-500">Рекомендации недоступны.</div>'}
                 </div>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-2">Downloads</h4>
+                <h4 class="font-semibold mb-2">Скачивания</h4>
                 ${artifactsMeta.payload_compacted ? `
                     <div class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-3">
-                        Payload compact mode is enabled. Full deep data is available via chunk downloads below.
+                        Включен компактный режим payload. Полные данные доступны через скачивание частей ниже.
                     </div>
                     <div class="text-xs text-gray-600 mb-3">
-                        Omitted from inline payload:
+                        Пропущено в inline payload:
                         issues=${escapeHtml((artifactsMeta.omitted_counts || {}).issues ?? 0)},
                         semantic=${escapeHtml((artifactsMeta.omitted_counts || {}).semantic_linking_map ?? 0)},
                         pages=${escapeHtml((artifactsMeta.omitted_counts || {}).pages ?? 0)}
                     </div>
                 ` : ''}
-                ${downloadsHtml || '<div class="text-sm text-gray-500">Chunk artifacts are not available for this run.</div>'}
+                ${downloadsHtml || '<div class="text-sm text-gray-500">Chunk-артефакты для этого запуска недоступны.</div>'}
             </div>
         </div>
     `;

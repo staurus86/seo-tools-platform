@@ -163,7 +163,7 @@ class DOCXGenerator:
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
         doc.add_paragraph(f"URL: {data.get('url', 'н/д')}")
         doc.add_paragraph(f"Р СџРЎР‚Р С•Р Р†Р ВµРЎР‚Р ВµР Р…Р ѕ РЎРѓРЎвЂљРЎР‚Р В°Р Р…Р С‘РЎвЂ : {data.get('pages_analyzed', 0)}")
-        doc.add_paragraph(f"Completed at: {data.get('completed_at', 'n/a')}")
+        doc.add_paragraph(f"Завершено: {data.get('completed_at', 'н/д')}")
         doc.add_paragraph(
             "Р С›Р С—Р С‘РЎРѓР В°Р Р…Р С‘Р Вµ: Р Т‘Р В°Р Р…Р Р…РЎвЂ№Р в„– Р С•РЎвЂљРЎвЂЎР Вµт РЎвЂћР С‘Р С”РЎРѓР С‘РЎР‚РЎС“Р Вµт Р С•Р В±РЎвЂ°Р ВµР Вµ РЎвЂљР ВµРЎвЂ¦Р Р…Р С‘РЎвЂЎР ВµРЎРѓР С”Р С•Р Вµ РЎРѓР С•РЎРѓРЎвЂљР С•РЎРЏР Р…Р С‘Р Вµ РЎРѓР В°Р в„–РЎвЂљР В° с РЎвЂљР С•РЎвЂЎР С”Р ё Р В·РЎР‚Р ВµР Р…Р ёя SEO, "
             "РЎвЂЎРЎвЂљР С•Р В±ы Р С•Р С—РЎР‚Р ВµР Т‘Р ВµР В»Р ёть Р С—РЎР‚Р С‘Р С•РЎР‚Р С‘РЎвЂљР ВµРЎвЂљРЎвЂ№ Р Т‘Р С•РЎР‚Р В°Р В±Р ѕС‚ок Р ё РЎРѓР Р…Р С‘Р В·Р ёть РЎР‚Р С‘РЎРѓР С”Р ё Р С—Р С•РЎвЂљР ВµРЎР‚Р ё Р С•РЎР‚Р С–Р В°Р Р…Р С‘РЎвЂЎР Вµского РЎвЂљРЎР‚Р В°РЎвЂћР С‘Р С”Р В°."
@@ -199,46 +199,46 @@ class DOCXGenerator:
         """Generate full robots.txt DOCX report with complete result coverage."""
         doc = Document()
 
-        url = data.get('url', 'n/a')
+        url = data.get('url', 'н/д')
         results = data.get('results', {}) or {}
         generated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
         def yes_no(value: Any) -> str:
-            return 'Yes' if bool(value) else 'No'
+            return 'Да' if bool(value) else 'Нет'
 
-        title = doc.add_heading('Robots.txt Audit Report', 0)
+        title = doc.add_heading('Отчет по аудиту Robots.txt', 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        subtitle = doc.add_paragraph('Technical crawl directives, risk profile, and remediation plan')
+        subtitle = doc.add_paragraph('Технические директивы сканирования, профиль рисков и план исправлений')
         subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         doc.add_paragraph(f"URL: {url}")
-        doc.add_paragraph(f"Generated: {generated_at}")
+        doc.add_paragraph(f"Сформирован: {generated_at}")
 
-        self._add_heading(doc, '1. Executive Summary', level=1)
+        self._add_heading(doc, '1. Ключевая сводка', level=1)
         summary_rows = [
-            ['robots.txt found', yes_no(results.get('robots_txt_found'))],
-            ['HTTP status', str(results.get('status_code', 'n/a'))],
-            ['Quality score', str(results.get('quality_score', 'n/a'))],
-            ['Quality grade', str(results.get('quality_grade', 'n/a'))],
-            ['Production ready', yes_no(results.get('production_ready'))],
-            ['Quick status', str(results.get('quick_status', 'n/a'))],
-            ['File size (bytes)', str(results.get('content_length', 0))],
-            ['Lines count', str(results.get('lines_count', 0))],
-            ['User-agents', str(results.get('user_agents', 0))],
-            ['Disallow rules', str(results.get('disallow_rules', 0))],
-            ['Allow rules', str(results.get('allow_rules', 0))],
-            ['Sitemaps declared', str(len(results.get('sitemaps', []) or []))],
-            ['Hosts declared', str(len(results.get('hosts', []) or []))],
-            ['Crawl-delay directives', str(len(results.get('crawl_delays', {}) or {}))],
-            ['Clean-param directives', str(len(results.get('clean_params', []) or []))],
+            ['robots.txt найден', yes_no(results.get('robots_txt_found'))],
+            ['HTTP-статус', str(results.get('status_code', 'н/д'))],
+            ['Оценка качества', str(results.get('quality_score', 'н/д'))],
+            ['Грейд качества', str(results.get('quality_grade', 'н/д'))],
+            ['Готов к продакшн', yes_no(results.get('production_ready'))],
+            ['Быстрый статус', str(results.get('quick_status', 'н/д'))],
+            ['Размер файла (байт)', str(results.get('content_length', 0))],
+            ['Количество строк', str(results.get('lines_count', 0))],
+            ['User-agent групп', str(results.get('user_agents', 0))],
+            ['Правил Disallow', str(results.get('disallow_rules', 0))],
+            ['Правил Allow', str(results.get('allow_rules', 0))],
+            ['Объявлено sitemap', str(len(results.get('sitemaps', []) or []))],
+            ['Объявлено host', str(len(results.get('hosts', []) or []))],
+            ['Директив crawl-delay', str(len(results.get('crawl_delays', {}) or {}))],
+            ['Директив clean-param', str(len(results.get('clean_params', []) or []))],
         ]
-        self._add_table(doc, ['Metric', 'Value'], summary_rows)
+        self._add_table(doc, ['Метрика', 'Значение'], summary_rows)
 
         severity = results.get('severity_counts', {}) or {}
-        self._add_heading(doc, '2. Severity Overview', level=1)
+        self._add_heading(doc, '2. Обзор критичности', level=1)
         self._add_table(
             doc,
-            ['Critical', 'Warning', 'Info'],
+            ['Критично', 'Предупреждение', 'Инфо'],
             [[
                 str(severity.get('critical', 0)),
                 str(severity.get('warning', 0)),
@@ -246,39 +246,39 @@ class DOCXGenerator:
             ]],
         )
 
-        self._add_heading(doc, '3. Critical Issues', level=1)
+        self._add_heading(doc, '3. Критические проблемы', level=1)
         critical = results.get('critical_issues', []) or results.get('issues', []) or []
         if critical:
             for item in critical:
                 doc.add_paragraph(str(item), style='List Bullet')
         else:
-            doc.add_paragraph('No critical issues found.')
+            doc.add_paragraph('Критические проблемы не обнаружены.')
 
-        self._add_heading(doc, '4. Warnings', level=1)
+        self._add_heading(doc, '4. Предупреждения', level=1)
         warnings = results.get('warning_issues', []) or results.get('warnings', []) or []
         if warnings:
             for item in warnings:
                 doc.add_paragraph(str(item), style='List Bullet')
         else:
-            doc.add_paragraph('No warnings found.')
+            doc.add_paragraph('Предупреждения не обнаружены.')
 
-        self._add_heading(doc, '5. Informational Notes', level=1)
+        self._add_heading(doc, '5. Информационные заметки', level=1)
         info_issues = results.get('info_issues', []) or []
         if info_issues:
             for item in info_issues:
                 doc.add_paragraph(str(item), style='List Bullet')
         else:
-            doc.add_paragraph('No informational notes.')
+            doc.add_paragraph('Информационные заметки отсутствуют.')
 
-        self._add_heading(doc, '6. Recommendations', level=1)
+        self._add_heading(doc, '6. Рекомендации', level=1)
         recommendations = results.get('recommendations', []) or []
         if recommendations:
             for item in recommendations:
                 doc.add_paragraph(str(item), style='List Bullet')
         else:
-            doc.add_paragraph('No recommendations generated.')
+            doc.add_paragraph('Рекомендации не сформированы.')
 
-        self._add_heading(doc, '7. Top Fixes', level=1)
+        self._add_heading(doc, '7. Топ исправлений', level=1)
         top_fixes = results.get('top_fixes', []) or []
         if top_fixes:
             rows = []
@@ -289,11 +289,11 @@ class DOCXGenerator:
                     str(fix.get('why', '')),
                     str(fix.get('action', '')),
                 ])
-            self._add_table(doc, ['Priority', 'Title', 'Why', 'Action'], rows)
+            self._add_table(doc, ['Приоритет', 'Заголовок', 'Почему', 'Действие'], rows)
         else:
-            doc.add_paragraph('No prioritized fixes generated.')
+            doc.add_paragraph('Приоритизированные исправления не сформированы.')
 
-        self._add_heading(doc, '8. Sitemap Checks', level=1)
+        self._add_heading(doc, '8. Проверки Sitemap', level=1)
         sitemap_checks = results.get('sitemap_checks', []) or []
         if sitemap_checks:
             rows = []
@@ -302,25 +302,25 @@ class DOCXGenerator:
                 if ok is True:
                     status = 'OK'
                 elif ok is False:
-                    status = 'FAIL'
+                    status = 'ОШИБКА'
                 else:
-                    status = 'SKIPPED'
+                    status = 'ПРОПУЩЕНО'
                 rows.append([
                     str(check.get('url', '')),
                     status,
                     str(check.get('status_code', '')),
                     str(check.get('error', '')),
                 ])
-            self._add_table(doc, ['URL', 'Status', 'HTTP', 'Error'], rows)
+            self._add_table(doc, ['URL', 'Статус', 'HTTP', 'Ошибка'], rows)
         else:
-            doc.add_paragraph('No sitemap checks available.')
+            doc.add_paragraph('Проверки sitemap недоступны.')
 
-        self._add_heading(doc, '9. Group Rules Detail', level=1)
+        self._add_heading(doc, '9. Детали правил групп', level=1)
         groups = results.get('groups_detail', []) or []
         if groups:
             for idx, group in enumerate(groups, start=1):
                 uas = ', '.join(group.get('user_agents', []) or [])
-                doc.add_paragraph(f"Group {idx}: {uas}")
+                doc.add_paragraph(f"Группа {idx}: {uas}")
                 disallow_rows = [
                     [str(item.get('path', '')), str(item.get('line', ''))]
                     for item in (group.get('disallow', []) or [])
@@ -331,16 +331,16 @@ class DOCXGenerator:
                 ]
                 if disallow_rows:
                     doc.add_paragraph('Disallow:')
-                    self._add_table(doc, ['Path', 'Line'], disallow_rows)
+                    self._add_table(doc, ['Путь', 'Строка'], disallow_rows)
                 if allow_rows:
                     doc.add_paragraph('Allow:')
-                    self._add_table(doc, ['Path', 'Line'], allow_rows)
+                    self._add_table(doc, ['Путь', 'Строка'], allow_rows)
                 if (not disallow_rows) and (not allow_rows):
-                    doc.add_paragraph('No allow/disallow rules in this group.')
+                    doc.add_paragraph('В этой группе нет правил allow/disallow.')
         else:
-            doc.add_paragraph('No parsed group details available.')
+            doc.add_paragraph('Детализация групп недоступна.')
 
-        self._add_heading(doc, '10. Syntax Errors', level=1)
+        self._add_heading(doc, '10. Синтаксические ошибки', level=1)
         syntax_errors = results.get('syntax_errors', []) or []
         if syntax_errors:
             rows = []
@@ -350,14 +350,14 @@ class DOCXGenerator:
                     str(err.get('error', '')),
                     str(err.get('content', '')),
                 ])
-            self._add_table(doc, ['Line', 'Error', 'Content'], rows)
+            self._add_table(doc, ['Строка', 'Ошибка', 'Содержимое'], rows)
         else:
-            doc.add_paragraph('No syntax errors found.')
+            doc.add_paragraph('Синтаксические ошибки не обнаружены.')
 
-        self._add_heading(doc, '11. Extended Analysis', level=1)
+        self._add_heading(doc, '11. Расширенный анализ', level=1)
         http_status_analysis = results.get('http_status_analysis', {}) or {}
         if http_status_analysis:
-            doc.add_paragraph(f"HTTP status context: {http_status_analysis.get('status_code', 'n/a')}")
+            doc.add_paragraph(f"Контекст HTTP-статуса: {http_status_analysis.get('status_code', 'н/д')}")
             for note in (http_status_analysis.get('notes', []) or []):
                 doc.add_paragraph(str(note), style='List Bullet')
 
@@ -370,12 +370,12 @@ class DOCXGenerator:
                     str(item.get('directive', '')),
                     str(item.get('value', '')),
                 ])
-            self._add_table(doc, ['Line', 'Directive', 'Value'], rows)
+            self._add_table(doc, ['Строка', 'Директива', 'Значение'], rows)
 
         host_validation = results.get('host_validation', {}) or {}
         if host_validation:
-            hosts = ', '.join(host_validation.get('hosts', []) or []) or 'n/a'
-            doc.add_paragraph(f"Host directives: {hosts}")
+            hosts = ', '.join(host_validation.get('hosts', []) or []) or 'н/д'
+            doc.add_paragraph(f"Директивы Host: {hosts}")
             for note in (host_validation.get('warnings', []) or []):
                 doc.add_paragraph(str(note), style='List Bullet')
 
@@ -389,32 +389,32 @@ class DOCXGenerator:
                     str(item.get('user_agent', '')),
                     str(item.get('path', item.get('groups', ''))),
                 ])
-            self._add_table(doc, ['Conflict Type', 'User-agent', 'Path/Value'], rows)
+            self._add_table(doc, ['Тип конфликта', 'User-agent', 'Путь/значение'], rows)
 
         longest_match = results.get('longest_match_analysis', {}) or {}
         longest_notes = longest_match.get('notes', []) or []
         if longest_notes:
-            doc.add_paragraph('Longest-match notes:')
+            doc.add_paragraph('Примечания по longest-match:')
             for note in longest_notes:
                 doc.add_paragraph(str(note), style='List Bullet')
 
         param_recommendations = results.get('param_recommendations', []) or []
         if param_recommendations:
-            doc.add_paragraph('Yandex Clean-param recommendations:')
+            doc.add_paragraph('Рекомендации по Yandex Clean-param:')
             for rec in param_recommendations:
                 doc.add_paragraph(str(rec), style='List Bullet')
 
-        self._add_heading(doc, '12. Bots Coverage', level=1)
+        self._add_heading(doc, '12. Покрытие по ботам', level=1)
         present_agents = results.get('present_agents', []) or []
         missing_bots = results.get('missing_bots', []) or []
         if present_agents:
-            doc.add_paragraph('Detected user-agent groups:')
+            doc.add_paragraph('Обнаруженные группы user-agent:')
             for ua in present_agents:
                 doc.add_paragraph(str(ua), style='List Bullet')
         else:
-            doc.add_paragraph('No explicit bot groups detected.')
+            doc.add_paragraph('Явные группы ботов не обнаружены.')
         if missing_bots:
-            doc.add_paragraph('Recommended bots to add explicit rules for:')
+            doc.add_paragraph('Рекомендуемые боты для явных правил:')
             for bot in missing_bots:
                 doc.add_paragraph(str(bot), style='List Bullet')
         else:
@@ -468,7 +468,7 @@ class DOCXGenerator:
         doc.add_paragraph('Yandex Clean-param: https://yandex.com/support/webmaster/en/robot-workings/clean-param')
 
         doc.add_paragraph()
-        footer = doc.add_paragraph(f"Generated by SEO Tools Platform at {generated_at}")
+        footer = doc.add_paragraph(f"Сформировано SEO Tools Platform: {generated_at}")
         footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
         if footer.runs:
             footer.runs[0].font.size = Pt(8)
@@ -490,7 +490,7 @@ class DOCXGenerator:
         resolved_url = results.get("resolved_sitemap_url") or data.get('url', 'н/д')
         discovery_source = results.get("sitemap_discovery_source", "")
         doc.add_paragraph(f"Входной URL: {input_url}")
-        doc.add_paragraph(f"Sitemap URL: {resolved_url}")
+        doc.add_paragraph(f"URL sitemap: {resolved_url}")
         if discovery_source:
             source_map = {
                 "direct_input": "прямой URL",
@@ -509,16 +509,16 @@ class DOCXGenerator:
             ["Всего URL", results.get("urls_count", 0)],
             ["Уникальных URL", results.get("unique_urls_count", 0)],
             ["Дубли URL", results.get("duplicate_urls_count", 0)],
-            ["Оценка качества", f"{results.get('quality_score', 'n/a')} ({results.get('quality_grade', 'n/a')})"],
+            ["Оценка качества", f"{results.get('quality_score', 'н/д')} ({results.get('quality_grade', 'н/д')})"],
         ]
         self._add_heading(doc, "1. Сводка", level=1)
         self._add_table(doc, ["Метрика", "Значение"], summary_rows)
 
         severity = results.get("severity_counts", {}) or {}
-        self._add_heading(doc, "2. Распределение по severity", level=1)
+        self._add_heading(doc, "2. Распределение по критичности", level=1)
         self._add_table(
             doc,
-            ["Critical", "Warning", "Info"],
+            ["Критично", "Предупреждение", "Инфо"],
             [[severity.get("critical", 0), severity.get("warning", 0), severity.get("info", 0)]],
         )
 
@@ -533,7 +533,7 @@ class DOCXGenerator:
                     it.get("details", ""),
                     it.get("action", ""),
                 ])
-            self._add_table(doc, ["Severity", "Проблема", "Детали", "Действие"], rows)
+            self._add_table(doc, ["Критичность", "Проблема", "Детали", "Действие"], rows)
         else:
             doc.add_paragraph("Приоритизированные проблемы отсутствуют.")
 
@@ -672,10 +672,10 @@ class DOCXGenerator:
             ['Средний процент потерь', f"{summary.get('avg_missing_pct', 0)}%", 'РРЅС„Рѕ'],
         ]
         self._add_table(doc, ['Показатель', 'Значение', 'Статус'], totals)
-        doc.add_paragraph(f"вЂў SEO-оценка: {summary.get('score', 'н/д')}/100")
-        doc.add_paragraph(f"вЂў Критических проблем: {summary.get('critical_issues', 0)}")
-        doc.add_paragraph(f"вЂў Предупреждений: {summary.get('warning_issues', 0)}")
-        doc.add_paragraph(f"вЂў Добавлено элементов через JS: {summary.get('missing_total', 0)}")
+        doc.add_paragraph(f"• SEO-оценка: {summary.get('score', 'н/д')}/100")
+        doc.add_paragraph(f"• Критических проблем: {summary.get('critical_issues', 0)}")
+        doc.add_paragraph(f"• Предупреждений: {summary.get('warning_issues', 0)}")
+        doc.add_paragraph(f"• Добавлено элементов через JS: {summary.get('missing_total', 0)}")
 
         primary = variants[0] if variants else {}
         raw_p = primary.get('raw', {}) or {}
@@ -967,7 +967,7 @@ class DOCXGenerator:
         title = doc.add_heading("Клиентский отчет: мобильная версия сайта", 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        url = data.get("url", "n/a")
+        url = data.get("url", "н/д")
         generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         doc.add_paragraph(f"Сайт: {url}")
         doc.add_paragraph(f"Отчет сформирован: {generated_at}")
@@ -1027,28 +1027,28 @@ class DOCXGenerator:
         self._add_heading(doc, "1. Сводка по проверке", level=1)
         summary_rows = [
             ["Движок проверки", results.get("engine", "legacy")],
-            ["Р ежим проверки", "Быстрый" if results.get("mode") == "quick" else "Полный"],
+            ["Режим проверки", "Быстрый" if results.get("mode") == "quick" else "Полный"],
             ["Проверено устройств", summary.get("total_devices", len(devices))],
             ["Устройств без критичных проблем", summary.get("mobile_friendly_devices", 0)],
             ["Устройств с проблемами", summary.get("non_friendly_devices", 0)],
             ["Среднее время загрузки, мс", summary.get("avg_load_time_ms", 0)],
             ["Ошибок (critical + warning)", len(actionable_issues)],
-            ["РРЅС„РѕСЂРјР°С†РёРѕРЅРЅС‹С… замечаний", len(info_issues)],
-            ["РРЅС‚РµРіСЂР°Р»СЊРЅР°СЏ оценка", results.get("score", "н/д")],
-            ["РС‚РѕРі", "Соответствует требованиям" if results.get("mobile_friendly") else "Требуются доработки"],
+            ["Информационных замечаний", len(info_issues)],
+            ["Интегральная оценка", results.get("score", "н/д")],
+            ["Итог", "Соответствует требованиям" if results.get("mobile_friendly") else "Требуются доработки"],
         ]
         self._add_table(doc, ["Показатель", "Значение"], summary_rows)
 
         self._add_heading(doc, "2. Технические параметры", level=1)
         tech_rows = [
-            ["HTTP", results.get("status_code", "n/a")],
-            ["Final URL", results.get("final_url", url)],
+            ["HTTP", results.get("status_code", "н/д")],
+            ["Итоговый URL", results.get("final_url", url)],
             ["Viewport найден", "Да" if results.get("viewport_found") else "Нет"],
-            ["Viewport content", results.get("viewport_content") or "-"],
+            ["Содержимое viewport", results.get("viewport_content") or "-"],
         ]
         self._add_table(doc, ["Параметр", "Значение"], tech_rows)
 
-        self._add_heading(doc, "3. Р езультаты по устройствам", level=1)
+        self._add_heading(doc, "3. Результаты по устройствам", level=1)
         if devices:
             device_rows = []
             for d in devices:
@@ -1061,14 +1061,14 @@ class DOCXGenerator:
                     d.get("device_name", ""),
                     category,
                     f"{(d.get('viewport') or {}).get('width', '-')}x{(d.get('viewport') or {}).get('height', '-')}",
-                    d.get("status_code", "n/a"),
+                    d.get("status_code", "н/д"),
                     d.get("load_time_ms", 0),
                     d.get("issues_count", 0),
                     "Да" if d.get("mobile_friendly") else "Нет",
                 ])
             self._add_table(
                 doc,
-                ["Устройство", "Тип", "Viewport", "HTTP", "Load ms", "Ошибок", "ОК для mobile"],
+                ["Устройство", "Тип", "Viewport", "HTTP", "Загрузка, мс", "Ошибок", "ОК для mobile"],
                 device_rows,
             )
         else:
@@ -1129,7 +1129,7 @@ class DOCXGenerator:
                     if detail:
                         doc.add_paragraph(f"- {detail}")
 
-        self._add_heading(doc, "5. РРЅС„РѕСЂРјР°С†РёРѕРЅРЅС‹Рµ наблюдения", level=1)
+        self._add_heading(doc, "5. Информационные наблюдения", level=1)
         if info_issues:
             for issue in info_issues:
                 info_title = issue.get("title") or "\u041d\u0430\u0431\u043b\u044e\u0434\u0435\u043d\u0438\u0435"
@@ -1219,41 +1219,41 @@ class DOCXGenerator:
         evidence_pack = ((results.get("evidence_pack", {}) or {}).get("rows") or [])
         batch_runs = results.get("batch_runs", []) or []
 
-        title = doc.add_heading("Bot Access Check Report", 0)
+        title = doc.add_heading("Отчет по проверке доступности ботов", 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        doc.add_paragraph(f"URL: {data.get('url', 'n/a')}")
-        doc.add_paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        doc.add_paragraph(f"Retry profile: {results.get('retry_profile', 'standard')}")
+        doc.add_paragraph(f"URL: {data.get('url', 'н/д')}")
+        doc.add_paragraph(f"Сформирован: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        doc.add_paragraph(f"Профиль ретраев: {results.get('retry_profile', 'standard')}")
         doc.add_paragraph(
-            f"Criticality profile: {results.get('criticality_profile', 'balanced')} | "
-            f"SLA profile: {results.get('sla_profile', 'standard')}"
+            f"Профиль критичности: {results.get('criticality_profile', 'balanced')} | "
+            f"Профиль SLA: {results.get('sla_profile', 'standard')}"
         )
         doc.add_paragraph(
-            f"AI policy mode: {'intentional AI blocks' if results.get('ai_block_expected') else 'strict availability'} "
-            f"(expected blocked: {summary.get('expected_ai_policy_blocked', 0)})"
+            f"Режим AI-политики: {'намеренные блокировки AI' if results.get('ai_block_expected') else 'строгая доступность'} "
+            f"(ожидаемо заблокировано: {summary.get('expected_ai_policy_blocked', 0)})"
         )
 
-        self._add_heading(doc, "1. Executive One-Page Summary", level=1)
+        self._add_heading(doc, "1. Краткая сводка на одной странице", level=1)
         exec_rows = [
-            ["Bots checked", len(results.get("bots_checked", []) or [])],
-            ["Reachable", summary.get("accessible", 0)],
-            ["Crawlable", summary.get("crawlable", 0)],
-            ["Renderable", summary.get("renderable", 0)],
-            ["Indexable", summary.get("indexable", 0)],
-            ["Non-indexable", summary.get("non_indexable", 0)],
-            ["WAF/CDN signals", summary.get("waf_cdn_detected", 0)],
-            ["Avg response ms", summary.get("avg_response_time_ms", 0)],
+            ["Ботов проверено", len(results.get("bots_checked", []) or [])],
+            ["Доступно", summary.get("accessible", 0)],
+            ["Сканируемо", summary.get("crawlable", 0)],
+            ["Рендерится", summary.get("renderable", 0)],
+            ["Индексируемо", summary.get("indexable", 0)],
+            ["Не индексируемо", summary.get("non_indexable", 0)],
+            ["Сигналы WAF/CDN", summary.get("waf_cdn_detected", 0)],
+            ["Средний ответ, мс", summary.get("avg_response_time_ms", 0)],
         ]
-        self._add_table(doc, ["Metric", "Value"], exec_rows)
+        self._add_table(doc, ["Метрика", "Значение"], exec_rows)
 
-        business_risk = "Low"
+        business_risk = "Низкий"
         if (summary.get("non_indexable", 0) or 0) > 0 or (summary.get("waf_cdn_detected", 0) or 0) > 0:
-            business_risk = "Medium"
+            business_risk = "Средний"
         if (summary.get("non_indexable", 0) or 0) >= max(1, int((summary.get("total", 0) or 0) * 0.3)):
-            business_risk = "High"
-        doc.add_paragraph(f"Business Risk: {business_risk}")
+            business_risk = "Высокий"
+        doc.add_paragraph(f"Бизнес-риск: {business_risk}")
 
-        self._add_heading(doc, "2. Top Blockers", level=1)
+        self._add_heading(doc, "2. Топ блокеров", level=1)
         if blockers:
             blocker_rows = []
             for item in blockers[:10]:
@@ -1264,23 +1264,23 @@ class DOCXGenerator:
                     item.get("priority_score", 0),
                     ", ".join(item.get("sample_bots", []) or []),
                 ])
-            self._add_table(doc, ["Code", "Title", "Affected", "Priority", "Sample Bots"], blocker_rows)
+            self._add_table(doc, ["Код", "Заголовок", "Затронуто", "Приоритет", "Примеры ботов"], blocker_rows)
         else:
-            doc.add_paragraph("No priority blockers detected.")
+            doc.add_paragraph("Приоритетные блокеры не обнаружены.")
 
-        self._add_heading(doc, "3. Sprint Plan (Playbooks)", level=1)
+        self._add_heading(doc, "3. План спринта (плейбуки)", level=1)
         if playbooks:
             for idx, item in enumerate(playbooks[:8], start=1):
                 doc.add_paragraph(
-                    f"{idx}. [{item.get('owner', 'Owner')}] {item.get('title', '')} "
-                    f"(priority {item.get('priority_score', 0)})"
+                    f"{idx}. [{item.get('owner', 'Владелец')}] {item.get('title', '')} "
+                    f"(приоритет {item.get('priority_score', 0)})"
                 )
                 for action in (item.get("actions") or [])[:5]:
                     doc.add_paragraph(str(action), style="List Bullet")
         else:
-            doc.add_paragraph("No playbooks generated for this run.")
+            doc.add_paragraph("Плейбуки для этого запуска не сформированы.")
 
-        self._add_heading(doc, "4. Category SLA Matrix", level=1)
+        self._add_heading(doc, "4. SLA-матрица категорий", level=1)
         if category_stats:
             rows = []
             for c in category_stats:
@@ -1290,47 +1290,47 @@ class DOCXGenerator:
                     c.get("total", 0),
                     c.get("indexable_pct", 0),
                     c.get("sla_target_pct", 0),
-                    "Yes" if c.get("sla_met") else "No",
+                    "Да" if c.get("sla_met") else "Нет",
                 ])
-            self._add_table(doc, ["Category", "Indexable", "Total", "Indexable %", "SLA %", "Met"], rows)
+            self._add_table(doc, ["Категория", "Индексируемо", "Всего", "Индексируемо %", "SLA %", "Выполнено"], rows)
         else:
-            doc.add_paragraph("No category stats available.")
+            doc.add_paragraph("Статистика по категориям недоступна.")
 
-        self._add_heading(doc, "5. Host Consistency", level=1)
-        doc.add_paragraph(f"Consistent: {'Yes' if host_consistency.get('consistent', True) else 'No'}")
+        self._add_heading(doc, "5. Консистентность host", level=1)
+        doc.add_paragraph(f"Консистентно: {'Да' if host_consistency.get('consistent', True) else 'Нет'}")
         for note in (host_consistency.get("notes") or []):
             doc.add_paragraph(str(note), style="List Bullet")
 
-        self._add_heading(doc, "6. Diff vs Baseline", level=1)
+        self._add_heading(doc, "6. Сравнение с baseline", level=1)
         if baseline_diff.get("has_baseline"):
             rows = [
                 [m.get("metric", ""), m.get("current", ""), m.get("baseline", ""), m.get("delta", "")]
                 for m in (baseline_diff.get("metrics") or [])
             ]
             if rows:
-                self._add_table(doc, ["Metric", "Current", "Baseline", "Delta"], rows)
+                self._add_table(doc, ["Метрика", "Текущее", "Базовое", "Дельта"], rows)
             else:
-                doc.add_paragraph("No metric deltas.")
+                doc.add_paragraph("Дельты метрик отсутствуют.")
         else:
-            doc.add_paragraph(baseline_diff.get("message", "No baseline found."))
+            doc.add_paragraph(baseline_diff.get("message", "Baseline не найден."))
 
-        self._add_heading(doc, "7. Trend History", level=1)
+        self._add_heading(doc, "7. История тренда", level=1)
         trend_history = trend.get("history", []) or []
         trend_delta = trend.get("delta_vs_previous", {}) or {}
         if trend_history:
             latest = trend.get("latest") or trend_history[0]
             previous = trend.get("previous")
             doc.add_paragraph(
-                f"Runs stored for domain: {trend.get('history_count', len(trend_history))}. "
-                f"Latest run: {latest.get('timestamp', 'n/a')}."
+                f"Запусков сохранено для домена: {trend.get('history_count', len(trend_history))}. "
+                f"Последний запуск: {latest.get('timestamp', 'н/д')}."
             )
             if previous:
-                doc.add_paragraph(f"Previous run: {previous.get('timestamp', 'n/a')}.")
+                doc.add_paragraph(f"Предыдущий запуск: {previous.get('timestamp', 'н/д')}.")
                 doc.add_paragraph(
-                    "Delta vs previous: "
-                    f"indexable {trend_delta.get('indexable', 0)}, "
-                    f"critical {trend_delta.get('critical_issues', 0)}, "
-                    f"avg response ms {trend_delta.get('avg_response_time_ms', 0)}."
+                    "Дельта к предыдущему: "
+                    f"индексируемо {trend_delta.get('indexable', 0)}, "
+                    f"критичных {trend_delta.get('critical_issues', 0)}, "
+                    f"средний ответ, мс {trend_delta.get('avg_response_time_ms', 0)}."
                 )
             rows = []
             for item in trend_history[:10]:
@@ -1345,35 +1345,35 @@ class DOCXGenerator:
                 ])
             self._add_table(
                 doc,
-                ["Run time", "Indexable", "Crawlable", "Renderable", "Avg ms", "Critical", "Warnings"],
+                ["Время запуска", "Индексируемо", "Сканируемо", "Рендерится", "Среднее, мс", "Критично", "Предупреждения"],
                 rows,
             )
         else:
-            doc.add_paragraph("No trend history available.")
+            doc.add_paragraph("История тренда недоступна.")
 
-        self._add_heading(doc, "8. Recommendations", level=1)
+        self._add_heading(doc, "8. Рекомендации", level=1)
         recs = results.get("recommendations", []) or []
         if recs:
             for rec in recs[:30]:
                 doc.add_paragraph(str(rec), style="List Bullet")
         else:
-            doc.add_paragraph("No recommendations.")
+            doc.add_paragraph("Рекомендации отсутствуют.")
 
         self._add_heading(doc, "9. Alerts", level=1)
         if alerts:
             for a in alerts[:30]:
                 doc.add_paragraph(f"[{str(a.get('severity', 'info')).upper()}] {a.get('code', '')}: {a.get('message', '')}", style="List Bullet")
         else:
-            doc.add_paragraph("No active alerts.")
+            doc.add_paragraph("Активные алерты отсутствуют.")
 
-        self._add_heading(doc, "10. Robots Policy Linter", level=1)
+        self._add_heading(doc, "10. Линтер Robots Policy", level=1)
         if robots_linter:
             rows = [[str(x.get("severity", "")).upper(), x.get("code", ""), x.get("message", "")] for x in robots_linter[:40]]
-            self._add_table(doc, ["Severity", "Code", "Message"], rows)
+            self._add_table(doc, ["Критичность", "Код", "Сообщение"], rows)
         else:
-            doc.add_paragraph("No robots linter findings.")
+            doc.add_paragraph("Линтер robots не выявил замечаний.")
 
-        self._add_heading(doc, "11. Allowlist Simulator", level=1)
+        self._add_heading(doc, "11. Симулятор allowlist", level=1)
         if allowlist_sim:
             rows = []
             for s in allowlist_sim[:20]:
@@ -1384,20 +1384,20 @@ class DOCXGenerator:
                     s.get("delta_indexable", 0),
                     s.get("projected_indexable_pct", 0),
                 ])
-            self._add_table(doc, ["Category", "Affected", "Delta Renderable", "Delta Indexable", "Projected %"], rows)
+            self._add_table(doc, ["Категория", "Затронуто", "Дельта рендеринга", "Дельта индексации", "Прогноз %"], rows)
         else:
-            doc.add_paragraph("No simulation data.")
+            doc.add_paragraph("Нет данных симуляции.")
 
-        self._add_heading(doc, "12. Action Center (by owner)", level=1)
+        self._add_heading(doc, "12. Центр действий (по владельцам)", level=1)
         if action_center:
             for owner, rows in action_center.items():
                 doc.add_paragraph(str(owner))
                 for item in (rows or [])[:8]:
-                    doc.add_paragraph(f"{item.get('title', '')} (priority {item.get('priority_score', 0)})", style="List Bullet")
+                    doc.add_paragraph(f"{item.get('title', '')} (приоритет {item.get('priority_score', 0)})", style="List Bullet")
         else:
-            doc.add_paragraph("No owner action groups.")
+            doc.add_paragraph("Группы действий по владельцам отсутствуют.")
 
-        self._add_heading(doc, "13. Evidence Pack", level=1)
+        self._add_heading(doc, "13. Пакет доказательств", level=1)
         if evidence_pack:
             rows = []
             for e in evidence_pack[:40]:
@@ -1405,15 +1405,15 @@ class DOCXGenerator:
                     e.get("bot", ""),
                     e.get("status", ""),
                     e.get("indexability_reason", ""),
-                    f"{'Yes' if e.get('waf_detected') else 'No'} ({e.get('waf_confidence', 0)})",
+                    f"{'Да' if e.get('waf_detected') else 'Нет'} ({e.get('waf_confidence', 0)})",
                     e.get("waf_reason", ""),
                 ])
-            self._add_table(doc, ["Bot", "HTTP", "Reason", "WAF", "WAF reason"], rows)
+            self._add_table(doc, ["Бот", "HTTP", "Причина", "WAF", "Причина WAF"], rows)
         else:
-            doc.add_paragraph("No evidence rows.")
+            doc.add_paragraph("Строки доказательств отсутствуют.")
 
         if batch_runs:
-            self._add_heading(doc, "14. Batch Runs", level=1)
+            self._add_heading(doc, "14. Пакетные прогоны", level=1)
             rows = []
             for b in batch_runs[:100]:
                 rows.append([
@@ -1424,7 +1424,7 @@ class DOCXGenerator:
                     b.get("critical_issues", 0),
                     b.get("warning_issues", 0),
                 ])
-            self._add_table(doc, ["URL", "Indexable", "Total", "Renderable", "Critical", "Warnings"], rows)
+            self._add_table(doc, ["URL", "Индексируемо", "Всего", "Рендерится", "Критично", "Предупреждения"], rows)
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)
@@ -1433,46 +1433,46 @@ class DOCXGenerator:
     def generate_onpage_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Generate DOCX report for onpage_audit."""
         doc = Document()
-        title = doc.add_heading("OnPage Audit Report", 0)
+        title = doc.add_heading("Отчет OnPage-аудита", 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         results = data.get("results", {}) or {}
         summary = results.get("summary", {}) or {}
-        url = data.get("url", "n/a")
+        url = data.get("url", "н/д")
         generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         doc.add_paragraph(f"URL: {url}")
-        doc.add_paragraph(f"Generated: {generated_at}")
+        doc.add_paragraph(f"Сформирован: {generated_at}")
         doc.add_paragraph(f"Engine: {results.get('engine', 'onpage-v1')}")
 
-        self._add_heading(doc, "1. Executive Summary", level=1)
+        self._add_heading(doc, "1. Ключевая сводка", level=1)
         summary_rows = [
-            ["Score", results.get("score", summary.get("score", 0))],
-            ["Spam score", summary.get("spam_score", (results.get("scores", {}) or {}).get("spam_score", 0))],
-            ["Keyword coverage score", summary.get("keyword_coverage_score", (results.get("scores", {}) or {}).get("keyword_coverage_score", 0))],
-            ["Keyword coverage %", summary.get("keyword_coverage_pct", (results.get("keyword_coverage", {}) or {}).get("coverage_pct", 0))],
-            ["AI risk composite", summary.get("ai_risk_composite", (results.get("scores", {}) or {}).get("ai_risk_composite", 0))],
-            ["Critical issues", summary.get("critical_issues", 0)],
-            ["Warning issues", summary.get("warning_issues", 0)],
-            ["Info issues", summary.get("info_issues", 0)],
-            ["HTTP status", results.get("status_code", "n/a")],
-            ["Final URL", results.get("final_url", url)],
-            ["Language", results.get("language", "auto")],
+            ["Оценка", results.get("score", summary.get("score", 0))],
+            ["Spam-оценка", summary.get("spam_score", (results.get("scores", {}) or {}).get("spam_score", 0))],
+            ["Оценка покрытия КС", summary.get("keyword_coverage_score", (results.get("scores", {}) or {}).get("keyword_coverage_score", 0))],
+            ["Покрытие КС, %", summary.get("keyword_coverage_pct", (results.get("keyword_coverage", {}) or {}).get("coverage_pct", 0))],
+            ["AI-риск (композит)", summary.get("ai_risk_composite", (results.get("scores", {}) or {}).get("ai_risk_composite", 0))],
+            ["Критические проблемы", summary.get("critical_issues", 0)],
+            ["Предупреждения", summary.get("warning_issues", 0)],
+            ["Инфо-проблемы", summary.get("info_issues", 0)],
+            ["HTTP-статус", results.get("status_code", "н/д")],
+            ["Финальный URL", results.get("final_url", url)],
+            ["Язык", results.get("language", "auto")],
         ]
-        self._add_table(doc, ["Metric", "Value"], summary_rows)
+        self._add_table(doc, ["Метрика", "Значение"], summary_rows)
         top_risks = sorted((results.get("issues", []) or []), key=lambda x: 0 if x.get("severity") == "critical" else 1)[:5]
         top_actions = (results.get("priority_queue", []) or [])[:5]
-        self._add_heading(doc, "1a. Executive One-Page Summary", level=2)
-        doc.add_paragraph("Top Risks", style="List Bullet")
+        self._add_heading(doc, "1a. Краткая сводка на одной странице", level=2)
+        doc.add_paragraph("Топ рисков", style="List Bullet")
         for risk in top_risks:
             doc.add_paragraph(f"{risk.get('severity', '').upper()} | {risk.get('title', '')}", style="List Bullet 2")
-        doc.add_paragraph("Top Actions", style="List Bullet")
+        doc.add_paragraph("Топ действий", style="List Bullet")
         for act in top_actions:
-            doc.add_paragraph(f"{act.get('bucket', '')}: {act.get('title', '')} (priority {act.get('priority_score', 0)})", style="List Bullet 2")
+                doc.add_paragraph(f"{act.get('bucket', '')}: {act.get('title', '')} (приоритет {act.get('priority_score', 0)})", style="List Bullet 2")
 
         content = results.get("content", {}) or {}
         content_profile = results.get("content_profile", {}) or {}
-        self._add_heading(doc, "2. Content Metrics", level=1)
+        self._add_heading(doc, "2. Метрики контента", level=1)
         content_rows = [
             ["Word count", content.get("word_count", 0)],
             ["Unique words", content.get("unique_word_count", 0)],
@@ -1483,7 +1483,7 @@ class DOCXGenerator:
             ["Nausea", content_profile.get("nausea_index", 0)],
             ["Text/HTML %", content_profile.get("text_html_pct", 0)],
         ]
-        self._add_table(doc, ["Metric", "Value"], content_rows)
+        self._add_table(doc, ["Метрика", "Значение"], content_rows)
 
         self._add_heading(doc, "3. Meta Tags", level=1)
         title_meta = results.get("title", {}) or {}
@@ -1514,27 +1514,27 @@ class DOCXGenerator:
                 ]
             )
         if keyword_rows:
-            self._add_table(doc, ["Keyword", "Count", "Density %", "Title", "Description", "H1", "Status"], keyword_rows)
+            self._add_table(doc, ["Ключевое слово", "Частота", "Плотность %", "Title", "Description", "H1", "Статус"], keyword_rows)
         else:
-            doc.add_paragraph("No keywords provided.")
+            doc.add_paragraph("Ключевые слова не переданы.")
 
-        self._add_heading(doc, "5. Top Terms", level=1)
+        self._add_heading(doc, "5. Топ терминов", level=1)
         top_term_rows = []
         for row in (results.get("top_terms", []) or [])[:20]:
             top_term_rows.append([row.get("term", ""), row.get("count", 0), row.get("pct", 0)])
         if top_term_rows:
-            self._add_table(doc, ["Term", "Count", "Share %"], top_term_rows)
+            self._add_table(doc, ["Термин", "Частота", "Доля %"], top_term_rows)
         else:
-            doc.add_paragraph("Top terms are not available.")
+            doc.add_paragraph("Топ терминов недоступен.")
 
         self._add_heading(doc, "6. Technical Signals", level=1)
         technical = results.get("technical", {}) or {}
         technical_rows = [
             ["Canonical href", technical.get("canonical_href", "")],
-            ["Canonical self", "Yes" if technical.get("canonical_is_self") else "No"],
+            ["Canonical self", "Да" if technical.get("canonical_is_self") else "Нет"],
             ["Meta robots", technical.get("robots", "")],
-            ["Noindex", "Yes" if technical.get("noindex") else "No"],
-            ["Nofollow", "Yes" if technical.get("nofollow") else "No"],
+            ["Noindex", "Да" if technical.get("noindex") else "Нет"],
+            ["Nofollow", "Да" if technical.get("nofollow") else "Нет"],
             ["Viewport", technical.get("viewport", "")],
             ["HTML lang", technical.get("lang", "")],
             ["Hreflang tags", technical.get("hreflang_count", 0)],
@@ -1570,7 +1570,7 @@ class DOCXGenerator:
                 ["Duplicate sentence ratio", spam_metrics.get("duplicate_sentence_ratio", 0)],
             ]
         )
-        self._add_table(doc, ["Metric", "Value"], quality_rows)
+        self._add_table(doc, ["Метрика", "Значение"], quality_rows)
 
         self._add_heading(doc, "8. N-grams", level=1)
         ngrams = results.get("ngrams", {}) or {}
@@ -1579,13 +1579,13 @@ class DOCXGenerator:
             bigram_rows = [[row.get("term", ""), row.get("count", 0), row.get("pct", 0)] for row in bigrams[:20]]
             self._add_table(doc, ["Bigram", "Count", "Share %"], bigram_rows)
         else:
-            doc.add_paragraph("Bigrams are not available.")
+            doc.add_paragraph("Биграммы недоступны.")
         trigrams = ngrams.get("trigrams", []) or []
         if trigrams:
             trigram_rows = [[row.get("term", ""), row.get("count", 0), row.get("pct", 0)] for row in trigrams[:20]]
             self._add_table(doc, ["Trigram", "Count", "Share %"], trigram_rows)
         else:
-            doc.add_paragraph("Trigrams are not available.")
+            doc.add_paragraph("Триграммы недоступны.")
 
         self._add_heading(doc, "9. Schema and OpenGraph", level=1)
         schema = results.get("schema", {}) or {}
@@ -1620,51 +1620,51 @@ class DOCXGenerator:
 
         link_terms = results.get("link_anchor_terms", []) or []
         if link_terms:
-            self._add_heading(doc, "11. Top Link Terms", level=1)
+            self._add_heading(doc, "11. Топ терминов анкоров", level=1)
             self._add_table(
                 doc,
-                ["Term", "Count"],
+                ["Термин", "Количество"],
                 [[row.get("term", ""), row.get("count", 0)] for row in link_terms[:10]],
             )
 
-        self._add_heading(doc, "11a. Severity Heatmap", level=2)
+        self._add_heading(doc, "11a. Тепловая карта критичности", level=2)
         heatmap = results.get("heatmap", {}) or {}
         heatmap_rows = []
         for cat, payload in heatmap.items():
             heatmap_rows.append([cat, payload.get("score", 0), payload.get("issues", 0), payload.get("critical", 0), payload.get("warning", 0)])
         if heatmap_rows:
-            self._add_table(doc, ["Category", "Score", "Issues", "Critical", "Warning"], heatmap_rows)
+            self._add_table(doc, ["Категория", "Оценка", "Проблемы", "Критично", "Предупреждение"], heatmap_rows)
 
         self._add_heading(doc, "11b. Priority Queue", level=2)
         queue = results.get("priority_queue", []) or []
         if queue:
             queue_rows = [[x.get("bucket", ""), x.get("severity", ""), x.get("code", ""), x.get("title", ""), x.get("priority_score", 0), x.get("effort", 0)] for x in queue[:15]]
-            self._add_table(doc, ["Bucket", "Severity", "Code", "Issue", "Priority", "Effort"], queue_rows)
+            self._add_table(doc, ["Этап", "Критичность", "Код", "Проблема", "Приоритет", "Трудозатраты"], queue_rows)
 
-        self._add_heading(doc, "11c. Before/After Targets", level=2)
+        self._add_heading(doc, "11c. Цели до/после", level=2)
         targets = results.get("targets", []) or []
         if targets:
             target_rows = [[x.get("metric", ""), x.get("current", 0), x.get("target", 0), x.get("delta", 0)] for x in targets]
-            self._add_table(doc, ["Metric", "Current", "Target", "Delta"], target_rows)
+            self._add_table(doc, ["Метрика", "Текущее", "Цель", "Дельта"], target_rows)
 
-        self._add_heading(doc, "12. Issues", level=1)
+        self._add_heading(doc, "12. Проблемы", level=1)
         issues = results.get("issues", []) or []
         if issues:
             for issue in issues[:80]:
                 sev = str(issue.get("severity", "info")).upper()
-                title_i = issue.get("title", issue.get("code", "Issue"))
+                title_i = issue.get("title", issue.get("code", "Проблема"))
                 details_i = issue.get("details", "")
                 doc.add_paragraph(f"[{sev}] {title_i}: {details_i}", style="List Bullet")
         else:
-            doc.add_paragraph("Issues not found.")
+            doc.add_paragraph("Проблемы не обнаружены.")
 
-        self._add_heading(doc, "13. Recommendations", level=1)
+        self._add_heading(doc, "13. Рекомендации", level=1)
         recs = results.get("recommendations", []) or []
         if recs:
             for rec in recs[:30]:
                 doc.add_paragraph(str(rec), style="List Bullet")
         else:
-            doc.add_paragraph("Recommendations are not available.")
+            doc.add_paragraph("Рекомендации недоступны.")
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)
@@ -1673,7 +1673,7 @@ class DOCXGenerator:
     def generate_site_audit_pro_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Generate compact DOCX report for site_audit_pro."""
         doc = Document()
-        title = doc.add_heading("Site Audit Pro Report", 0)
+        title = doc.add_heading("Отчет Site Audit Pro", 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         results = data.get("results", {}) or {}
@@ -1682,28 +1682,28 @@ class DOCXGenerator:
         pipeline_metrics = pipeline.get("metrics", {}) or {}
         pages = results.get("pages", []) or []
         issues = results.get("issues", []) or []
-        url = data.get("url", "n/a")
+        url = data.get("url", "н/д")
 
         doc.add_paragraph(f"URL: {url}")
-        doc.add_paragraph(f"Mode: {results.get('mode', 'quick')}")
-        doc.add_paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        doc.add_paragraph(f"Режим: {results.get('mode', 'quick')}")
+        doc.add_paragraph(f"Сформирован: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-        self._add_heading(doc, "1. Executive Summary", level=1)
+        self._add_heading(doc, "1. Ключевая сводка", level=1)
         summary_rows = [
-            ["Total pages", summary.get("total_pages", 0)],
-            ["Issues total", summary.get("issues_total", 0)],
-            ["Critical", summary.get("critical_issues", 0)],
-            ["Warning", summary.get("warning_issues", 0)],
-            ["Info", summary.get("info_issues", 0)],
-            ["Score", summary.get("score", "n/a")],
-            ["Avg response (ms)", pipeline_metrics.get("avg_response_time_ms", 0)],
-            ["Avg readability", pipeline_metrics.get("avg_readability_score", 0)],
-            ["Avg link quality", pipeline_metrics.get("avg_link_quality_score", 0)],
-            ["Orphan pages", pipeline_metrics.get("orphan_pages", 0)],
+            ["Всего страниц", summary.get("total_pages", 0)],
+            ["Всего проблем", summary.get("issues_total", 0)],
+            ["Критично", summary.get("critical_issues", 0)],
+            ["Предупреждение", summary.get("warning_issues", 0)],
+            ["Инфо", summary.get("info_issues", 0)],
+            ["Оценка", summary.get("score", "н/д")],
+            ["Средний ответ (мс)", pipeline_metrics.get("avg_response_time_ms", 0)],
+            ["Средняя читаемость", pipeline_metrics.get("avg_readability_score", 0)],
+            ["Среднее качество ссылок", pipeline_metrics.get("avg_link_quality_score", 0)],
+            ["Orphan-страницы", pipeline_metrics.get("orphan_pages", 0)],
         ]
-        self._add_table(doc, ["Metric", "Value"], summary_rows)
+        self._add_table(doc, ["Метрика", "Значение"], summary_rows)
 
-        self._add_heading(doc, "2. Top Issues", level=1)
+        self._add_heading(doc, "2. Топ проблем", level=1)
         top_issues = issues[:20]
         if top_issues:
             issue_rows = []
@@ -1714,33 +1714,33 @@ class DOCXGenerator:
                     issue.get("url", ""),
                     issue.get("title", ""),
                 ])
-            self._add_table(doc, ["Severity", "Code", "URL", "Issue"], issue_rows)
+            self._add_table(doc, ["Критичность", "Код", "URL", "Проблема"], issue_rows)
         else:
-            doc.add_paragraph("Issues not found.")
+            doc.add_paragraph("Проблемы не обнаружены.")
 
-        self._add_heading(doc, "3. Link Graph Highlights", level=1)
+        self._add_heading(doc, "3. Ключевые сигналы ссылочного графа", level=1)
         top_pr = (pipeline.get("pagerank") or [])[:10]
         if top_pr:
             pr_rows = [[row.get("url", ""), row.get("score", 0)] for row in top_pr]
             self._add_table(doc, ["URL", "PageRank"], pr_rows)
         else:
-            doc.add_paragraph("PageRank data is not available.")
+            doc.add_paragraph("Данные PageRank недоступны.")
 
-        self._add_heading(doc, "4. Topic Clusters", level=1)
+        self._add_heading(doc, "4. Кластеры тем", level=1)
         clusters = (pipeline.get("topic_clusters") or [])[:20]
         if clusters:
             cluster_rows = [[c.get("topic", "misc"), c.get("count", 0), ", ".join((c.get("urls") or [])[:3])] for c in clusters]
-            self._add_table(doc, ["Topic", "Pages", "Sample URLs"], cluster_rows)
+            self._add_table(doc, ["Тема", "Страницы", "Примеры URL"], cluster_rows)
         else:
-            doc.add_paragraph("Topic clusters are not available.")
+            doc.add_paragraph("Кластеры тем недоступны.")
 
-        self._add_heading(doc, "5. Recommendations", level=1)
+        self._add_heading(doc, "5. Рекомендации", level=1)
         recommendations = [p.get("recommendation") for p in pages if p.get("recommendation")]
         if recommendations:
             for rec in recommendations[:20]:
                 doc.add_paragraph(str(rec), style="List Bullet")
         else:
-            doc.add_paragraph("Recommendations are not available.")
+            doc.add_paragraph("Рекомендации недоступны.")
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)

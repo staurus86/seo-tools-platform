@@ -1,14 +1,14 @@
 ﻿{% extends "base.html" %}
 
-{% block title %}SEO Tools Platform - Site Analysis{% endblock %}
+{% block title %}SEO Tools Platform - Анализ сайта{% endblock %}
 
 {% block content %}
 <!-- Hero Section -->
 <div class="text-center mb-12">
-    <h2 class="text-4xl font-bold text-gray-800 mb-4">Professional SEO Toolset</h2>
+    <h2 class="text-4xl font-bold text-gray-800 mb-4">Профессиональный SEO Toolset</h2>
     <p class="text-xl text-gray-600 max-w-2xl mx-auto">
-        Async platform for technical and content SEO checks.
-        All tools run independently with task progress tracking.
+        Асинхронная платформа для технических и контентных SEO-проверок.
+        Каждый инструмент запускается отдельно с отслеживанием статуса задачи.
     </p>
 </div>
 
@@ -22,20 +22,20 @@
                 <i class="fas fa-sitemap text-blue-600 text-xl"></i>
             </div>
             <div>
-                <h3 class="text-lg font-semibold text-gray-800">OnPage Audit</h3>
-                <p class="text-sm text-gray-500">Single-page SEO relevance</p>
+                <h3 class="text-lg font-semibold text-gray-800">OnPage-аудит</h3>
+                <p class="text-sm text-gray-500">SEO-релевантность страницы</p>
             </div>
         </div>
         <p class="text-gray-600 mb-4 text-sm">
-            Single-page on-page audit: keywords density, title/description/H1 quality, anti-spam checks, links, media, and technical signals.
+            Проверка одной страницы: плотность ключей, качество title/description/H1, антиспам, ссылки, медиа и технические сигналы.
         </p>
         <form class="space-y-3" onsubmit="startTask(event, 'onpage-audit')">
             <input type="url" name="url" placeholder="https://example.com" required
                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-            <textarea name="keywords" rows="3" placeholder="keyword 1, keyword 2, keyword 3"
+            <textarea name="keywords" rows="3" placeholder="ключ 1, ключ 2, ключ 3"
                       class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"></textarea>
             <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition">
-                <i class="fas fa-play mr-2"></i>Start OnPage audit
+                <i class="fas fa-play mr-2"></i>Запустить OnPage-аудит
             </button>
         </form>
     </div>
@@ -48,14 +48,14 @@
             </div>
             <div>
                 <h3 class="text-lg font-semibold text-gray-800">Site Audit Pro</h3>
-                <p class="text-sm text-gray-500">Extended isolated audit</p>
+                <p class="text-sm text-gray-500">Расширенный изолированный аудит</p>
             </div>
         </div>
         <p class="text-gray-600 mb-4 text-sm">
-            Dedicated engine for SEOPRO migration with quick/full modes and XLSX/DOCX outputs.
+            Выделенный движок для миграции SEOPRO с режимами quick/full и отчетами XLSX/DOCX.
         </p>
         <form class="space-y-3" onsubmit="startTask(event, 'site-audit-pro')" data-tool="site-audit-pro">
-            <input type="url" name="url" placeholder="https://example.com (optional in batch mode)"
+            <input type="url" name="url" placeholder="https://example.com (необязательно в batch)"
                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent js-sitepro-root-url">
             <div class="grid grid-cols-2 gap-2">
                 <select name="mode" class="px-3 py-2 border rounded-lg text-sm">
@@ -63,17 +63,17 @@
                     <option value="full">full</option>
                 </select>
                 <input type="number" name="max_pages" value="5" min="1" max="5"
-                       class="px-3 py-2 border rounded-lg text-sm" title="Max pages">
+                       class="px-3 py-2 border rounded-lg text-sm" title="Макс. страниц">
             </div>
             <div class="grid grid-cols-1 gap-2">
                 <select name="scan_mode" class="px-3 py-2 border rounded-lg text-sm js-sitepro-scan-mode">
-                    <option value="crawl" selected>crawl site</option>
-                    <option value="batch">batch url list</option>
+                    <option value="crawl" selected>обход сайта</option>
+                    <option value="batch">список URL (batch)</option>
                 </select>
                 <label class="flex items-center gap-2 text-sm text-gray-700">
                     <input type="checkbox" name="extended_hreflang_checks" value="true"
                            class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                    <span>Extended hreflang checks (all scanned pages)</span>
+                    <span>Расширенные hreflang-проверки (для всех просканированных страниц)</span>
                 </label>
                 <input type="hidden" name="batch_mode" value="false" class="js-sitepro-batch-flag">
                 <div class="hidden js-sitepro-batch-box">
@@ -83,16 +83,16 @@
                         rows="8"
                         placeholder="https://example.com/page-1&#10;https://example.com/page-2&#10;https://example.com/page-3"
                     ></textarea>
-                    <p class="text-xs text-gray-500 mt-1">Up to 500 URLs, one URL per line.</p>
+                    <p class="text-xs text-gray-500 mt-1">До 500 URL, по одному URL в строке.</p>
                 </div>
             </div>
             <button type="submit" class="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition">
-                <i class="fas fa-play mr-2"></i>Start Site Audit Pro
+                <i class="fas fa-play mr-2"></i>Запустить Site Audit Pro
             </button>
         </form>
     </div>
 
-    <!-- Tool 2: Robots.txt Checker -->
+    <!-- Tool 2: Проверка Robots.txt -->
     <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-green-500">
         <div class="flex items-center mb-4">
             <div class="bg-green-100 p-3 rounded-lg mr-4">
@@ -100,15 +100,15 @@
             </div>
             <div>
                 <h3 class="text-lg font-semibold text-gray-800">Robots.txt</h3>
-                <p class="text-sm text-gray-500">Access and syntax check</p>
+                <p class="text-sm text-gray-500">Проверка доступа и синтаксиса</p>
             </div>
         </div>
-        <p class="text-gray-600 mb-4 text-sm">Validate directives, sitemap presence, and crawler permissions.</p>
+        <p class="text-gray-600 mb-4 text-sm">Проверка директив, наличия sitemap и прав краулеров.</p>
         <form class="space-y-3" onsubmit="startTask(event, 'robots-check')">
             <input type="url" name="url" placeholder="https://example.com" required
                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
             <button type="submit" class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition">
-                <i class="fas fa-play mr-2"></i>Check robots.txt
+                <i class="fas fa-play mr-2"></i>Проверить robots.txt
             </button>
         </form>
     </div>
@@ -121,16 +121,16 @@
             </div>
             <div>
                 <h3 class="text-lg font-semibold text-gray-800">Sitemap.xml</h3>
-                <p class="text-sm text-gray-500">XML sitemap validation</p>
+                <p class="text-sm text-gray-500">Валидация XML sitemap</p>
             </div>
         </div>
-        <p class="text-gray-600 mb-4 text-sm">Validate sitemap structure, URLs, and metadata quality.</p>
+        <p class="text-gray-600 mb-4 text-sm">Проверка структуры sitemap, URL и качества метаданных.</p>
         <form class="space-y-3" onsubmit="startTask(event, 'sitemap-validate')">
             <input type="text" name="url" placeholder="example.com или https://example.com/sitemap.xml" required
                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
             <p class="text-xs text-gray-500">Можно ввести домен, сайт с http/https или полный URL sitemap. Сначала ищем sitemap в robots.txt.</p>
             <button type="submit" class="w-full bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700 transition">
-                <i class="fas fa-play mr-2"></i>Validate sitemap
+                <i class="fas fa-play mr-2"></i>Проверить sitemap
             </button>
         </form>
     </div>
@@ -142,45 +142,45 @@
                 <i class="fas fa-code text-orange-600 text-xl"></i>
             </div>
             <div>
-                <h3 class="text-lg font-semibold text-gray-800">Render Audit</h3>
+                <h3 class="text-lg font-semibold text-gray-800">Render-аудит</h3>
                 <p class="text-sm text-gray-500">JavaScript vs no-JS</p>
             </div>
         </div>
-        <p class="text-gray-600 mb-4 text-sm">Compare HTML output and key SEO elements with and without JS rendering.</p>
+        <p class="text-gray-600 mb-4 text-sm">Сравнение HTML и ключевых SEO-элементов с JS и без JS.</p>
         <form class="space-y-3" onsubmit="startTask(event, 'render-audit')">
             <input type="url" name="url" placeholder="https://example.com/page" required
                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent">
             <button type="submit" class="w-full bg-orange-600 text-white py-2 rounded-lg hover:bg-orange-700 transition">
-                <i class="fas fa-play mr-2"></i>Start render audit
+                <i class="fas fa-play mr-2"></i>Запустить render-аудит
             </button>
         </form>
     </div>
 
-    <!-- Tool 5: Mobile Checker -->
+    <!-- Tool 5: Проверка мобильной версии -->
     <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-pink-500">
         <div class="flex items-center mb-4">
             <div class="bg-pink-100 p-3 rounded-lg mr-4">
                 <i class="fas fa-mobile-alt text-pink-600 text-xl"></i>
             </div>
             <div>
-                <h3 class="text-lg font-semibold text-gray-800">Mobile Check</h3>
-                <p class="text-sm text-gray-500">Device-based validation</p>
+                <h3 class="text-lg font-semibold text-gray-800">Проверка мобильной версии</h3>
+                <p class="text-sm text-gray-500">Проверка на устройствах</p>
             </div>
         </div>
-        <p class="text-gray-600 mb-4 text-sm">Test responsive behavior and usability across popular mobile devices.</p>
+        <p class="text-gray-600 mb-4 text-sm">Проверка адаптивности и удобства на популярных мобильных устройствах.</p>
         <form class="space-y-3" onsubmit="startTask(event, 'mobile-check')">
             <input type="url" name="url" placeholder="https://example.com" required
                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent">
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Scan mode</label>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Режим сканирования</label>
                 <select name="mode" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent">
-                    <option value="quick" selected>Quick (iPhone 16 Pro + Galaxy S25)</option>
-                    <option value="full">Full (default device set)</option>
+                    <option value="quick" selected>Быстрый (iPhone 16 Pro + Galaxy S25)</option>
+                    <option value="full">Полный (стандартный набор устройств)</option>
                 </select>
             </div>
             <details class="rounded-lg border border-pink-200 bg-pink-50/40 p-3">
-                <summary class="cursor-pointer text-sm font-medium text-pink-800">Custom devices (optional)</summary>
-                <p class="mt-2 text-xs text-gray-600">If nothing is selected, default mode devices are used.</p>
+                <summary class="cursor-pointer text-sm font-medium text-pink-800">Кастомные устройства (опционально)</summary>
+                <p class="mt-2 text-xs text-gray-600">Если ничего не выбрано, используются устройства режима по умолчанию.</p>
                 <div class="mt-3 grid grid-cols-1 gap-1 text-sm">
                     <label class="flex items-center gap-2"><input type="checkbox" name="devices" value="iPhone 16 Pro" class="rounded border-gray-300 text-pink-600 focus:ring-pink-500"><span>iPhone 16 Pro</span></label>
                     <label class="flex items-center gap-2"><input type="checkbox" name="devices" value="Samsung Galaxy S25" class="rounded border-gray-300 text-pink-600 focus:ring-pink-500"><span>Samsung Galaxy S25</span></label>
@@ -192,35 +192,35 @@
                 </div>
             </details>
             <button type="submit" class="w-full bg-pink-600 text-white py-2 rounded-lg hover:bg-pink-700 transition">
-                <i class="fas fa-play mr-2"></i>Start mobile check
+                <i class="fas fa-play mr-2"></i>Запустить мобильную проверку
             </button>
         </form>
     </div>
 
-    <!-- Tool 6: Bot Checker -->
+    <!-- Tool 6: Проверка доступности ботов -->
     <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-red-500">
         <div class="flex items-center mb-4">
             <div class="bg-red-100 p-3 rounded-lg mr-4">
                 <i class="fas fa-spider text-red-600 text-xl"></i>
             </div>
             <div>
-                <h3 class="text-lg font-semibold text-gray-800">Bot Access Check</h3>
-                <p class="text-sm text-gray-500">Search and AI crawler visibility</p>
+                <h3 class="text-lg font-semibold text-gray-800">Проверка доступности ботов</h3>
+                <p class="text-sm text-gray-500">Видимость для поисковых и AI-краулеров</p>
             </div>
         </div>
-        <p class="text-gray-600 mb-4 text-sm">Check accessibility for major search and AI bots via HTTP, robots, and meta rules.</p>
+        <p class="text-gray-600 mb-4 text-sm">Проверка доступности для основных поисковых и AI-ботов по HTTP, robots и meta-правилам.</p>
         <form class="space-y-3" onsubmit="startTask(event, 'bot-check')">
             <input type="url" name="url" placeholder="https://example.com" required
                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent">
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Scan mode</label>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Режим сканирования</label>
                 <select name="scan_mode" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent js-bot-scan-mode">
-                    <option value="single" selected>Single URL</option>
-                    <option value="batch">Batch URL list (up to 100)</option>
+                    <option value="single" selected>Один URL</option>
+                    <option value="batch">Список URL (до 100)</option>
                 </select>
             </div>
             <div class="hidden js-bot-batch-box">
-                <label class="block text-sm font-medium text-gray-700 mb-1">Batch URLs (one per line)</label>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Batch URL (по одному в строке)</label>
                 <textarea
                     name="batch_urls_text"
                     rows="5"
@@ -229,16 +229,16 @@
                 ></textarea>
             </div>
             <details class="rounded-lg border border-red-200 bg-red-50/40 p-3">
-                <summary class="cursor-pointer text-sm font-medium text-red-800">Bot selection</summary>
+                <summary class="cursor-pointer text-sm font-medium text-red-800">Выбор ботов</summary>
                 <div class="mt-3 space-y-3 text-sm">
                     <div>
-                        <div class="text-gray-700 font-medium mb-2">Groups</div>
-                        <label class="flex items-center gap-2"><input type="checkbox" name="bot_groups" value="search" class="rounded border-gray-300 text-red-600 focus:ring-red-500"><span>All search bots</span></label>
-                        <label class="flex items-center gap-2"><input type="checkbox" name="bot_groups" value="ai" class="rounded border-gray-300 text-red-600 focus:ring-red-500"><span>All AI bots</span></label>
-                        <label class="flex items-center gap-2"><input type="checkbox" name="bot_groups" value="crawlers" class="rounded border-gray-300 text-red-600 focus:ring-red-500"><span>All crawlers</span></label>
+                        <div class="text-gray-700 font-medium mb-2">Группы</div>
+                        <label class="flex items-center gap-2"><input type="checkbox" name="bot_groups" value="search" class="rounded border-gray-300 text-red-600 focus:ring-red-500"><span>Все поисковые боты</span></label>
+                        <label class="flex items-center gap-2"><input type="checkbox" name="bot_groups" value="ai" class="rounded border-gray-300 text-red-600 focus:ring-red-500"><span>Все AI-боты</span></label>
+                        <label class="flex items-center gap-2"><input type="checkbox" name="bot_groups" value="crawlers" class="rounded border-gray-300 text-red-600 focus:ring-red-500"><span>Все краулеры</span></label>
                     </div>
                     <div>
-                        <div class="text-gray-700 font-medium mb-2">Default selected bots</div>
+                        <div class="text-gray-700 font-medium mb-2">Боты по умолчанию</div>
                         <div class="grid grid-cols-1 gap-1">
                             <label class="flex items-center gap-2"><input type="checkbox" name="selected_bots" value="YandexBot" checked class="rounded border-gray-300 text-red-600 focus:ring-red-500"><span>Yandex</span></label>
                             <label class="flex items-center gap-2"><input type="checkbox" name="selected_bots" value="Googlebot Desktop" checked class="rounded border-gray-300 text-red-600 focus:ring-red-500"><span>Google</span></label>
@@ -254,10 +254,10 @@
                 </div>
             </details>
             <details class="rounded-lg border border-red-200 bg-red-50/40 p-3">
-                <summary class="cursor-pointer text-sm font-medium text-red-800">Advanced execution</summary>
+                <summary class="cursor-pointer text-sm font-medium text-red-800">Расширенные параметры</summary>
                 <div class="mt-3 grid grid-cols-1 gap-2 text-sm">
                     <div>
-                        <label class="block text-gray-700 mb-1">Retry profile</label>
+                        <label class="block text-gray-700 mb-1">Профиль повторов</label>
                         <select name="retry_profile" class="w-full px-3 py-2 border rounded-lg">
                             <option value="standard" selected>standard</option>
                             <option value="strict">strict</option>
@@ -265,7 +265,7 @@
                         </select>
                     </div>
                     <div>
-                        <label class="block text-gray-700 mb-1">Criticality profile</label>
+                        <label class="block text-gray-700 mb-1">Профиль критичности</label>
                         <select name="criticality_profile" class="w-full px-3 py-2 border rounded-lg">
                             <option value="balanced" selected>balanced</option>
                             <option value="search_first">search_first</option>
@@ -273,7 +273,7 @@
                         </select>
                     </div>
                     <div>
-                        <label class="block text-gray-700 mb-1">SLA profile</label>
+                        <label class="block text-gray-700 mb-1">SLA-профиль</label>
                         <select name="sla_profile" class="w-full px-3 py-2 border rounded-lg">
                             <option value="standard" selected>standard</option>
                             <option value="strict">strict</option>
@@ -281,16 +281,16 @@
                     </div>
                     <label class="flex items-center gap-2 text-gray-700">
                         <input type="checkbox" name="baseline_enabled" value="true" checked class="rounded border-gray-300 text-red-600 focus:ring-red-500">
-                        <span>Enable baseline diff</span>
+                        <span>Включить baseline diff</span>
                     </label>
                     <label class="flex items-center gap-2 text-gray-700">
                         <input type="checkbox" name="ai_block_expected" value="true" class="rounded border-gray-300 text-red-600 focus:ring-red-500">
-                        <span>AI bot blocking is intentional</span>
+                        <span>Блокировка AI-ботов намеренная</span>
                     </label>
                 </div>
             </details>
             <button type="submit" class="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition">
-                <i class="fas fa-play mr-2"></i>Start bot check
+                <i class="fas fa-play mr-2"></i>Запустить проверку ботов
             </button>
         </form>
     </div>
@@ -300,26 +300,26 @@
 <div class="bg-white rounded-xl shadow-md p-6">
     <div class="flex items-center justify-between mb-4">
         <h3 class="text-lg font-semibold text-gray-800">
-            <i class="fas fa-history mr-2 text-gray-500"></i>Task history
+            <i class="fas fa-history mr-2 text-gray-500"></i>История задач
         </h3>
         <button onclick="clearHistory()" class="text-sm text-red-500 hover:text-red-700">
-            <i class="fas fa-trash mr-1"></i>Clear
+            <i class="fas fa-trash mr-1"></i>Очистить
         </button>
     </div>
     <div id="history-container" class="space-y-2">
-        <p class="text-gray-500 text-center py-4">No tasks yet</p>
+        <p class="text-gray-500 text-center py-4">Задач пока нет</p>
     </div>
 </div>
 
-<!-- Rate Limit Warning Modal -->
+<!-- Модальное окно ограничения запросов -->
 <div id="rate-limit-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
     <div class="bg-white rounded-xl p-6 max-w-md mx-4">
         <div class="text-center">
             <i class="fas fa-clock text-yellow-500 text-4xl mb-4"></i>
-            <h3 class="text-lg font-semibold mb-2">Rate limit reached</h3>
+            <h3 class="text-lg font-semibold mb-2">Достигнут лимит запросов</h3>
             <p class="text-gray-600 mb-4">
-                You reached <span id="modal-limit">10</span> requests in one hour.
-                Try again in about <span id="modal-time">60</span> minutes.
+                Вы достигли лимита в <span id="modal-limit">10</span> запросов в час.
+                Повторите попытку примерно через <span id="modal-time">60</span> минут.
             </p>
             <button onclick="closeRateLimitModal()" class="bg-gray-800 text-white px-6 py-2 rounded-lg hover:bg-gray-900">
                 OK
