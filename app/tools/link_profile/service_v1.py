@@ -1412,6 +1412,20 @@ def run_link_profile_audit(
         and float(x.get("follow_pct") or 0.0) >= 60.0
         and float(x.get("lost_pct") or 100.0) <= 40.0
     ][:300]
+    for row in ready_buy_rows:
+        row["popularity_score"] = round(
+            (float(row.get("competitors_covered_pct") or 0.0) * 0.55)
+            + (float(row.get("avg_traffic") or 0.0) / 200.0 * 0.25)
+            + (float(row.get("avg_dr") or 0.0) * 0.20),
+            2,
+        )
+    ready_buy_rows.sort(
+        key=lambda x: (
+            float(x.get("popularity_score") or 0.0),
+            float(x.get("opportunity_score") or 0.0),
+        ),
+        reverse=True,
+    )
     dr_bucket_rows = [{"dr_bucket": k, "links": v} for k, v in sorted(dr_bucket_counter.items(), key=lambda x: str(x[0]))]
     dr_bucket_our_rows = []
     dr_bucket_comp_rows = []
@@ -1605,6 +1619,133 @@ def run_link_profile_audit(
         {"Метрика": "Follow-ссылки на внутренние, %", "Значение": round(float(our_metrics.get("internal_follow_pct", 0.0) or 0.0), 2)},
     ]
 
+    priority_dashboard_rows: List[Dict[str, Any]] = []
+    action_queue_rows: List[Dict[str, Any]] = []
+
+    spam_pct = _pct(anchor_type_counter.get("spam", 0), sum(anchor_type_counter.values()))
+    nofollow_pct = float(summary.get("nofollow_pct") or 0.0)
+    lost_pct = float(summary.get("lost_links_pct") or 0.0)
+    http_bad_pct = round(
+        float(_pct(http_class_counter.get("4xx", 0), sum(http_class_counter.values())))
+        + float(_pct(http_class_counter.get("5xx", 0), sum(http_class_counter.values()))),
+        2,
+    )
+    donor_gap_avg = round(mean([float(x.get("donor_gap_pct") or 0.0) for x in comparison_rows]), 2) if comparison_rows else 0.0
+    ready_buy_count = len(ready_buy_rows)
+
+    def _status(metric: float, good_max: float, warn_max: float) -> str:
+        if metric <= good_max:
+            return "good"
+        if metric <= warn_max:
+            return "warning"
+        return "critical"
+
+    priority_dashboard_rows.extend(
+        [
+            {
+                "Приоритет": "P1",
+                "Блок": "Риски качества",
+                "Метрика": "Потерянные ссылки, %",
+                "Значение": lost_pct,
+                "Порог": "<= 25",
+                "Статус": _status(lost_pct, 25.0, 40.0),
+                "Почему важно": "Высокая доля lost снижает стабильность ссылочного профиля.",
+            },
+            {
+                "Приоритет": "P1",
+                "Блок": "Риски качества",
+                "Метрика": "Nofollow, %",
+                "Значение": nofollow_pct,
+                "Порог": "<= 45",
+                "Статус": _status(nofollow_pct, 45.0, 60.0),
+                "Почему важно": "Снижает передаваемый ссылочный вес.",
+            },
+            {
+                "Приоритет": "P1",
+                "Блок": "Риски качества",
+                "Метрика": "Плохие HTTP доноров (4xx+5xx), %",
+                "Значение": http_bad_pct,
+                "Порог": "<= 12",
+                "Статус": _status(http_bad_pct, 12.0, 20.0),
+                "Почему важно": "Нестабильные/битые доноры ухудшают качество профиля.",
+            },
+            {
+                "Приоритет": "P2",
+                "Блок": "Анкор-лист",
+                "Метрика": "Спам-анкоров, %",
+                "Значение": spam_pct,
+                "Порог": "<= 8",
+                "Статус": _status(spam_pct, 8.0, 15.0),
+                "Почему важно": "Риск переспама и фильтров поисковых систем.",
+            },
+            {
+                "Приоритет": "P2",
+                "Блок": "Рост",
+                "Метрика": "Средний donor gap vs конкуренты, %",
+                "Значение": donor_gap_avg,
+                "Порог": "<= 35",
+                "Статус": "warning" if donor_gap_avg > 35.0 else "good",
+                "Почему важно": "Показывает незакрытые доноры конкурентов.",
+            },
+            {
+                "Приоритет": "P2",
+                "Блок": "Рост",
+                "Метрика": "Готовых доноров для закупки, шт",
+                "Значение": ready_buy_count,
+                "Порог": ">= 50",
+                "Статус": "good" if ready_buy_count >= 50 else "warning",
+                "Почему важно": "Быстрый пул для GGL/Miralinks.",
+            },
+        ]
+    )
+
+    action_queue_rows.extend(
+        [
+            {
+                "Приоритет": "P1",
+                "Действие": "Снизить долю lost-ссылок",
+                "Impact": "high",
+                "Effort": "medium",
+                "Что сделать": "Проверить top-доноров lost_status, восстановить/заменить ссылки.",
+            },
+            {
+                "Приоритет": "P1",
+                "Действие": "Очистить некачественные HTTP доноры",
+                "Impact": "high",
+                "Effort": "low",
+                "Что сделать": "Исключить 4xx/5xx доноров из закупки, обновить список площадок.",
+            },
+            {
+                "Приоритет": "P1",
+                "Действие": "Поднять долю dofollow",
+                "Impact": "high",
+                "Effort": "medium",
+                "Что сделать": "Сместить закупку в пользу площадок с follow_only/mixed с высоким follow%.",
+            },
+            {
+                "Приоритет": "P2",
+                "Действие": "Закрыть donor gap",
+                "Impact": "high",
+                "Effort": "high",
+                "Что сделать": "Взять top из ready_buy_domains и opportunity_domains, которых нет у нас.",
+            },
+            {
+                "Приоритет": "P2",
+                "Действие": "Нормализовать анкор-лист",
+                "Impact": "medium",
+                "Effort": "medium",
+                "Что сделать": "Держать бренд/безанкор в безопасном диапазоне, ограничить коммерцию/спам.",
+            },
+            {
+                "Приоритет": "P3",
+                "Действие": "Расширить языковый и типовой микс доноров",
+                "Impact": "medium",
+                "Effort": "medium",
+                "Что сделать": "Добрать доноры по релевантным языкам и типам (text/image/form).",
+            },
+        ]
+    )
+
     prompts = {
         "ourSite": (
             f"У сайта {domain} {summary['our_unique_ref_domains']} уникальных доноров. "
@@ -1690,7 +1831,11 @@ def run_link_profile_audit(
                 "raw_duplicates_without_our": raw_duplicates_without_our_rows,
                 "executive_kpi": executive_kpi_rows,
                 "profile_structure": profile_structure_rows,
+                "priority_dashboard": priority_dashboard_rows,
+                "action_queue": action_queue_rows,
                 "ourSiteTables": [
+                    {"title": "Приоритеты SEO (первый экран)", "rows": priority_dashboard_rows},
+                    {"title": "Очередь действий (что делать первым)", "rows": action_queue_rows},
                     {"title": "KPI по нашему сайту vs среднее конкурентов", "rows": executive_kpi_rows},
                     {"title": "Структура ссылочного профиля (наш сайт)", "rows": profile_structure_rows},
                     {"title": "Наш сайт: доноры", "rows": our_site_rows},

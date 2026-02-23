@@ -4279,6 +4279,8 @@ class XLSXGenerator:
                     self._apply_style(c, cell_style)
 
         _write_sheet("Наш сайт", tables.get("our_site_overview", []) or [])
+        _write_sheet("Приоритеты SEO", tables.get("priority_dashboard", []) or [])
+        _write_sheet("Очередь действий", tables.get("action_queue", []) or [])
         _write_sheet("KPI сводка", tables.get("executive_kpi", []) or [])
         _write_sheet("Структура профиля", tables.get("profile_structure", []) or [])
         _write_sheet("Ссылки с главных raw", tables.get("raw_homepage_links", []) or [])
