@@ -224,6 +224,61 @@
             transform: translateY(0);
         }
     }
+    .auditpro-results {
+        --ap-bg-soft: linear-gradient(180deg, #f7fbff 0%, #f8fafc 100%);
+        --ap-card-border: #d8e1ee;
+        --ap-card-shadow: 0 10px 28px rgba(2, 6, 23, 0.06);
+        --ap-card-shadow-hover: 0 14px 32px rgba(2, 6, 23, 0.1);
+        --ap-title: #0f172a;
+        --ap-muted: #475569;
+        background: var(--ap-bg-soft);
+        border: 1px solid #e2e8f0;
+        border-radius: 1rem;
+        padding: 1rem;
+    }
+    .auditpro-results .bg-white.rounded-xl.shadow-md,
+    .auditpro-results .bg-white.rounded-2xl.shadow-lg {
+        border: 1px solid var(--ap-card-border);
+        box-shadow: var(--ap-card-shadow);
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+        animation: auditpro-fade-in 0.3s ease both;
+    }
+    .auditpro-results .bg-white.rounded-xl.shadow-md:hover,
+    .auditpro-results .bg-white.rounded-2xl.shadow-lg:hover {
+        transform: translateY(-2px);
+        border-color: #bfdbfe;
+        box-shadow: var(--ap-card-shadow-hover);
+    }
+    .auditpro-results h3,
+    .auditpro-results h4 {
+        color: var(--ap-title);
+        letter-spacing: -0.01em;
+    }
+    .auditpro-results .text-gray-600,
+    .auditpro-results .text-slate-500 {
+        color: var(--ap-muted) !important;
+    }
+    .auditpro-results table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: #f8fafc;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+    .auditpro-results table tbody tr:hover {
+        background: #f8fbff;
+    }
+    @keyframes auditpro-fade-in {
+        from {
+            opacity: 0;
+            transform: translateY(8px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
 </style>
 {% endblock %}
 
@@ -588,7 +643,7 @@ function showResults(data) {
 function showError(data) {
     document.getElementById('progress-section').classList.add('hidden');
     document.getElementById('error-section').classList.remove('hidden');
-    document.getElementById('error-message').textContent = data.error || 'Unknown error';
+    document.getElementById('error-message').textContent = data.error || 'Неизвестная ошибка';
 }
 
 // Global variables for robots data
@@ -1934,7 +1989,7 @@ function generateRobotsHTML(data) {
     }
     
     return `
-        <div class="space-y-6">
+        <div class="space-y-6 auditpro-results">
             <!-- Actions -->
             <div class="bg-white rounded-xl shadow-md p-4 flex flex-wrap gap-3">
                 <button onclick="downloadTextReport()" class="inline-flex items-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition cursor-pointer">
@@ -2156,13 +2211,13 @@ function generateRobotsHTML(data) {
             ` : ''}
 
             <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="text-lg font-semibold text-gray-700 mb-3">
-                    <i class="fas fa-book mr-2"></i>Official Robots.txt Help
-                </h4>
-                <div class="space-y-2 text-sm">
-                    <a class="text-blue-600 hover:underline break-all" href="https://developers.google.com/search/docs/crawling-indexing/robots/robots_txt" target="_blank" rel="noopener noreferrer">
-                        Google Search Central: robots.txt specification
-                    </a>
+                    <h4 class="text-lg font-semibold text-gray-700 mb-3">
+                        <i class="fas fa-book mr-2"></i>Справка по robots.txt
+                    </h4>
+                    <div class="space-y-2 text-sm">
+                        <a class="text-blue-600 hover:underline break-all" href="https://developers.google.com/search/docs/crawling-indexing/robots/robots_txt" target="_blank" rel="noopener noreferrer">
+                            Google Search Central: спецификация robots.txt
+                        </a>
                     <a class="text-blue-600 hover:underline break-all" href="https://yandex.com/support/webmaster/en/robot-workings/allow-disallow" target="_blank" rel="noopener noreferrer">
                         Yandex Webmaster: Allow/Disallow directives
                     </a>
@@ -2567,7 +2622,8 @@ function generateSitemapHTMLV2(result) {
 function generateSitemapHTML(result) {
     const r = result.results || result;
     return `
-        <div class="bg-white rounded-xl shadow-md p-6">
+        <div class="auditpro-results">
+            <div class="bg-white rounded-xl shadow-md p-6">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-lg font-semibold">Валидация Sitemap</h3>
                 <button onclick="copyToClipboard('${result.url}')" class="text-blue-600 hover:text-blue-800 text-sm">
@@ -2580,6 +2636,7 @@ function generateSitemapHTML(result) {
                 <div><span class="text-gray-600">URLs найдено:</span> <span class="font-medium">${r.urls_count || 0}</span></div>
                 <div><span class="text-gray-600">Стат:</span> <span class="font-medium">${r.status || 'н/д'}</span></div>
                 ${r.error ? `<div class="col-span-2 text-red-600"><span class="font-medium">Ошибка: ${r.error}</span></div>` : ''}
+            </div>
             </div>
         </div>
     `;
@@ -2667,11 +2724,11 @@ function generateBotHTML(result) {
     const botRowsHtml = botRows.map((row) => {
         const statusText = row.status || row.error || 'n/a';
         const responseMs = row.response_time_ms ? `${row.response_time_ms} ms` : 'n/a';
-        const reachableLabel = row.accessible ? 'yes' : 'no';
+        const reachableLabel = row.accessible ? 'да' : 'нет';
         const indexable = (typeof row.indexable === 'boolean')
             ? row.indexable
             : (row.accessible && row.has_content && row.robots_allowed !== false && !row.x_robots_forbidden && !row.meta_forbidden);
-        const indexableLabel = indexable ? 'yes' : 'no';
+        const indexableLabel = indexable ? 'да' : 'нет';
         const category = String(row.category || '');
         const isAi = category === 'AI';
         const isSearch = criticalCategories.has(category);
@@ -2716,7 +2773,7 @@ function generateBotHTML(result) {
                 <div class="font-semibold text-amber-900">${b.title}</div>
                 <div class="text-amber-800">Приоритет: ${b.priority_score} | Затронуто ботов: ${b.affected_bots}</div>
                 <div class="text-amber-700">${b.details}</div>
-                <div class="text-amber-700">Sample bots: ${(b.sample_bots || []).join(', ') || '-'}</div>
+                <div class="text-amber-700">Примеры ботов: ${(b.sample_bots || []).join(', ') || '-'}</div>
             </div>
         `).join('')
         : '<div class="text-sm text-gray-500">Приоритетные блокеры не найдены.</div>';
@@ -2800,7 +2857,7 @@ function generateBotHTML(result) {
             <td class="py-2 pr-2 text-sm">${escapeHtml(e.bot || '')}</td>
             <td class="py-2 pr-2 text-sm">${e.status ?? 'n/a'}</td>
             <td class="py-2 pr-2 text-sm">${escapeHtml(e.indexability_reason || '')}</td>
-            <td class="py-2 pr-2 text-sm">${e.waf_detected ? 'yes' : 'no'} (${e.waf_confidence ?? 0})</td>
+            <td class="py-2 pr-2 text-sm">${e.waf_detected ? 'да' : 'нет'} (${e.waf_confidence ?? 0})</td>
             <td class="py-2 pr-2 text-xs text-gray-600">${escapeHtml(e.response_sample || '')}</td>
         </tr>
     `).join('');
@@ -2818,7 +2875,8 @@ function generateBotHTML(result) {
     `).join('');
 
     return `
-        <div class="bg-white rounded-xl shadow-md p-6">
+        <div class="auditpro-results">
+            <div class="bg-white rounded-xl shadow-md p-6">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-lg font-semibold">Проверка доступности ботов</h3>
                 <div class="flex gap-3">
@@ -2941,9 +2999,9 @@ function generateBotHTML(result) {
                     <table class="w-full min-w-[980px] text-sm" id="bot-results-list">
                         <thead>
                             <tr class="text-left text-xs text-slate-500 border-b">
-                                <th class="py-2 pr-2">Bot</th>
+                                <th class="py-2 pr-2">Бот</th>
                                 <th class="py-2 pr-2">Категория</th>
-                                <th class="py-2 pr-2">HTTP/Error</th>
+                                <th class="py-2 pr-2">HTTP/Ошибка</th>
                                 <th class="py-2 pr-2">Ответ</th>
                                 <th class="py-2 pr-2">Доступен</th>
                                 <th class="py-2 pr-2">Индексируемо</th>
@@ -3067,6 +3125,7 @@ function generateBotHTML(result) {
                         : `<div class="text-sm text-gray-500">${(r.baseline_diff || {}).message || 'Baseline не найден.'}</div>`
                 }
             </div>
+            </div>
         </div>
     `;
 }
@@ -3176,7 +3235,7 @@ function generateSiteAnalysisHTML(result) {
     const badPercent = Math.round((badPages / totalPages) * 100);
     
     return `
-        <div class="space-y-6">
+        <div class="space-y-6 auditpro-results">
             <!-- Summary Card -->
             <div class="bg-white rounded-xl shadow-md p-6">
                 <div class="flex justify-between items-start mb-4">
@@ -3870,7 +3929,7 @@ function generateMobileCheckHTML(result) {
     const recommendationsHtml = (r.recommendations || []).map(rec => `<li>${rec}</li>`).join('');
 
     return `
-        <div class="space-y-6">
+        <div class="space-y-6 auditpro-results">
             <div class="bg-white rounded-xl shadow-md p-6">
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="text-lg font-semibold">Проверка мобильной версии</h3>
@@ -4067,7 +4126,7 @@ function generateOnPageAuditHTML(result) {
     `).join('');
 
     return `
-        <div class="space-y-6">
+        <div class="space-y-6 auditpro-results">
             <div class="bg-white rounded-xl shadow-md p-6">
                 <div class="flex justify-between items-center mb-4">
                     <div>
@@ -4120,16 +4179,16 @@ function generateOnPageAuditHTML(result) {
             <div class="bg-white rounded-xl shadow-md p-6">
                 <h4 class="font-semibold mb-3">AI-сигналы</h4>
                 <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3 text-sm">
-                    <div><span class="text-gray-600">AI marker density/1k:</span> <span class="font-medium">${ai.ai_marker_density_1k ?? 0}</span></div>
-                    <div><span class="text-gray-600">Hedging ratio:</span> <span class="font-medium">${ai.hedging_ratio ?? 0}</span></div>
-                    <div><span class="text-gray-600">Template repetition:</span> <span class="font-medium">${ai.template_repetition ?? 0}</span></div>
-                    <div><span class="text-gray-600">Burstiness CV:</span> <span class="font-medium">${ai.burstiness_cv ?? 0}</span></div>
-                    <div><span class="text-gray-600">Perplexity proxy:</span> <span class="font-medium">${ai.perplexity_proxy ?? 0}</span></div>
-                    <div><span class="text-gray-600">Entity depth/1k:</span> <span class="font-medium">${ai.entity_depth_1k ?? 0}</span></div>
-                    <div><span class="text-gray-600">Claim specificity:</span> <span class="font-medium">${ai.claim_specificity_score ?? 0}</span></div>
-                    <div><span class="text-gray-600">Author signal:</span> <span class="font-medium">${ai.author_signal_score ?? 0}</span></div>
-                    <div><span class="text-gray-600">Source attribution:</span> <span class="font-medium">${ai.source_attribution_score ?? 0}</span></div>
-                    <div><span class="text-gray-600">AI risk composite:</span> <span class="font-medium">${ai.ai_risk_composite ?? 0}</span></div>
+                    <div><span class="text-gray-600">Плотность AI-маркеров/1k:</span> <span class="font-medium">${ai.ai_marker_density_1k ?? 0}</span></div>
+                    <div><span class="text-gray-600">Доля хеджирования:</span> <span class="font-medium">${ai.hedging_ratio ?? 0}</span></div>
+                    <div><span class="text-gray-600">Повторяемость шаблонов:</span> <span class="font-medium">${ai.template_repetition ?? 0}</span></div>
+                    <div><span class="text-gray-600">Вариативность (CV):</span> <span class="font-medium">${ai.burstiness_cv ?? 0}</span></div>
+                    <div><span class="text-gray-600">Прокси perplexity:</span> <span class="font-medium">${ai.perplexity_proxy ?? 0}</span></div>
+                    <div><span class="text-gray-600">Глубина сущностей/1k:</span> <span class="font-medium">${ai.entity_depth_1k ?? 0}</span></div>
+                    <div><span class="text-gray-600">Специфичность утверждений:</span> <span class="font-medium">${ai.claim_specificity_score ?? 0}</span></div>
+                    <div><span class="text-gray-600">Сигнал автора:</span> <span class="font-medium">${ai.author_signal_score ?? 0}</span></div>
+                    <div><span class="text-gray-600">Атрибуция источников:</span> <span class="font-medium">${ai.source_attribution_score ?? 0}</span></div>
+                    <div><span class="text-gray-600">Композитный AI-риск:</span> <span class="font-medium">${ai.ai_risk_composite ?? 0}</span></div>
                 </div>
             </div>
 
@@ -4162,10 +4221,10 @@ function generateOnPageAuditHTML(result) {
                         <tr class="text-left text-xs text-gray-500 border-b">
                             <th class="py-2 pr-2 bg-white">Этап</th>
                             <th class="py-2 pr-2 bg-white">Критичность</th>
-                            <th class="py-2 pr-2 bg-white">Code</th>
+                            <th class="py-2 pr-2 bg-white">Код</th>
                             <th class="py-2 pr-2 bg-white">Проблема</th>
                             <th class="py-2 pr-2 bg-white">Приоритет</th>
-                            <th class="py-2 pr-2 bg-white">Effort</th>
+                            <th class="py-2 pr-2 bg-white">Трудозатраты</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -4182,7 +4241,7 @@ function generateOnPageAuditHTML(result) {
                             <th class="py-2 pr-2 bg-white">Метрика</th>
                             <th class="py-2 pr-2 bg-white">Текущее</th>
                             <th class="py-2 pr-2 bg-white">Цель</th>
-                            <th class="py-2 pr-2 bg-white">Delta</th>
+                            <th class="py-2 pr-2 bg-white">Изменение</th>
                         </tr>
                     </thead>
                     <tbody>
