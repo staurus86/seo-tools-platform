@@ -339,6 +339,10 @@ def _normalize_backlink_row(row: Dict[str, Any]) -> Dict[str, Any]:
         row,
         ("language", "lang"),
     )
+    ur_value = _pick_value(
+        row,
+        ("ur", "url rating"),
+    )
     domain_rating = _pick_value(
         row,
         ("dr", "domain rating", "domain_rating", "ahrefs_dr"),
@@ -367,6 +371,7 @@ def _normalize_backlink_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "link_type": str(link_type or "").strip().lower(),
         "http_code": str(http_code or "").strip(),
         "language": str(language or "").strip().lower(),
+        "ur": _to_float(ur_value),
         "dr": _to_float(domain_rating),
         "traffic": _to_float(traffic),
     }
@@ -472,6 +477,8 @@ def run_link_profile_audit(
     zone_counter: Counter[str] = Counter()
     redirect_301_counter: Counter[str] = Counter()
     homepage_donor_counter: Counter[str] = Counter()
+    source_domain_stats: Dict[str, Dict[str, float]] = defaultdict(lambda: {"count": 0.0, "dr_sum": 0.0, "dr_n": 0.0, "ur_sum": 0.0, "ur_n": 0.0, "traffic_sum": 0.0, "traffic_n": 0.0, "nofollow_n": 0.0})
+    target_agg: Dict[str, Dict[str, Any]] = defaultdict(lambda: {"total": 0, "follow": 0, "nofollow": 0, "unknown": 0, "target_home": 0, "home_follow": 0, "home_nofollow": 0, "int_follow": 0, "int_nofollow": 0, "dr_counts": Counter(), "zone_counts": Counter()})
 
     dr_values: List[float] = []
     traffic_values: List[float] = []
@@ -490,6 +497,17 @@ def run_link_profile_audit(
             redirect_301_counter[src] += 1
         if row.get("source_is_homepage"):
             homepage_donor_counter[src] += 1
+        sd = source_domain_stats[src]
+        sd["count"] += 1
+        if row.get("dr") is not None:
+            sd["dr_sum"] += float(row.get("dr"))
+            sd["dr_n"] += 1
+        if row.get("ur") is not None:
+            sd["ur_sum"] += float(row.get("ur"))
+            sd["ur_n"] += 1
+        if row.get("traffic") is not None:
+            sd["traffic_sum"] += float(row.get("traffic"))
+            sd["traffic_n"] += 1
 
         if _is_our_target(trg, domain):
             our_links += 1
@@ -508,6 +526,7 @@ def run_link_profile_audit(
                 follow_comp_counter["dofollow"] += 1
         elif follow is False:
             follow_counter["nofollow"] += 1
+            sd["nofollow_n"] += 1
             if _is_our_target(trg, domain):
                 follow_our_counter["nofollow"] += 1
             else:
@@ -545,6 +564,28 @@ def run_link_profile_audit(
                 our_traffic_values.append(float(effective_traffic))
             else:
                 comp_traffic_values.append(float(effective_traffic))
+        ta = target_agg[trg]
+        ta["total"] += 1
+        is_home = bool(row.get("target_is_homepage"))
+        if is_home:
+            ta["target_home"] += 1
+        if follow is True:
+            ta["follow"] += 1
+            if is_home:
+                ta["home_follow"] += 1
+            else:
+                ta["int_follow"] += 1
+        elif follow is False:
+            ta["nofollow"] += 1
+            if is_home:
+                ta["home_nofollow"] += 1
+            else:
+                ta["int_nofollow"] += 1
+        else:
+            ta["unknown"] += 1
+        if row.get("dr") is not None:
+            ta["dr_counts"][_dr_bucket(row.get("dr"))] += 1
+        ta["zone_counts"][_extract_zone(src)] += 1
 
     duplicates_with_our: List[Dict[str, Any]] = []
     duplicates_without_our: List[Dict[str, Any]] = []
@@ -577,20 +618,19 @@ def run_link_profile_audit(
             )
 
     per_target_metrics: Dict[str, Dict[str, Any]] = {}
-    for target_domain in set([r.get("target_domain") for r in normalized_rows if r.get("target_domain")]):
-        trows = [r for r in normalized_rows if r.get("target_domain") == target_domain]
-        total = len(trows)
-        follow = sum(1 for r in trows if r.get("follow") is True)
-        nofollow = sum(1 for r in trows if r.get("follow") is False)
-        unknown = total - follow - nofollow
-        home = sum(1 for r in trows if r.get("target_is_homepage"))
+    for target_domain, agg in target_agg.items():
+        total = int(agg.get("total", 0))
+        follow = int(agg.get("follow", 0))
+        nofollow = int(agg.get("nofollow", 0))
+        unknown = int(agg.get("unknown", 0))
+        home = int(agg.get("target_home", 0))
         internal = total - home
-        home_follow = sum(1 for r in trows if r.get("target_is_homepage") and r.get("follow") is True)
-        home_nofollow = sum(1 for r in trows if r.get("target_is_homepage") and r.get("follow") is False)
-        int_follow = sum(1 for r in trows if (not r.get("target_is_homepage")) and r.get("follow") is True)
-        int_nofollow = sum(1 for r in trows if (not r.get("target_is_homepage")) and r.get("follow") is False)
-        dr_counts = Counter(_dr_bucket(r.get("dr")) for r in trows if r.get("dr") is not None)
-        zone_counts = Counter(_extract_zone(r.get("source_domain", "")) for r in trows if r.get("source_domain"))
+        home_follow = int(agg.get("home_follow", 0))
+        home_nofollow = int(agg.get("home_nofollow", 0))
+        int_follow = int(agg.get("int_follow", 0))
+        int_nofollow = int(agg.get("int_nofollow", 0))
+        dr_counts = agg.get("dr_counts", Counter())
+        zone_counts = agg.get("zone_counts", Counter())
         per_target_metrics[target_domain] = {
             "total_links": total,
             "homepage_pct": round((home / max(1, total)) * 100, 2),
@@ -693,6 +733,32 @@ def run_link_profile_audit(
         key=lambda x: (x.get("competitors_count", 0), x.get("targets_count", 0)),
         reverse=True,
     )[:30]
+    candidate_domains = set([x.get("domain") for x in duplicates_without_our if x.get("domain")] + [x.get("domain") for x in single_competitor if x.get("domain")])
+    priority_score_rows: List[Dict[str, Any]] = []
+    for d in candidate_domains:
+        stats = source_domain_stats.get(str(d), {})
+        n = max(1.0, float(stats.get("count", 0.0)))
+        avg_dr = float(stats.get("dr_sum", 0.0)) / max(1.0, float(stats.get("dr_n", 0.0)))
+        avg_ur = float(stats.get("ur_sum", 0.0)) / max(1.0, float(stats.get("ur_n", 0.0)))
+        avg_traffic = float(stats.get("traffic_sum", 0.0)) / max(1.0, float(stats.get("traffic_n", 0.0)))
+        nofollow_rate = float(stats.get("nofollow_n", 0.0)) / n
+        if avg_dr <= 5:
+            continue
+        priority_score = (avg_dr * 0.5) + (avg_ur * 0.3) + ((avg_traffic or 0.0) * 0.2 / 1000.0)
+        priority_score_rows.append(
+            {
+                "domain": d,
+                "avg_dr": round(avg_dr, 2),
+                "avg_ur": round(avg_ur, 2),
+                "avg_traffic": round(avg_traffic, 2),
+                "nofollow_rate": round(nofollow_rate, 4),
+                "priority_score": round(priority_score, 4),
+            }
+        )
+    strict_rows = [r for r in priority_score_rows if r["avg_dr"] > 40 and r["nofollow_rate"] < 0.5]
+    if not strict_rows:
+        strict_rows = [r for r in priority_score_rows if r["avg_dr"] > 30 and r["nofollow_rate"] < 0.7]
+    priority_score_domains = sorted(strict_rows, key=lambda x: x["priority_score"], reverse=True)[:300]
     dr_bucket_rows = [{"dr_bucket": k, "links": v} for k, v in sorted(dr_bucket_counter.items(), key=lambda x: str(x[0]))]
     dr_bucket_our_rows = []
     dr_bucket_comp_rows = []
@@ -791,6 +857,7 @@ def run_link_profile_audit(
         "unknown_follow": follow_counter.get("unknown", 0),
         "duplicates_with_our_site": len(duplicates_with_our),
         "duplicates_without_our_site": len(duplicates_without_our),
+        "priority_domains_scored": len(priority_score_domains),
         "our_unique_ref_domains": len(our_ref_domains),
         "donors_with_301": len(redirect_301_counter),
         "donors_homepage": len(homepage_donor_counter),
@@ -847,6 +914,7 @@ def run_link_profile_audit(
                 "single_competitor_domains": single_competitor[:200],
                 "single_our_domains": single_our[:200],
                 "priority_domains": priority_domains,
+                "priority_score_domains": priority_score_domains,
                 "our_site_overview": our_site_rows,
                 "comparison_overview": comparison_rows,
                 "benchmark_overview": benchmark_rows,
@@ -896,6 +964,7 @@ def run_link_profile_audit(
                     {"title": "Single competitor domains", "rows": single_competitor[:200]},
                     {"title": "Single our domains", "rows": single_our[:200]},
                     {"title": "Priority domains", "rows": priority_domains},
+                    {"title": "Priority score domains", "rows": priority_score_domains},
                     {"title": "Competitors analysis", "rows": competitor_rows},
                 ],
             },

@@ -1975,6 +1975,7 @@ function generateLinkProfileAuditHTML(data) {
         ['Уникальных конкурентов', summary.unique_competitors ?? '-'],
         ['Ссылок на наш домен', summary.our_links ?? '-'],
         ['Дубликаты с нашим сайтом', summary.duplicates_with_our_site ?? '-'],
+        ['Priority scored domains', summary.priority_domains_scored ?? '-'],
         ['Dofollow / Nofollow', `${summary.dofollow ?? 0} / ${summary.nofollow ?? 0}`],
         ['Средний DR', summary.avg_dr ?? '-'],
     ];
@@ -2126,6 +2127,7 @@ function generateLinkProfileAuditHTML(data) {
                 </div>
                 <div data-lp-subscope="duplicates" data-lp-subpanel="priority" class="hidden space-y-6">
                     ${renderTableGroup({ title: 'Priority domains', rows: tables.priority_domains || [] }, 'Нет данных')}
+                    ${renderTableGroup({ title: 'Priority score domains', rows: tables.priority_score_domains || [] }, 'Нет данных')}
                     ${renderTableGroup({ title: 'Single competitor domains', rows: tables.single_competitor_domains || [] }, 'Нет данных')}
                     ${renderTableGroup({ title: 'Single our domains', rows: tables.single_our_domains || [] }, 'Нет данных')}
                 </div>
