@@ -2137,6 +2137,8 @@ function generateLinkProfileAuditHTML(data) {
                         <button type="button" data-lp-subscope="additional" data-lp-subtab="dr" onclick="switchLinkProfileSubTab('additional','dr')" class="px-3 py-1 rounded-md text-sm font-medium bg-slate-900 text-white">DR</button>
                         <button type="button" data-lp-subscope="additional" data-lp-subtab="follow" onclick="switchLinkProfileSubTab('additional','follow')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Follow</button>
                         <button type="button" data-lp-subscope="additional" data-lp-subtab="domains" onclick="switchLinkProfileSubTab('additional','domains')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Domains</button>
+                        <button type="button" data-lp-subscope="additional" data-lp-subtab="redirects" onclick="switchLinkProfileSubTab('additional','redirects')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Redirect 301</button>
+                        <button type="button" data-lp-subscope="additional" data-lp-subtab="homepage" onclick="switchLinkProfileSubTab('additional','homepage')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Homepage Donors</button>
                         <button type="button" data-lp-subscope="additional" data-lp-subtab="brand" onclick="switchLinkProfileSubTab('additional','brand')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Brand Auto</button>
                         <button type="button" data-lp-subscope="additional" data-lp-subtab="files" onclick="switchLinkProfileSubTab('additional','files')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Files</button>
                     </div>
@@ -2154,6 +2156,12 @@ function generateLinkProfileAuditHTML(data) {
                 <div data-lp-subscope="additional" data-lp-subpanel="domains" class="space-y-6 hidden">
                     ${renderTableGroup({ title: 'Domain zones', rows: tables.zones || [] }, 'Нет данных по доменным зонам')}
                     ${renderTableGroup({ title: 'Comparison overview', rows: tables.comparison_overview || [] }, 'Нет данных сравнения')}
+                </div>
+                <div data-lp-subscope="additional" data-lp-subpanel="redirects" class="space-y-6 hidden">
+                    ${renderTableGroup({ title: 'Donors with redirect 301', rows: tables.donors_with_redirect_301 || [] }, 'Нет доноров с редиректом 301')}
+                </div>
+                <div data-lp-subscope="additional" data-lp-subpanel="homepage" class="space-y-6 hidden">
+                    ${renderTableGroup({ title: 'Donors from homepage', rows: tables.donors_homepage || [] }, 'Нет доноров с главной страницы')}
                 </div>
                 <div data-lp-subscope="additional" data-lp-subpanel="brand" class="space-y-6 hidden">
                     ${renderTableGroup({ title: 'Auto brand keywords', rows: tables.brand_keywords_auto || [] }, 'Нет авто-брендовых ключей')}

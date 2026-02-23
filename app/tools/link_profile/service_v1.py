@@ -238,6 +238,24 @@ def _anchor_words(anchor: str) -> List[str]:
     return [w.lower() for w in re.findall(r"[A-Za-zА-Яа-яЁё0-9]{3,}", anchor or "")]
 
 
+def _has_redirect_301(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    if not text:
+        return False
+    return "301" in text
+
+
+def _is_homepage_url(url: str) -> bool:
+    if not url:
+        return False
+    try:
+        parsed = urlparse(url if "://" in url else f"https://{url}")
+        path = (parsed.path or "").strip()
+        return path in ("", "/")
+    except Exception:
+        return False
+
+
 def _normalize_backlink_row(row: Dict[str, Any]) -> Dict[str, Any]:
     source = _pick_value(
         row,
@@ -279,6 +297,10 @@ def _normalize_backlink_row(row: Dict[str, Any]) -> Dict[str, Any]:
         row,
         ("nofollow",),
     )
+    redirect_status_codes = _pick_value(
+        row,
+        ("redirect chain status codes", "redirect_status_codes", "redirect status", "status codes"),
+    )
     domain_rating = _pick_value(
         row,
         ("dr", "domain rating", "domain_rating", "ahrefs_dr"),
@@ -297,10 +319,12 @@ def _normalize_backlink_row(row: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "source_url": source_url,
         "source_domain": _extract_domain(source_url),
+        "source_is_homepage": _is_homepage_url(source_url),
         "target_url": target_url,
         "target_domain": _extract_domain(target_url),
         "anchor": str(anchor or "").strip(),
         "follow": follow_flag,
+        "has_redirect_301": _has_redirect_301(redirect_status_codes),
         "dr": _to_float(domain_rating),
         "traffic": _to_float(traffic),
     }
@@ -404,6 +428,8 @@ def run_link_profile_audit(
     anchor_word_counter: Counter[str] = Counter()
     dr_bucket_counter: Counter[str] = Counter()
     zone_counter: Counter[str] = Counter()
+    redirect_301_counter: Counter[str] = Counter()
+    homepage_donor_counter: Counter[str] = Counter()
 
     dr_values: List[float] = []
     traffic_values: List[float] = []
@@ -418,6 +444,10 @@ def run_link_profile_audit(
         trg = row["target_domain"]
         source_to_targets[src].add(trg)
         zone_counter[_extract_zone(src)] += 1
+        if row.get("has_redirect_301"):
+            redirect_301_counter[src] += 1
+        if row.get("source_is_homepage"):
+            homepage_donor_counter[src] += 1
 
         if _is_our_target(trg, domain):
             our_links += 1
@@ -565,6 +595,8 @@ def run_link_profile_audit(
         dr_bucket_our_rows.append({"dr_bucket": bucket, "links": sum(1 for x in our_dr_values if _dr_bucket(x) == bucket) if bucket != "unknown" else 0})
         dr_bucket_comp_rows.append({"dr_bucket": bucket, "links": sum(1 for x in comp_dr_values if _dr_bucket(x) == bucket) if bucket != "unknown" else 0})
     zone_rows = [{"zone": z, "links": c} for z, c in zone_counter.most_common(20)]
+    redirect_301_rows = [{"domain": d, "links_with_301": c} for d, c in redirect_301_counter.most_common(200)]
+    homepage_donor_rows = [{"domain": d, "links_from_homepage": c} for d, c in homepage_donor_counter.most_common(200)]
     follow_rows = [
         {"type": "dofollow", "count": follow_counter.get("dofollow", 0)},
         {"type": "nofollow", "count": follow_counter.get("nofollow", 0)},
@@ -655,6 +687,8 @@ def run_link_profile_audit(
         "duplicates_with_our_site": len(duplicates_with_our),
         "duplicates_without_our_site": len(duplicates_without_our),
         "our_unique_ref_domains": len(our_ref_domains),
+        "donors_with_301": len(redirect_301_counter),
+        "donors_homepage": len(homepage_donor_counter),
         "avg_our_dr": round(mean(our_dr_values), 2) if our_dr_values else None,
         "avg_our_traffic": round(mean(our_traffic_values), 2) if our_traffic_values else None,
     }
@@ -717,6 +751,8 @@ def run_link_profile_audit(
                 "zones": zone_rows,
                 "follow_types": follow_rows,
                 "follow_types_detailed": follow_detail_rows,
+                "donors_with_redirect_301": redirect_301_rows,
+                "donors_homepage": homepage_donor_rows,
                 "brand_keywords_auto": brand_rows,
                 "source_files": file_summaries,
                 "ourSiteTables": [
@@ -736,6 +772,8 @@ def run_link_profile_audit(
                     {"title": "Domain zones", "rows": zone_rows},
                     {"title": "Follow / Nofollow", "rows": follow_rows},
                     {"title": "Follow / Nofollow detailed", "rows": follow_detail_rows},
+                    {"title": "Donors with redirect 301", "rows": redirect_301_rows},
+                    {"title": "Donors from homepage", "rows": homepage_donor_rows},
                     {"title": "Auto brand keywords", "rows": brand_rows},
                     {"title": "Source files", "rows": file_summaries},
                 ],
