@@ -4680,7 +4680,7 @@ async def create_link_profile_audit(
     background_tasks: BackgroundTasks,
     our_domain: str = Form(...),
     backlink_files: List[UploadFile] = File(...),
-    batch_file: UploadFile = File(...),
+    batch_file: Optional[UploadFile] = File(None),
     commercial_keywords: str = Form(""),
     informational_keywords: str = Form(""),
     spam_keywords: str = Form(""),
@@ -4694,8 +4694,7 @@ async def create_link_profile_audit(
         raise HTTPException(status_code=422, detail="Укажите домен проекта")
     if not backlink_files:
         raise HTTPException(status_code=422, detail="Добавьте хотя бы один файл бэклинков")
-    if not batch_file:
-        raise HTTPException(status_code=422, detail="Добавьте batch analysis файл")
+    # batch_file is optional for all-in-one XLSX packs (e.g. test links.xlsx).
 
     allowed_ext = (".csv", ".xlsx")
     backlog_payloads: List[tuple[str, bytes]] = []
@@ -4708,12 +4707,15 @@ async def create_link_profile_audit(
             raise HTTPException(status_code=422, detail=f"Пустой файл: {name}")
         backlog_payloads.append((name, blob))
 
-    batch_name = str(batch_file.filename or "")
-    if not batch_name.lower().endswith(allowed_ext):
-        raise HTTPException(status_code=422, detail="Batch файл должен быть .csv или .xlsx")
-    batch_payload = await batch_file.read()
-    if not batch_payload:
-        raise HTTPException(status_code=422, detail="Batch файл пустой")
+    batch_name = ""
+    batch_payload = b""
+    if batch_file and str(batch_file.filename or "").strip():
+        batch_name = str(batch_file.filename or "")
+        if not batch_name.lower().endswith(allowed_ext):
+            raise HTTPException(status_code=422, detail="Batch файл должен быть .csv или .xlsx")
+        batch_payload = await batch_file.read()
+        if not batch_payload:
+            raise HTTPException(status_code=422, detail="Batch файл пустой")
 
     task_id = f"link-profile-{datetime.now().timestamp()}"
     create_task_pending(task_id, "link_profile_audit", str(our_domain or "").strip(), status_message="Задача поставлена в очередь")
@@ -4733,7 +4735,7 @@ async def create_link_profile_audit(
             result = run_link_profile_audit(
                 our_domain=str(our_domain or "").strip(),
                 backlink_files=backlog_payloads,
-                batch_file=(batch_name, batch_payload),
+                batch_file=(batch_name, batch_payload) if batch_name else None,
                 commercial_keywords=commercial_keywords,
                 informational_keywords=informational_keywords,
                 spam_keywords=spam_keywords,

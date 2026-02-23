@@ -116,6 +116,63 @@ def _read_xlsx_rows(payload: bytes) -> List[Dict[str, Any]]:
     return rows
 
 
+def _worksheet_to_rows(ws) -> List[Dict[str, Any]]:
+    iterator = ws.iter_rows(values_only=True)
+    header_row = next(iterator, None)
+    if not header_row:
+        return []
+    headers = [str(h).strip() if h is not None else "" for h in header_row]
+    rows: List[Dict[str, Any]] = []
+    for values in iterator:
+        if values is None:
+            continue
+        item: Dict[str, Any] = {}
+        non_empty = False
+        for idx, key in enumerate(headers):
+            if not key:
+                continue
+            value = values[idx] if idx < len(values) else None
+            if value not in (None, ""):
+                non_empty = True
+            item[key] = value
+        if non_empty:
+            rows.append(item)
+    return rows
+
+
+def _read_test_links_pack(payload: bytes) -> Dict[str, List[Dict[str, Any]]]:
+    wb = load_workbook(io.BytesIO(payload), read_only=True, data_only=True)
+    sheet_map = {str(n): wb[n] for n in wb.sheetnames}
+    backlinks_rows: List[Dict[str, Any]] = []
+    batch_rows: List[Dict[str, Any]] = []
+    priority_rows: List[Dict[str, Any]] = []
+
+    backlink_sheets = ["Ссылки с конкурентов", "Дубли без нашего сайта", "Ссылки с главных", "Ссылки с редиректов"]
+    for s in backlink_sheets:
+        ws = sheet_map.get(s)
+        if not ws:
+            continue
+        for row in _worksheet_to_rows(ws):
+            row["__sheet__"] = s
+            backlinks_rows.append(row)
+
+    for s in ("RU", "Все"):
+        ws = sheet_map.get(s)
+        if not ws:
+            continue
+        batch_rows.extend(_worksheet_to_rows(ws))
+
+    ws_prio = sheet_map.get("Приоритетные доноры")
+    if ws_prio:
+        priority_rows.extend(_worksheet_to_rows(ws_prio))
+
+    return {
+        "backlinks_rows": backlinks_rows,
+        "batch_rows": batch_rows,
+        "priority_rows": priority_rows,
+    }
+
+
 def _read_tabular_rows(filename: str, payload: bytes) -> List[Dict[str, Any]]:
     lower = filename.lower()
     if lower.endswith(".csv"):
@@ -389,7 +446,7 @@ def run_link_profile_audit(
     *,
     our_domain: str,
     backlink_files: List[Tuple[str, bytes]],
-    batch_file: Tuple[str, bytes],
+    batch_file: Optional[Tuple[str, bytes]] = None,
     commercial_keywords: str = "",
     informational_keywords: str = "",
     spam_keywords: str = "",
@@ -419,10 +476,49 @@ def run_link_profile_audit(
     if progress_callback:
         progress_callback(15, "Чтение файла batch analysis")
 
-    batch_name, batch_payload = batch_file
-    batch_rows = _read_tabular_rows(batch_name, batch_payload)
+    batch_name = ""
+    batch_rows: List[Dict[str, Any]] = []
+    auto_batch_rows: List[Dict[str, Any]] = []
+    precomputed_priority_rows: List[Dict[str, Any]] = []
+
+    if batch_file:
+        batch_name, batch_payload = batch_file
+        batch_rows = _read_tabular_rows(batch_name, batch_payload)
     batch_metrics: Dict[str, Dict[str, Optional[float]]] = {}
     batch_targets: List[str] = []
+
+    if progress_callback:
+        progress_callback(35, "Чтение файлов бэклинков")
+
+    normalized_rows: List[Dict[str, Any]] = []
+    file_summaries: List[Dict[str, Any]] = []
+    for filename, payload in backlink_files:
+        rows: List[Dict[str, Any]] = []
+        if str(filename or "").lower().endswith(".xlsx"):
+            pack = _read_test_links_pack(payload)
+            if pack.get("backlinks_rows"):
+                rows = pack.get("backlinks_rows", [])
+                auto_batch_rows.extend(pack.get("batch_rows", []))
+                precomputed_priority_rows.extend(pack.get("priority_rows", []))
+            else:
+                rows = _read_tabular_rows(filename, payload)
+        else:
+            rows = _read_tabular_rows(filename, payload)
+        valid_rows = 0
+        for row in rows:
+            normalized = _normalize_backlink_row(row)
+            if not normalized["source_domain"]:
+                continue
+            if not normalized["target_domain"]:
+                continue
+            normalized_rows.append(normalized)
+            valid_rows += 1
+        file_summaries.append({"file": filename, "rows": len(rows), "valid_rows": valid_rows})
+
+    if (not batch_rows) and auto_batch_rows:
+        batch_rows = auto_batch_rows
+        batch_name = "from_test_links_pack"
+
     for row in batch_rows:
         d, metrics = _normalize_batch_row(row)
         if d:
@@ -437,24 +533,6 @@ def run_link_profile_audit(
     derived_brand_keywords = list(dict.fromkeys([x for x in auto_brand_tokens if x and len(x) >= 2]))
     brand_keywords_used = list(dict.fromkeys((keywords.get("brand") or []) + derived_brand_keywords))
     keywords["brand"] = brand_keywords_used
-
-    if progress_callback:
-        progress_callback(35, "Чтение файлов бэклинков")
-
-    normalized_rows: List[Dict[str, Any]] = []
-    file_summaries: List[Dict[str, Any]] = []
-    for filename, payload in backlink_files:
-        rows = _read_tabular_rows(filename, payload)
-        valid_rows = 0
-        for row in rows:
-            normalized = _normalize_backlink_row(row)
-            if not normalized["source_domain"]:
-                continue
-            if not normalized["target_domain"]:
-                continue
-            normalized_rows.append(normalized)
-            valid_rows += 1
-        file_summaries.append({"file": filename, "rows": len(rows), "valid_rows": valid_rows})
 
     if not normalized_rows:
         raise ValueError("Не удалось извлечь ссылки из входных файлов")
@@ -759,6 +837,37 @@ def run_link_profile_audit(
     if not strict_rows:
         strict_rows = [r for r in priority_score_rows if r["avg_dr"] > 30 and r["nofollow_rate"] < 0.7]
     priority_score_domains = sorted(strict_rows, key=lambda x: x["priority_score"], reverse=True)[:300]
+    if precomputed_priority_rows:
+        imported: List[Dict[str, Any]] = []
+        for row in precomputed_priority_rows:
+            d = _pick_value(row, ("domain",))
+            dr = _to_float(_pick_value(row, ("domain rating", "dr")))
+            ur = _to_float(_pick_value(row, ("ur", "url rating")))
+            tr = _to_float(_pick_value(row, ("domain traffic", "organic / traffic", "traffic")))
+            nf = _to_follow_bool(_pick_value(row, ("nofollow",)))
+            ps = _to_float(_pick_value(row, ("priority score",)))
+            domain_key = _normalize_domain(str(d or ""))
+            if not domain_key:
+                continue
+            imported.append(
+                {
+                    "domain": domain_key,
+                    "avg_dr": dr,
+                    "avg_ur": ur,
+                    "avg_traffic": tr,
+                    "nofollow_rate": 1.0 if nf is True else 0.0 if nf is False else None,
+                    "priority_score": ps,
+                }
+            )
+        if imported:
+            idx = {str(x.get("domain")): x for x in priority_score_domains}
+            for row in imported:
+                idx[str(row.get("domain"))] = row
+            priority_score_domains = sorted(
+                idx.values(),
+                key=lambda x: float(x.get("priority_score") or 0.0),
+                reverse=True,
+            )[:500]
     dr_bucket_rows = [{"dr_bucket": k, "links": v} for k, v in sorted(dr_bucket_counter.items(), key=lambda x: str(x[0]))]
     dr_bucket_our_rows = []
     dr_bucket_comp_rows = []
