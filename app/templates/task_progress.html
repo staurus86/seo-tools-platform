@@ -2014,16 +2014,49 @@ function generateLinkProfileAuditHTML(data) {
 
     const breakdownRows = Object.entries(anchorBreakdown).map(([k, v]) => ({ type: k, count: v }));
     const prompts = r.prompts || {};
-    const ourSiteTables = tables.ourSiteTables || [];
-    const competitorTables = tables.competitorTables || [];
-    const comparisonTables = tables.comparisonTables || [];
-    const additionalTables = tables.additionalTables || [];
-    const duplicatesTables = tables.duplicatesTables || [];
     const anchorTables = [
         { title: 'Anchor Summary', rows: tables.anchor_analysis || [] },
         { title: 'Word Analysis', rows: tables.anchor_word_analysis || [] },
         { title: 'Anchor Types', rows: breakdownRows },
         { title: 'Anchor Mix %', rows: tables.anchor_mix_pct || [] },
+    ];
+    const executiveGroups = [
+        { title: 'Executive overview', rows: tables.executive_overview || [] },
+        { title: 'KPI по нашему сайту vs среднее конкурентов', rows: tables.executive_kpi || [] },
+        { title: 'Приоритеты SEO', rows: tables.priority_dashboard || [] },
+    ];
+    const competitorGroups = [
+        { title: 'Competitor benchmark', rows: tables.competitor_benchmark || [] },
+        { title: 'Рейтинг конкурентов', rows: tables.competitor_ranking || [] },
+        { title: 'Качество профиля конкурентов', rows: tables.competitor_quality || [] },
+        { title: 'Сырые метрики конкурентов', rows: tables.competitor_analysis || [] },
+    ];
+    const gapGroups = [
+        { title: 'Gap donors priority', rows: tables.gap_donors_priority || [] },
+        { title: 'Donor overlap matrix', rows: tables.donor_overlap_matrix || [] },
+        { title: 'Ready-to-buy domains', rows: tables.ready_buy_domains || [] },
+        { title: 'Priority score domains', rows: tables.priority_score_domains || [] },
+    ];
+    const qualityGroups = [
+        { title: 'Link attributes', rows: tables.link_attributes || [] },
+        { title: 'HTTP / Type / Lang / Platform', rows: tables.http_type_lang_platform || [] },
+        { title: 'Target structure', rows: tables.target_structure || [] },
+        { title: 'Follow/Nofollow %', rows: tables.follow_mix_pct || [] },
+        { title: 'Follow domain mix %', rows: tables.follow_domain_mix_pct || [] },
+    ];
+    const lossGroups = [
+        { title: 'Loss & recovery', rows: tables.loss_recovery || [] },
+        { title: 'Lost status mix', rows: tables.lost_status_mix || [] },
+        { title: 'Ссылки с редиректов', rows: tables.raw_redirect_links || [] },
+        { title: 'Ссылки с главных', rows: tables.raw_homepage_links || [] },
+    ];
+    const riskGroups = [
+        { title: 'Risk signals', rows: tables.risk_signals || [] },
+        { title: 'Проблемные дубликаты без нашего сайта', rows: tables.raw_duplicates_without_our || [] },
+    ];
+    const planGroups = [
+        { title: 'План 30/60/90', rows: tables.action_queue_90d || [] },
+        { title: 'Очередь действий', rows: tables.action_queue || [] },
     ];
     const badgePairs = [
         `Доноры: ${summary.unique_ref_domains ?? 0}`,
@@ -2038,7 +2071,7 @@ function generateLinkProfileAuditHTML(data) {
                 <div class="flex flex-wrap items-start justify-between gap-4">
                     <div>
                         <h3 class="text-2xl font-semibold mb-1">Аудит ссылочного профиля</h3>
-                        <p class="text-sm text-cyan-100">Структура результатов: Links / Anchors / Duplicates / Additional.</p>
+                        <p class="text-sm text-cyan-100">Структура результатов: Executive / Competitors / Gap / Quality / Loss / Anchors / Risks / Plan.</p>
                         <div class="mt-3 flex flex-wrap gap-2">
                             ${badgePairs.map((x) => `<span class="lp-chip">${escapeHtml(x)}</span>`).join('')}
                         </div>
@@ -2073,10 +2106,14 @@ function generateLinkProfileAuditHTML(data) {
 
             <div class="bg-white rounded-xl shadow-md p-4">
                 <div class="flex flex-wrap gap-2">
-                    <button type="button" data-lp-tab="links" onclick="switchLinkProfileAuditTab('links')" class="px-4 py-2 rounded-lg text-sm font-medium bg-amber-600 text-white">Links</button>
+                    <button type="button" data-lp-tab="executive" onclick="switchLinkProfileAuditTab('executive')" class="px-4 py-2 rounded-lg text-sm font-medium bg-amber-600 text-white">Executive</button>
+                    <button type="button" data-lp-tab="competitors" onclick="switchLinkProfileAuditTab('competitors')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Competitors</button>
+                    <button type="button" data-lp-tab="gap" onclick="switchLinkProfileAuditTab('gap')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Gap-доноры</button>
+                    <button type="button" data-lp-tab="quality" onclick="switchLinkProfileAuditTab('quality')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Quality</button>
+                    <button type="button" data-lp-tab="loss" onclick="switchLinkProfileAuditTab('loss')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Loss</button>
                     <button type="button" data-lp-tab="anchors" onclick="switchLinkProfileAuditTab('anchors')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Anchors</button>
-                    <button type="button" data-lp-tab="duplicates" onclick="switchLinkProfileAuditTab('duplicates')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Duplicates</button>
-                    <button type="button" data-lp-tab="additional" onclick="switchLinkProfileAuditTab('additional')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Additional</button>
+                    <button type="button" data-lp-tab="risks" onclick="switchLinkProfileAuditTab('risks')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Risks</button>
+                    <button type="button" data-lp-tab="plan" onclick="switchLinkProfileAuditTab('plan')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Plan</button>
                 </div>
             </div>
 
@@ -2094,142 +2131,47 @@ function generateLinkProfileAuditHTML(data) {
                 </div>
             ` : ''}
 
-            <div data-lp-panel="links" class="space-y-6">
-                <div class="bg-white rounded-xl shadow-md p-4">
-                    <div class="flex flex-wrap gap-2">
-                        <button type="button" data-lp-subscope="links" data-lp-subtab="our" onclick="switchLinkProfileSubTab('links','our')" class="px-3 py-1 rounded-md text-sm font-medium bg-slate-900 text-white">Наш сайт</button>
-                        <button type="button" data-lp-subscope="links" data-lp-subtab="competitors" onclick="switchLinkProfileSubTab('links','competitors')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Конкуренты</button>
-                        <button type="button" data-lp-subscope="links" data-lp-subtab="comparison" onclick="switchLinkProfileSubTab('links','comparison')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Сравнение</button>
-                        <button type="button" data-lp-subscope="links" data-lp-subtab="raw" onclick="switchLinkProfileSubTab('links','raw')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Сырые выборки</button>
-                    </div>
+            <div data-lp-panel="executive" class="space-y-6">
+                ${executiveGroups.map((group) => renderTableGroup(group, 'Нет executive-данных')).join('')}
+            </div>
+
+            <div data-lp-panel="competitors" class="space-y-6 hidden">
+                ${competitorGroups.map((group) => renderTableGroup(group, 'Нет данных конкурентов')).join('')}
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Промпт: конкуренты</h4>
+                    <p class="text-sm text-slate-700">${escapeHtml(prompts.competitors || 'Нет данных')}</p>
                 </div>
-                <div data-lp-subscope="links" data-lp-subpanel="our" class="space-y-6">
-                    ${ourSiteTables.map((group) => renderTableGroup(group, 'Нет данных по нашему сайту')).join('')}
-                    <div class="bg-white rounded-xl shadow-md p-6">
-                        <h4 class="font-semibold mb-3">Промпт: наш сайт</h4>
-                        <p class="text-sm text-slate-700">${escapeHtml(prompts.ourSite || 'Нет данных')}</p>
-                    </div>
+            </div>
+
+            <div data-lp-panel="gap" class="space-y-6 hidden">
+                ${gapGroups.map((group) => renderTableGroup(group, 'Нет gap-данных')).join('')}
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Промпт: сравнение</h4>
+                    <p class="text-sm text-slate-700">${escapeHtml(prompts.comparison || 'Нет данных')}</p>
                 </div>
-                <div data-lp-subscope="links" data-lp-subpanel="competitors" class="space-y-6 hidden">
-                    ${competitorTables.map((group) => renderTableGroup(group, 'Нет данных по конкурентам')).join('')}
-                    <div class="bg-white rounded-xl shadow-md p-6">
-                        <h4 class="font-semibold mb-3">Промпт: конкуренты</h4>
-                        <p class="text-sm text-slate-700">${escapeHtml(prompts.competitors || 'Нет данных')}</p>
-                    </div>
-                </div>
-                <div data-lp-subscope="links" data-lp-subpanel="comparison" class="space-y-6 hidden">
-                    ${comparisonTables.map((group) => renderTableGroup(group, 'Нет данных сравнения')).join('')}
-                    <div class="bg-white rounded-xl shadow-md p-6">
-                        <h4 class="font-semibold mb-3">Промпт: сравнение</h4>
-                        <p class="text-sm text-slate-700">${escapeHtml(prompts.comparison || 'Нет данных')}</p>
-                    </div>
-                </div>
-                <div data-lp-subscope="links" data-lp-subpanel="raw" class="space-y-6 hidden">
-                    ${renderTableGroup({ title: 'Ссылки с главных', rows: tables.raw_homepage_links || [] }, 'Нет данных по ссылкам с главных')}
-                    ${renderTableGroup({ title: 'Ссылки с редиректов', rows: tables.raw_redirect_links || [] }, 'Нет данных по ссылкам с редиректов')}
-                    ${renderTableGroup({ title: 'Дубликаты без нашего сайта', rows: tables.raw_duplicates_without_our || [] }, 'Нет данных по дубликатам без нашего сайта')}
-                </div>
+            </div>
+
+            <div data-lp-panel="quality" class="space-y-6 hidden">
+                ${qualityGroups.map((group) => renderTableGroup(group, 'Нет quality-данных')).join('')}
+            </div>
+
+            <div data-lp-panel="loss" class="space-y-6 hidden">
+                ${lossGroups.map((group) => renderTableGroup(group, 'Нет данных по потерям')).join('')}
             </div>
 
             <div data-lp-panel="anchors" class="space-y-6 hidden">
-                <div class="bg-white rounded-xl shadow-md p-4">
-                    <div class="flex flex-wrap gap-2">
-                        <button type="button" data-lp-subscope="anchors" data-lp-subtab="summary" onclick="switchLinkProfileSubTab('anchors','summary')" class="px-3 py-1 rounded-md text-sm font-medium bg-slate-900 text-white">Summary</button>
-                        <button type="button" data-lp-subscope="anchors" data-lp-subtab="words" onclick="switchLinkProfileSubTab('anchors','words')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Word Analysis</button>
-                        <button type="button" data-lp-subscope="anchors" data-lp-subtab="types" onclick="switchLinkProfileSubTab('anchors','types')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Types</button>
-                        <button type="button" data-lp-subscope="anchors" data-lp-subtab="mix" onclick="switchLinkProfileSubTab('anchors','mix')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Mix %</button>
-                    </div>
-                </div>
-                <div data-lp-subscope="anchors" data-lp-subpanel="summary">
-                    ${renderTableGroup(anchorTables[0], 'Нет данных по анкорам')}
-                </div>
-                <div data-lp-subscope="anchors" data-lp-subpanel="words" class="hidden">
-                    ${renderTableGroup(anchorTables[1], 'Нет данных по словам анкоров')}
-                </div>
-                <div data-lp-subscope="anchors" data-lp-subpanel="types" class="hidden">
-                    ${renderTableGroup(anchorTables[2], 'Нет данных по типам анкоров')}
-                </div>
-                <div data-lp-subscope="anchors" data-lp-subpanel="mix" class="hidden">
-                    ${renderTableGroup(anchorTables[3], 'Нет данных по mix анкоров')}
-                </div>
+                ${anchorTables.map((group) => renderTableGroup(group, 'Нет данных по анкорам')).join('')}
             </div>
 
-            <div data-lp-panel="duplicates" class="space-y-6 hidden">
-                <div class="bg-white rounded-xl shadow-md p-4">
-                    <div class="flex flex-wrap gap-2">
-                        <button type="button" data-lp-subscope="duplicates" data-lp-subtab="with-our" onclick="switchLinkProfileSubTab('duplicates','with-our')" class="px-3 py-1 rounded-md text-sm font-medium bg-slate-900 text-white">With Our Site</button>
-                        <button type="button" data-lp-subscope="duplicates" data-lp-subtab="without-our" onclick="switchLinkProfileSubTab('duplicates','without-our')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Without Our Site</button>
-                        <button type="button" data-lp-subscope="duplicates" data-lp-subtab="priority" onclick="switchLinkProfileSubTab('duplicates','priority')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Priority</button>
-                    </div>
-                </div>
-                <div data-lp-subscope="duplicates" data-lp-subpanel="with-our">
-                    ${renderTableGroup({ title: 'Duplicates with our site', rows: tables.duplicates_with_our_site || [] }, 'Нет данных')}
-                </div>
-                <div data-lp-subscope="duplicates" data-lp-subpanel="without-our" class="hidden">
-                    ${renderTableGroup({ title: 'Duplicates with two competitors', rows: tables.duplicates_with_two_competitors || [] }, 'Нет данных')}
-                </div>
-                <div data-lp-subscope="duplicates" data-lp-subpanel="priority" class="hidden space-y-6">
-                    ${renderTableGroup({ title: 'Priority domains', rows: tables.priority_domains || [] }, 'Нет данных')}
-                    ${renderTableGroup({ title: 'Priority score domains', rows: tables.priority_score_domains || [] }, 'Нет данных')}
-                    ${renderTableGroup({ title: 'Ready-to-buy domains (GGL/Miralinks)', rows: tables.ready_buy_domains || [] }, 'Нет данных')}
-                    ${renderTableGroup({ title: 'Single competitor domains', rows: tables.single_competitor_domains || [] }, 'Нет данных')}
-                    ${renderTableGroup({ title: 'Single our domains', rows: tables.single_our_domains || [] }, 'Нет данных')}
-                </div>
+            <div data-lp-panel="risks" class="space-y-6 hidden">
+                ${riskGroups.map((group) => renderTableGroup(group, 'Нет риск-данных')).join('')}
             </div>
 
-            <div data-lp-panel="additional" class="space-y-6 hidden">
-                <div class="bg-white rounded-xl shadow-md p-4">
-                    <div class="flex flex-wrap gap-2">
-                        <button type="button" data-lp-subscope="additional" data-lp-subtab="dr" onclick="switchLinkProfileSubTab('additional','dr')" class="px-3 py-1 rounded-md text-sm font-medium bg-slate-900 text-white">DR</button>
-                        <button type="button" data-lp-subscope="additional" data-lp-subtab="follow" onclick="switchLinkProfileSubTab('additional','follow')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Follow</button>
-                        <button type="button" data-lp-subscope="additional" data-lp-subtab="domains" onclick="switchLinkProfileSubTab('additional','domains')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Domains</button>
-                        <button type="button" data-lp-subscope="additional" data-lp-subtab="redirects" onclick="switchLinkProfileSubTab('additional','redirects')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Redirect 301</button>
-                        <button type="button" data-lp-subscope="additional" data-lp-subtab="homepage" onclick="switchLinkProfileSubTab('additional','homepage')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Homepage Donors</button>
-                        <button type="button" data-lp-subscope="additional" data-lp-subtab="techmix" onclick="switchLinkProfileSubTab('additional','techmix')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Type/HTTP/Lang</button>
-                        <button type="button" data-lp-subscope="additional" data-lp-subtab="brand" onclick="switchLinkProfileSubTab('additional','brand')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Brand Auto</button>
-                        <button type="button" data-lp-subscope="additional" data-lp-subtab="files" onclick="switchLinkProfileSubTab('additional','files')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Files</button>
-                    </div>
-                </div>
-                <div data-lp-subscope="additional" data-lp-subpanel="dr" class="space-y-6">
-                    ${renderTableGroup({ title: 'DR stats', rows: tables.dr_stats || [] }, 'Нет DR статистики')}
-                    ${renderTableGroup({ title: 'DR buckets', rows: tables.dr_buckets || [] }, 'Нет DR buckets')}
-                    ${renderTableGroup({ title: 'DR buckets: наш сайт', rows: tables.dr_buckets_our_site || [] }, 'Нет DR buckets')}
-                    ${renderTableGroup({ title: 'DR buckets: конкуренты', rows: tables.dr_buckets_competitors || [] }, 'Нет DR buckets')}
-                </div>
-                <div data-lp-subscope="additional" data-lp-subpanel="follow" class="space-y-6 hidden">
-                    ${renderTableGroup({ title: 'Follow / Nofollow', rows: tables.follow_types || [] }, 'Нет данных follow')}
-                    ${renderTableGroup({ title: 'Follow / Nofollow %', rows: tables.follow_mix_pct || [] }, 'Нет данных follow')}
-                    ${renderTableGroup({ title: 'Follow/Nofollow domains %', rows: tables.follow_domain_mix_pct || [] }, 'Нет данных follow по доменам')}
-                    ${renderTableGroup({ title: 'Follow / Nofollow detailed', rows: tables.follow_types_detailed || [] }, 'Нет данных follow')}
-                    ${renderTableGroup({ title: 'Lost status mix', rows: tables.lost_status_mix || [] }, 'Нет данных по потерянным ссылкам')}
-                </div>
-                <div data-lp-subscope="additional" data-lp-subpanel="domains" class="space-y-6 hidden">
-                    ${renderTableGroup({ title: 'Domain zones', rows: tables.zones || [] }, 'Нет данных по доменным зонам')}
-                    ${renderTableGroup({ title: 'Comparison overview', rows: tables.comparison_overview || [] }, 'Нет данных сравнения')}
-                </div>
-                <div data-lp-subscope="additional" data-lp-subpanel="redirects" class="space-y-6 hidden">
-                    ${renderTableGroup({ title: 'Donors with redirect 301', rows: tables.donors_with_redirect_301 || [] }, 'Нет доноров с редиректом 301')}
-                </div>
-                <div data-lp-subscope="additional" data-lp-subpanel="homepage" class="space-y-6 hidden">
-                    ${renderTableGroup({ title: 'Donors from homepage', rows: tables.donors_homepage || [] }, 'Нет доноров с главной страницы')}
-                </div>
-                <div data-lp-subscope="additional" data-lp-subpanel="techmix" class="space-y-6 hidden">
-                    ${renderTableGroup({ title: 'HTTP class mix', rows: tables.http_class_mix || [] }, 'Нет данных по классам HTTP')}
-                    ${renderTableGroup({ title: 'Link type mix', rows: tables.link_type_mix || [] }, 'Нет данных по типам ссылок')}
-                    ${renderTableGroup({ title: 'Language mix', rows: tables.language_mix || [] }, 'Нет данных по языкам')}
-                    ${renderTableGroup({ title: 'Link types by competitor', rows: tables.link_types_by_competitor || [] }, 'Нет данных по типам ссылок')}
-                    ${renderTableGroup({ title: 'HTTP codes by competitor', rows: tables.http_codes_by_competitor || [] }, 'Нет данных по HTTP кодам')}
-                    ${renderTableGroup({ title: 'Languages by competitor', rows: tables.languages_by_competitor || [] }, 'Нет данных по языкам')}
-                </div>
-                <div data-lp-subscope="additional" data-lp-subpanel="brand" class="space-y-6 hidden">
-                    ${renderTableGroup({ title: 'Auto brand keywords', rows: tables.brand_keywords_auto || [] }, 'Нет авто-брендовых ключей')}
-                    <div class="bg-white rounded-xl shadow-md p-6">
-                        <h4 class="font-semibold mb-3">План действий</h4>
-                        <p class="text-sm text-slate-700">${escapeHtml(prompts.plan || 'План не сформирован')}</p>
-                    </div>
-                </div>
-                <div data-lp-subscope="additional" data-lp-subpanel="files" class="space-y-6 hidden">
-                    ${renderTableGroup({ title: 'Source files', rows: tables.source_files || [] }, 'Нет данных по исходным файлам')}
+            <div data-lp-panel="plan" class="space-y-6 hidden">
+                ${planGroups.map((group) => renderTableGroup(group, 'Нет данных по плану')).join('')}
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">План действий (NLP-подсказка)</h4>
+                    <p class="text-sm text-slate-700">${escapeHtml(prompts.plan || 'План не сформирован')}</p>
                 </div>
             </div>
         </div>
