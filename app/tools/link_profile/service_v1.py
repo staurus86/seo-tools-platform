@@ -601,6 +601,9 @@ def run_link_profile_audit(
         progress_callback(35, "Чтение файлов бэклинков")
 
     normalized_rows: List[Dict[str, Any]] = []
+    raw_homepage_links_rows: List[Dict[str, Any]] = []
+    raw_redirect_links_rows: List[Dict[str, Any]] = []
+    raw_duplicates_without_our_rows: List[Dict[str, Any]] = []
     file_summaries: List[Dict[str, Any]] = []
     for filename, payload in backlink_files:
         rows: List[Dict[str, Any]] = []
@@ -616,6 +619,44 @@ def run_link_profile_audit(
             rows = _read_tabular_rows(filename, payload)
         valid_rows = 0
         for row in rows:
+            sheet_name = str(row.get("__sheet__") or "").strip()
+            if sheet_name == "Ссылки с главных":
+                raw_homepage_links_rows.append(
+                    {
+                        "Referring page URL": _pick_value(row, ("referring page url",)) or "",
+                        "Target URL": _pick_value(row, ("target url",)) or "",
+                        "Anchor": _pick_value(row, ("anchor",)) or "",
+                        "Domain Rating": _pick_value(row, ("domain rating", "dr")) or "",
+                        "UR": _pick_value(row, ("ur", "url rating")) or "",
+                        "Domain traffic": _pick_value(row, ("domain traffic", "traffic")) or "",
+                        "Nofollow": _pick_value(row, ("nofollow",)) or "",
+                        "Lost status": _pick_value(row, ("lost status",)) or "",
+                    }
+                )
+            elif sheet_name == "Ссылки с редиректов":
+                raw_redirect_links_rows.append(
+                    {
+                        "Referring page URL": _pick_value(row, ("referring page url",)) or "",
+                        "Referring page HTTP code": _pick_value(row, ("referring page http code", "http code", "status")) or "",
+                        "Domain rating": _pick_value(row, ("domain rating", "dr")) or "",
+                        "UR": _pick_value(row, ("ur", "url rating")) or "",
+                        "Domain traffic": _pick_value(row, ("domain traffic", "traffic")) or "",
+                        "Target URL": _pick_value(row, ("target url",)) or "",
+                    }
+                )
+            elif sheet_name == "Дубли без нашего сайта":
+                raw_duplicates_without_our_rows.append(
+                    {
+                        "Referring page URL": _pick_value(row, ("referring page url",)) or "",
+                        "Target URL": _pick_value(row, ("target url",)) or "",
+                        "Anchor": _pick_value(row, ("anchor",)) or "",
+                        "Domain Rating": _pick_value(row, ("domain rating", "dr")) or "",
+                        "UR": _pick_value(row, ("ur", "url rating")) or "",
+                        "Domain traffic": _pick_value(row, ("domain traffic", "traffic")) or "",
+                        "Nofollow": _pick_value(row, ("nofollow",)) or "",
+                        "Lost status": _pick_value(row, ("lost status",)) or "",
+                    }
+                )
             normalized = _normalize_backlink_row(row)
             if not normalized["source_domain"]:
                 continue
@@ -1548,12 +1589,18 @@ def run_link_profile_audit(
                 "opportunity_domains": opportunity_domains_rows,
                 "ready_buy_domains": ready_buy_rows,
                 "dr_distribution_matrix": dr_distribution_matrix_rows,
+                "raw_homepage_links": raw_homepage_links_rows,
+                "raw_redirect_links": raw_redirect_links_rows,
+                "raw_duplicates_without_our": raw_duplicates_without_our_rows,
                 "executive_kpi": executive_kpi_rows,
                 "profile_structure": profile_structure_rows,
                 "ourSiteTables": [
                     {"title": "KPI по нашему сайту vs среднее конкурентов", "rows": executive_kpi_rows},
                     {"title": "Структура ссылочного профиля (наш сайт)", "rows": profile_structure_rows},
                     {"title": "Наш сайт: доноры", "rows": our_site_rows},
+                    {"title": "Ссылки с главных (raw)", "rows": raw_homepage_links_rows},
+                    {"title": "Ссылки с редиректов (raw)", "rows": raw_redirect_links_rows},
+                    {"title": "Дубликаты без нашего сайта (raw)", "rows": raw_duplicates_without_our_rows},
                 ],
                 "competitorTables": [
                     {"title": "Конкуренты", "rows": competitor_rows},

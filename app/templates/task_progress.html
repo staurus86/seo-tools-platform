@@ -2073,6 +2073,7 @@ function generateLinkProfileAuditHTML(data) {
                         <button type="button" data-lp-subscope="links" data-lp-subtab="our" onclick="switchLinkProfileSubTab('links','our')" class="px-3 py-1 rounded-md text-sm font-medium bg-slate-900 text-white">Наш сайт</button>
                         <button type="button" data-lp-subscope="links" data-lp-subtab="competitors" onclick="switchLinkProfileSubTab('links','competitors')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Конкуренты</button>
                         <button type="button" data-lp-subscope="links" data-lp-subtab="comparison" onclick="switchLinkProfileSubTab('links','comparison')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Сравнение</button>
+                        <button type="button" data-lp-subscope="links" data-lp-subtab="raw" onclick="switchLinkProfileSubTab('links','raw')" class="px-3 py-1 rounded-md text-sm font-medium bg-white text-slate-700 border">Сырые выборки</button>
                     </div>
                 </div>
                 <div data-lp-subscope="links" data-lp-subpanel="our" class="space-y-6">
@@ -2095,6 +2096,11 @@ function generateLinkProfileAuditHTML(data) {
                         <h4 class="font-semibold mb-3">Промпт: сравнение</h4>
                         <p class="text-sm text-slate-700">${escapeHtml(prompts.comparison || 'Нет данных')}</p>
                     </div>
+                </div>
+                <div data-lp-subscope="links" data-lp-subpanel="raw" class="space-y-6 hidden">
+                    ${renderTableGroup({ title: 'Ссылки с главных', rows: tables.raw_homepage_links || [] }, 'Нет данных по ссылкам с главных')}
+                    ${renderTableGroup({ title: 'Ссылки с редиректов', rows: tables.raw_redirect_links || [] }, 'Нет данных по ссылкам с редиректов')}
+                    ${renderTableGroup({ title: 'Дубликаты без нашего сайта', rows: tables.raw_duplicates_without_our || [] }, 'Нет данных по дубликатам без нашего сайта')}
                 </div>
             </div>
 
