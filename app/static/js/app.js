@@ -158,7 +158,14 @@ async function startTask(event, endpoint) {
         }
         
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
+            let errorMessage = `HTTP ${response.status}`;
+            try {
+                const errorPayload = await response.json();
+                errorMessage = errorPayload?.detail || errorPayload?.error || errorPayload?.message || errorMessage;
+            } catch (_) {
+                // Keep default HTTP status text when body is not JSON.
+            }
+            throw new Error(errorMessage);
         }
         
         const result = await response.json();
@@ -181,7 +188,7 @@ async function startTask(event, endpoint) {
         
     } catch (error) {
         console.error('Error starting task:', error);
-        showToast('Failed to create task. Try again later.', 'error');
+        showToast(error?.message || 'Failed to create task. Try again later.', 'error');
     } finally {
         button.disabled = false;
         button.innerHTML = originalText;

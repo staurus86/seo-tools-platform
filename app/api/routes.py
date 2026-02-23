@@ -9,7 +9,7 @@ import re
 import json
 import time
 import requests
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 router = APIRouter(prefix="/api", tags=["SEO Tools"])
 
@@ -2036,6 +2036,88 @@ class BotCheckRequest(BaseModel):
             return [str(item).strip() for item in value if str(item).strip()]
         return value
 
+
+def _normalize_http_input(raw_value: str) -> str:
+    value = str(raw_value or "").strip()
+    if not value:
+        return ""
+    if not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", value):
+        value = f"https://{value}"
+    parsed = urlparse(value)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return ""
+    return value
+
+
+def _is_likely_sitemap_url(value: str) -> bool:
+    parsed = urlparse(value)
+    path = (parsed.path or "").lower()
+    if not path:
+        return False
+    if path.endswith(".xml") or "sitemap" in path:
+        return True
+    return False
+
+
+def _looks_like_sitemap_xml(payload: str) -> bool:
+    text = str(payload or "").lstrip("\ufeff \n\r\t").lower()
+    return text.startswith("<?xml") or "<urlset" in text or "<sitemapindex" in text
+
+
+def _discover_sitemap_url(site_url: str, timeout: int = 12) -> tuple[Optional[str], Optional[str]]:
+    """Discover sitemap URL for a site. Returns (sitemap_url, source)."""
+    candidate_root = _normalize_http_input(site_url)
+    if not candidate_root:
+        return None, None
+
+    parsed_root = urlparse(candidate_root)
+    root = f"{parsed_root.scheme}://{parsed_root.netloc}"
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; SEO-Tools/1.0)"}
+
+    with requests.Session() as session:
+        # 1) robots.txt sitemap declarations (priority)
+        try:
+            robots_resp = session.get(urljoin(root, "/robots.txt"), timeout=timeout, allow_redirects=True, headers=headers)
+            if robots_resp.status_code == 200:
+                for line in (robots_resp.text or "").splitlines():
+                    if not re.match(r"^\s*sitemap\s*:", line, flags=re.IGNORECASE):
+                        continue
+                    raw_loc = line.split(":", 1)[1].strip() if ":" in line else ""
+                    if not raw_loc:
+                        continue
+                    loc = urljoin(root + "/", raw_loc)
+                    normalized_loc = _normalize_http_input(loc)
+                    if not normalized_loc:
+                        continue
+                    try:
+                        sm_resp = session.get(normalized_loc, timeout=timeout, allow_redirects=True, headers=headers)
+                        if sm_resp.status_code == 200 and _looks_like_sitemap_xml(sm_resp.text[:10000]):
+                            return normalized_loc, "robots.txt"
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
+        # 2) Common fallback sitemap paths
+        common_paths = (
+            "/sitemap.xml",
+            "/sitemap_index.xml",
+            "/sitemap-index.xml",
+            "/sitemaps.xml",
+            "/sitemaps/sitemap.xml",
+            "/wp-sitemap.xml",
+        )
+        for path in common_paths:
+            loc = urljoin(root, path)
+            try:
+                sm_resp = session.get(loc, timeout=timeout, allow_redirects=True, headers=headers)
+                if sm_resp.status_code == 200 and _looks_like_sitemap_xml(sm_resp.text[:10000]):
+                    return loc, "common_path"
+            except Exception:
+                continue
+
+    return None, None
+
     @field_validator("batch_urls", mode="before")
     @classmethod
     def _normalize_batch_urls(cls, value):
@@ -2765,13 +2847,33 @@ async def get_site_pro_artifact_manifest(task_id: str):
 @router.post("/tasks/sitemap-validate")
 async def create_sitemap_validate(data: SitemapValidateRequest):
     """Full sitemap validation"""
-    url = data.url
-    
-    print(f"[API] Full sitemap validation for: {url}")
-    
-    result = check_sitemap_full(url)
+    raw_input = str(data.url or "").strip()
+    normalized_input = _normalize_http_input(raw_input)
+    if not normalized_input:
+        raise HTTPException(status_code=422, detail="Введите корректный домен или URL sitemap.")
+
+    if _is_likely_sitemap_url(normalized_input):
+        target_sitemap_url = normalized_input
+        discovery_source = "direct_input"
+    else:
+        discovered, source = _discover_sitemap_url(normalized_input)
+        if not discovered:
+            raise HTTPException(
+                status_code=422,
+                detail="Мы не нашли sitemap автоматически. Введите полный URL sitemap (например, https://example.com/sitemap.xml)."
+            )
+        target_sitemap_url = discovered
+        discovery_source = source or "auto_discovery"
+
+    print(f"[API] Full sitemap validation for input={normalized_input}, sitemap={target_sitemap_url}, source={discovery_source}")
+
+    result = check_sitemap_full(target_sitemap_url)
+    if isinstance(result, dict):
+        result["input_url"] = normalized_input
+        result["resolved_sitemap_url"] = target_sitemap_url
+        result["sitemap_discovery_source"] = discovery_source
     task_id = f"sitemap-{datetime.now().timestamp()}"
-    create_task_result(task_id, "sitemap_validate", url, result)
+    create_task_result(task_id, "sitemap_validate", target_sitemap_url, result)
     
     return {
         "task_id": task_id,

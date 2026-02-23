@@ -126,8 +126,9 @@
         </div>
         <p class="text-gray-600 mb-4 text-sm">Validate sitemap structure, URLs, and metadata quality.</p>
         <form class="space-y-3" onsubmit="startTask(event, 'sitemap-validate')">
-            <input type="url" name="url" placeholder="https://example.com/sitemap.xml" required
+            <input type="text" name="url" placeholder="example.com или https://example.com/sitemap.xml" required
                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+            <p class="text-xs text-gray-500">Можно ввести домен, сайт с http/https или полный URL sitemap. Сначала ищем sitemap в robots.txt.</p>
             <button type="submit" class="w-full bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700 transition">
                 <i class="fas fa-play mr-2"></i>Validate sitemap
             </button>
