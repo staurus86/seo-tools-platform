@@ -4693,6 +4693,11 @@ class XLSXGenerator:
             tables.get("action_queue_90d", []) or [],
             preferred_headers=["Phase", "Priority", "Action", "Target KPI", "Owner"],
         )
+        _write_dynamic_sheet(
+            "18_Validation",
+            tables.get("validation_checks", []) or [],
+            preferred_headers=["check", "status", "details"],
+        )
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         self._save_workbook(wb, filepath)

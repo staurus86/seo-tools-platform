@@ -146,13 +146,27 @@ def _decode_text(payload: bytes) -> str:
 def _read_csv_rows(payload: bytes, max_rows: Optional[int] = None) -> List[Dict[str, Any]]:
     text = _decode_text(payload)
     stream = io.StringIO(text, newline="")
-    sample = text[:8192]
-    try:
-        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
-    except Exception:
+    first_line = ""
+    for line in text.splitlines():
+        if line.strip():
+            first_line = line
+            break
+    # Fast path for Ahrefs exports: UTF-16 + tab-delimited with stable headers.
+    delimiter_override: Optional[str] = None
+    if first_line and first_line.count("\t") >= max(first_line.count(","), first_line.count(";"), first_line.count("|")):
         dialect = csv.excel
+        delimiter_override = "\t"
+    else:
+        sample = text[:8192]
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+        except Exception:
+            dialect = csv.excel
     try:
-        reader = csv.DictReader(stream, dialect=dialect)
+        if delimiter_override:
+            reader = csv.DictReader(stream, dialect=dialect, delimiter=delimiter_override)
+        else:
+            reader = csv.DictReader(stream, dialect=dialect)
         rows: List[Dict[str, Any]] = []
         for row in reader:
             rows.append(dict(row))
@@ -2555,6 +2569,65 @@ def run_link_profile_audit(
         {"Metric": "High-risk donors", "Value": sum(1 for x in risk_signals_rows if str(x.get("Risk Level")) == "high")},
     ]
 
+    validation_checks: List[Dict[str, Any]] = []
+
+    def _add_check(name: str, ok: bool, details: str, severity: str = "error") -> None:
+        validation_checks.append(
+            {
+                "check": name,
+                "status": "ok" if ok else ("warning" if severity == "warning" else "error"),
+                "details": details,
+            }
+        )
+
+    total_rows = len(normalized_rows)
+    follow_total = int(follow_counter.get("dofollow", 0) + follow_counter.get("nofollow", 0) + follow_counter.get("unknown", 0))
+    _add_check(
+        "rows_vs_follow_total",
+        total_rows == follow_total,
+        f"rows_total={total_rows}, follow_split_total={follow_total}",
+    )
+    competitor_links_total = int(sum(int(v) for v in competitor_counter.values()))
+    _add_check(
+        "rows_vs_our_plus_competitors",
+        total_rows == (our_links + competitor_links_total),
+        f"rows_total={total_rows}, our_links={our_links}, competitor_links={competitor_links_total}",
+    )
+    _add_check(
+        "unique_ref_domains_consistency",
+        len(source_to_targets) == int(summary.get("unique_ref_domains") or 0),
+        f"source_to_targets={len(source_to_targets)}, summary.unique_ref_domains={summary.get('unique_ref_domains')}",
+    )
+    for metric_name in ("dofollow_pct", "nofollow_pct", "lost_links_pct", "http_2xx_pct"):
+        metric_value = float(summary.get(metric_name) or 0.0)
+        _add_check(
+            f"range_{metric_name}",
+            0.0 <= metric_value <= 100.0,
+            f"{metric_name}={metric_value}",
+        )
+    _add_check(
+        "executive_tables_non_empty",
+        bool(executive_overview_rows and competitor_benchmark_rows and gap_donors_priority_rows),
+        f"exec={len(executive_overview_rows)}, benchmark={len(competitor_benchmark_rows)}, gap={len(gap_donors_priority_rows)}",
+    )
+    raw_caps_hit = (
+        len(raw_homepage_links_rows) >= MAX_RAW_TABLE_ROWS
+        or len(raw_redirect_links_rows) >= MAX_RAW_TABLE_ROWS
+        or len(raw_duplicates_without_our_rows) >= MAX_RAW_TABLE_ROWS
+    )
+    _add_check(
+        "raw_tables_capped",
+        not raw_caps_hit,
+        f"home={len(raw_homepage_links_rows)}, redirect={len(raw_redirect_links_rows)}, duplicates={len(raw_duplicates_without_our_rows)}, cap={MAX_RAW_TABLE_ROWS}",
+        severity="warning",
+    )
+
+    validation_summary = {
+        "ok": sum(1 for x in validation_checks if x.get("status") == "ok"),
+        "warning": sum(1 for x in validation_checks if x.get("status") == "warning"),
+        "error": sum(1 for x in validation_checks if x.get("status") == "error"),
+    }
+
     prompts = {
         "ourSite": (
             f"У сайта {domain} {summary['our_unique_ref_domains']} уникальных доноров. "
@@ -2589,6 +2662,10 @@ def run_link_profile_audit(
             "summary": summary,
             "warnings": warnings,
             "errors": [],
+            "validation": {
+                "summary": validation_summary,
+                "checks": _cap_rows(validation_checks, 200),
+            },
             "keywords": {
                 **keywords,
                 "derivedBrandKeywords": derived_brand_keywords,
@@ -2668,12 +2745,14 @@ def run_link_profile_audit(
                 "http_type_lang_platform": _cap_rows(http_type_lang_platform_rows),
                 "target_structure": _cap_rows(target_structure_rows),
                 "risk_signals": _cap_rows(risk_signals_rows),
+                "validation_checks": _cap_rows(validation_checks, 200),
                 "ourSiteTables": [
                     {"title": "Приоритеты SEO (первый экран)", "rows": _cap_rows(priority_dashboard_rows)},
                     {"title": "Очередь действий (что делать первым)", "rows": _cap_rows(action_queue_rows)},
                     {"title": "План 30/60/90", "rows": _cap_rows(action_queue_90d_rows)},
                     {"title": "KPI по нашему сайту vs среднее конкурентов", "rows": _cap_rows(executive_kpi_rows)},
                     {"title": "Executive overview", "rows": _cap_rows(executive_overview_rows)},
+                    {"title": "Validation checks", "rows": _cap_rows(validation_checks, 200)},
                     {"title": "Структура ссылочного профиля (наш сайт)", "rows": _cap_rows(profile_structure_rows)},
                     {"title": "Target structure (наш сайт vs конкуренты)", "rows": _cap_rows(target_structure_rows)},
                     {"title": "Наш сайт: доноры", "rows": _cap_rows(our_site_rows)},

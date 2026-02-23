@@ -1846,6 +1846,7 @@ class DOCXGenerator:
         _add_dict_table("2.1 Executive overview", tables.get("executive_overview", []) or [], level=2)
         _add_dict_table("2.2 KPI", tables.get("executive_kpi", []) or [], level=2)
         _add_dict_table("2.3 Приоритеты", tables.get("priority_dashboard", []) or [], level=2)
+        _add_dict_table("2.4 Validation checks", tables.get("validation_checks", []) or [], level=2)
 
         self._add_heading(doc, "3. Competitors", level=1)
         _add_dict_table("3.1 Competitor benchmark", tables.get("competitor_benchmark", []) or [], level=2)
