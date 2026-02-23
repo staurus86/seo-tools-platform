@@ -178,12 +178,47 @@ def _worksheet_to_rows(ws) -> List[Dict[str, Any]]:
     return rows
 
 
+def _parse_analysis_data_sections(ws) -> List[Dict[str, Any]]:
+    sections: List[Dict[str, Any]] = []
+    header_markers = {"домен", "competitor"}
+    current_header: List[str] = []
+    current_rows: List[Dict[str, Any]] = []
+
+    def _finalize():
+        nonlocal current_header, current_rows
+        if current_header and current_rows:
+            title = " / ".join(current_header[:3])
+            sections.append({"title": title, "rows": current_rows})
+        current_header = []
+        current_rows = []
+
+    iterator = ws.iter_rows(values_only=True)
+    for row in iterator:
+        compact = [v for v in row if v not in (None, "")]
+        if not compact:
+            _finalize()
+            continue
+        first = str(compact[0]).strip().lower()
+        if first in header_markers and len(compact) >= 2:
+            _finalize()
+            current_header = [str(x).strip() for x in compact]
+            continue
+        if current_header:
+            rec: Dict[str, Any] = {}
+            for idx, h in enumerate(current_header):
+                rec[h] = compact[idx] if idx < len(compact) else None
+            current_rows.append(rec)
+    _finalize()
+    return sections
+
+
 def _read_test_links_pack(payload: bytes) -> Dict[str, List[Dict[str, Any]]]:
     wb = load_workbook(io.BytesIO(payload), read_only=True, data_only=True)
     sheet_map = {str(n): wb[n] for n in wb.sheetnames}
     backlinks_rows: List[Dict[str, Any]] = []
     batch_rows: List[Dict[str, Any]] = []
     priority_rows: List[Dict[str, Any]] = []
+    analysis_sections: List[Dict[str, Any]] = []
 
     backlink_sheets = ["Ссылки с конкурентов", "Дубли без нашего сайта", "Ссылки с главных", "Ссылки с редиректов"]
     for s in backlink_sheets:
@@ -203,11 +238,15 @@ def _read_test_links_pack(payload: bytes) -> Dict[str, List[Dict[str, Any]]]:
     ws_prio = sheet_map.get("Приоритетные доноры")
     if ws_prio:
         priority_rows.extend(_worksheet_to_rows(ws_prio))
+    ws_analysis = sheet_map.get("Анализ данных")
+    if ws_analysis:
+        analysis_sections.extend(_parse_analysis_data_sections(ws_analysis))
 
     return {
         "backlinks_rows": backlinks_rows,
         "batch_rows": batch_rows,
         "priority_rows": priority_rows,
+        "analysis_sections": analysis_sections,
     }
 
 
@@ -590,6 +629,7 @@ def run_link_profile_audit(
     batch_rows: List[Dict[str, Any]] = []
     auto_batch_rows: List[Dict[str, Any]] = []
     precomputed_priority_rows: List[Dict[str, Any]] = []
+    imported_analysis_sections: List[Dict[str, Any]] = []
 
     if batch_file:
         batch_name, batch_payload = batch_file
@@ -613,6 +653,7 @@ def run_link_profile_audit(
                 rows = pack.get("backlinks_rows", [])
                 auto_batch_rows.extend(pack.get("batch_rows", []))
                 precomputed_priority_rows.extend(pack.get("priority_rows", []))
+                imported_analysis_sections.extend(pack.get("analysis_sections", []))
             else:
                 rows = _read_tabular_rows(filename, payload)
         else:
@@ -1643,6 +1684,7 @@ def run_link_profile_audit(
                 "opportunity_domains": opportunity_domains_rows,
                 "ready_buy_domains": ready_buy_rows,
                 "dr_distribution_matrix": dr_distribution_matrix_rows,
+                "analysis_data_sections": imported_analysis_sections,
                 "raw_homepage_links": raw_homepage_links_rows,
                 "raw_redirect_links": raw_redirect_links_rows,
                 "raw_duplicates_without_our": raw_duplicates_without_our_rows,
@@ -1671,6 +1713,7 @@ def run_link_profile_audit(
                     {"title": "DR распределение доноров по доменам (%)", "rows": dr_distribution_matrix_rows},
                     {"title": "Матрица возможностей доноров", "rows": opportunity_domains_rows},
                     {"title": "Ready-to-buy доноры (GGL/Miralinks)", "rows": ready_buy_rows},
+                    *imported_analysis_sections,
                 ],
                 "additionalTables": [
                     {"title": "DR статистика", "rows": dr_stats_rows},

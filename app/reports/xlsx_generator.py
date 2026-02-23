@@ -4307,6 +4307,13 @@ class XLSXGenerator:
         _write_sheet("HTTP class mix", tables.get("http_class_mix", []) or [])
         _write_sheet("Link type mix", tables.get("link_type_mix", []) or [])
         _write_sheet("Language mix", tables.get("language_mix", []) or [])
+        analysis_sections = tables.get("analysis_data_sections", []) or []
+        for idx, section in enumerate(analysis_sections, start=1):
+            title = str((section or {}).get("title") or f"Анализ-{idx:02d}")
+            rows = (section or {}).get("rows") or []
+            base = title.replace("/", "-").replace(":", "-").strip() if title else ""
+            safe_title = (f"A{idx:02d}-{base}" if base else f"A{idx:02d}-Анализ")[:31]
+            _write_sheet(safe_title, rows)
 
         notes_ws = wb.create_sheet("Warnings")
         notes_ws["A1"] = "Тип"
