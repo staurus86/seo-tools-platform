@@ -4290,6 +4290,7 @@ class XLSXGenerator:
         _write_sheet("Доменные зоны", tables.get("zones", []) or [])
         _write_sheet("Качество конкурентов", tables.get("competitor_quality", []) or [])
         _write_sheet("Сравнение GAP", tables.get("comparison_overview", []) or [])
+        _write_sheet("DR по доменам %", tables.get("dr_distribution_matrix", []) or [])
         _write_sheet("Матрица возможностей", tables.get("opportunity_domains", []) or [])
         _write_sheet("Follow mix %", tables.get("follow_mix_pct", []) or [])
         _write_sheet("Lost status mix", tables.get("lost_status_mix", []) or [])

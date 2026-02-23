@@ -291,6 +291,16 @@ def _dr_bucket(dr: Optional[float]) -> str:
     return "70+"
 
 
+def _dr_bucket_decile(dr: Optional[float]) -> str:
+    if dr is None:
+        return "DR unknown"
+    value = max(0.0, min(100.0, float(dr)))
+    low = int(value // 10) * 10
+    if low >= 90:
+        return "DR 90-100"
+    return f"DR {low}-{low + 9}"
+
+
 def _anchor_words(anchor: str) -> List[str]:
     return [w.lower() for w in re.findall(r"[A-Za-zА-Яа-яЁё0-9]{3,}", anchor or "")]
 
@@ -635,7 +645,26 @@ def run_link_profile_audit(
             "http2xx_n": 0.0,
         }
     )
-    target_agg: Dict[str, Dict[str, Any]] = defaultdict(lambda: {"total": 0, "follow": 0, "nofollow": 0, "unknown": 0, "target_home": 0, "home_follow": 0, "home_nofollow": 0, "int_follow": 0, "int_nofollow": 0, "lost": 0, "dr_counts": Counter(), "zone_counts": Counter(), "http_class": Counter(), "link_type": Counter(), "language": Counter()})
+    target_agg: Dict[str, Dict[str, Any]] = defaultdict(
+        lambda: {
+            "total": 0,
+            "follow": 0,
+            "nofollow": 0,
+            "unknown": 0,
+            "target_home": 0,
+            "home_follow": 0,
+            "home_nofollow": 0,
+            "int_follow": 0,
+            "int_nofollow": 0,
+            "lost": 0,
+            "dr_counts": Counter(),
+            "dr10_counts": Counter(),
+            "zone_counts": Counter(),
+            "http_class": Counter(),
+            "link_type": Counter(),
+            "language": Counter(),
+        }
+    )
 
     dr_values: List[float] = []
     traffic_values: List[float] = []
@@ -759,6 +788,8 @@ def run_link_profile_audit(
             ta["unknown"] += 1
         if row.get("dr") is not None:
             ta["dr_counts"][_dr_bucket(row.get("dr"))] += 1
+        if effective_dr is not None:
+            ta["dr10_counts"][_dr_bucket_decile(effective_dr)] += 1
         ta["zone_counts"][_extract_zone(src)] += 1
         if row.get("lost_status"):
             ta["lost"] += 1
@@ -822,6 +853,7 @@ def run_link_profile_audit(
             "internal_nofollow_pct": round((int_nofollow / max(1, nofollow)) * 100, 2),
             "lost_pct": round((int(agg.get("lost", 0)) / max(1, total)) * 100, 2),
             "dr_counts": dr_counts,
+            "dr10_counts": agg.get("dr10_counts", Counter()),
             "zone_counts": zone_counts,
             "http_class": agg.get("http_class", Counter()),
             "link_type": agg.get("link_type", Counter()),
@@ -859,9 +891,9 @@ def run_link_profile_audit(
                 }
             )
 
-    link_types_by_competitor = _flatten_breakdown_rows(normalized_rows, dim="link_type", value_key="link_type", row_limit=1000)
-    http_codes_by_competitor = _flatten_breakdown_rows(normalized_rows, dim="http_code", value_key="http_code", row_limit=1000)
-    languages_by_competitor = _flatten_breakdown_rows(normalized_rows, dim="language", value_key="language", row_limit=1000)
+    link_types_by_competitor = _flatten_breakdown_rows(normalized_rows, dim="link_type", value_key="link_type", row_limit=3000)
+    http_codes_by_competitor = _flatten_breakdown_rows(normalized_rows, dim="http_code", value_key="http_code", row_limit=3000)
+    languages_by_competitor = _flatten_breakdown_rows(normalized_rows, dim="language", value_key="language", row_limit=3000)
 
     our_ref_domains = set(our_source_counter.keys())
     our_site_rows: List[Dict[str, Any]] = []
@@ -877,7 +909,7 @@ def run_link_profile_audit(
         )
 
     competitor_rows: List[Dict[str, Any]] = []
-    for competitor, links_count in competitor_counter.most_common(20):
+    for competitor, links_count in competitor_counter.most_common(200):
         metrics = batch_metrics.get(competitor, {})
         comp_refs = competitor_ref_domains.get(competitor, set())
         shared = len(comp_refs & our_ref_domains)
@@ -910,6 +942,13 @@ def run_link_profile_audit(
         )
 
     comparison_rows: List[Dict[str, Any]] = []
+    our_batch_dr = _to_float((batch_metrics.get(domain) or {}).get("dr"))
+    if our_batch_dr is None:
+        for d_key, m in batch_metrics.items():
+            if _is_our_target(str(d_key), domain):
+                our_batch_dr = _to_float((m or {}).get("dr"))
+                if our_batch_dr is not None:
+                    break
     our_follow_pct = float(our_metrics.get("follow_pct", 0.0) or 0.0)
     our_lost_pct = float(our_metrics.get("lost_pct", 0.0) or 0.0)
     our_http2xx_pct = _pct((our_metrics.get("http_class", Counter()) or Counter()).get("2xx", 0), max(1, int((our_metrics.get("total_links", 0) or 0))))
@@ -924,6 +963,10 @@ def run_link_profile_audit(
         comp_follow_pct = float(comp_metrics.get("follow_pct", 0.0) or 0.0)
         comp_lost_pct = float(comp_metrics.get("lost_pct", 0.0) or 0.0)
         comp_http2xx_pct = _pct((comp_metrics.get("http_class", Counter()) or Counter()).get("2xx", 0), max(1, int((comp_metrics.get("total_links", 0) or 0))))
+        comp_batch_dr = _to_float((batch_metrics.get(competitor) or {}).get("dr"))
+        dr_gap_pct = None
+        if (our_batch_dr is not None) and (comp_batch_dr is not None):
+            dr_gap_pct = _pct(comp_batch_dr - our_batch_dr, max(1.0, our_batch_dr))
         comparison_rows.append(
             {
                 "competitor_domain": competitor,
@@ -942,6 +985,9 @@ def run_link_profile_audit(
                 "competitor_http_2xx_pct": comp_http2xx_pct,
                 "our_http_2xx_pct": our_http2xx_pct,
                 "http_2xx_gap_pp": round(comp_http2xx_pct - our_http2xx_pct, 2),
+                "our_batch_dr": our_batch_dr,
+                "competitor_batch_dr": comp_batch_dr,
+                "dr_gap_pct_vs_our": dr_gap_pct,
             }
         )
 
@@ -973,6 +1019,44 @@ def run_link_profile_audit(
             }
         )
     competitor_quality_rows.sort(key=lambda x: float(x.get("quality_score_0_100", 0.0)), reverse=True)
+
+    dr_deciles = [
+        "DR 0-9",
+        "DR 10-19",
+        "DR 20-29",
+        "DR 30-39",
+        "DR 40-49",
+        "DR 50-59",
+        "DR 60-69",
+        "DR 70-79",
+        "DR 80-89",
+        "DR 90-100",
+    ]
+    dr_distribution_matrix_rows: List[Dict[str, Any]] = []
+    matrix_domains = [x.get("competitor_domain") for x in competitor_rows if x.get("competitor_domain")]
+    for comp in matrix_domains:
+        m = per_target_metrics.get(str(comp), {})
+        total_links = max(1, int(m.get("total_links", 0) or 0))
+        dr10 = m.get("dr10_counts", Counter()) or Counter()
+        row: Dict[str, Any] = {"Домен": comp}
+        for bucket in dr_deciles:
+            row[bucket] = _pct(dr10.get(bucket, 0), total_links)
+        dr_distribution_matrix_rows.append(row)
+    if dr_distribution_matrix_rows:
+        avg_row: Dict[str, Any] = {"Домен": "Средние"}
+        med_row: Dict[str, Any] = {"Домен": "Медиана"}
+        for bucket in dr_deciles:
+            vals = [float(x.get(bucket, 0.0) or 0.0) for x in dr_distribution_matrix_rows]
+            avg_row[bucket] = round(mean(vals), 2) if vals else 0.0
+            med_row[bucket] = round(median(vals), 2) if vals else 0.0
+        dr_distribution_matrix_rows.append(avg_row)
+        dr_distribution_matrix_rows.append(med_row)
+    our_dr10 = (our_metrics or {}).get("dr10_counts", Counter()) or Counter()
+    our_total = max(1, int((our_metrics or {}).get("total_links", 0) or 0))
+    our_row: Dict[str, Any] = {"Домен": domain}
+    for bucket in dr_deciles:
+        our_row[bucket] = _pct(our_dr10.get(bucket, 0), our_total)
+    dr_distribution_matrix_rows.append(our_row)
 
     top_anchors = [{"anchor": a, "count": c} for a, c in anchor_counter.most_common(30)]
     anchor_word_rows = [{"word": w, "count": c} for w, c in anchor_word_counter.most_common(30)]
@@ -1265,6 +1349,7 @@ def run_link_profile_audit(
                 "languages_by_competitor": languages_by_competitor,
                 "competitor_quality": competitor_quality_rows,
                 "opportunity_domains": opportunity_domains_rows,
+                "dr_distribution_matrix": dr_distribution_matrix_rows,
                 "ourSiteTables": [
                     {"title": "Наш сайт: доноры", "rows": our_site_rows},
                 ],
@@ -1275,6 +1360,7 @@ def run_link_profile_audit(
                 "comparisonTables": [
                     {"title": "Сравнение с конкурентами", "rows": comparison_rows},
                     {"title": "Бенчмарк avg/median по конкурентам", "rows": benchmark_rows},
+                    {"title": "DR распределение доноров по доменам (%)", "rows": dr_distribution_matrix_rows},
                     {"title": "Матрица возможностей доноров", "rows": opportunity_domains_rows},
                 ],
                 "additionalTables": [

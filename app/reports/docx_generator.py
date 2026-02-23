@@ -1860,9 +1860,15 @@ class DOCXGenerator:
                 for x in comparison[:30]
             ]
             self._add_table(doc, ["Домен", "Общие доноры", "Donor gap %", "Follow gap п.п.", "Lost gap п.п."], rows)
+        dr_matrix = tables.get("dr_distribution_matrix", []) or []
+        if dr_matrix:
+            self._add_heading(doc, "2.5 DR распределение доноров по доменам (%)", level=2)
+            cols = ["Домен", "DR 0-9", "DR 10-19", "DR 20-29", "DR 30-39", "DR 40-49", "DR 50-59", "DR 60-69", "DR 70-79", "DR 80-89", "DR 90-100"]
+            rows = [[x.get(c, "") for c in cols] for x in dr_matrix[:30]]
+            self._add_table(doc, cols, rows)
         opportunities = tables.get("opportunity_domains", []) or []
         if opportunities:
-            self._add_heading(doc, "2.5 Матрица возможностей доноров", level=2)
+            self._add_heading(doc, "2.6 Матрица возможностей доноров", level=2)
             rows = [
                 [
                     x.get("domain", ""),
