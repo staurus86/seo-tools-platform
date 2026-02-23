@@ -484,32 +484,38 @@ class DOCXGenerator:
         results = data.get('results', {}) or {}
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-        title = doc.add_heading('Sitemap Validation Report', 0)
+        title = doc.add_heading('Отчет по валидации Sitemap', 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        input_url = results.get("input_url") or data.get('url', 'n/a')
-        resolved_url = results.get("resolved_sitemap_url") or data.get('url', 'n/a')
+        input_url = results.get("input_url") or data.get('url', 'н/д')
+        resolved_url = results.get("resolved_sitemap_url") or data.get('url', 'н/д')
         discovery_source = results.get("sitemap_discovery_source", "")
-        doc.add_paragraph(f"Input: {input_url}")
+        doc.add_paragraph(f"Входной URL: {input_url}")
         doc.add_paragraph(f"Sitemap URL: {resolved_url}")
         if discovery_source:
-            doc.add_paragraph(f"Discovery source: {discovery_source}")
-        doc.add_paragraph(f"Generated: {now_str}")
+            source_map = {
+                "direct_input": "прямой URL",
+                "robots.txt": "robots.txt",
+                "common_path": "стандартный путь",
+                "auto_discovery": "автоопределение",
+            }
+            doc.add_paragraph(f"Источник обнаружения: {source_map.get(discovery_source, discovery_source)}")
+        doc.add_paragraph(f"Сформировано: {now_str}")
 
         summary_rows = [
-            ["Valid", "Yes" if results.get("valid") else "No"],
-            ["HTTP status", results.get("status_code", "n/a")],
-            ["Sitemaps scanned", results.get("sitemaps_scanned", 0)],
-            ["Sitemaps valid", results.get("sitemaps_valid", 0)],
-            ["Total URLs", results.get("urls_count", 0)],
-            ["Unique URLs", results.get("unique_urls_count", 0)],
-            ["Duplicate URLs", results.get("duplicate_urls_count", 0)],
-            ["Quality score", f"{results.get('quality_score', 'n/a')} ({results.get('quality_grade', 'n/a')})"],
+            ["Валиден", "Да" if results.get("valid") else "Нет"],
+            ["HTTP статус", results.get("status_code", "н/д")],
+            ["Sitemap-файлов просканировано", results.get("sitemaps_scanned", 0)],
+            ["Валидных sitemap-файлов", results.get("sitemaps_valid", 0)],
+            ["Всего URL", results.get("urls_count", 0)],
+            ["Уникальных URL", results.get("unique_urls_count", 0)],
+            ["Дубли URL", results.get("duplicate_urls_count", 0)],
+            ["Оценка качества", f"{results.get('quality_score', 'n/a')} ({results.get('quality_grade', 'n/a')})"],
         ]
-        self._add_heading(doc, "1. Summary", level=1)
-        self._add_table(doc, ["Metric", "Value"], summary_rows)
+        self._add_heading(doc, "1. Сводка", level=1)
+        self._add_table(doc, ["Метрика", "Значение"], summary_rows)
 
         severity = results.get("severity_counts", {}) or {}
-        self._add_heading(doc, "2. Severity Breakdown", level=1)
+        self._add_heading(doc, "2. Распределение по severity", level=1)
         self._add_table(
             doc,
             ["Critical", "Warning", "Info"],
@@ -517,7 +523,7 @@ class DOCXGenerator:
         )
 
         issues = results.get("issues", []) or []
-        self._add_heading(doc, "3. Prioritized Issues", level=1)
+        self._add_heading(doc, "3. Приоритизированные проблемы", level=1)
         if issues:
             rows = []
             for it in issues[:40]:
@@ -527,12 +533,12 @@ class DOCXGenerator:
                     it.get("details", ""),
                     it.get("action", ""),
                 ])
-            self._add_table(doc, ["Severity", "Issue", "Details", "Action"], rows)
+            self._add_table(doc, ["Severity", "Проблема", "Детали", "Действие"], rows)
         else:
-            doc.add_paragraph("No prioritized issues.")
+            doc.add_paragraph("Приоритизированные проблемы отсутствуют.")
 
         action_plan = results.get("action_plan", []) or []
-        self._add_heading(doc, "4. Action Plan", level=1)
+        self._add_heading(doc, "4. План исправлений", level=1)
         if action_plan:
             rows = []
             for item in action_plan[:30]:
@@ -543,34 +549,34 @@ class DOCXGenerator:
                     item.get("action", ""),
                     item.get("sla", ""),
                 ])
-            self._add_table(doc, ["Priority", "Owner", "Issue", "Action", "SLA"], rows)
+            self._add_table(doc, ["Приоритет", "Ответственный", "Проблема", "Действие", "SLA"], rows)
         else:
-            doc.add_paragraph("No action plan items.")
+            doc.add_paragraph("Пункты плана исправлений отсутствуют.")
 
         hreflang = results.get("hreflang", {}) or {}
         freshness = results.get("freshness", {}) or {}
         media = results.get("media_extensions", {}) or {}
-        self._add_heading(doc, "5. Advanced Validation", level=1)
+        self._add_heading(doc, "5. Расширенная валидация", level=1)
         self._add_table(
             doc,
-            ["Check", "Value"],
+            ["Проверка", "Значение"],
             [
-                ["Hreflang detected", "Yes" if hreflang.get("detected") else "No"],
-                ["Hreflang links", hreflang.get("links_count", 0)],
-                ["Hreflang invalid code", hreflang.get("invalid_code_count", 0)],
-                ["Hreflang invalid href", hreflang.get("invalid_href_count", 0)],
-                ["Hreflang duplicate lang", hreflang.get("duplicate_lang_count", 0)],
-                ["Lastmod missing", freshness.get("lastmod_missing_count", 0)],
-                ["Lastmod stale", freshness.get("stale_lastmod_count", 0)],
-                ["Lastmod future", freshness.get("lastmod_future_count", 0)],
-                ["Image tags / missing loc", f"{media.get('image_tags_count', 0)} / {media.get('image_missing_loc_count', 0)}"],
-                ["Video tags / missing req", f"{media.get('video_tags_count', 0)} / {media.get('video_missing_required_count', 0)}"],
-                ["News tags / missing req", f"{media.get('news_tags_count', 0)} / {media.get('news_missing_required_count', 0)}"],
+                ["Hreflang обнаружен", "Да" if hreflang.get("detected") else "Нет"],
+                ["Hreflang ссылок", hreflang.get("links_count", 0)],
+                ["Hreflang: некорректный код", hreflang.get("invalid_code_count", 0)],
+                ["Hreflang: некорректный href", hreflang.get("invalid_href_count", 0)],
+                ["Hreflang: дубль языка", hreflang.get("duplicate_lang_count", 0)],
+                ["Lastmod отсутствует", freshness.get("lastmod_missing_count", 0)],
+                ["Lastmod устаревший", freshness.get("stale_lastmod_count", 0)],
+                ["Lastmod в будущем", freshness.get("lastmod_future_count", 0)],
+                ["Image теги / без loc", f"{media.get('image_tags_count', 0)} / {media.get('image_missing_loc_count', 0)}"],
+                ["Video теги / без обязательных", f"{media.get('video_tags_count', 0)} / {media.get('video_missing_required_count', 0)}"],
+                ["News теги / без обязательных", f"{media.get('news_tags_count', 0)} / {media.get('news_missing_required_count', 0)}"],
             ],
         )
 
         sitemap_files = results.get("sitemap_files", []) or []
-        self._add_heading(doc, "6. File-Level Errors And Warnings", level=1)
+        self._add_heading(doc, "6. Ошибки и предупреждения по файлам", level=1)
         if sitemap_files:
             rows = []
             for item in sitemap_files[:200]:
@@ -584,44 +590,44 @@ class DOCXGenerator:
                     warnings_txt,
                 ])
             if rows:
-                self._add_table(doc, ["Sitemap file", "Errors", "Warnings"], rows)
+                self._add_table(doc, ["Sitemap-файл", "Ошибки", "Предупреждения"], rows)
             else:
-                doc.add_paragraph("No file-level errors or warnings.")
+                doc.add_paragraph("Ошибки или предупреждения по файлам не обнаружены.")
         else:
-            doc.add_paragraph("No sitemap files in result.")
+            doc.add_paragraph("В результате нет sitemap-файлов.")
 
         tool_notes = results.get("tool_notes", []) or []
         if tool_notes:
-            self._add_heading(doc, "7. Tool Notes (Not Sitemap Errors)", level=1)
+            self._add_heading(doc, "7. Служебные заметки (не ошибки sitemap)", level=1)
             for note in tool_notes[:30]:
                 doc.add_paragraph(str(note), style='List Bullet')
 
         checks = results.get("live_indexability_checks", []) or []
-        self._add_heading(doc, "8. Live Indexability Sample", level=1)
+        self._add_heading(doc, "8. Live-выборка индексируемости", level=1)
         if checks:
             rows = []
             for item in checks[:20]:
                 rows.append([
                     item.get("url", ""),
                     item.get("status_code", ""),
-                    "Yes" if item.get("indexable") else "No",
-                    f"{item.get('canonical_status', 'n/a')}: {item.get('canonical_url', '')}",
+                    "Да" if item.get("indexable") else "Нет",
+                    f"{item.get('canonical_status', 'н/д')}: {item.get('canonical_url', '')}",
                     "; ".join(item.get("reasons", [])[:2]),
                 ])
-            self._add_table(doc, ["URL", "HTTP", "Indexable", "Canonical", "Reasons"], rows)
+            self._add_table(doc, ["URL", "HTTP", "Индексируемость", "Canonical", "Причины"], rows)
         else:
-            doc.add_paragraph("Live sample is empty.")
+            doc.add_paragraph("Live-выборка пуста.")
 
         recs = results.get("recommendations", []) or []
-        self._add_heading(doc, "9. Recommendations", level=1)
+        self._add_heading(doc, "9. Рекомендации", level=1)
         if recs:
             for rec in recs[:40]:
                 doc.add_paragraph(str(rec), style='List Bullet')
         else:
-            doc.add_paragraph("No recommendations.")
+            doc.add_paragraph("Рекомендации отсутствуют.")
 
         doc.add_paragraph()
-        footer = doc.add_paragraph(f"Generated by SEO Tools Platform: {now_str}")
+        footer = doc.add_paragraph(f"Сформировано в SEO Tools Platform: {now_str}")
         footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
         footer.runs[0].font.size = Pt(8)
         footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)

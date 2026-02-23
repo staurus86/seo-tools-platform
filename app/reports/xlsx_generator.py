@@ -424,32 +424,32 @@ class XLSXGenerator:
         header_style = self._create_header_style()
         cell_style = self._create_cell_style()
         results = data.get('results', {}) or {}
-        report_url = results.get("resolved_sitemap_url") or data.get('url', 'n/a')
+        report_url = results.get("resolved_sitemap_url") or data.get('url', 'н/д')
 
         ws = wb.active
-        ws.title = "Summary"
-        ws['A1'] = 'Sitemap Validation Report'
+        ws.title = "Сводка"
+        ws['A1'] = 'Отчет по валидации Sitemap'
         ws['A1'].font = Font(bold=True, size=16)
         ws.merge_cells('A1:E1')
 
         summary_rows = [
             ("URL", report_url),
-            ("Valid", "Yes" if results.get("valid") else "No"),
-            ("HTTP status", results.get("status_code", "n/a")),
-            ("Sitemaps scanned", results.get("sitemaps_scanned", 0)),
-            ("Sitemaps valid", results.get("sitemaps_valid", 0)),
-            ("Total URLs discovered", results.get("urls_count", 0)),
-            ("Unique URLs", results.get("unique_urls_count", 0)),
-            ("Duplicate URLs", results.get("duplicate_urls_count", 0)),
-            ("Invalid URLs", results.get("invalid_urls_count", 0)),
-            ("Invalid lastmod", results.get("invalid_lastmod_count", 0)),
-            ("Invalid changefreq", results.get("invalid_changefreq_count", 0)),
-            ("Invalid priority", results.get("invalid_priority_count", 0)),
-            ("Total size (bytes)", results.get("size", 0)),
-            ("Export URLs truncated", "Yes" if results.get("urls_export_truncated") else "No"),
-            ("Max export URLs", results.get("max_export_urls", 0)),
-            ("Export chunk size", results.get("export_chunk_size", 0)),
-            ("Export parts count", results.get("export_parts_count", 0)),
+            ("Валиден", "Да" if results.get("valid") else "Нет"),
+            ("HTTP статус", results.get("status_code", "н/д")),
+            ("Sitemap-файлов просканировано", results.get("sitemaps_scanned", 0)),
+            ("Валидных sitemap-файлов", results.get("sitemaps_valid", 0)),
+            ("Всего URL обнаружено", results.get("urls_count", 0)),
+            ("Уникальных URL", results.get("unique_urls_count", 0)),
+            ("Дубли URL", results.get("duplicate_urls_count", 0)),
+            ("Некорректные URL", results.get("invalid_urls_count", 0)),
+            ("Некорректный lastmod", results.get("invalid_lastmod_count", 0)),
+            ("Некорректный changefreq", results.get("invalid_changefreq_count", 0)),
+            ("Некорректный priority", results.get("invalid_priority_count", 0)),
+            ("Общий размер (байт)", results.get("size", 0)),
+            ("Экспорт URL ограничен", "Да" if results.get("urls_export_truncated") else "Нет"),
+            ("Лимит URL для экспорта", results.get("max_export_urls", 0)),
+            ("Размер части экспорта", results.get("export_chunk_size", 0)),
+            ("Число частей экспорта", results.get("export_parts_count", 0)),
         ]
         row = 3
         for key, value in summary_rows:
@@ -459,10 +459,10 @@ class XLSXGenerator:
         ws.column_dimensions['A'].width = 34
         ws.column_dimensions['B'].width = 80
 
-        files_ws = wb.create_sheet("Sitemap Files")
+        files_ws = wb.create_sheet("Sitemap-файлы")
         files_headers = [
-            "Sitemap URL", "Type", "HTTP", "OK", "URLs",
-            "Duplicates", "Size bytes", "Errors", "Warnings", "Severity"
+            "Sitemap URL", "Тип", "HTTP", "OK", "URL",
+            "Дубли", "Размер, байт", "Ошибки", "Предупреждения", "Severity"
         ]
         for col, header in enumerate(files_headers, 1):
             cell = files_ws.cell(row=1, column=col, value=header)
@@ -474,7 +474,7 @@ class XLSXGenerator:
                 item.get("sitemap_url", ""),
                 item.get("type", ""),
                 item.get("status_code", ""),
-                "Yes" if item.get("ok") else "No",
+                "Да" if item.get("ok") else "Нет",
                 item.get("urls_count", 0),
                 item.get("duplicate_count", 0),
                 item.get("size_bytes", 0),
@@ -492,8 +492,8 @@ class XLSXGenerator:
         for col, width in enumerate([72, 14, 10, 8, 12, 12, 14, 60, 60, 14], 1):
             files_ws.column_dimensions[get_column_letter(col)].width = width
 
-        errors_ws = wb.create_sheet("Errors")
-        errors_ws.cell(row=1, column=1, value="Error")
+        errors_ws = wb.create_sheet("Ошибки")
+        errors_ws.cell(row=1, column=1, value="Ошибка")
         errors_ws.cell(row=1, column=2, value="Severity")
         self._apply_style(errors_ws.cell(row=1, column=1), header_style)
         self._apply_style(errors_ws.cell(row=1, column=2), header_style)
@@ -509,8 +509,8 @@ class XLSXGenerator:
         errors_ws.freeze_panes = "A2"
         errors_ws.auto_filter.ref = "A1:B1"
 
-        warnings_ws = wb.create_sheet("Warnings")
-        warnings_ws.cell(row=1, column=1, value="Warning")
+        warnings_ws = wb.create_sheet("Предупреждения")
+        warnings_ws.cell(row=1, column=1, value="Предупреждение")
         warnings_ws.cell(row=1, column=2, value="Severity")
         self._apply_style(warnings_ws.cell(row=1, column=1), header_style)
         self._apply_style(warnings_ws.cell(row=1, column=2), header_style)
@@ -526,8 +526,8 @@ class XLSXGenerator:
         warnings_ws.freeze_panes = "A2"
         warnings_ws.auto_filter.ref = "A1:B1"
 
-        dup_ws = wb.create_sheet("Duplicates")
-        dup_headers = ["URL", "First sitemap", "Duplicate sitemap", "Severity"]
+        dup_ws = wb.create_sheet("Дубли")
+        dup_headers = ["URL", "Первый sitemap", "Сitemap-дубль", "Severity"]
         for col, header in enumerate(dup_headers, 1):
             cell = dup_ws.cell(row=1, column=col, value=header)
             self._apply_style(cell, header_style)
@@ -547,8 +547,8 @@ class XLSXGenerator:
         dup_ws.column_dimensions['C'].width = 60
         dup_ws.column_dimensions['D'].width = 14
 
-        rec_ws = wb.create_sheet("Recommendations")
-        rec_ws.cell(row=1, column=1, value="Recommendation")
+        rec_ws = wb.create_sheet("Рекомендации")
+        rec_ws.cell(row=1, column=1, value="Рекомендация")
         rec_ws.cell(row=1, column=2, value="Severity")
         self._apply_style(rec_ws.cell(row=1, column=1), header_style)
         self._apply_style(rec_ws.cell(row=1, column=2), header_style)
@@ -564,8 +564,8 @@ class XLSXGenerator:
         rec_ws.freeze_panes = "A2"
         rec_ws.auto_filter.ref = "A1:B1"
 
-        tool_notes_ws = wb.create_sheet("Tool Notes")
-        tool_notes_ws.cell(row=1, column=1, value="Note")
+        tool_notes_ws = wb.create_sheet("Служебные заметки")
+        tool_notes_ws.cell(row=1, column=1, value="Заметка")
         self._apply_style(tool_notes_ws.cell(row=1, column=1), header_style)
         tool_notes = results.get("tool_notes", []) or []
         if tool_notes:
@@ -573,15 +573,15 @@ class XLSXGenerator:
                 c = tool_notes_ws.cell(row=idx, column=1, value=str(note))
                 self._apply_style(c, cell_style)
         else:
-            c = tool_notes_ws.cell(row=2, column=1, value="No tool notes")
+            c = tool_notes_ws.cell(row=2, column=1, value="Служебные заметки отсутствуют")
             self._apply_style(c, cell_style)
         tool_notes_ws.column_dimensions['A'].width = 140
         tool_notes_ws.freeze_panes = "A2"
 
-        insights_ws = wb.create_sheet("Insights")
-        insights_ws.cell(row=1, column=1, value="Metric")
-        insights_ws.cell(row=1, column=2, value="Value")
-        insights_ws.cell(row=1, column=3, value="Interpretation")
+        insights_ws = wb.create_sheet("Инсайты")
+        insights_ws.cell(row=1, column=1, value="Метрика")
+        insights_ws.cell(row=1, column=2, value="Значение")
+        insights_ws.cell(row=1, column=3, value="Интерпретация")
         for col in range(1, 4):
             self._apply_style(insights_ws.cell(row=1, column=col), header_style)
 
@@ -597,13 +597,13 @@ class XLSXGenerator:
         export_ratio = round((exported_urls / total_urls) * 100, 2) if total_urls > 0 else 0.0
 
         insight_rows = [
-            ("Quality score", results.get("quality_score", "n/a"), f"Grade {results.get('quality_grade', 'n/a')}"),
-            ("Errors / Warnings", f"{errors_count} / {warnings_count}", "Lower is better"),
-            ("Unique URL ratio", f"{unique_ratio}%", "Unique URLs divided by total discovered URLs"),
-            ("Valid sitemap files ratio", f"{valid_ratio}%", "Valid sitemap files divided by scanned files"),
-            ("Export coverage ratio", f"{export_ratio}%", "Exported URLs divided by total discovered URLs"),
-            ("Traversal reached limit", "Yes" if any("traversal limit" in str(w).lower() for w in (results.get("warnings", []) or [])) else "No", "If Yes, not all sitemap files may be scanned"),
-            ("Export truncated", "Yes" if results.get("urls_export_truncated") else "No", "If Yes, use part exports for full URL set"),
+            ("Оценка качества", results.get("quality_score", "н/д"), f"Оценка {results.get('quality_grade', 'н/д')}"),
+            ("Ошибки / Предупреждения", f"{errors_count} / {warnings_count}", "Чем меньше, тем лучше"),
+            ("Доля уникальных URL", f"{unique_ratio}%", "Уникальные URL от общего числа обнаруженных URL"),
+            ("Доля валидных sitemap-файлов", f"{valid_ratio}%", "Валидные sitemap-файлы от числа просканированных"),
+            ("Покрытие экспорта", f"{export_ratio}%", "Экспортированные URL от общего числа обнаруженных URL"),
+            ("Ограничение обхода достигнуто", "Да" if any("лимит обхода" in str(w).lower() for w in (results.get("tool_notes", []) or [])) else "Нет", "Если Да, просканированы не все sitemap-файлы"),
+            ("Экспорт ограничен", "Да" if results.get("urls_export_truncated") else "Нет", "Если Да, используйте экспорт частями для полного списка URL"),
         ]
         for idx, (k, v, i_txt) in enumerate(insight_rows, start=2):
             self._apply_style(insights_ws.cell(row=idx, column=1, value=k), cell_style)
@@ -612,19 +612,19 @@ class XLSXGenerator:
 
         highlights = results.get("highlights", []) or []
         start_row = len(insight_rows) + 4
-        self._apply_style(insights_ws.cell(row=start_row, column=1, value="Highlights"), header_style)
+        self._apply_style(insights_ws.cell(row=start_row, column=1, value="Ключевые выводы"), header_style)
         if highlights:
             for offset, item in enumerate(highlights, start=1):
                 self._apply_style(insights_ws.cell(row=start_row + offset, column=1, value=str(item)), cell_style)
         else:
-            self._apply_style(insights_ws.cell(row=start_row + 1, column=1, value="No highlights"), cell_style)
+            self._apply_style(insights_ws.cell(row=start_row + 1, column=1, value="Ключевые выводы отсутствуют"), cell_style)
 
         insights_ws.column_dimensions['A'].width = 34
         insights_ws.column_dimensions['B'].width = 24
         insights_ws.column_dimensions['C'].width = 80
         insights_ws.freeze_panes = "A2"
 
-        urls_ws = wb.create_sheet("Export URLs")
+        urls_ws = wb.create_sheet("Экспорт URL")
         urls_ws.cell(row=1, column=1, value="URL")
         self._apply_style(urls_ws.cell(row=1, column=1), header_style)
         for idx, u in enumerate((results.get("export_urls", []) or []), start=2):

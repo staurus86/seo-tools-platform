@@ -1103,7 +1103,7 @@ function downloadSitemapFilePreview(index, filename) {
 
 async function downloadSitemapXlsxReport() {
     if (!sitemapData) {
-        alert('No sitemap data available');
+        alert('Нет данных sitemap для экспорта');
         return;
     }
     try {
@@ -1128,14 +1128,14 @@ async function downloadSitemapXlsxReport() {
         document.body.removeChild(a);
         URL.revokeObjectURL(href);
     } catch (error) {
-        console.error('Error downloading sitemap xlsx:', error);
-        alert('Failed to download sitemap XLSX report');
+        console.error('Ошибка скачивания sitemap xlsx:', error);
+        alert('Не удалось скачать XLSX-отчет по sitemap');
     }
 }
 
 async function downloadSitemapDocxReport() {
     if (!sitemapData) {
-        alert('No sitemap data available');
+        alert('Нет данных sitemap для экспорта');
         return;
     }
     try {
@@ -1146,7 +1146,7 @@ async function downloadSitemapDocxReport() {
         });
         if (!response.ok) {
             const payload = await response.json().catch(() => ({}));
-            throw new Error(payload.error || 'Failed to generate sitemap DOCX report');
+            throw new Error(payload.error || 'Не удалось сформировать DOCX-отчет по sitemap');
         }
         const blob = await response.blob();
         const href = URL.createObjectURL(blob);
@@ -1160,14 +1160,14 @@ async function downloadSitemapDocxReport() {
         document.body.removeChild(a);
         URL.revokeObjectURL(href);
     } catch (error) {
-        console.error('Error downloading sitemap docx:', error);
-        alert(error.message || 'Failed to download sitemap DOCX report');
+        console.error('Ошибка скачивания sitemap docx:', error);
+        alert(error.message || 'Не удалось скачать DOCX-отчет по sitemap');
     }
 }
 
 async function runSitemapCheckFromRobots(sitemapUrl) {
     if (!sitemapUrl) {
-        alert('Sitemap URL is empty');
+        alert('Пустой URL sitemap');
         return;
     }
     try {
@@ -1189,8 +1189,8 @@ async function runSitemapCheckFromRobots(sitemapUrl) {
         });
         window.location.href = `/results/${data.task_id}`;
     } catch (error) {
-        console.error('Error starting sitemap validation:', error);
-        alert('Failed to start sitemap validation: ' + (error.message || error));
+        console.error('Ошибка запуска валидации sitemap:', error);
+        alert('Не удалось запустить валидацию sitemap: ' + (error.message || error));
     }
 }
 
@@ -2207,7 +2207,7 @@ function generateSitemapHTMLV2(result) {
 
     const totalIssues = errors.length + warnings.length;
     const healthBadge = r.valid && totalIssues === 0 ? 'bg-emerald-100 text-emerald-700' : (r.valid ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700');
-    const healthText = r.valid && totalIssues === 0 ? 'Healthy sitemap' : (r.valid ? 'Valid with warnings' : 'Needs fixes');
+    const healthText = r.valid && totalIssues === 0 ? 'Sitemap в порядке' : (r.valid ? 'Валиден, но есть предупреждения' : 'Требуются исправления');
     const totalUrls = Number(r.urls_count || 0);
     const uniqueUrls = Number(r.unique_urls_count || 0);
     const scanned = Number(r.sitemaps_scanned || 0);
@@ -2215,7 +2215,7 @@ function generateSitemapHTMLV2(result) {
     const exported = Number(exportUrls.length || 0);
     const coverageUnique = totalUrls > 0 ? Math.round((uniqueUrls / totalUrls) * 1000) / 10 : 0;
     const exportCoverage = totalUrls > 0 ? Math.round((exported / totalUrls) * 1000) / 10 : 0;
-    const riskLevel = errors.length > 0 ? 'High' : (warnings.length > 0 ? 'Medium' : 'Low');
+    const riskLevel = errors.length > 0 ? 'Высокий' : (warnings.length > 0 ? 'Средний' : 'Низкий');
     const scanLimitFiles = Number(r.scan_limit_files || 0);
     const scanLimitReached = !!r.scan_limit_reached;
     const scanQueueRemaining = Number(r.scan_queue_remaining || 0);
@@ -2234,26 +2234,31 @@ function generateSitemapHTMLV2(result) {
         warning: 'bg-amber-50 border-amber-200 text-amber-800',
         info: 'bg-sky-50 border-sky-200 text-sky-800'
     };
+    const levelLabel = {
+        critical: 'Критично',
+        warning: 'Предупреждение',
+        info: 'Инфо'
+    };
 
     const classifyNotice = (message) => {
         const text = String(message || '');
-        if (/uniform lastmod|lastmod/i.test(text)) return 'lastmod';
-        if (/preview truncated|export/i.test(text)) return 'preview_export';
+        if (/uniform lastmod|lastmod|однотипн|устаревш|будущ/i.test(text)) return 'lastmod';
+        if (/preview truncated|export|превью|экспорт/i.test(text)) return 'preview_export';
         if (/hreflang/i.test(text)) return 'hreflang';
-        if (/image|video|news/i.test(text)) return 'media';
-        if (/sitemap index|self-references|repeated/i.test(text)) return 'index_structure';
-        if (/http|parse|unsupported/i.test(text)) return 'fetch_parse';
+        if (/image|video|news|media|изображ|видео|новост/i.test(text)) return 'media';
+        if (/sitemap index|self-references|repeated|индекс|самоссыл|повтор/i.test(text)) return 'index_structure';
+        if (/http|parse|unsupported|парсинг|загрузк|неподдерж/i.test(text)) return 'fetch_parse';
         return 'other';
     };
 
     const groupLabel = {
-        lastmod: 'Lastmod / Freshness',
-        preview_export: 'Preview / Export',
+        lastmod: 'Lastmod / Актуальность',
+        preview_export: 'Превью / Экспорт',
         hreflang: 'Hreflang',
-        media: 'Media Extensions',
-        index_structure: 'Sitemap Index Structure',
-        fetch_parse: 'Fetch / Parse',
-        other: 'Other'
+        media: 'Media-расширения',
+        index_structure: 'Структура Sitemap Index',
+        fetch_parse: 'Загрузка / Парсинг',
+        other: 'Прочее'
     };
 
     const groupedWarnings = {};
@@ -2282,30 +2287,30 @@ function generateSitemapHTMLV2(result) {
                 <div class="bg-gradient-to-r from-cyan-700 via-sky-700 to-indigo-700 text-white p-6">
                     <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
                         <div>
-                            <div class="text-xs uppercase tracking-[0.18em] text-cyan-100 mb-2">Sitemap Intelligence</div>
+                            <div class="text-xs uppercase tracking-[0.18em] text-cyan-100 mb-2">Аналитика Sitemap</div>
                             <h3 class="text-2xl font-semibold mb-2">Валидация Sitemap</h3>
                             <div class="text-sm text-cyan-100 break-all">${escapeHtml(resolvedSitemapUrl || '')}</div>
-                            ${inputUrl && inputUrl !== resolvedSitemapUrl ? `<div class="text-xs text-cyan-200 mt-1">Input: ${escapeHtml(inputUrl)} | Source: ${escapeHtml(sitemapDiscoverySource || 'auto')}</div>` : ''}
+                            ${inputUrl && inputUrl !== resolvedSitemapUrl ? `<div class="text-xs text-cyan-200 mt-1">Ввод: ${escapeHtml(inputUrl)} | Источник: ${escapeHtml(sitemapDiscoverySource === 'robots.txt' ? 'robots.txt' : sitemapDiscoverySource === 'direct_input' ? 'прямой URL' : sitemapDiscoverySource === 'common_path' ? 'стандартный путь' : 'автоопределение')}</div>` : ''}
                             <div class="mt-3 flex flex-wrap gap-2">
                                 <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${healthBadge}">${healthText}</span>
-                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-white/20 text-white">Errors: ${errors.length}</span>
-                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-white/20 text-white">Warnings: ${warnings.length}</span>
-                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-white/20 text-white">Risk: ${riskLevel}</span>
+                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-white/20 text-white">Ошибки: ${errors.length}</span>
+                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-white/20 text-white">Предупреждения: ${warnings.length}</span>
+                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-white/20 text-white">Риск: ${riskLevel}</span>
                             </div>
                         </div>
                         <div class="flex items-center gap-4">
                             <div class="relative w-24 h-24 rounded-full p-2" style="${scoreRingStyle}">
                                 <div class="w-full h-full rounded-full bg-slate-900/80 backdrop-blur flex items-center justify-center">
                                     <div class="text-center">
-                                        <div class="text-xl font-bold">${qualityScore !== null ? qualityScore : 'n/a'}</div>
-                                        <div class="text-[10px] text-slate-300">score ${qualityGrade ? `(${qualityGrade})` : ''}</div>
+                                        <div class="text-xl font-bold">${qualityScore !== null ? qualityScore : 'н/д'}</div>
+                                        <div class="text-[10px] text-slate-300">оценка ${qualityGrade ? `(${qualityGrade})` : ''}</div>
                                     </div>
                                 </div>
                             </div>
                             <div class="text-xs text-cyan-100 space-y-1">
-                                <div>Scanned files: <span class="text-white font-semibold">${scanned}</span></div>
-                                <div>Total URLs: <span class="text-white font-semibold">${totalUrls}</span></div>
-                                <div>Unique URLs: <span class="text-white font-semibold">${uniqueUrls}</span></div>
+                                <div>Просканировано файлов: <span class="text-white font-semibold">${scanned}</span></div>
+                                <div>Всего URL: <span class="text-white font-semibold">${totalUrls}</span></div>
+                                <div>Уникальных URL: <span class="text-white font-semibold">${uniqueUrls}</span></div>
                             </div>
                         </div>
                     </div>
@@ -2337,58 +2342,58 @@ function generateSitemapHTMLV2(result) {
             </div>
 
             <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3">
-                <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm transition hover:shadow-md"><div class="text-xs text-slate-500">HTTP</div><div class="text-xl font-semibold">${r.status_code || 'n/a'}</div></div>
-                <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm transition hover:shadow-md"><div class="text-xs text-slate-500">Sitemaps</div><div class="text-xl font-semibold">${scanned}</div><div class="text-[11px] text-slate-500">valid: ${validScanned}</div></div>
-                <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm transition hover:shadow-md"><div class="text-xs text-slate-500">URLs</div><div class="text-xl font-semibold">${totalUrls}</div><div class="text-[11px] text-slate-500">unique: ${uniqueUrls}</div></div>
-                <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm transition hover:shadow-md"><div class="text-xs text-slate-500">Duplicates</div><div class="text-xl font-semibold">${r.duplicate_urls_count || 0}</div></div>
-                <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm transition hover:shadow-md"><div class="text-xs text-slate-500">Live non-indexable</div><div class="text-xl font-semibold">${r.live_non_indexable_count || 0}</div></div>
-                <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm transition hover:shadow-md"><div class="text-xs text-slate-500">Depth</div><div class="text-xl font-semibold">${r.max_depth_seen || 0}</div><div class="text-[11px] text-slate-500">self/repeat: ${r.self_child_refs || 0}/${r.repeated_child_refs || 0}</div></div>
+                <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm transition hover:shadow-md"><div class="text-xs text-slate-500">HTTP</div><div class="text-xl font-semibold">${r.status_code || 'н/д'}</div></div>
+                <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm transition hover:shadow-md"><div class="text-xs text-slate-500">Sitemap-файлы</div><div class="text-xl font-semibold">${scanned}</div><div class="text-[11px] text-slate-500">валидных: ${validScanned}</div></div>
+                <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm transition hover:shadow-md"><div class="text-xs text-slate-500">URL</div><div class="text-xl font-semibold">${totalUrls}</div><div class="text-[11px] text-slate-500">уникальных: ${uniqueUrls}</div></div>
+                <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm transition hover:shadow-md"><div class="text-xs text-slate-500">Дубли</div><div class="text-xl font-semibold">${r.duplicate_urls_count || 0}</div></div>
+                <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm transition hover:shadow-md"><div class="text-xs text-slate-500">Неиндексируемые (live)</div><div class="text-xl font-semibold">${r.live_non_indexable_count || 0}</div></div>
+                <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm transition hover:shadow-md"><div class="text-xs text-slate-500">Глубина</div><div class="text-xl font-semibold">${r.max_depth_seen || 0}</div><div class="text-[11px] text-slate-500">самоссылки/повторы: ${r.self_child_refs || 0}/${r.repeated_child_refs || 0}</div></div>
             </div>
 
             <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 xl:col-span-2">
-                    <h4 class="font-semibold text-slate-800 mb-4">Pipeline And Coverage</h4>
+                    <h4 class="font-semibold text-slate-800 mb-4">Этапы И Покрытие</h4>
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs mb-4">
-                        <div class="px-3 py-2 rounded border ${phaseFetchDone ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">1. Fetch</div>
-                        <div class="px-3 py-2 rounded border ${phaseTraverseDone ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">2. Traverse</div>
-                        <div class="px-3 py-2 rounded border ${phaseParseDone ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">3. Parse</div>
-                        <div class="px-3 py-2 rounded border ${phaseFinalizeDone ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">4. Build</div>
+                        <div class="px-3 py-2 rounded border ${phaseFetchDone ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">1. Загрузка</div>
+                        <div class="px-3 py-2 rounded border ${phaseTraverseDone ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">2. Обход</div>
+                        <div class="px-3 py-2 rounded border ${phaseParseDone ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">3. Парсинг</div>
+                        <div class="px-3 py-2 rounded border ${phaseFinalizeDone ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500'}">4. Сборка отчета</div>
                     </div>
                     <div class="space-y-4">
                         <div>
-                            <div class="flex justify-between text-xs text-slate-600 mb-1"><span>Traversal progress</span><span>${scanned} / ${scanLimitFiles || scanned} (${scanProgressByLimit}%)</span></div>
+                            <div class="flex justify-between text-xs text-slate-600 mb-1"><span>Прогресс обхода</span><span>${scanned} / ${scanLimitFiles || scanned} (${scanProgressByLimit}%)</span></div>
                             <div class="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden"><div class="bg-sky-500 h-2.5 rounded-full transition-all duration-700" style="width:${scanProgressByLimit}%"></div></div>
                         </div>
                         <div>
-                            <div class="flex justify-between text-xs text-slate-600 mb-1"><span>Unique URL coverage</span><span>${coverageUnique}%</span></div>
+                            <div class="flex justify-between text-xs text-slate-600 mb-1"><span>Покрытие уникальных URL</span><span>${coverageUnique}%</span></div>
                             <div class="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden"><div class="bg-emerald-500 h-2.5 rounded-full transition-all duration-700" style="width:${coverageUnique}%"></div></div>
                         </div>
                         <div>
-                            <div class="flex justify-between text-xs text-slate-600 mb-1"><span>Export coverage</span><span>${exportCoverage}%</span></div>
+                            <div class="flex justify-between text-xs text-slate-600 mb-1"><span>Покрытие экспорта</span><span>${exportCoverage}%</span></div>
                             <div class="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden"><div class="bg-indigo-500 h-2.5 rounded-full transition-all duration-700" style="width:${exportCoverage}%"></div></div>
                         </div>
                     </div>
-                    ${scanLimitReached ? `<div class="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">Traversal limit reached: ${scanLimitFiles}. Remaining queued sitemaps: ${scanQueueRemaining}.</div>` : ''}
-                    ${r.urls_export_truncated ? `<div class="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">Export preview limited to ${r.max_export_urls || 0} URLs.</div>` : ''}
-                    ${(r.export_parts_count || 0) > 1 ? `<div class="mt-2 text-xs text-slate-600">Recommended export parts: ${r.export_parts_count} (${exportChunkSize} URLs each)</div>` : ''}
+                    ${scanLimitReached ? `<div class="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">Достигнут лимит обхода: ${scanLimitFiles}. В очереди осталось sitemap: ${scanQueueRemaining}.</div>` : ''}
+                    ${r.urls_export_truncated ? `<div class="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">Превью экспорта ограничено до ${r.max_export_urls || 0} URL.</div>` : ''}
+                    ${(r.export_parts_count || 0) > 1 ? `<div class="mt-2 text-xs text-slate-600">Рекомендуемое число частей экспорта: ${r.export_parts_count} (по ${exportChunkSize} URL)</div>` : ''}
                 </div>
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-                    <h4 class="font-semibold text-slate-800 mb-3">Advanced Signals</h4>
+                    <h4 class="font-semibold text-slate-800 mb-3">Расширенные Сигналы</h4>
                     <div class="space-y-3 text-sm">
                         <div class="rounded-lg border border-slate-200 p-3">
                             <div class="text-xs text-slate-500">Hreflang</div>
-                            <div class="font-semibold">${hreflang.detected ? 'Detected' : 'Not detected'}</div>
-                            <div class="text-xs text-slate-500">links: ${hreflang.links_count || 0}, invalid: ${(hreflang.invalid_code_count || 0) + (hreflang.invalid_href_count || 0)}</div>
+                            <div class="font-semibold">${hreflang.detected ? 'Обнаружен' : 'Не обнаружен'}</div>
+                            <div class="text-xs text-slate-500">ссылок: ${hreflang.links_count || 0}, некорректных: ${(hreflang.invalid_code_count || 0) + (hreflang.invalid_href_count || 0)}</div>
                         </div>
                         <div class="rounded-lg border border-slate-200 p-3">
-                            <div class="text-xs text-slate-500">Freshness</div>
-                            <div class="font-semibold">stale: ${freshness.stale_lastmod_count || 0}</div>
-                            <div class="text-xs text-slate-500">missing: ${freshness.lastmod_missing_count || 0}, future: ${freshness.lastmod_future_count || 0}</div>
+                            <div class="text-xs text-slate-500">Актуальность</div>
+                            <div class="font-semibold">устаревших: ${freshness.stale_lastmod_count || 0}</div>
+                            <div class="text-xs text-slate-500">без lastmod: ${freshness.lastmod_missing_count || 0}, будущих: ${freshness.lastmod_future_count || 0}</div>
                         </div>
                         <div class="rounded-lg border border-slate-200 p-3">
-                            <div class="text-xs text-slate-500">Media Extensions</div>
+                            <div class="text-xs text-slate-500">Media-расширения</div>
                             <div class="font-semibold">${mediaExt.image_tags_count || 0}/${mediaExt.video_tags_count || 0}/${mediaExt.news_tags_count || 0}</div>
-                            <div class="text-xs text-slate-500">missing required: ${(mediaExt.image_missing_loc_count || 0) + (mediaExt.video_missing_required_count || 0) + (mediaExt.news_missing_required_count || 0)}</div>
+                            <div class="text-xs text-slate-500">пропущено обязательных: ${(mediaExt.image_missing_loc_count || 0) + (mediaExt.video_missing_required_count || 0) + (mediaExt.news_missing_required_count || 0)}</div>
                         </div>
                     </div>
                 </div>
@@ -2397,19 +2402,19 @@ function generateSitemapHTMLV2(result) {
             ${(issues.length > 0 || actionPlan.length > 0) ? `
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
                     <div class="flex items-center justify-between mb-3">
-                        <h4 class="font-semibold text-slate-800">Prioritized Findings</h4>
-                        <div class="text-xs text-slate-600">critical: <span class="font-semibold">${severityCounts.critical || 0}</span>, warning: <span class="font-semibold">${severityCounts.warning || 0}</span>, info: <span class="font-semibold">${severityCounts.info || 0}</span></div>
+                        <h4 class="font-semibold text-slate-800">Приоритизированные Находки</h4>
+                        <div class="text-xs text-slate-600">критично: <span class="font-semibold">${severityCounts.critical || 0}</span>, предупреждений: <span class="font-semibold">${severityCounts.warning || 0}</span>, инфо: <span class="font-semibold">${severityCounts.info || 0}</span></div>
                     </div>
                     <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
                         ${['critical', 'warning', 'info'].map(level => `
                             <div class="rounded-lg border p-3 ${levelClass[level]}">
-                                <div class="font-semibold text-sm mb-2 uppercase">${level}</div>
+                                <div class="font-semibold text-sm mb-2 uppercase">${levelLabel[level] || level}</div>
                                 ${groupedIssues[level].length > 0 ? groupedIssues[level].slice(0, 8).map(it => `
                                     <div class="mb-2 pb-2 border-b border-current/20 last:border-0 last:mb-0 last:pb-0">
-                                        <div class="text-sm font-medium">${escapeHtml(it.title || it.code || 'Issue')}</div>
+                                        <div class="text-sm font-medium">${escapeHtml(it.title || it.code || 'Проблема')}</div>
                                         <div class="text-xs opacity-90">${escapeHtml(it.details || '')}</div>
                                     </div>
-                                `).join('') : '<div class="text-xs opacity-75">No items</div>'}
+                                `).join('') : '<div class="text-xs opacity-75">Нет пунктов</div>'}
                             </div>
                         `).join('')}
                     </div>
@@ -2418,11 +2423,11 @@ function generateSitemapHTMLV2(result) {
 
             ${(Object.keys(groupedErrors).length > 0 || Object.keys(groupedWarnings).length > 0) ? `
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-                    <h4 class="font-semibold text-slate-800 mb-3">Structured Problems</h4>
+                    <h4 class="font-semibold text-slate-800 mb-3">Структурированные Проблемы</h4>
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                         <div>
-                            <div class="text-sm font-semibold text-rose-700 mb-2">Errors (${errors.length})</div>
-                            ${Object.keys(groupedErrors).length === 0 ? '<div class="text-xs text-slate-500">No errors</div>' : Object.entries(groupedErrors).map(([key, list]) => `
+                            <div class="text-sm font-semibold text-rose-700 mb-2">Ошибки (${errors.length})</div>
+                            ${Object.keys(groupedErrors).length === 0 ? '<div class="text-xs text-slate-500">Ошибок нет</div>' : Object.entries(groupedErrors).map(([key, list]) => `
                                 <details class="mb-2 border border-rose-200 rounded-lg bg-rose-50">
                                     <summary class="px-3 py-2 text-xs font-medium cursor-pointer">${escapeHtml(groupLabel[key] || key)} (${list.length})</summary>
                                     <div class="px-3 pb-3 space-y-1">${list.slice(0, 20).map(msg => `<div class="text-xs text-rose-700">${escapeHtml(msg)}</div>`).join('')}</div>
@@ -2430,8 +2435,8 @@ function generateSitemapHTMLV2(result) {
                             `).join('')}
                         </div>
                         <div>
-                            <div class="text-sm font-semibold text-amber-700 mb-2">Warnings (${warnings.length})</div>
-                            ${Object.keys(groupedWarnings).length === 0 ? '<div class="text-xs text-slate-500">No warnings</div>' : Object.entries(groupedWarnings).map(([key, list]) => `
+                            <div class="text-sm font-semibold text-amber-700 mb-2">Предупреждения (${warnings.length})</div>
+                            ${Object.keys(groupedWarnings).length === 0 ? '<div class="text-xs text-slate-500">Предупреждений нет</div>' : Object.entries(groupedWarnings).map(([key, list]) => `
                                 <details class="mb-2 border border-amber-200 rounded-lg bg-amber-50">
                                     <summary class="px-3 py-2 text-xs font-medium cursor-pointer">${escapeHtml(groupLabel[key] || key)} (${list.length})</summary>
                                     <div class="px-3 pb-3 space-y-1">${list.slice(0, 20).map(msg => `<div class="text-xs text-amber-800">${escapeHtml(msg)}</div>`).join('')}</div>
@@ -2444,7 +2449,7 @@ function generateSitemapHTMLV2(result) {
 
             ${toolNotes.length > 0 ? `
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-                    <h4 class="font-semibold text-slate-800 mb-3">Tool Notes (Not Sitemap Errors)</h4>
+                    <h4 class="font-semibold text-slate-800 mb-3">Служебные Заметки (Не Ошибки Sitemap)</h4>
                     <div class="space-y-1">
                         ${toolNotes.map(note => `<div class="text-xs text-slate-600">${escapeHtml(note)}</div>`).join('')}
                     </div>
@@ -2453,13 +2458,13 @@ function generateSitemapHTMLV2(result) {
 
             ${liveChecks.length > 0 ? `
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-                    <h4 class="font-semibold text-slate-800 mb-3">Live Indexability Sample (${liveChecks.length})</h4>
+                    <h4 class="font-semibold text-slate-800 mb-3">Live-Выборка Индексируемости (${liveChecks.length})</h4>
                     <div class="space-y-2 max-h-80 overflow-auto pr-1">
                         ${liveChecks.slice(0, 20).map(item => `
                             <div class="border rounded-lg p-3 text-sm transition hover:shadow-sm ${item.indexable ? 'border-emerald-200 bg-emerald-50/40' : 'border-rose-200 bg-rose-50/40'}">
                                 <div class="font-medium break-all">${escapeHtml(item.url || '')}</div>
-                                <div class="text-xs text-gray-600 mt-1">HTTP: ${item.status_code ?? 'n/a'} | Indexable: <span class="${item.indexable ? 'text-emerald-700' : 'text-rose-700'} font-medium">${item.indexable ? 'Yes' : 'No'}</span> | ${item.response_ms ?? 0} ms</div>
-                                <div class="text-xs text-gray-600 mt-1">Canonical: <span class="font-medium">${escapeHtml(item.canonical_status || 'n/a')}</span>${item.canonical_url ? ` | <span class="break-all">${escapeHtml(item.canonical_url)}</span>` : ''}</div>
+                                <div class="text-xs text-gray-600 mt-1">HTTP: ${item.status_code ?? 'н/д'} | Индексируемость: <span class="${item.indexable ? 'text-emerald-700' : 'text-rose-700'} font-medium">${item.indexable ? 'Да' : 'Нет'}</span> | ${item.response_ms ?? 0} мс</div>
+                                <div class="text-xs text-gray-600 mt-1">Canonical: <span class="font-medium">${escapeHtml(item.canonical_status || 'н/д')}</span>${item.canonical_url ? ` | <span class="break-all">${escapeHtml(item.canonical_url)}</span>` : ''}</div>
                                 ${(item.reasons || []).length > 0 ? `<div class="text-xs text-rose-700 mt-1">${escapeHtml((item.reasons || []).join(' | '))}</div>` : ''}
                             </div>
                         `).join('')}
@@ -2504,11 +2509,11 @@ function generateSitemapHTMLV2(result) {
 
             ${actionPlan.length > 0 ? `
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-                    <h4 class="font-semibold text-slate-800 mb-3">Execution Plan</h4>
+                    <h4 class="font-semibold text-slate-800 mb-3">План Исправлений</h4>
                     <div class="space-y-2">
                         ${actionPlan.slice(0, 20).map(item => `
                             <div class="border rounded-lg p-3 bg-slate-50">
-                                <div class="text-xs text-slate-600 mb-1">${escapeHtml(item.priority || 'P2')} | ${escapeHtml(item.owner || 'SEO')} | SLA: ${escapeHtml(item.sla || 'n/a')}</div>
+                                <div class="text-xs text-slate-600 mb-1">${escapeHtml(item.priority || 'P2')} | ${escapeHtml(item.owner || 'SEO')} | SLA: ${escapeHtml(item.sla || 'н/д')}</div>
                                 <div class="text-sm font-medium text-slate-800">${escapeHtml(item.issue || '')}</div>
                                 <div class="text-sm text-slate-700">${escapeHtml(item.action || '')}</div>
                             </div>
@@ -2518,7 +2523,7 @@ function generateSitemapHTMLV2(result) {
             ` : ''}
 
             <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-                <h4 class="font-semibold text-slate-800 mb-3">Sitemap Files (${sitemapFiles.length})</h4>
+                <h4 class="font-semibold text-slate-800 mb-3">Файлы Sitemap (${sitemapFiles.length})</h4>
                 <div class="space-y-3">
                     ${sitemapFiles.map((f, idx) => `
                         <details class="border rounded-lg p-3 bg-white hover:bg-slate-50 transition">
@@ -2526,19 +2531,19 @@ function generateSitemapHTMLV2(result) {
                                 <div class="flex items-center justify-between gap-3">
                                     <div>
                                         <div class="text-sm font-medium break-all">${escapeHtml(f.sitemap_url)}</div>
-                                        <div class="text-xs text-slate-600 mt-1">type: ${escapeHtml(f.type || 'unknown')} | HTTP: ${f.status_code || 'n/a'} | URLs: ${f.urls_count || 0} | dup: ${f.duplicate_count || 0}</div>
+                                        <div class="text-xs text-slate-600 mt-1">тип: ${escapeHtml(f.type || 'неизвестно')} | HTTP: ${f.status_code || 'н/д'} | URL: ${f.urls_count || 0} | дублей: ${f.duplicate_count || 0}</div>
                                     </div>
-                                    <span class="text-xs px-2 py-1 rounded ${f.ok ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">${f.ok ? 'OK' : 'ERROR'}</span>
+                                    <span class="text-xs px-2 py-1 rounded ${f.ok ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">${f.ok ? 'OK' : 'ОШИБКА'}</span>
                                 </div>
                             </summary>
                             <div class="mt-3 border-t pt-3">
                                 ${(f.urls || []).length > 0 ? `
                                     <button onclick='downloadSitemapFilePreview(${idx}, "sitemap-${safeDomain}-${dateStamp}-${idx + 1}-urls-preview.txt")' class="px-2 py-1 rounded bg-emerald-100 hover:bg-emerald-200 text-xs text-emerald-800 transition mb-2">
-                                        <i class="fas fa-file-download mr-1"></i>Экспорт preview URL этого sitemap
+                                        <i class="fas fa-file-download mr-1"></i>Экспорт URL-превью этого sitemap
                                     </button>
                                 ` : ''}
-                                ${(f.urls_omitted || 0) > 0 ? `<div class="text-xs text-amber-700 mb-1">Preview limited, omitted: ${f.urls_omitted}</div>` : ''}
-                                ${(f.duplicate_urls || []).length > 0 ? `<div class="text-xs text-rose-700 break-all mb-1">Duplicate examples: ${escapeHtml((f.duplicate_urls || []).slice(0, 10).join(' | '))}</div>` : ''}
+                                ${(f.urls_omitted || 0) > 0 ? `<div class="text-xs text-amber-700 mb-1">Превью ограничено, скрыто: ${f.urls_omitted}</div>` : ''}
+                                ${(f.duplicate_urls || []).length > 0 ? `<div class="text-xs text-rose-700 break-all mb-1">Примеры дублей: ${escapeHtml((f.duplicate_urls || []).slice(0, 10).join(' | '))}</div>` : ''}
                                 ${(f.errors || []).length > 0 ? `<div class="text-xs text-rose-700">${escapeHtml((f.errors || []).join(' | '))}</div>` : ''}
                                 ${(f.warnings || []).length > 0 ? `<div class="text-xs text-amber-700 mt-1">${escapeHtml((f.warnings || []).join(' | '))}</div>` : ''}
                             </div>
@@ -2548,10 +2553,10 @@ function generateSitemapHTMLV2(result) {
             </div>
 
             <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-                <h4 class="font-semibold text-slate-800 mb-3">Reference</h4>
+                <h4 class="font-semibold text-slate-800 mb-3">Справка</h4>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
-                    <a class="text-blue-600 hover:underline break-all" href="https://www.sitemaps.org/protocol.html" target="_blank" rel="noopener noreferrer">Sitemaps protocol (sitemaps.org)</a>
-                    <a class="text-blue-600 hover:underline break-all" href="https://developers.google.com/search/docs/crawling-indexing/sitemaps/overview" target="_blank" rel="noopener noreferrer">Google Search Central: Sitemaps overview</a>
+                    <a class="text-blue-600 hover:underline break-all" href="https://www.sitemaps.org/protocol.html" target="_blank" rel="noopener noreferrer">Протокол Sitemap (sitemaps.org)</a>
+                    <a class="text-blue-600 hover:underline break-all" href="https://developers.google.com/search/docs/crawling-indexing/sitemaps/overview" target="_blank" rel="noopener noreferrer">Google Search Central: обзор Sitemap</a>
                 </div>
             </div>
         </div>

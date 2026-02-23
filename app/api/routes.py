@@ -1385,12 +1385,12 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
                     continue
 
                 if file_report["size_bytes"] > max_file_size:
-                    file_report["warnings"].append("File is larger than 50 MiB.")
+                    file_report["warnings"].append("Размер файла превышает 50 МиБ.")
 
                 try:
                     root = ET.fromstring(response.content)
                 except ET.ParseError as parse_error:
-                    file_report["errors"].append(f"XML parse error: {parse_error}")
+                    file_report["errors"].append(f"Ошибка парсинга XML: {parse_error}")
                     sitemap_files.append(file_report)
                     continue
 
@@ -1404,24 +1404,24 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
                             continue
                         loc = find_child_text(sm_node, "loc")
                         if not loc:
-                            file_report["warnings"].append("sitemap entry without <loc>.")
+                            file_report["warnings"].append("В sitemap-индексе найден элемент без <loc>.")
                             continue
                         if not is_http_url(loc):
-                            file_report["warnings"].append(f"Invalid child sitemap URL: {loc}")
+                            file_report["warnings"].append(f"Некорректный URL дочернего sitemap: {loc}")
                             continue
                         if loc == sitemap_url:
                             self_child_refs += 1
-                            file_report["warnings"].append(f"Self reference in sitemap index: {loc}")
+                            file_report["warnings"].append(f"Самоссылка в sitemap-индексе: {loc}")
                             continue
                         child_count += 1
                         if loc in visited or loc in queue:
                             repeated_child_refs += 1
-                            file_report["warnings"].append(f"Child sitemap referenced multiple times: {loc}")
+                            file_report["warnings"].append(f"Дочерний sitemap указан несколько раз: {loc}")
                             continue
                         if (len(visited) + len(queue) < max_sitemaps):
                             queue.append(loc)
                     if child_count == 0:
-                        file_report["warnings"].append("Sitemap index has no child sitemaps.")
+                        file_report["warnings"].append("Sitemap-индекс не содержит дочерних sitemap.")
                     file_report["ok"] = len(file_report["errors"]) == 0
 
                 elif root_tag == "urlset":
@@ -1443,11 +1443,11 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
                             continue
                         loc = find_child_text(url_node, "loc")
                         if not loc:
-                            file_report["warnings"].append("url entry without <loc>.")
+                            file_report["warnings"].append("В urlset найден элемент без <loc>.")
                             continue
                         if not is_http_url(loc):
                             invalid_urls_count += 1
-                            file_report["warnings"].append(f"Invalid URL in <loc>: {loc}")
+                            file_report["warnings"].append(f"Некорректный URL в <loc>: {loc}")
                             continue
 
                         lastmod = find_child_text(url_node, "lastmod")
@@ -1569,26 +1569,26 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
                     file_report["duplicate_count"] = file_duplicate_occurrences
                     file_report["duplicate_urls"] = dedupe_keep_order(file_duplicate_urls)[:200]
                     if len(file_urls) > max_urls_per_sitemap:
-                        file_report["warnings"].append("More than 50,000 URLs in one sitemap file.")
+                        file_report["warnings"].append("В одном sitemap-файле более 50 000 URL.")
                     if file_report["urls_omitted"] > 0:
                         file_report["tool_notes"].append(
-                            f"URLs preview truncated for UI/API payload: {file_report['urls_omitted']} omitted from preview; full URLs count was still validated."
+                            f"Превью URL ограничено для UI/API: скрыто {file_report['urls_omitted']} URL; полный подсчет и валидация выполнены."
                         )
                     if file_invalid_lastmod_count > 0:
                         file_report["warnings"].append(
-                            f"Invalid <lastmod> values: {file_invalid_lastmod_count}. Examples: {' | '.join(file_invalid_lastmod_examples[:5])}"
+                            f"Некорректные значения <lastmod>: {file_invalid_lastmod_count}. Примеры: {' | '.join(file_invalid_lastmod_examples[:5])}"
                         )
                     if file_invalid_changefreq_count > 0:
-                        file_report["warnings"].append(f"Invalid <changefreq> values: {file_invalid_changefreq_count}.")
+                        file_report["warnings"].append(f"Некорректные значения <changefreq>: {file_invalid_changefreq_count}.")
                     if file_invalid_priority_count > 0:
-                        file_report["warnings"].append(f"Invalid <priority> values: {file_invalid_priority_count}.")
+                        file_report["warnings"].append(f"Некорректные значения <priority>: {file_invalid_priority_count}.")
                     if file_future_lastmod_count > 0:
                         file_report["warnings"].append(
-                            f"Future <lastmod> values: {file_future_lastmod_count}. Examples: {' | '.join(file_future_lastmod_examples[:5])}"
+                            f"Будущие значения <lastmod>: {file_future_lastmod_count}. Примеры: {' | '.join(file_future_lastmod_examples[:5])}"
                         )
                     if file_stale_lastmod_count > 0:
                         file_report["warnings"].append(
-                            f"Stale <lastmod> values (> {stale_days} days): {file_stale_lastmod_count}. Examples: {' | '.join(file_stale_lastmod_examples[:5])}"
+                            f"Устаревшие значения <lastmod> (> {stale_days} дней): {file_stale_lastmod_count}. Примеры: {' | '.join(file_stale_lastmod_examples[:5])}"
                         )
                     if len(file_lastmods) >= 20:
                         histogram: Dict[str, int] = {}
@@ -1608,12 +1608,12 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
                                 "sample_urls": dominant_examples,
                             }
                             file_report["warnings"].append(
-                                f"Suspiciously uniform lastmod values: {dominant}/{len(file_lastmods)} ({dominant_ratio}%) are {dominant_value}. Examples: {' | '.join(dominant_examples)}"
+                                f"Подозрительно однотипные lastmod: {dominant}/{len(file_lastmods)} ({dominant_ratio}%) = {dominant_value}. Примеры: {' | '.join(dominant_examples)}"
                             )
                     file_report["ok"] = len(file_report["errors"]) == 0
 
                 else:
-                    file_report["errors"].append(f"Unsupported XML root tag: {root_tag}")
+                    file_report["errors"].append(f"Неподдерживаемый корневой XML-тег: {root_tag}")
 
                 sitemap_files.append(file_report)
 
@@ -1622,13 +1622,13 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
                 sitemap_files.append(file_report)
 
         if queue:
-            tool_notes.append(f"Sitemap traversal limit reached: {max_sitemaps} files (remaining in queue: {len(queue)}).")
+            tool_notes.append(f"Достигнут лимит обхода sitemap: {max_sitemaps} файлов (осталось в очереди: {len(queue)}).")
 
         errors.extend([f"{item['sitemap_url']}: {err}" for item in sitemap_files for err in item.get("errors", [])])
         warnings.extend([f"{item['sitemap_url']}: {warn}" for item in sitemap_files for warn in item.get("warnings", [])])
 
         if duplicate_details_truncated:
-            tool_notes.append(f"Duplicate details were truncated to {max_duplicate_details} entries.")
+            tool_notes.append(f"Список дублей сокращен до {max_duplicate_details} записей.")
 
         valid_files = sum(1 for item in sitemap_files if item.get("ok"))
         total_urls_discovered = sum(item.get("urls_count", 0) for item in sitemap_files if item.get("type") == "urlset")
@@ -1692,7 +1692,7 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
                                 if not is_http_url(canonical_abs):
                                     item["canonical_status"] = "invalid"
                                     canonical_invalid_count += 1
-                                    reasons.append("canonical: invalid URL")
+                                    reasons.append("canonical: некорректный URL")
                                 else:
                                     norm_src = sample_url.rstrip("/")
                                     norm_can = canonical_abs.rstrip("/")
@@ -1701,7 +1701,7 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
                                     else:
                                         item["canonical_status"] = "other"
                                         canonical_non_self_count += 1
-                                        reasons.append("canonical points to different URL")
+                                        reasons.append("canonical указывает на другой URL")
                     item["reasons"] = reasons
                     item["indexable"] = (200 <= int(live_response.status_code) < 300) and len(reasons) == 0
                     if item["indexable"] is False:
@@ -1716,9 +1716,9 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
 
         if canonical_checked_count > 0 and (canonical_missing_count + canonical_invalid_count + canonical_non_self_count) > 0:
             warnings.append(
-                "Canonical check on random sample: "
-                f"missing={canonical_missing_count}, invalid={canonical_invalid_count}, non-self={canonical_non_self_count} "
-                f"(sample={canonical_checked_count})."
+                "Проверка canonical на случайной выборке: "
+                f"отсутствует={canonical_missing_count}, некорректный={canonical_invalid_count}, не self={canonical_non_self_count} "
+                f"(выборка={canonical_checked_count})."
             )
 
         recommendations: List[str] = []
@@ -1726,147 +1726,147 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
         quality_score = 100
 
         if len(sitemap_files) > 0 and len(errors) == 0 and len(warnings) == 0:
-            highlights.append("Sitemap structure is valid and parsed without errors.")
+            highlights.append("Структура sitemap валидна, парсинг выполнен без ошибок.")
         if total_urls_discovered > 0:
-            highlights.append(f"Discovered URLs: {total_urls_discovered}. Unique URLs: {len(seen_urls)}.")
+            highlights.append(f"Обнаружено URL: {total_urls_discovered}. Уникальных URL: {len(seen_urls)}.")
         if duplicate_urls_count == 0 and total_urls_discovered > 0:
-            highlights.append("No duplicate URLs detected across scanned sitemap files.")
+            highlights.append("Дубли URL между просканированными sitemap-файлами не обнаружены.")
         if hreflang_links_count > 0:
-            highlights.append(f"Hreflang links detected in sitemap: {hreflang_links_count}.")
+            highlights.append(f"В sitemap обнаружены hreflang-ссылки: {hreflang_links_count}.")
         if image_tags_count + video_tags_count + news_tags_count > 0:
-            highlights.append(f"Media extensions detected (image/video/news): {image_tags_count}/{video_tags_count}/{news_tags_count}.")
+            highlights.append(f"Обнаружены media-расширения (image/video/news): {image_tags_count}/{video_tags_count}/{news_tags_count}.")
         if live_indexability_checks:
-            highlights.append(f"Live indexability sample checked: {len(live_indexability_checks)} URLs, non-indexable: {live_non_indexable_count}.")
+            highlights.append(f"Проверена live-выборка индексируемости: {len(live_indexability_checks)} URL, неиндексируемых: {live_non_indexable_count}.")
 
         if invalid_urls_count > 0:
-            recommendations.append("Fix invalid <loc> values and keep only absolute HTTP/HTTPS URLs.")
+            recommendations.append("Исправьте некорректные <loc> и оставьте только абсолютные HTTP/HTTPS URL.")
             quality_score -= min(25, invalid_urls_count)
         if invalid_lastmod_count > 0:
-            recommendations.append("Fix <lastmod> values to W3C date format (YYYY-MM-DD or full ISO-8601).")
+            recommendations.append("Приведите <lastmod> к формату W3C (YYYY-MM-DD или полный ISO-8601).")
             quality_score -= min(20, invalid_lastmod_count)
         if stale_lastmod_count > 0:
             recommendations.append(
-                f"Refresh stale URLs (older than {stale_days} days by <lastmod>) and keep content update signals accurate."
+                f"Обновите устаревшие URL (старше {stale_days} дней по <lastmod>) и поддерживайте корректные сигналы обновления."
             )
             quality_score -= min(10, stale_lastmod_count)
         if lastmod_future_count > 0:
-            recommendations.append("Fix future-dated <lastmod> values; search engines may treat them as unreliable signals.")
+            recommendations.append("Исправьте будущие даты в <lastmod>; поисковые системы могут считать такой сигнал недостоверным.")
             quality_score -= min(10, lastmod_future_count)
         if invalid_changefreq_count > 0:
-            recommendations.append("Use only valid <changefreq> values (always/hourly/daily/weekly/monthly/yearly/never).")
+            recommendations.append("Используйте только допустимые значения <changefreq> (always/hourly/daily/weekly/monthly/yearly/never).")
             quality_score -= min(10, invalid_changefreq_count)
         if invalid_priority_count > 0:
-            recommendations.append("Use <priority> values only in range 0.0..1.0.")
+            recommendations.append("Используйте значения <priority> только в диапазоне 0.0..1.0.")
             quality_score -= min(10, invalid_priority_count)
         if duplicate_urls_count > 0:
-            recommendations.append("Remove duplicate URLs across sitemap files.")
+            recommendations.append("Удалите дубли URL между sitemap-файлами.")
             quality_score -= min(20, duplicate_urls_count)
         if self_child_refs > 0 or repeated_child_refs > 0:
-            recommendations.append("Fix sitemap index structure (remove self-references and repeated child sitemap links).")
+            recommendations.append("Исправьте структуру sitemap-индекса (уберите самоссылки и повторяющиеся ссылки на дочерние sitemap).")
             quality_score -= min(10, self_child_refs + repeated_child_refs)
         if queue:
             quality_score -= 10
         if urls_export_truncated:
-            tool_notes.append(f"Export preview payload was truncated to {max_export_urls} URLs; use part exports for full list.")
+            tool_notes.append(f"Превью экспорта ограничено до {max_export_urls} URL; для полного списка используйте экспорт частями.")
         if total_urls_discovered > max_urls_per_sitemap:
-            recommendations.append("At least one sitemap exceeds 50,000 URLs; split it into multiple files.")
+            recommendations.append("Как минимум один sitemap превышает 50 000 URL; разделите его на несколько файлов.")
             quality_score -= 10
         if any((item.get("size_bytes", 0) or 0) > max_file_size for item in sitemap_files):
-            recommendations.append("At least one sitemap file exceeds 50 MiB; split or compress sitemap files.")
+            recommendations.append("Как минимум один sitemap-файл превышает 50 МиБ; разделите или сожмите sitemap-файлы.")
             quality_score -= 10
         if hreflang_links_count > 0 and (hreflang_invalid_code_count + hreflang_invalid_href_count + hreflang_duplicate_lang_count) > 0:
-            recommendations.append("Fix hreflang entries in sitemap (valid code, absolute href, no duplicate language per URL).")
+            recommendations.append("Исправьте hreflang в sitemap (валидный код, абсолютный href, без дублирования языков в рамках URL).")
             quality_score -= min(10, hreflang_invalid_code_count + hreflang_invalid_href_count + hreflang_duplicate_lang_count)
         if image_tags_count > 0 and image_missing_loc_count > 0:
-            recommendations.append("Ensure each <image:image> entry contains a valid <image:loc> URL.")
+            recommendations.append("Убедитесь, что каждый <image:image> содержит валидный <image:loc> URL.")
             quality_score -= min(8, image_missing_loc_count)
         if video_tags_count > 0 and video_missing_required_count > 0:
-            recommendations.append("Fix required video sitemap fields (thumbnail_loc, title, description, content_loc/player_loc).")
+            recommendations.append("Заполните обязательные поля video sitemap (thumbnail_loc, title, description, content_loc/player_loc).")
             quality_score -= min(8, video_missing_required_count)
         if news_tags_count > 0 and news_missing_required_count > 0:
-            recommendations.append("Fix required news sitemap fields (publication_date and title).")
+            recommendations.append("Заполните обязательные поля news sitemap (publication_date и title).")
             quality_score -= min(8, news_missing_required_count)
         if live_non_indexable_count > 0:
-            recommendations.append("Review non-indexable URLs from live sample (HTTP errors or noindex directives).")
+            recommendations.append("Проверьте неиндексируемые URL из live-выборки (HTTP-ошибки или noindex).")
             quality_score -= min(15, live_non_indexable_count)
         if canonical_checked_count > 0 and (canonical_missing_count + canonical_invalid_count + canonical_non_self_count) > 0:
-            recommendations.append("Review canonical tags on sampled URLs (missing/invalid/non-self canonicals).")
+            recommendations.append("Проверьте canonical в выборке URL (отсутствует/некорректный/не self canonical).")
             quality_score -= min(8, canonical_missing_count + canonical_invalid_count + canonical_non_self_count)
 
         if not recommendations:
-            recommendations.append("No critical sitemap issues found. Maintain current structure and monitor in search engine webmaster tools.")
+            recommendations.append("Критических проблем sitemap не обнаружено. Поддерживайте текущую структуру и отслеживайте состояние в инструментах вебмастеров.")
 
         issues: List[Dict[str, Any]] = []
         if invalid_urls_count > 0:
             issues.append(build_issue(
                 "critical",
                 "invalid_loc_urls",
-                "Invalid URLs in <loc>",
-                f"Found {invalid_urls_count} invalid sitemap URLs.",
-                "Fix broken <loc> values and keep only absolute HTTP/HTTPS URLs.",
+                "Некорректные URL в <loc>",
+                f"Найдено некорректных sitemap URL: {invalid_urls_count}.",
+                "Исправьте некорректные <loc> и оставьте только абсолютные HTTP/HTTPS URL.",
                 "SEO/Dev",
             ))
         if duplicate_urls_count > 0:
             issues.append(build_issue(
                 "warning",
                 "duplicate_urls",
-                "Duplicate URLs across sitemap files",
-                f"Found {duplicate_urls_count} duplicate URL occurrences.",
-                "Deduplicate URL entries across all sitemap files.",
+                "Дубли URL между sitemap-файлами",
+                f"Найдено повторов URL: {duplicate_urls_count}.",
+                "Уберите дубли URL во всех sitemap-файлах.",
                 "SEO",
             ))
         if self_child_refs > 0 or repeated_child_refs > 0:
             issues.append(build_issue(
                 "warning",
                 "sitemap_index_structure",
-                "Sitemap index structure issues",
-                f"Self refs: {self_child_refs}, repeated refs: {repeated_child_refs}.",
-                "Remove self-references and repeated child sitemap references.",
+                "Проблемы структуры sitemap-индекса",
+                f"Самоссылки: {self_child_refs}, повторные ссылки: {repeated_child_refs}.",
+                "Уберите самоссылки и повторные ссылки на дочерние sitemap.",
                 "Dev",
             ))
         if invalid_lastmod_count + stale_lastmod_count + lastmod_future_count > 0:
             issues.append(build_issue(
                 "warning",
                 "lastmod_quality",
-                "Lastmod freshness issues",
-                f"Invalid: {invalid_lastmod_count}, stale: {stale_lastmod_count}, future: {lastmod_future_count}.",
-                "Normalize lastmod format and keep timestamps realistic and updated.",
+                "Проблемы актуальности lastmod",
+                f"Некорректных: {invalid_lastmod_count}, устаревших: {stale_lastmod_count}, будущих: {lastmod_future_count}.",
+                "Нормализуйте формат lastmod и поддерживайте реалистичные и актуальные даты.",
                 "SEO/Content",
             ))
         if hreflang_links_count > 0 and (hreflang_invalid_code_count + hreflang_invalid_href_count + hreflang_duplicate_lang_count) > 0:
             issues.append(build_issue(
                 "warning",
                 "hreflang_sitemap_issues",
-                "Hreflang issues in sitemap",
-                f"Invalid codes: {hreflang_invalid_code_count}, invalid href: {hreflang_invalid_href_count}, duplicate langs: {hreflang_duplicate_lang_count}.",
-                "Fix hreflang values and href URLs in sitemap alternate links.",
+                "Проблемы hreflang в sitemap",
+                f"Некорректные коды: {hreflang_invalid_code_count}, некорректные href: {hreflang_invalid_href_count}, дубли языков: {hreflang_duplicate_lang_count}.",
+                "Исправьте hreflang и href в alternate-ссылках sitemap.",
                 "SEO",
             ))
         if (image_tags_count > 0 and image_missing_loc_count > 0) or (video_tags_count > 0 and video_missing_required_count > 0) or (news_tags_count > 0 and news_missing_required_count > 0):
             issues.append(build_issue(
                 "warning",
                 "media_extension_issues",
-                "Media/news sitemap extension issues",
-                f"Image missing loc: {image_missing_loc_count}, video missing required: {video_missing_required_count}, news missing required: {news_missing_required_count}.",
-                "Fix required fields in image/video/news sitemap extensions.",
+                "Проблемы расширений media/news sitemap",
+                f"image без loc: {image_missing_loc_count}, video без обязательных полей: {video_missing_required_count}, news без обязательных полей: {news_missing_required_count}.",
+                "Заполните обязательные поля в расширениях image/video/news sitemap.",
                 "SEO/Dev",
             ))
         if live_non_indexable_count > 0:
             issues.append(build_issue(
                 "critical",
                 "live_non_indexable_sample",
-                "Live sample contains non-indexable URLs",
-                f"{live_non_indexable_count} of {len(live_indexability_checks)} sampled URLs look non-indexable.",
-                "Fix noindex/HTTP issues on sampled pages and re-run validation.",
+                "В live-выборке есть неиндексируемые URL",
+                f"{live_non_indexable_count} из {len(live_indexability_checks)} URL в выборке выглядят неиндексируемыми.",
+                "Исправьте noindex/HTTP-проблемы на страницах из выборки и запустите проверку повторно.",
                 "SEO/Dev",
             ))
         if canonical_checked_count > 0 and (canonical_missing_count + canonical_invalid_count + canonical_non_self_count) > 0:
             issues.append(build_issue(
                 "warning",
                 "canonical_sample_issues",
-                "Canonical issues in random sample",
-                f"Sample={canonical_checked_count}, missing={canonical_missing_count}, invalid={canonical_invalid_count}, non-self={canonical_non_self_count}.",
-                "Fix missing/invalid canonicals and validate canonical targets for sampled URLs.",
+                "Проблемы canonical в случайной выборке",
+                f"Выборка={canonical_checked_count}, отсутствует={canonical_missing_count}, некорректный={canonical_invalid_count}, не self={canonical_non_self_count}.",
+                "Исправьте отсутствующие/некорректные canonical и проверьте цели canonical для URL из выборки.",
                 "SEO/Dev",
             ))
 
@@ -1892,7 +1892,7 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
             action_plan.append({
                 "priority": "P2",
                 "owner": "SEO",
-                "issue": "No critical blockers",
+                "issue": "Критические блокеры отсутствуют",
                 "action": recommendations[0],
                 "sla": "7d",
             })
@@ -2975,7 +2975,7 @@ async def create_sitemap_validate(data: SitemapValidateRequest):
         discovery_source = source or "auto_discovery"
 
     print(
-        f"[API] Full sitemap validation for input={normalized_input}, "
+        f"[API] Полная валидация sitemap для input={normalized_input}, "
         f"sitemaps={len(target_sitemap_urls)}, source={discovery_source}"
     )
 
@@ -2996,7 +2996,7 @@ async def create_sitemap_validate(data: SitemapValidateRequest):
     return {
         "task_id": task_id,
         "status": "SUCCESS",
-        "message": "Sitemap validation completed"
+        "message": "Валидация sitemap завершена"
     }
 
 
