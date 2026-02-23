@@ -1817,6 +1817,33 @@ function renderSimpleTable(rows, emptyText = 'Нет данных') {
     `;
 }
 
+function renderTableGroup(group, fallback = 'Нет данных') {
+    const title = group && group.title ? String(group.title) : '';
+    const rows = group && Array.isArray(group.rows) ? group.rows : [];
+    return `
+        <div class="bg-white rounded-xl shadow-md p-6">
+            ${title ? `<h4 class="font-semibold mb-3">${escapeHtml(title)}</h4>` : ''}
+            ${renderSimpleTable(rows, fallback)}
+        </div>
+    `;
+}
+
+function switchLinkProfileAuditTab(tabId) {
+    const root = document.getElementById('link-profile-tabs-root');
+    if (!root) return;
+    root.querySelectorAll('[data-lp-tab]').forEach((btn) => {
+        const active = btn.getAttribute('data-lp-tab') === tabId;
+        btn.classList.toggle('bg-amber-600', active);
+        btn.classList.toggle('text-white', active);
+        btn.classList.toggle('bg-white', !active);
+        btn.classList.toggle('text-slate-700', !active);
+    });
+    root.querySelectorAll('[data-lp-panel]').forEach((panel) => {
+        const show = panel.getAttribute('data-lp-panel') === tabId;
+        panel.classList.toggle('hidden', !show);
+    });
+}
+
 function generateLinkProfileAuditHTML(data) {
     const resultData = data.result || data;
     const r = resultData.results || {};
@@ -1838,13 +1865,23 @@ function generateLinkProfileAuditHTML(data) {
     ];
 
     const breakdownRows = Object.entries(anchorBreakdown).map(([k, v]) => ({ type: k, count: v }));
-    const planText = (r.prompts || {}).plan || '';
+    const prompts = r.prompts || {};
+    const ourSiteTables = tables.ourSiteTables || [];
+    const competitorTables = tables.competitorTables || [];
+    const comparisonTables = tables.comparisonTables || [];
+    const additionalTables = tables.additionalTables || [];
+    const duplicatesTables = tables.duplicatesTables || [];
+    const anchorTables = [
+        { title: 'Anchor Summary', rows: tables.anchor_analysis || [] },
+        { title: 'Word Analysis', rows: tables.anchor_word_analysis || [] },
+        { title: 'Anchor Types', rows: breakdownRows },
+    ];
 
     return `
-        <div class="space-y-6">
+        <div class="space-y-6" id="link-profile-tabs-root">
             <div class="bg-white rounded-xl shadow-md p-6">
                 <h3 class="text-xl font-semibold mb-2">Аудит ссылочного профиля</h3>
-                <p class="text-sm text-slate-600">Базовые результаты этапа 1 интеграции. На следующем этапе добавим расширенные вкладки и экспорт DOCX/XLSX.</p>
+                <p class="text-sm text-slate-600">Структура результатов: Links / Anchors / Duplicates / Additional.</p>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1854,6 +1891,15 @@ function generateLinkProfileAuditHTML(data) {
                         <div class="text-lg font-semibold text-slate-900">${escapeHtml(value)}</div>
                     </div>
                 `).join('')}
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-4">
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" data-lp-tab="links" onclick="switchLinkProfileAuditTab('links')" class="px-4 py-2 rounded-lg text-sm font-medium bg-amber-600 text-white">Links</button>
+                    <button type="button" data-lp-tab="anchors" onclick="switchLinkProfileAuditTab('anchors')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Anchors</button>
+                    <button type="button" data-lp-tab="duplicates" onclick="switchLinkProfileAuditTab('duplicates')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Duplicates</button>
+                    <button type="button" data-lp-tab="additional" onclick="switchLinkProfileAuditTab('additional')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Additional</button>
+                </div>
             </div>
 
             ${errors.length ? `
@@ -1870,24 +1916,38 @@ function generateLinkProfileAuditHTML(data) {
                 </div>
             ` : ''}
 
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-3">Распределение анкоров</h4>
-                ${renderSimpleTable(breakdownRows, 'Нет данных по классификации анкоров')}
+            <div data-lp-panel="links" class="space-y-6">
+                ${ourSiteTables.map((group) => renderTableGroup(group, 'Нет данных по нашему сайту')).join('')}
+                ${competitorTables.map((group) => renderTableGroup(group, 'Нет данных по конкурентам')).join('')}
+                ${comparisonTables.map((group) => renderTableGroup(group, 'Нет данных сравнения')).join('')}
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Промпт: наш сайт</h4>
+                    <p class="text-sm text-slate-700">${escapeHtml(prompts.ourSite || 'Нет данных')}</p>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Промпт: конкуренты</h4>
+                    <p class="text-sm text-slate-700">${escapeHtml(prompts.competitors || 'Нет данных')}</p>
+                </div>
             </div>
 
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-3">Конкуренты (топ)</h4>
-                ${renderSimpleTable(tables.competitor_analysis || [], 'Нет данных по конкурентам')}
+            <div data-lp-panel="anchors" class="space-y-6 hidden">
+                ${anchorTables.map((group) => renderTableGroup(group, 'Нет данных по анкорам')).join('')}
             </div>
 
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-3">Priority domains</h4>
-                ${renderSimpleTable(tables.priority_domains || [], 'Нет приоритетных доменов')}
+            <div data-lp-panel="duplicates" class="space-y-6 hidden">
+                ${duplicatesTables.map((group) => renderTableGroup(group, 'Нет данных по дубликатам')).join('')}
             </div>
 
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-3">План действий</h4>
-                <p class="text-sm text-slate-700">${escapeHtml(planText || 'План не сформирован')}</p>
+            <div data-lp-panel="additional" class="space-y-6 hidden">
+                ${additionalTables.map((group) => renderTableGroup(group, 'Нет дополнительных метрик')).join('')}
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Промпт: сравнение</h4>
+                    <p class="text-sm text-slate-700">${escapeHtml(prompts.comparison || 'Нет данных')}</p>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">План действий</h4>
+                    <p class="text-sm text-slate-700">${escapeHtml(prompts.plan || 'План не сформирован')}</p>
+                </div>
             </div>
         </div>
     `;

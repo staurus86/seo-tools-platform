@@ -177,6 +177,54 @@ def _classify_anchor(anchor: str, keywords: Dict[str, List[str]]) -> str:
     return "other"
 
 
+def _derive_brand_keywords(domain: str) -> List[str]:
+    host = (domain or "").lower().strip()
+    if not host:
+        return []
+    host = host.split(":")[0]
+    if host.startswith("www."):
+        host = host[4:]
+    main = host.split(".")[0]
+    chunks = re.split(r"[^a-z0-9а-яё]+", main, flags=re.IGNORECASE)
+    out = [host, main]
+    out.extend(chunks)
+    seen = set()
+    result: List[str] = []
+    for item in out:
+        token = (item or "").strip().lower()
+        if len(token) < 2 or token in seen:
+            continue
+        seen.add(token)
+        result.append(token)
+    return result
+
+
+def _extract_zone(domain: str) -> str:
+    parts = (domain or "").split(".")
+    if len(parts) < 2:
+        return "other"
+    zone = parts[-1].lower()
+    return zone if 1 < len(zone) <= 10 else "other"
+
+
+def _dr_bucket(dr: Optional[float]) -> str:
+    if dr is None:
+        return "unknown"
+    if dr < 10:
+        return "0-9"
+    if dr < 30:
+        return "10-29"
+    if dr < 50:
+        return "30-49"
+    if dr < 70:
+        return "50-69"
+    return "70+"
+
+
+def _anchor_words(anchor: str) -> List[str]:
+    return [w.lower() for w in re.findall(r"[A-Za-zА-Яа-яЁё0-9]{3,}", anchor or "")]
+
+
 def _normalize_backlink_row(row: Dict[str, Any]) -> Dict[str, Any]:
     source = _pick_value(
         row,
@@ -276,6 +324,9 @@ def run_link_profile_audit(
         "spam": _parse_keywords(spam_keywords),
         "brand": _parse_keywords(brand_keywords),
     }
+    derived_brand_keywords = _derive_brand_keywords(domain)
+    brand_keywords_used = list(dict.fromkeys((keywords.get("brand") or []) + derived_brand_keywords))
+    keywords["brand"] = brand_keywords_used
 
     if progress_callback:
         progress_callback(15, "Чтение файла batch analysis")
@@ -313,24 +364,36 @@ def run_link_profile_audit(
         progress_callback(60, "Расчет метрик ссылочного профиля")
 
     source_to_targets: Dict[str, set[str]] = defaultdict(set)
+    source_to_competitors: Dict[str, set[str]] = defaultdict(set)
     competitor_counter: Counter[str] = Counter()
+    competitor_ref_domains: Dict[str, set[str]] = defaultdict(set)
+    our_source_counter: Counter[str] = Counter()
     follow_counter: Counter[str] = Counter()
     anchor_type_counter: Counter[str] = Counter()
     anchor_counter: Counter[str] = Counter()
+    anchor_word_counter: Counter[str] = Counter()
+    dr_bucket_counter: Counter[str] = Counter()
+    zone_counter: Counter[str] = Counter()
 
     dr_values: List[float] = []
     traffic_values: List[float] = []
+    our_dr_values: List[float] = []
+    our_traffic_values: List[float] = []
 
     our_links = 0
     for row in normalized_rows:
         src = row["source_domain"]
         trg = row["target_domain"]
         source_to_targets[src].add(trg)
+        zone_counter[_extract_zone(src)] += 1
 
         if _is_our_target(trg, domain):
             our_links += 1
+            our_source_counter[src] += 1
         else:
             competitor_counter[trg] += 1
+            competitor_ref_domains[trg].add(src)
+            source_to_competitors[src].add(trg)
 
         follow = row.get("follow")
         if follow is True:
@@ -345,13 +408,26 @@ def run_link_profile_audit(
         anchor_type_counter[anchor_type] += 1
         if anchor:
             anchor_counter[anchor] += 1
+            for token in _anchor_words(anchor):
+                anchor_word_counter[token] += 1
 
-        if row.get("dr") is not None:
-            dr_values.append(float(row["dr"]))
-        if row.get("traffic") is not None:
-            traffic_values.append(float(row["traffic"]))
+        row_dr = row.get("dr")
+        row_traffic = row.get("traffic")
+        source_metrics = batch_metrics.get(src, {})
+        effective_dr = row_dr if row_dr is not None else source_metrics.get("dr")
+        effective_traffic = row_traffic if row_traffic is not None else source_metrics.get("traffic")
+        if effective_dr is not None:
+            dr_values.append(float(effective_dr))
+            dr_bucket_counter[_dr_bucket(float(effective_dr))] += 1
+            if _is_our_target(trg, domain):
+                our_dr_values.append(float(effective_dr))
+        if effective_traffic is not None:
+            traffic_values.append(float(effective_traffic))
+            if _is_our_target(trg, domain):
+                our_traffic_values.append(float(effective_traffic))
 
     duplicates_with_our: List[Dict[str, Any]] = []
+    duplicates_without_our: List[Dict[str, Any]] = []
     single_our: List[Dict[str, Any]] = []
     single_competitor: List[Dict[str, Any]] = []
 
@@ -363,6 +439,7 @@ def run_link_profile_audit(
                 {
                     "domain": src,
                     "targets_count": len(targets),
+                    "competitors_count": len(competitor_targets),
                     "competitor_targets": ", ".join(sorted(competitor_targets)[:5]),
                 }
             )
@@ -370,21 +447,76 @@ def run_link_profile_audit(
             single_our.append({"domain": src, "targets_count": len(targets)})
         elif (not has_our) and len(competitor_targets) == 1:
             single_competitor.append({"domain": src, "competitor": competitor_targets[0]})
+        elif (not has_our) and len(competitor_targets) >= 2:
+            duplicates_without_our.append(
+                {
+                    "domain": src,
+                    "competitors_count": len(competitor_targets),
+                    "competitor_targets": ", ".join(sorted(competitor_targets)[:5]),
+                }
+            )
 
-    competitor_rows: List[Dict[str, Any]] = []
-    for competitor, links_count in competitor_counter.most_common(20):
-        metrics = batch_metrics.get(competitor, {})
-        competitor_rows.append(
+    our_ref_domains = set(our_source_counter.keys())
+    our_site_rows: List[Dict[str, Any]] = []
+    for src, links_count in our_source_counter.most_common(50):
+        metrics = batch_metrics.get(src, {})
+        our_site_rows.append(
             {
-                "competitor_domain": competitor,
-                "links": links_count,
+                "ref_domain": src,
+                "links_to_our_site": links_count,
                 "batch_dr": metrics.get("dr"),
                 "batch_traffic": metrics.get("traffic"),
             }
         )
 
-    top_anchors = [{"anchor": a, "count": c} for a, c in anchor_counter.most_common(20)]
-    priority_domains = sorted(duplicates_with_our, key=lambda x: x.get("targets_count", 0), reverse=True)[:20]
+    competitor_rows: List[Dict[str, Any]] = []
+    for competitor, links_count in competitor_counter.most_common(20):
+        metrics = batch_metrics.get(competitor, {})
+        comp_refs = competitor_ref_domains.get(competitor, set())
+        shared = len(comp_refs & our_ref_domains)
+        competitor_rows.append(
+            {
+                "competitor_domain": competitor,
+                "links": links_count,
+                "ref_domains": len(comp_refs),
+                "shared_with_our_site": shared,
+                "batch_dr": metrics.get("dr"),
+                "batch_traffic": metrics.get("traffic"),
+            }
+        )
+
+    comparison_rows: List[Dict[str, Any]] = []
+    for row in competitor_rows:
+        competitor = str(row.get("competitor_domain") or "")
+        comp_refs = competitor_ref_domains.get(competitor, set())
+        shared = len(comp_refs & our_ref_domains)
+        comp_only = len(comp_refs - our_ref_domains)
+        our_only = len(our_ref_domains - comp_refs)
+        overlap_pct = round((shared / max(1, len(comp_refs))) * 100, 2)
+        comparison_rows.append(
+            {
+                "competitor_domain": competitor,
+                "shared_ref_domains": shared,
+                "competitor_only_domains": comp_only,
+                "our_only_domains": our_only,
+                "overlap_pct": overlap_pct,
+            }
+        )
+
+    top_anchors = [{"anchor": a, "count": c} for a, c in anchor_counter.most_common(30)]
+    anchor_word_rows = [{"word": w, "count": c} for w, c in anchor_word_counter.most_common(30)]
+    priority_domains = sorted(
+        duplicates_with_our,
+        key=lambda x: (x.get("competitors_count", 0), x.get("targets_count", 0)),
+        reverse=True,
+    )[:30]
+    dr_bucket_rows = [{"dr_bucket": k, "links": v} for k, v in sorted(dr_bucket_counter.items(), key=lambda x: str(x[0]))]
+    zone_rows = [{"zone": z, "links": c} for z, c in zone_counter.most_common(20)]
+    follow_rows = [
+        {"type": "dofollow", "count": follow_counter.get("dofollow", 0)},
+        {"type": "nofollow", "count": follow_counter.get("nofollow", 0)},
+        {"type": "unknown", "count": follow_counter.get("unknown", 0)},
+    ]
 
     if progress_callback:
         progress_callback(85, "Формирование итогового отчета")
@@ -392,8 +524,8 @@ def run_link_profile_audit(
     warnings: List[str] = []
     if follow_counter.get("unknown", 0) > 0:
         warnings.append("Часть ссылок без явного признака dofollow/nofollow")
-    if not keywords.get("brand"):
-        warnings.append("Не задан словарь brand keywords")
+    if not _parse_keywords(brand_keywords):
+        warnings.append("Словарь brand keywords не передан, использованы автоматически выведенные брендовые токены")
 
     summary = {
         "our_domain": domain,
@@ -409,6 +541,29 @@ def run_link_profile_audit(
         "nofollow": follow_counter.get("nofollow", 0),
         "unknown_follow": follow_counter.get("unknown", 0),
         "duplicates_with_our_site": len(duplicates_with_our),
+        "duplicates_without_our_site": len(duplicates_without_our),
+        "our_unique_ref_domains": len(our_ref_domains),
+        "avg_our_dr": round(mean(our_dr_values), 2) if our_dr_values else None,
+        "avg_our_traffic": round(mean(our_traffic_values), 2) if our_traffic_values else None,
+    }
+
+    prompts = {
+        "ourSite": (
+            f"У сайта {domain} {summary['our_unique_ref_domains']} уникальных доноров. "
+            "Сфокусируйтесь на доменах из priority_domains и увеличьте долю dofollow-ссылок."
+        ),
+        "competitors": (
+            f"Обнаружено {summary['unique_competitors']} конкурентных доменов в ссылочном профиле. "
+            "Приоритет: конкуренты с высоким shared_ref_domains и высоким batch_dr."
+        ),
+        "comparison": (
+            "Используйте таблицу comparison для поиска donor-gap: competitor_only_domains "
+            "показывает зоны быстрого расширения профиля."
+        ),
+        "plan": (
+            "План на 90 дней: 1) закрыть 20 приоритетных доменов, 2) выровнять anchor mix (brand/commercial), "
+            "3) снизить долю unknown follow, 4) ежемесячно пересчитывать overlap с конкурентами."
+        ),
     }
 
     result = {
@@ -419,23 +574,58 @@ def run_link_profile_audit(
             "summary": summary,
             "warnings": warnings,
             "errors": [],
-            "keywords": keywords,
+            "keywords": {
+                **keywords,
+                "derivedBrandKeywords": derived_brand_keywords,
+                "brandKeywordsUsed": brand_keywords_used,
+            },
             "source_files": file_summaries,
+            "outputs": {
+                "competitorAnalysis": {"rows": competitor_rows},
+                "anchorAnalysis": {"rows": top_anchors},
+                "duplicates": {"rows": duplicates_with_our[:200]},
+                "additionalMetrics": {"rows": dr_bucket_rows},
+                "combinedOutput": {"rows": []},
+            },
             "tables": {
                 "competitor_analysis": competitor_rows,
                 "anchor_analysis": top_anchors,
+                "anchor_word_analysis": anchor_word_rows,
                 "duplicates_with_our_site": duplicates_with_our[:200],
+                "duplicates_with_two_competitors": duplicates_without_our[:200],
                 "single_competitor_domains": single_competitor[:200],
                 "single_our_domains": single_our[:200],
                 "priority_domains": priority_domains,
+                "our_site_overview": our_site_rows,
+                "comparison_overview": comparison_rows,
+                "dr_buckets": dr_bucket_rows,
+                "zones": zone_rows,
+                "follow_types": follow_rows,
+                "ourSiteTables": [
+                    {"title": "Наш сайт: доноры", "rows": our_site_rows},
+                ],
+                "competitorTables": [
+                    {"title": "Конкуренты", "rows": competitor_rows},
+                ],
+                "comparisonTables": [
+                    {"title": "Сравнение с конкурентами", "rows": comparison_rows},
+                ],
+                "additionalTables": [
+                    {"title": "DR buckets", "rows": dr_bucket_rows},
+                    {"title": "Domain zones", "rows": zone_rows},
+                    {"title": "Follow / Nofollow", "rows": follow_rows},
+                ],
+                "duplicatesTables": [
+                    {"title": "Duplicates with our site", "rows": duplicates_with_our[:200]},
+                    {"title": "Duplicates with two competitors", "rows": duplicates_without_our[:200]},
+                    {"title": "Single competitor domains", "rows": single_competitor[:200]},
+                    {"title": "Single our domains", "rows": single_our[:200]},
+                    {"title": "Priority domains", "rows": priority_domains},
+                    {"title": "Competitors analysis", "rows": competitor_rows},
+                ],
             },
             "anchor_breakdown": dict(anchor_type_counter),
-            "prompts": {
-                "plan": (
-                    "Приоритизируйте домены из блока priority_domains, "
-                    "увеличьте долю брендовых анкоров и проверьте перекос по nofollow/dofollow."
-                )
-            },
+            "prompts": prompts,
         },
     }
 
