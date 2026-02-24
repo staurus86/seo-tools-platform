@@ -70,6 +70,7 @@ class ClusterizerRequest(BaseModel):
     """Запрос на кластеризацию ключевых слов"""
     keywords: List[str] = Field(default_factory=list, description="Список ключей")
     method: str = Field(default="jaccard", description="Метод схожести: jaccard|overlap|dice")
+    clustering_mode: str = Field(default="balanced", description="Режим кластеризации: strict|balanced|broad")
     similarity_threshold_pct: int = Field(default=35, ge=1, le=100, description="Порог схожести в процентах")
     min_cluster_size: int = Field(default=2, ge=1, le=50, description="Минимальный размер кластера")
 

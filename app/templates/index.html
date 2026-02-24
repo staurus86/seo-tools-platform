@@ -306,7 +306,7 @@
                 <p class="text-sm text-gray-500">Группировка по схожести ключей</p>
             </div>
         </div>
-        <p class="text-gray-600 mb-4 text-sm">Базовая кластеризация без SERP: до 2000 ключей, методы Jaccard/Overlap/Dice.</p>
+        <p class="text-gray-600 mb-4 text-sm">Кластеризация без SERP: до 2000 ключей, гибридная схожесть (токены + опечатки) и режимы strict/balanced/broad.</p>
         <form class="space-y-3" onsubmit="startTask(event, 'clusterizer')">
             <textarea
                 name="keywords_text"
@@ -316,12 +316,19 @@
                 class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm"
             ></textarea>
             <input type="hidden" name="url" value="Список ключей">
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <select name="method" class="px-3 py-2 border rounded-lg text-sm">
                     <option value="jaccard" selected>Jaccard</option>
                     <option value="overlap">Overlap</option>
                     <option value="dice">Dice</option>
                 </select>
+                <select name="clustering_mode" class="px-3 py-2 border rounded-lg text-sm" title="Режим кластеризации">
+                    <option value="balanced" selected>balanced (Recommended)</option>
+                    <option value="strict">strict</option>
+                    <option value="broad">broad</option>
+                </select>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <input
                     type="number"
                     name="similarity_threshold_pct"
@@ -341,7 +348,7 @@
                     title="Минимальный размер кластера"
                 >
             </div>
-            <p class="text-xs text-gray-500">Ключи можно разделять переносами строк, запятыми или точкой с запятой.</p>
+            <p class="text-xs text-gray-500">Разделители: перенос строки, запятая или точка с запятой. `strict` режет слабые связи, `broad` объединяет шире.</p>
             <button type="submit" class="w-full bg-cyan-600 text-white py-2 rounded-lg hover:bg-cyan-700 transition">
                 <i class="fas fa-play mr-2"></i>Запустить кластеризацию
             </button>

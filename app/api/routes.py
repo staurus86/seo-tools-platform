@@ -2850,6 +2850,47 @@ async def export_onpage_xlsx(data: ExportRequest):
         return {"error": str(e)}
 
 
+@router.post("/export/clusterizer-xlsx")
+async def export_clusterizer_xlsx(data: ExportRequest):
+    """Export keyword clusterizer report to XLSX."""
+    import os
+    from fastapi.responses import Response
+    from app.reports.xlsx_generator import xlsx_generator
+
+    try:
+        task_id = data.task_id
+        task = get_task_result(task_id)
+        if not task:
+            return {"error": "Task not found", "task_id": task_id}
+
+        task_type = task.get("task_type")
+        if task_type != "clusterizer":
+            return {"error": f"Unsupported task type for clusterizer XLSX export: {task_type}"}
+
+        task_result = task.get("result", {})
+        report_payload = {
+            "url": task.get("url", "") or task_result.get("url", ""),
+            "results": task_result.get("results", task_result),
+        }
+        filepath = xlsx_generator.generate_clusterizer_report(task_id, report_payload)
+        if not filepath or not os.path.exists(filepath):
+            return {"error": "Failed to generate report"}
+        append_task_artifact(task_id, filepath, kind="export")
+
+        with open(filepath, "rb") as f:
+            content = f.read()
+
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+        filename = f"clusterizer_report_{timestamp}.xlsx"
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.post("/export/link-profile-docx")
 async def export_link_profile_docx(data: ExportRequest):
     """Export link profile audit report to DOCX."""
@@ -4417,6 +4458,7 @@ def check_keywords_clusterizer(
     method: str = "jaccard",
     similarity_threshold: float = 0.35,
     min_cluster_size: int = 2,
+    clustering_mode: str = "balanced",
     progress_callback=None,
 ) -> Dict[str, Any]:
     """Basic keyword clusterizer without SERP data."""
@@ -4427,6 +4469,7 @@ def check_keywords_clusterizer(
         method=method,
         similarity_threshold=similarity_threshold,
         min_cluster_size=min_cluster_size,
+        clustering_mode=clustering_mode,
         progress_callback=progress_callback,
     )
 
@@ -4498,6 +4541,7 @@ class ClusterizerRequest(BaseModel):
     keywords: Optional[List[str]] = None
     keywords_text: Optional[str] = None
     method: Optional[str] = "jaccard"
+    clustering_mode: Optional[str] = "balanced"
     similarity_threshold_pct: int = 35
     min_cluster_size: int = 2
 
@@ -4518,6 +4562,13 @@ class ClusterizerRequest(BaseModel):
         if value is None:
             return ""
         return str(value).strip()
+
+    @field_validator("clustering_mode", mode="before")
+    @classmethod
+    def _normalize_clustering_mode(cls, value):
+        if value is None:
+            return "balanced"
+        return str(value).strip().lower()
 
 
 @router.post("/tasks/site-analyze")
@@ -4741,6 +4792,9 @@ async def create_clusterizer_task(data: ClusterizerRequest, background_tasks: Ba
     method = str(data.method or "jaccard").strip().lower()
     if method not in {"jaccard", "overlap", "dice"}:
         method = "jaccard"
+    clustering_mode = str(data.clustering_mode or "balanced").strip().lower()
+    if clustering_mode not in {"strict", "balanced", "broad"}:
+        clustering_mode = "balanced"
     similarity_threshold_pct = max(1, min(100, int(data.similarity_threshold_pct or 35)))
     min_cluster_size = max(1, min(50, int(data.min_cluster_size or 2)))
     similarity_threshold = similarity_threshold_pct / 100.0
@@ -4775,6 +4829,7 @@ async def create_clusterizer_task(data: ClusterizerRequest, background_tasks: Ba
                 method=method,
                 similarity_threshold=similarity_threshold,
                 min_cluster_size=min_cluster_size,
+                clustering_mode=clustering_mode,
                 progress_callback=_progress,
             )
 

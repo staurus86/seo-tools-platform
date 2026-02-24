@@ -44,7 +44,43 @@ class ClusterizerServiceTests(unittest.TestCase):
         self.assertEqual(summary.get("duplicates_removed"), 1)
         self.assertEqual(summary.get("clusters_total"), 1)
 
+    def test_mode_changes_cluster_granularity(self):
+        keywords = [
+            "купить айфон 16",
+            "iphone 16 купить",
+            "айфон 16 цена",
+            "чехол iphone 16",
+            "чехлы для iphone 16",
+        ]
+
+        strict_result = run_keyword_clusterizer(
+            keywords=keywords,
+            method="jaccard",
+            similarity_threshold=0.36,
+            min_cluster_size=2,
+            clustering_mode="strict",
+        )
+        broad_result = run_keyword_clusterizer(
+            keywords=keywords,
+            method="jaccard",
+            similarity_threshold=0.36,
+            min_cluster_size=2,
+            clustering_mode="broad",
+        )
+
+        strict_summary = (strict_result.get("results") or {}).get("summary") or {}
+        broad_summary = (broad_result.get("results") or {}).get("summary") or {}
+        self.assertGreaterEqual(
+            int(strict_summary.get("clusters_total", 0)),
+            int(broad_summary.get("clusters_total", 0)),
+        )
+        strict_settings = (strict_result.get("results") or {}).get("settings") or {}
+        broad_settings = (broad_result.get("results") or {}).get("settings") or {}
+        self.assertGreater(
+            float(strict_settings.get("similarity_threshold", 0.0)),
+            float(broad_settings.get("similarity_threshold", 0.0)),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
-

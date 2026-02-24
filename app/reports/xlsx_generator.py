@@ -4210,6 +4210,141 @@ class XLSXGenerator:
         wb.close()
         return filepath
 
+    def generate_clusterizer_report(self, task_id: str, data: Dict[str, Any]) -> str:
+        """Generate XLSX report for keyword clusterizer."""
+        wb = Workbook()
+        header_style = self._create_header_style()
+        cell_style = self._create_cell_style()
+
+        results = data.get("results", {}) or {}
+        summary = results.get("summary", {}) or {}
+        settings_payload = results.get("settings", {}) or {}
+        clusters = results.get("clusters", []) or []
+        unclustered = results.get("unclustered_keywords", []) or []
+        keyword_rows = results.get("cluster_keywords_flat", []) or []
+
+        ws_summary = wb.active
+        ws_summary.title = "Сводка"
+        ws_summary["A1"] = "Отчет кластеризатора ключевых слов"
+        ws_summary["A1"].font = Font(bold=True, size=16)
+        ws_summary.merge_cells("A1:D1")
+
+        summary_rows = [
+            ("Engine", results.get("engine", "keyword-clusterizer-v2")),
+            ("Method", settings_payload.get("method", "jaccard")),
+            ("Mode", settings_payload.get("clustering_mode", "balanced")),
+            ("Threshold requested", settings_payload.get("similarity_threshold_requested", 0)),
+            ("Threshold effective", settings_payload.get("similarity_threshold", 0)),
+            ("Threshold effective %", settings_payload.get("similarity_threshold_pct", 0)),
+            ("Min cluster size", settings_payload.get("min_cluster_size", 2)),
+            ("Keywords input total", summary.get("keywords_input_total", 0)),
+            ("Keywords unique total", summary.get("keywords_unique_total", 0)),
+            ("Duplicates removed", summary.get("duplicates_removed", 0)),
+            ("Clusters total", summary.get("clusters_total", 0)),
+            ("Primary clusters total", summary.get("primary_clusters_total", 0)),
+            ("Singleton clusters", summary.get("singleton_clusters", 0)),
+            ("Multi-keyword clusters", summary.get("multi_keyword_clusters", 0)),
+            ("Biggest cluster size", summary.get("biggest_cluster_size", 0)),
+            ("Avg cluster size", summary.get("avg_cluster_size", 0)),
+            ("Avg cluster cohesion", summary.get("avg_cluster_cohesion", 0)),
+            ("High quality clusters", summary.get("high_quality_clusters", 0)),
+            ("Low confidence keywords", summary.get("low_confidence_keywords", 0)),
+            ("Similarity checks", summary.get("comparisons_total", 0)),
+            ("Potential pairs", summary.get("comparisons_total_potential", 0)),
+        ]
+        for row_idx, (metric, value) in enumerate(summary_rows, start=3):
+            self._apply_style(ws_summary.cell(row=row_idx, column=1, value=metric), header_style)
+            self._apply_style(ws_summary.cell(row=row_idx, column=2, value=value), cell_style)
+        ws_summary.column_dimensions["A"].width = 34
+        ws_summary.column_dimensions["B"].width = 32
+
+        ws_clusters = wb.create_sheet("Кластеры")
+        cluster_headers = [
+            "Cluster ID",
+            "Size",
+            "Size with duplicates",
+            "Representative",
+            "Top tokens",
+            "Density",
+            "Avg similarity",
+            "Cohesion",
+            "Keywords preview",
+        ]
+        for col, header in enumerate(cluster_headers, 1):
+            self._apply_style(ws_clusters.cell(row=1, column=col, value=header), header_style)
+        for row_idx, cluster in enumerate(clusters, start=2):
+            row_values = [
+                cluster.get("cluster_id", 0),
+                cluster.get("size", 0),
+                cluster.get("size_with_duplicates", 0),
+                cluster.get("representative", ""),
+                ", ".join(cluster.get("top_tokens", []) or []),
+                cluster.get("density", 0),
+                cluster.get("avg_similarity", 0),
+                cluster.get("cohesion", ""),
+                ", ".join((cluster.get("keywords", []) or [])[:12]),
+            ]
+            for col, value in enumerate(row_values, 1):
+                self._apply_style(ws_clusters.cell(row=row_idx, column=col, value=value), cell_style)
+        ws_clusters.freeze_panes = "A2"
+        ws_clusters.auto_filter.ref = "A1:I1"
+        for col, width in enumerate([12, 10, 22, 46, 48, 12, 14, 12, 100], 1):
+            ws_clusters.column_dimensions[get_column_letter(col)].width = width
+
+        ws_keywords = wb.create_sheet("Ключи")
+        keyword_headers = [
+            "Cluster ID",
+            "Cluster size",
+            "Representative",
+            "Keyword",
+            "Score to representative",
+            "Duplicates count",
+        ]
+        for col, header in enumerate(keyword_headers, 1):
+            self._apply_style(ws_keywords.cell(row=1, column=col, value=header), header_style)
+        if keyword_rows:
+            for row_idx, item in enumerate(keyword_rows, start=2):
+                row_values = [
+                    item.get("cluster_id", 0),
+                    item.get("cluster_size", 0),
+                    item.get("representative", ""),
+                    item.get("keyword", ""),
+                    item.get("score_to_representative", 0),
+                    item.get("duplicates_count", 1),
+                ]
+                for col, value in enumerate(row_values, 1):
+                    self._apply_style(ws_keywords.cell(row=row_idx, column=col, value=value), cell_style)
+        else:
+            row_idx = 2
+            for cluster in clusters:
+                for keyword in (cluster.get("keywords", []) or []):
+                    row_values = [
+                        cluster.get("cluster_id", 0),
+                        cluster.get("size", 0),
+                        cluster.get("representative", ""),
+                        keyword,
+                        "",
+                        1,
+                    ]
+                    for col, value in enumerate(row_values, 1):
+                        self._apply_style(ws_keywords.cell(row=row_idx, column=col, value=value), cell_style)
+                    row_idx += 1
+        ws_keywords.freeze_panes = "A2"
+        ws_keywords.auto_filter.ref = "A1:F1"
+        for col, width in enumerate([12, 12, 46, 68, 20, 16], 1):
+            ws_keywords.column_dimensions[get_column_letter(col)].width = width
+
+        ws_unclustered = wb.create_sheet("Одиночные")
+        self._apply_style(ws_unclustered.cell(row=1, column=1, value="Keyword"), header_style)
+        for row_idx, keyword in enumerate(unclustered, start=2):
+            self._apply_style(ws_unclustered.cell(row=row_idx, column=1, value=keyword), cell_style)
+        ws_unclustered.column_dimensions["A"].width = 86
+
+        filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
+        self._save_workbook(wb, filepath)
+        wb.close()
+        return filepath
+
     def generate_link_profile_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Generate XLSX report for link_profile_audit with fixed template sheets."""
         wb = Workbook()
@@ -4720,6 +4855,7 @@ class XLSXGenerator:
             'bot_check': self.generate_bot_report,
             'site_audit_pro': self.generate_site_audit_pro_report,
             'onpage_audit': self.generate_onpage_report,
+            'clusterizer': self.generate_clusterizer_report,
             'link_profile_audit': self.generate_link_profile_report,
         }
         

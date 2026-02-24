@@ -1880,6 +1880,39 @@ async function downloadOnpageXlsxReport() {
     }
 }
 
+async function downloadClusterizerXlsxReport() {
+    if (!clusterizerData) {
+        alert('Нет данных кластеризатора');
+        return;
+    }
+    try {
+        const response = await fetch('/api/export/clusterizer-xlsx', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task_id: clusterizerData.task_id || taskId })
+        });
+        const payloadType = response.headers.get('content-type') || '';
+        if (!response.ok || payloadType.includes('application/json')) {
+            const err = await response.json();
+            throw new Error(err.error || `HTTP ${response.status}`);
+        }
+        const blob = await response.blob();
+        const href = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const cd = response.headers.get('Content-Disposition') || '';
+        const m = cd.match(/filename=([^;]+)/i);
+        a.download = m ? m[1].replace(/\"/g, '') : `clusterizer-report-${new Date().toISOString().slice(0,10)}.xlsx`;
+        a.href = href;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(href);
+    } catch (error) {
+        console.error('Ошибка скачивания clusterizer XLSX:', error);
+        alert(error.message || 'Не удалось скачать XLSX-отчет');
+    }
+}
+
 function setLinkProfileExportState(kind, isLoading) {
     const buttonId = kind === 'docx' ? 'lp-export-docx-btn' : 'lp-export-xlsx-btn';
     const btn = document.getElementById(buttonId);
@@ -5069,6 +5102,9 @@ function generateClusterizerHTML(result) {
             .join(', ');
         const hiddenKeywords = Math.max(0, keywords.length - 8);
         const densityPct = Math.round(Number(cluster.density || 0) * 1000) / 10;
+        const avgSimPct = Math.round(Number(cluster.avg_similarity || 0) * 1000) / 10;
+        const cohesion = String(cluster.cohesion || 'low');
+        const cohesionLabel = cohesion === 'high' ? 'Высокая' : (cohesion === 'medium' ? 'Средняя' : 'Низкая');
 
         return `
             <tr class="border-b border-slate-100 text-sm">
@@ -5077,6 +5113,8 @@ function generateClusterizerHTML(result) {
                 <td class="py-2 pr-2 break-words">${representative}</td>
                 <td class="py-2 pr-2 break-words">${topTokens || '-'}</td>
                 <td class="py-2 pr-2">${densityPct}%</td>
+                <td class="py-2 pr-2">${avgSimPct}%</td>
+                <td class="py-2 pr-2">${cohesionLabel}</td>
                 <td class="py-2 pr-2 break-words">${keywordsPreview}${hiddenKeywords > 0 ? `, +${hiddenKeywords}` : ''}</td>
             </tr>
         `;
@@ -5093,9 +5131,12 @@ function generateClusterizerHTML(result) {
                 <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
                     <div>
                         <h3 class="text-lg font-semibold">Кластеризатор ключей</h3>
-                        <p class="text-sm text-gray-500">Метод: ${escapeHtml(String(settings.method || 'jaccard'))}, порог: ${Number(settings.similarity_threshold_pct || 0)}%</p>
+                        <p class="text-sm text-gray-500">Метод: ${escapeHtml(String(settings.method || 'jaccard'))}, режим: ${escapeHtml(String(settings.clustering_mode || 'balanced'))}, порог: ${Number(settings.similarity_threshold_pct || 0)}%</p>
                     </div>
-                    <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
+                    <div class="flex items-center gap-3">
+                        <button onclick="downloadClusterizerXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>Скачать XLSX</button>
+                        <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
+                    </div>
                 </div>
                 <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3 text-sm">
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Входных ключей</div><div class="text-xl font-semibold">${Number(summary.keywords_input_total || 0)}</div></div>
@@ -5105,7 +5146,7 @@ function generateClusterizerHTML(result) {
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Многоключевых</div><div class="text-xl font-semibold">${Number(summary.multi_keyword_clusters || 0)}</div></div>
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Одиночных</div><div class="text-xl font-semibold">${Number(summary.singleton_clusters || 0)}</div></div>
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Макс. размер</div><div class="text-xl font-semibold">${Number(summary.biggest_cluster_size || 0)}</div></div>
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Сравнений пар</div><div class="text-xl font-semibold">${Number(summary.comparisons_total || 0)}</div></div>
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Когезия кластеров</div><div class="text-xl font-semibold">${Math.round(Number(summary.avg_cluster_cohesion || 0) * 1000) / 10}%</div></div>
                 </div>
             </div>
 
@@ -5122,11 +5163,13 @@ function generateClusterizerHTML(result) {
                             <th class="py-2 pr-2 bg-white">Репрезентативный ключ</th>
                             <th class="py-2 pr-2 bg-white">Топ токены</th>
                             <th class="py-2 pr-2 bg-white">Плотность</th>
+                            <th class="py-2 pr-2 bg-white">Сред. схожесть</th>
+                            <th class="py-2 pr-2 bg-white">Качество</th>
                             <th class="py-2 pr-2 bg-white">Ключи (превью)</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${clusterRowsHtml || '<tr><td class="py-2 text-sm text-gray-500" colspan="6">Нет данных для отображения.</td></tr>'}
+                        ${clusterRowsHtml || '<tr><td class="py-2 text-sm text-gray-500" colspan="8">Нет данных для отображения.</td></tr>'}
                     </tbody>
                 </table>
             </div>
@@ -5136,10 +5179,14 @@ function generateClusterizerHTML(result) {
                     <h4 class="font-semibold mb-3">Параметры запуска</h4>
                     <div class="space-y-1 text-sm text-slate-700">
                         <div><span class="text-slate-500">Метод:</span> <span class="font-medium">${escapeHtml(String(settings.method || 'jaccard'))}</span></div>
+                        <div><span class="text-slate-500">Режим:</span> <span class="font-medium">${escapeHtml(String(settings.clustering_mode || 'balanced'))}</span></div>
+                        <div><span class="text-slate-500">Запрошенный порог:</span> <span class="font-medium">${Math.round(Number(settings.similarity_threshold_requested || settings.similarity_threshold || 0) * 1000) / 10}%</span></div>
                         <div><span class="text-slate-500">Порог схожести:</span> <span class="font-medium">${Number(settings.similarity_threshold_pct || 0)}%</span></div>
                         <div><span class="text-slate-500">Мин. размер кластера:</span> <span class="font-medium">${Number(settings.min_cluster_size || 0)}</span></div>
                         <div><span class="text-slate-500">Кластеры >= min size:</span> <span class="font-medium">${primaryClusters.length}</span></div>
                         <div><span class="text-slate-500">Средний размер кластера:</span> <span class="font-medium">${Number(summary.avg_cluster_size || 0)}</span></div>
+                        <div><span class="text-slate-500">Ключей с низкой уверенностью:</span> <span class="font-medium">${Number(summary.low_confidence_keywords || 0)}</span></div>
+                        <div><span class="text-slate-500">Сравнений:</span> <span class="font-medium">${Number(summary.comparisons_total || 0)} из ${Number(summary.comparisons_total_potential || 0)}</span></div>
                     </div>
                 </div>
                 <div class="bg-white rounded-xl shadow-md p-6">
