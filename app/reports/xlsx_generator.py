@@ -4268,6 +4268,7 @@ class XLSXGenerator:
             "Cluster ID",
             "Size",
             "Size with duplicates",
+            "Cluster label",
             "Representative",
             "Top tokens",
             "Density",
@@ -4286,6 +4287,7 @@ class XLSXGenerator:
                 cluster.get("cluster_id", 0),
                 cluster.get("size", 0),
                 cluster.get("size_with_duplicates", 0),
+                cluster.get("cluster_label", ""),
                 cluster.get("representative", ""),
                 ", ".join(cluster.get("top_tokens", []) or []),
                 cluster.get("density", 0),
@@ -4300,8 +4302,8 @@ class XLSXGenerator:
             for col, value in enumerate(row_values, 1):
                 self._apply_style(ws_clusters.cell(row=row_idx, column=col, value=value), cell_style)
         ws_clusters.freeze_panes = "A2"
-        ws_clusters.auto_filter.ref = "A1:L1"
-        for col, width in enumerate([12, 10, 22, 46, 48, 12, 14, 14, 14, 14, 14, 100], 1):
+        ws_clusters.auto_filter.ref = "A1:M1"
+        for col, width in enumerate([12, 10, 22, 40, 46, 48, 12, 14, 14, 14, 14, 14, 100], 1):
             ws_clusters.column_dimensions[get_column_letter(col)].width = width
 
         ws_keywords = wb.create_sheet("Ключи")

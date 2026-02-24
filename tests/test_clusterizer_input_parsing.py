@@ -1,17 +1,10 @@
-import importlib.util
 import unittest
+
+from app.tools.clusterizer.input_parser import collect_clusterizer_keyword_rows
 
 
 class ClusterizerInputParsingTests(unittest.TestCase):
-    def _load_parser(self):
-        if importlib.util.find_spec("multipart") is None:
-            self.skipTest("python-multipart is not installed in this environment")
-        from app.api.routes import _collect_clusterizer_keyword_rows
-
-        return _collect_clusterizer_keyword_rows
-
     def test_parses_quoted_multiline_keyword_frequency_blocks(self):
-        parser = self._load_parser()
         raw = """
 подготовка к триатлону онлайн
 подготовка к триатлону за месяц
@@ -24,7 +17,7 @@ class ClusterizerInputParsingTests(unittest.TestCase):
 0"
 """.strip()
 
-        rows = parser([], raw)
+        rows = collect_clusterizer_keyword_rows([], raw)
         keywords = [str(row.get("keyword") or "").strip().lower() for row in rows]
 
         self.assertIn("подготовка к триатлону онлайн", keywords)
@@ -34,7 +27,16 @@ class ClusterizerInputParsingTests(unittest.TestCase):
         self.assertNotIn("0", keywords)
         self.assertNotIn('0"', keywords)
 
+        by_keyword = {str(row.get("keyword") or "").strip().lower(): float(row.get("frequency") or 0.0) for row in rows}
+        self.assertEqual(by_keyword.get("подготовка к триатлону прикол"), 0.0)
+        self.assertEqual(by_keyword.get("подготовка к триатлону питание"), 0.0)
+
+    def test_parses_quoted_tab_frequency(self):
+        rows = collect_clusterizer_keyword_rows([], "\"триатлон теория и практика\\t0\"")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(str(rows[0].get("keyword") or ""), "триатлон теория и практика")
+        self.assertEqual(float(rows[0].get("frequency")), 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()
-

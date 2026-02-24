@@ -103,6 +103,20 @@ class ClusterizerServiceTests(unittest.TestCase):
         self.assertGreater(float(top_cluster.get("demand_total", 0.0)), 700.0)
         self.assertGreater(float(summary.get("top_cluster_demand_share_pct", 0.0)), 70.0)
 
+    def test_zero_frequency_is_preserved(self):
+        result = run_keyword_clusterizer(
+            keyword_rows=[
+                {"keyword": "подготовка к триатлону питание", "frequency": 0},
+                {"keyword": "подготовка к триатлону онлайн", "frequency": 0},
+            ],
+            method="jaccard",
+            similarity_threshold=0.3,
+            min_cluster_size=1,
+            clustering_mode="balanced",
+        )
+        summary = (result.get("results") or {}).get("summary") or {}
+        self.assertAlmostEqual(float(summary.get("input_demand_total", -1.0)), 0.0, delta=0.001)
+
 
 if __name__ == "__main__":
     unittest.main()

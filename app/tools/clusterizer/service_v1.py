@@ -125,11 +125,22 @@ def _cluster_quality_label(avg_similarity: float) -> str:
 def _safe_frequency(value: Any) -> float:
     try:
         freq = float(str(value).replace(",", "."))
-        if freq > 0:
-            return min(freq, 10**9)
+        if freq < 0:
+            return 0.0
+        return min(freq, 10**9)
     except Exception:
         pass
     return 1.0
+
+
+def _build_cluster_label(top_tokens: List[str], intent: str) -> str:
+    tokens = [str(token or "").strip() for token in top_tokens if str(token or "").strip()]
+    if not tokens:
+        return str(intent or "mixed")
+    base = " / ".join(tokens[:3])
+    if intent and intent not in {"mixed", "unknown"}:
+        return f"{intent}: {base}"
+    return base
 
 
 def _detect_intent_from_stems(stems: Set[str]) -> str:
@@ -370,6 +381,19 @@ def run_keyword_clusterizer(
             key=lambda item: (-float(item.get("score_to_representative", 0.0)), len(str(item.get("keyword", "")))),
         )
 
+        if keywords_detailed:
+            top_score = float(keywords_detailed[0].get("score_to_representative", 0.0))
+            rep_candidates = [
+                item for item in keywords_detailed
+                if float(item.get("score_to_representative", 0.0)) >= max(0.3, top_score - 0.08)
+            ]
+            representative_clean = sorted(
+                rep_candidates if rep_candidates else keywords_detailed,
+                key=lambda item: (len(str(item.get("keyword", ""))), -float(item.get("demand", 0.0))),
+            )[0].get("keyword", rep_entry["display"])
+        else:
+            representative_clean = rep_entry["display"]
+
         for i in range(len(member_indexes)):
             for j in range(i + 1, len(member_indexes)):
                 pair_count += 1
@@ -392,12 +416,14 @@ def run_keyword_clusterizer(
             + (len(member_indexes) * 0.25)
             + (avg_similarity * 100.0 * 0.2)
         )
+        cluster_label = _build_cluster_label(top_tokens, intent)
 
         cluster_payload = {
             "cluster_id": cluster_pos,
             "size": len(member_indexes),
             "size_with_duplicates": duplicates_in_cluster,
-            "representative": rep_entry["display"],
+            "cluster_label": cluster_label,
+            "representative": representative_clean,
             "top_tokens": top_tokens,
             "edge_count": edge_count,
             "density": round(density, 4),
@@ -417,7 +443,7 @@ def run_keyword_clusterizer(
                 {
                     "cluster_id": cluster_pos,
                     "cluster_size": len(member_indexes),
-                    "representative": rep_entry["display"],
+                    "representative": representative_clean,
                     "keyword": row["keyword"],
                     "score_to_representative": row["score_to_representative"],
                     "duplicates_count": row["duplicates_count"],

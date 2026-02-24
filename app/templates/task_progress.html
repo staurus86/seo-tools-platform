@@ -5092,6 +5092,7 @@ function generateClusterizerHTML(result) {
     const clusterRowsHtml = shownClusters.map((cluster) => {
         const clusterId = Number(cluster.cluster_id || 0);
         const size = Number(cluster.size || 0);
+        const clusterLabel = escapeHtml(String(cluster.cluster_label || ''));
         const representative = escapeHtml(String(cluster.representative || '-'));
         const topTokens = Array.isArray(cluster.top_tokens)
             ? cluster.top_tokens.slice(0, 8).map((token) => escapeHtml(String(token))).join(', ')
@@ -5114,7 +5115,10 @@ function generateClusterizerHTML(result) {
             <tr class="border-b border-slate-100 text-sm">
                 <td class="py-2 pr-2 font-medium">${clusterId}</td>
                 <td class="py-2 pr-2">${size}</td>
-                <td class="py-2 pr-2 break-words">${representative}</td>
+                <td class="py-2 pr-2 break-words">
+                    <div class="font-medium text-slate-800">${clusterLabel || representative}</div>
+                    ${clusterLabel ? `<div class="text-xs text-slate-500 mt-0.5">${representative}</div>` : ''}
+                </td>
                 <td class="py-2 pr-2 break-words">${topTokens || '-'}</td>
                 <td class="py-2 pr-2">${densityPct}%</td>
                 <td class="py-2 pr-2">${avgSimPct}%</td>
