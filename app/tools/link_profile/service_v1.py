@@ -2,7 +2,7 @@ import csv
 import io
 import re
 from collections import Counter, defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from statistics import mean, median
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import urlparse
@@ -545,11 +545,14 @@ def _anchor_words(anchor: str) -> List[str]:
     return [w.lower() for w in re.findall(r"[A-Za-zА-Яа-яЁё0-9]{3,}", anchor or "")]
 
 
-def _has_redirect_301(value: Any) -> bool:
-    text = str(value or "").strip().lower()
-    if not text:
-        return False
-    return "301" in text
+def _has_redirect_301(*values: Any) -> bool:
+    for value in values:
+        text = str(value or "").strip().lower()
+        if not text:
+            continue
+        if re.search(r"(?<!\d)301(?!\d)", text):
+            return True
+    return False
 
 
 def _is_homepage_url(url: str) -> bool:
@@ -777,6 +780,10 @@ def _normalize_backlink_row(row: Dict[str, Any]) -> Dict[str, Any]:
     target_url = str(target or "").strip()
     follow_flag = _to_follow_bool(follow)
     nofollow_flag = _to_follow_bool(nofollow)
+    lost_flag_value = _to_flag_bool(lost_flag)
+    lost_status_value = str(lost_status or "").strip().lower()
+    if not lost_status_value and lost_flag_value is True:
+        lost_status_value = "lost"
     if follow_flag is None and nofollow_flag is not None:
         follow_flag = not nofollow_flag
     return {
@@ -788,18 +795,18 @@ def _normalize_backlink_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "target_is_homepage": _is_homepage_url(target_url),
         "anchor": str(anchor or "").strip(),
         "follow": follow_flag,
-        "has_redirect_301": _has_redirect_301(redirect_status_codes),
+        "has_redirect_301": _has_redirect_301(redirect_status_codes, redirect_chain_status, http_code),
         "link_type": str(link_type or "").strip().lower(),
         "http_code": str(http_code or "").strip(),
         "language": str(language or "").strip().lower(),
         "platform": str(platform or "").strip().lower(),
         "page_title": str(page_title or "").strip(),
-        "lost_status": str(lost_status or "").strip().lower(),
+        "lost_status": lost_status_value,
         "drop_reason": str(drop_reason or "").strip().lower(),
         "discovered_status": str(discovered_status or "").strip().lower(),
         "first_seen": _to_iso_date(first_seen),
         "last_seen": _to_iso_date(last_seen),
-        "lost_flag": _to_flag_bool(lost_flag),
+        "lost_flag": lost_flag_value,
         "content": str(content or "").strip().lower(),
         "ugc": _to_flag_bool(ugc_flag),
         "sponsored": _to_flag_bool(sponsored_flag),
@@ -869,6 +876,98 @@ def _normalize_batch_row(row: Dict[str, Any]) -> Tuple[str, Dict[str, Optional[f
     }
 
 
+def _is_blank_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str) and not value.strip():
+        return True
+    return False
+
+
+def _batch_row_priority_key(row: Dict[str, Any]) -> Tuple[Any, ...]:
+    value_aliases: List[Sequence[str]] = [
+        ("url rating", "ur"),
+        ("domain rating", "dr"),
+        ("ahrefs rank",),
+        ("organic / total keywords", "organic_keywords_total"),
+        ("organic / keywords (top 3)", "organic_keywords_top3"),
+        ("organic / keywords (4-10)", "organic_keywords_4_10"),
+        ("organic / keywords (11-20)", "organic_keywords_11_20"),
+        ("organic / keywords (21-50)", "organic_keywords_21_50"),
+        ("organic / keywords (51+)", "organic_keywords_51_plus"),
+        ("organic / traffic", "organic_traffic", "traffic"),
+        ("organic / value", "organic_value"),
+        ("organic / top countries",),
+        ("ref. domains / all", "ref domains all", "ref_domains_all"),
+        ("ref. domains / followed", "ref_domains_followed"),
+        ("ref. domains / not followed", "ref_domains_not_followed"),
+        ("ref. ips / ips", "ref_ips_ips"),
+        ("ref. ips / subnets", "ref_ips_subnets"),
+        ("backlinks / all", "backlinks_all", "total backlinks"),
+        ("backlinks / followed", "backlinks_followed"),
+        ("backlinks / not followed", "backlinks_not_followed"),
+        ("backlinks / redirects", "backlinks_redirects"),
+        ("backlinks / internal", "backlinks_internal"),
+        ("outgoing domains / followed", "outgoing_domains_followed"),
+        ("outgoing domains / all time", "outgoing_domains_all_time"),
+        ("outgoing links / followed", "outgoing_links_followed"),
+        ("outgoing links / all time", "outgoing_links_all_time"),
+    ]
+    values = [_pick_value(row, aliases) for aliases in value_aliases]
+    non_empty_count = sum(1 for value in values if not _is_blank_value(value))
+
+    numeric_count = 0
+    numeric_sum = 0.0
+    for value in values:
+        num = _to_float(value)
+        if num is None:
+            continue
+        numeric_count += 1
+        numeric_sum += num
+
+    backlinks_all = _to_float(_pick_value(row, ("backlinks / all", "backlinks_all", "total backlinks")))
+    ref_domains_all = _to_float(_pick_value(row, ("ref. domains / all", "ref domains all", "ref_domains_all")))
+    traffic = _to_float(_pick_value(row, ("organic / traffic", "organic_traffic", "traffic")))
+    dr = _to_float(_pick_value(row, ("domain rating", "dr")))
+
+    fingerprint = "|".join(
+        f"{str(k).strip().lower()}={str(v).strip()}"
+        for k, v in sorted((row or {}).items(), key=lambda kv: str(kv[0]).strip().lower())
+    )
+    return (
+        non_empty_count,
+        numeric_count,
+        float(backlinks_all) if backlinks_all is not None else float("-inf"),
+        float(ref_domains_all) if ref_domains_all is not None else float("-inf"),
+        float(traffic) if traffic is not None else float("-inf"),
+        float(dr) if dr is not None else float("-inf"),
+        numeric_sum,
+        fingerprint,
+    )
+
+
+def _select_preferred_batch_rows(rows: List[Dict[str, Any]]) -> Tuple[Dict[str, Dict[str, Any]], int, int]:
+    preferred_rows: Dict[str, Dict[str, Any]] = {}
+    preferred_keys: Dict[str, Tuple[Any, ...]] = {}
+    domain_counts: Counter[str] = Counter()
+
+    for row in rows:
+        target_raw = _pick_value(row, ("target", "domain", "site", "url"))
+        domain_key = _normalize_domain(str(target_raw or ""))
+        if not domain_key:
+            continue
+        domain_counts[domain_key] += 1
+        key = _batch_row_priority_key(row)
+        prev_key = preferred_keys.get(domain_key)
+        if prev_key is None or key > prev_key:
+            preferred_rows[domain_key] = row
+            preferred_keys[domain_key] = key
+
+    duplicate_domains = sum(1 for count in domain_counts.values() if count > 1)
+    duplicate_rows = sum(max(0, count - 1) for count in domain_counts.values())
+    return preferred_rows, duplicate_domains, duplicate_rows
+
+
 def run_link_profile_audit(
     *,
     our_domain: str,
@@ -907,6 +1006,9 @@ def run_link_profile_audit(
 
     batch_name = ""
     batch_rows: List[Dict[str, Any]] = []
+    preferred_batch_rows_by_domain: Dict[str, Dict[str, Any]] = {}
+    batch_duplicate_domains = 0
+    batch_duplicate_rows = 0
     auto_batch_rows: List[Dict[str, Any]] = []
     precomputed_priority_rows: List[Dict[str, Any]] = []
     imported_analysis_sections: List[Dict[str, Any]] = []
@@ -1026,11 +1128,11 @@ def run_link_profile_audit(
         batch_rows = auto_batch_rows
         batch_name = "from_test_links_pack"
 
-    for row in batch_rows:
-        d, metrics = _normalize_batch_row(row)
-        if d:
-            batch_metrics[d] = metrics
-            batch_targets.append(d)
+    preferred_batch_rows_by_domain, batch_duplicate_domains, batch_duplicate_rows = _select_preferred_batch_rows(batch_rows)
+    for d in sorted(preferred_batch_rows_by_domain.keys()):
+        _, metrics = _normalize_batch_row(preferred_batch_rows_by_domain[d])
+        batch_metrics[d] = metrics
+        batch_targets.append(d)
 
     for target_domain in batch_targets:
         auto_brand_tokens.extend(_derive_brand_keywords(target_domain))
@@ -1653,12 +1755,7 @@ def run_link_profile_audit(
         "Outgoing domains / Followed", "Outgoing domains / All time",
         "Outgoing links / Followed", "Outgoing links / All time",
     ]
-    batch_rows_by_domain: Dict[str, Dict[str, Any]] = {}
-    for row in batch_rows:
-        target_raw = _pick_value(row, ("target", "domain", "site", "url"))
-        key = _normalize_domain(str(target_raw or ""))
-        if key and key not in batch_rows_by_domain:
-            batch_rows_by_domain[key] = row
+    batch_rows_by_domain: Dict[str, Dict[str, Any]] = preferred_batch_rows_by_domain
 
     report_ru_rows: List[Dict[str, Any]] = []
     ru_idx = 1
@@ -1914,7 +2011,7 @@ def run_link_profile_audit(
         ["empty", "naked_url", "brand", "brand_commercial", "brand_navigational", "commercial", "informational", "navigational", "generic", "spam", "other"],
         "anchor:",
     )
-    link_type_categories = sorted(set(link_type_counter.keys()))[:20]
+    link_type_categories = [k for k, _ in link_type_counter.most_common(20)]
     link_type_benchmark_rows = _build_mix_benchmark(
         lambda m: m.get("link_type", Counter()) or Counter(),
         link_type_categories,
@@ -2030,14 +2127,20 @@ def run_link_profile_audit(
         )
     opportunity_domains_rows.sort(key=lambda x: (float(x.get("opportunity_score", 0.0)), float(x.get("competitors_covered", 0))), reverse=True)
     opportunity_domains_rows = opportunity_domains_rows[:500]
-    ready_buy_rows = [
-        x
-        for x in opportunity_domains_rows
-        if float(x.get("avg_dr") or 0.0) >= 30.0
-        and float(x.get("avg_traffic") or 0.0) >= 50.0
-        and float(x.get("follow_pct") or 0.0) >= 60.0
-        and float(x.get("lost_pct") or 100.0) <= 40.0
-    ][:300]
+    ready_buy_rows: List[Dict[str, Any]] = []
+    for row in opportunity_domains_rows:
+        lost_pct_value = _to_float(row.get("lost_pct"))
+        if lost_pct_value is None:
+            lost_pct_value = 100.0
+        if (
+            float(row.get("avg_dr") or 0.0) >= 30.0
+            and float(row.get("avg_traffic") or 0.0) >= 50.0
+            and float(row.get("follow_pct") or 0.0) >= 60.0
+            and lost_pct_value <= 40.0
+        ):
+            ready_buy_rows.append(row)
+            if len(ready_buy_rows) >= 300:
+                break
     for row in ready_buy_rows:
         row["popularity_score"] = round(
             (float(row.get("competitors_covered_pct") or 0.0) * 0.55)
@@ -2158,6 +2261,11 @@ def run_link_profile_audit(
         warnings.append("Часть ссылок без явного признака dofollow/nofollow")
     if not _parse_keywords(brand_keywords):
         warnings.append("Словарь brand keywords не передан, использованы автоматически выведенные брендовые токены")
+    if batch_duplicate_domains > 0:
+        warnings.append(
+            f"В batch-данных обнаружены дубликаты доменов: {batch_duplicate_domains} "
+            f"(лишних строк: {batch_duplicate_rows}). Для отчета выбрана наиболее заполненная запись по каждому домену."
+        )
     if row_limit_hit:
         warnings.append(
             f"Обработан лимит {MAX_LINK_PROFILE_ROWS} строк для стабильной работы. "
@@ -2177,6 +2285,8 @@ def run_link_profile_audit(
         "our_domain": domain,
         "backlink_files": len(backlink_files),
         "batch_file": batch_name,
+        "batch_duplicate_domains": batch_duplicate_domains,
+        "batch_duplicate_rows_ignored": batch_duplicate_rows,
         "rows_total": len(normalized_rows),
         "our_links": our_links,
         "unique_ref_domains": len(source_to_targets),
@@ -2810,7 +2920,7 @@ def run_link_profile_audit(
     result = {
         "task_type": "link_profile_audit",
         "url": domain,
-        "completed_at": datetime.utcnow().isoformat(),
+        "completed_at": datetime.now(timezone.utc).isoformat(),
         "results": {
             "summary": summary,
             "warnings": warnings,

@@ -14,7 +14,7 @@
     </div>
 
     <!-- Progress Section -->
-    <div id="progress-section" class="bg-white rounded-xl shadow-md p-6 mb-6">
+    <div id="progress-section" class="bg-white rounded-xl shadow-md p-6 mb-6" role="status" aria-live="polite" aria-atomic="true">
         <div class="flex items-center justify-between mb-4">
             <div>
                 <h3 class="text-lg font-semibold" id="status-title">Выполняется...</h3>
@@ -711,6 +711,10 @@ function showResults(data) {
     document.getElementById('results-section').classList.remove('hidden');
     const result = normalizeMojibakeDeep(data);
     lastTaskResult = result;
+    if (result.task_type !== 'link_profile_audit') {
+        linkProfileRenderPayload = null;
+        linkProfileRowsLimitByScope = {};
+    }
     
     // Store data for download functions (include task_id from API response)
     if (result.task_type === 'robots_check') {
@@ -762,6 +766,8 @@ function showResults(data) {
             task_id: result.task_id || taskId,
             url: result.url || ''
         };
+        linkProfileRenderPayload = result;
+        linkProfileRowsLimitByScope = {};
     }
     
     const resultsContent = document.getElementById('results-content');
@@ -789,6 +795,7 @@ function showResults(data) {
         filterOnpageIssues('all');
     } else if (result.task_type === 'link_profile_audit') {
         resultsContent.innerHTML = generateLinkProfileAuditHTML(result);
+        switchLinkProfileAuditTab('executive');
     } else {
         resultsContent.innerHTML = generateGenericHTML(result);
     }
@@ -810,6 +817,10 @@ let siteAuditProData = null;
 let siteAuditProIssuesState = { issues: [], filtered: [], filter: 'all', query: '', limit: 20, sort: 'severity', owner: 'all' };
 let onpageData = null;
 let linkProfileData = null;
+let linkProfileRenderPayload = null;
+let linkProfileRowsLimitByScope = {};
+const LINK_PROFILE_DEFAULT_ROWS = 100;
+const LINK_PROFILE_ROWS_STEP = 200;
 let lastTaskResult = null;
 let sitemapExportUrls = [];
 let sitemapDuplicateLines = [];
@@ -1860,11 +1871,27 @@ async function downloadOnpageXlsxReport() {
     }
 }
 
+function setLinkProfileExportState(kind, isLoading) {
+    const buttonId = kind === 'docx' ? 'lp-export-docx-btn' : 'lp-export-xlsx-btn';
+    const btn = document.getElementById(buttonId);
+    if (!btn) return;
+    btn.disabled = Boolean(isLoading);
+    btn.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+    btn.classList.toggle('opacity-60', Boolean(isLoading));
+    btn.classList.toggle('cursor-not-allowed', Boolean(isLoading));
+    const label = btn.querySelector('[data-lp-export-label]');
+    if (label) {
+        label.textContent = isLoading ? 'Формирование...' : (kind === 'docx' ? 'DOCX' : 'XLSX');
+    }
+}
+
 async function downloadLinkProfileDocxReport() {
     if (!linkProfileData) {
         alert('Нет данных аудита ссылочного профиля');
         return;
     }
+    setLinkProfileExportState('docx', true);
+    setLinkProfileFeedback('Формируем DOCX-отчет...', 'info');
     try {
         const response = await fetch('/api/export/link-profile-docx', {
             method: 'POST',
@@ -1881,15 +1908,20 @@ async function downloadLinkProfileDocxReport() {
         const a = document.createElement('a');
         const cd = response.headers.get('Content-Disposition') || '';
         const m = cd.match(/filename=([^;]+)/i);
-        a.download = m ? m[1].replace(/\"/g, '') : `link-profile-report-${new Date().toISOString().slice(0,10)}.docx`;
+        const filename = m ? m[1].replace(/\"/g, '') : `link-profile-report-${new Date().toISOString().slice(0,10)}.docx`;
+        a.download = filename;
         a.href = href;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(href);
+        setLinkProfileFeedback(`DOCX готов: ${filename}`, 'success');
     } catch (error) {
         console.error('Ошибка скачивания Link Profile DOCX:', error);
+        setLinkProfileFeedback(error.message || 'Ошибка загрузки DOCX', 'error');
         alert(error.message || 'Не удалось скачать DOCX-отчет');
+    } finally {
+        setLinkProfileExportState('docx', false);
     }
 }
 
@@ -1898,6 +1930,8 @@ async function downloadLinkProfileXlsxReport() {
         alert('Нет данных аудита ссылочного профиля');
         return;
     }
+    setLinkProfileExportState('xlsx', true);
+    setLinkProfileFeedback('Формируем XLSX-отчет...', 'info');
     try {
         const response = await fetch('/api/export/link-profile-xlsx', {
             method: 'POST',
@@ -1914,15 +1948,20 @@ async function downloadLinkProfileXlsxReport() {
         const a = document.createElement('a');
         const cd = response.headers.get('Content-Disposition') || '';
         const m = cd.match(/filename=([^;]+)/i);
-        a.download = m ? m[1].replace(/\"/g, '') : `link-profile-report-${new Date().toISOString().slice(0,10)}.xlsx`;
+        const filename = m ? m[1].replace(/\"/g, '') : `link-profile-report-${new Date().toISOString().slice(0,10)}.xlsx`;
+        a.download = filename;
         a.href = href;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(href);
+        setLinkProfileFeedback(`XLSX готов: ${filename}`, 'success');
     } catch (error) {
         console.error('Ошибка скачивания Link Profile XLSX:', error);
+        setLinkProfileFeedback(error.message || 'Ошибка загрузки XLSX', 'error');
         alert(error.message || 'Не удалось скачать XLSX-отчет');
+    } finally {
+        setLinkProfileExportState('xlsx', false);
     }
 }
 
@@ -2030,6 +2069,96 @@ function renderTableGroups(groups, fallback = 'Нет данных', maxRows = 1
     return ready.map((group) => renderTableGroup(group, fallback, maxRows)).join('');
 }
 
+function getLinkProfileRowsLimit(scope) {
+    const normalizedScope = String(scope || '').trim().toLowerCase();
+    if (!normalizedScope) return LINK_PROFILE_DEFAULT_ROWS;
+    const v = Number(linkProfileRowsLimitByScope[normalizedScope] || LINK_PROFILE_DEFAULT_ROWS);
+    return Number.isFinite(v) && v > 0 ? v : LINK_PROFILE_DEFAULT_ROWS;
+}
+
+function setLinkProfileFeedback(message, tone = 'info') {
+    const el = document.getElementById('link-profile-live-status');
+    if (!el) return;
+    const text = String(message || '').trim();
+    el.textContent = text;
+    el.classList.remove('text-sky-700', 'text-emerald-700', 'text-rose-700', 'text-amber-700');
+    if (tone === 'success') {
+        el.classList.add('text-emerald-700');
+    } else if (tone === 'error') {
+        el.classList.add('text-rose-700');
+    } else if (tone === 'warning') {
+        el.classList.add('text-amber-700');
+    } else {
+        el.classList.add('text-sky-700');
+    }
+}
+
+function renderLinkProfileTableGroups(scope, groups, fallback = 'Нет данных') {
+    const normalizedScope = String(scope || '').trim().toLowerCase();
+    const ready = (Array.isArray(groups) ? groups : []).filter((group) => Array.isArray(group?.rows) && group.rows.length > 0);
+    if (!ready.length) {
+        return `
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <div class="text-sm text-slate-500 mb-3">${escapeHtml(fallback)}</div>
+                <div class="flex flex-wrap gap-2">
+                    ${normalizedScope !== 'plan' ? `<button type="button" onclick="switchLinkProfileAuditTab('plan')" class="px-3 py-1.5 text-xs rounded-lg bg-slate-900 text-white hover:bg-slate-800">Открыть Plan</button>` : ''}
+                    <button type="button" onclick="downloadLinkProfileXlsxReport()" class="px-3 py-1.5 text-xs rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">Скачать полный XLSX</button>
+                </div>
+            </div>
+        `;
+    }
+    const maxRows = getLinkProfileRowsLimit(normalizedScope);
+    const truncated = ready.some((group) => (group.rows || []).length > maxRows);
+    const totalRows = ready.reduce((acc, group) => acc + ((group.rows || []).length), 0);
+    const shownRows = ready.reduce((acc, group) => acc + Math.min((group.rows || []).length, maxRows), 0);
+    const groupsHtml = ready.map((group) => renderTableGroup(group, fallback, maxRows)).join('');
+    const controlsHtml = truncated || maxRows > LINK_PROFILE_DEFAULT_ROWS
+        ? `
+            <div class="bg-white rounded-xl shadow-md p-4 flex flex-wrap items-center justify-between gap-3">
+                <div class="text-xs text-slate-600">Показано ${escapeHtml(shownRows)} из ${escapeHtml(totalRows)} строк (лимит: ${escapeHtml(maxRows)})</div>
+                <div class="flex flex-wrap gap-2">
+                    ${truncated ? `<button type="button" onclick="expandLinkProfileRows('${escapeHtml(normalizedScope)}')" class="px-3 py-1.5 text-xs rounded-lg bg-slate-900 text-white hover:bg-slate-800">Показать еще ${LINK_PROFILE_ROWS_STEP}</button>` : ''}
+                    ${maxRows > LINK_PROFILE_DEFAULT_ROWS ? `<button type="button" onclick="collapseLinkProfileRows('${escapeHtml(normalizedScope)}')" class="px-3 py-1.5 text-xs rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">Свернуть до ${LINK_PROFILE_DEFAULT_ROWS}</button>` : ''}
+                </div>
+            </div>
+        `
+        : '';
+    return `${groupsHtml}${controlsHtml}`;
+}
+
+function getActiveLinkProfileTab() {
+    const root = document.getElementById('link-profile-tabs-root');
+    if (!root) return 'executive';
+    const activeBtn = root.querySelector('[data-lp-tab][aria-selected="true"]');
+    if (activeBtn) return activeBtn.getAttribute('data-lp-tab') || 'executive';
+    const visiblePanel = Array.from(root.querySelectorAll('[data-lp-panel]')).find((panel) => !panel.classList.contains('hidden'));
+    return visiblePanel?.getAttribute('data-lp-panel') || 'executive';
+}
+
+function rerenderLinkProfileResult(preferredTabId = '') {
+    if (!linkProfileRenderPayload) return;
+    const resultsContent = document.getElementById('results-content');
+    if (!resultsContent) return;
+    const activeTab = preferredTabId || getActiveLinkProfileTab() || 'executive';
+    resultsContent.innerHTML = generateLinkProfileAuditHTML(linkProfileRenderPayload);
+    switchLinkProfileAuditTab(activeTab);
+}
+
+function expandLinkProfileRows(scope) {
+    const normalizedScope = String(scope || '').trim().toLowerCase();
+    if (!normalizedScope) return;
+    const current = getLinkProfileRowsLimit(normalizedScope);
+    linkProfileRowsLimitByScope[normalizedScope] = current + LINK_PROFILE_ROWS_STEP;
+    rerenderLinkProfileResult(normalizedScope);
+}
+
+function collapseLinkProfileRows(scope) {
+    const normalizedScope = String(scope || '').trim().toLowerCase();
+    if (!normalizedScope) return;
+    linkProfileRowsLimitByScope[normalizedScope] = LINK_PROFILE_DEFAULT_ROWS;
+    rerenderLinkProfileResult(normalizedScope);
+}
+
 function normalizeLinkProfileRedirectRows(rows) {
     if (!Array.isArray(rows) || !rows.length) return [];
     return rows.map((row) => ({
@@ -2066,11 +2195,40 @@ function switchLinkProfileAuditTab(tabId) {
             badge.classList.toggle('text-slate-700', !active);
             badge.classList.toggle('border-slate-300', !active);
         }
+        btn.setAttribute('aria-selected', active ? 'true' : 'false');
+        btn.setAttribute('tabindex', active ? '0' : '-1');
     });
     root.querySelectorAll('[data-lp-panel]').forEach((panel) => {
         const show = panel.getAttribute('data-lp-panel') === tabId;
         panel.classList.toggle('hidden', !show);
+        panel.hidden = !show;
+        panel.setAttribute('aria-hidden', show ? 'false' : 'true');
     });
+    const activeButton = root.querySelector(`[data-lp-tab="${tabId}"]`);
+    if (activeButton) {
+        setLinkProfileFeedback(`Открыт раздел: ${activeButton.textContent.trim()}`, 'info');
+    }
+}
+
+function handleLinkProfileTabKeydown(event) {
+    const key = event.key;
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(key)) return;
+    const root = document.getElementById('link-profile-tabs-root');
+    if (!root) return;
+    const tabs = Array.from(root.querySelectorAll('[data-lp-tab]'));
+    const currentIndex = tabs.findIndex((tab) => tab.getAttribute('aria-selected') === 'true');
+    if (currentIndex < 0 || !tabs.length) return;
+    event.preventDefault();
+    let nextIndex = currentIndex;
+    if (key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabs.length;
+    if (key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    if (key === 'Home') nextIndex = 0;
+    if (key === 'End') nextIndex = tabs.length - 1;
+    const targetTab = tabs[nextIndex];
+    const tabId = targetTab?.getAttribute('data-lp-tab');
+    if (!tabId) return;
+    switchLinkProfileAuditTab(tabId);
+    targetTab.focus();
 }
 
 function switchLinkProfileSubTab(scope, tabId) {
@@ -2202,15 +2360,16 @@ function generateLinkProfileAuditHTML(data) {
                             <div class="text-xs text-slate-100/90">validation err: ${escapeHtml(validationErrors)} | warn: ${escapeHtml(validationWarnings)}</div>
                         </div>
                         <div class="flex flex-wrap gap-2">
-                            <button onclick="downloadLinkProfileDocxReport()" class="px-4 py-2 bg-white/15 border border-white/30 text-white rounded-lg hover:bg-white/25 transition text-sm">
-                                <i class="fas fa-file-word mr-1"></i>DOCX
+                            <button id="lp-export-docx-btn" onclick="downloadLinkProfileDocxReport()" class="px-4 py-2 bg-white/15 border border-white/30 text-white rounded-lg hover:bg-white/25 transition text-sm" aria-label="Скачать DOCX отчет">
+                                <i class="fas fa-file-word mr-1"></i><span data-lp-export-label>DOCX</span>
                             </button>
-                            <button onclick="downloadLinkProfileXlsxReport()" class="px-4 py-2 bg-white/15 border border-white/30 text-white rounded-lg hover:bg-white/25 transition text-sm">
-                                <i class="fas fa-file-excel mr-1"></i>XLSX
+                            <button id="lp-export-xlsx-btn" onclick="downloadLinkProfileXlsxReport()" class="px-4 py-2 bg-white/15 border border-white/30 text-white rounded-lg hover:bg-white/25 transition text-sm" aria-label="Скачать XLSX отчет">
+                                <i class="fas fa-file-excel mr-1"></i><span data-lp-export-label>XLSX</span>
                             </button>
                         </div>
                     </div>
                 </div>
+                <div id="link-profile-live-status" class="mt-3 text-xs text-sky-700" role="status" aria-live="polite" aria-atomic="true">Результаты готовы. Используйте вкладки для анализа.</div>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-4">
@@ -2230,16 +2389,24 @@ function generateLinkProfileAuditHTML(data) {
                 `).join('')}
             </div>
 
-            <div class="bg-white rounded-xl shadow-md p-4">
+            <div class="bg-white rounded-xl shadow-md p-4 flex flex-wrap items-center justify-between gap-3">
+                <div class="text-sm text-slate-700">Следующий шаг: откройте вкладку <strong>Plan</strong> и сформируйте очередь действий.</div>
                 <div class="flex flex-wrap gap-2">
-                    <button type="button" data-lp-tab="executive" onclick="switchLinkProfileAuditTab('executive')" class="px-4 py-2 rounded-lg text-sm font-medium bg-amber-600 text-white">Executive <span class="lp-tab-badge bg-white/20 text-white border-white/30">${escapeHtml(tabCounters.executive)}</span></button>
-                    <button type="button" data-lp-tab="competitors" onclick="switchLinkProfileAuditTab('competitors')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Competitors <span class="lp-tab-badge">${escapeHtml(tabCounters.competitors)}</span></button>
-                    <button type="button" data-lp-tab="gap" onclick="switchLinkProfileAuditTab('gap')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Gap-доноры <span class="lp-tab-badge">${escapeHtml(tabCounters.gap)}</span></button>
-                    <button type="button" data-lp-tab="quality" onclick="switchLinkProfileAuditTab('quality')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Quality <span class="lp-tab-badge">${escapeHtml(tabCounters.quality)}</span></button>
-                    <button type="button" data-lp-tab="loss" onclick="switchLinkProfileAuditTab('loss')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Loss <span class="lp-tab-badge">${escapeHtml(tabCounters.loss)}</span></button>
-                    <button type="button" data-lp-tab="anchors" onclick="switchLinkProfileAuditTab('anchors')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Anchors <span class="lp-tab-badge">${escapeHtml(tabCounters.anchors)}</span></button>
-                    <button type="button" data-lp-tab="risks" onclick="switchLinkProfileAuditTab('risks')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Risks <span class="lp-tab-badge">${escapeHtml(tabCounters.risks)}</span></button>
-                    <button type="button" data-lp-tab="plan" onclick="switchLinkProfileAuditTab('plan')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Plan <span class="lp-tab-badge">${escapeHtml(tabCounters.plan)}</span></button>
+                    <button type="button" onclick="switchLinkProfileAuditTab('plan')" class="px-3 py-1.5 text-xs rounded-lg bg-slate-900 text-white hover:bg-slate-800">Открыть Plan</button>
+                    <button type="button" onclick="downloadLinkProfileXlsxReport()" class="px-3 py-1.5 text-xs rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">Скачать полный XLSX</button>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-4">
+                <div class="flex flex-wrap gap-2" role="tablist" aria-label="Разделы аудита ссылочного профиля">
+                    <button type="button" id="lp-tab-btn-executive" role="tab" aria-selected="true" aria-controls="lp-panel-executive" tabindex="0" data-lp-tab="executive" onkeydown="handleLinkProfileTabKeydown(event)" onclick="switchLinkProfileAuditTab('executive')" class="px-4 py-2 rounded-lg text-sm font-medium bg-amber-600 text-white">Executive <span class="lp-tab-badge bg-white/20 text-white border-white/30">${escapeHtml(tabCounters.executive)}</span></button>
+                    <button type="button" id="lp-tab-btn-competitors" role="tab" aria-selected="false" aria-controls="lp-panel-competitors" tabindex="-1" data-lp-tab="competitors" onkeydown="handleLinkProfileTabKeydown(event)" onclick="switchLinkProfileAuditTab('competitors')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Competitors <span class="lp-tab-badge">${escapeHtml(tabCounters.competitors)}</span></button>
+                    <button type="button" id="lp-tab-btn-gap" role="tab" aria-selected="false" aria-controls="lp-panel-gap" tabindex="-1" data-lp-tab="gap" onkeydown="handleLinkProfileTabKeydown(event)" onclick="switchLinkProfileAuditTab('gap')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Gap-доноры <span class="lp-tab-badge">${escapeHtml(tabCounters.gap)}</span></button>
+                    <button type="button" id="lp-tab-btn-quality" role="tab" aria-selected="false" aria-controls="lp-panel-quality" tabindex="-1" data-lp-tab="quality" onkeydown="handleLinkProfileTabKeydown(event)" onclick="switchLinkProfileAuditTab('quality')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Quality <span class="lp-tab-badge">${escapeHtml(tabCounters.quality)}</span></button>
+                    <button type="button" id="lp-tab-btn-loss" role="tab" aria-selected="false" aria-controls="lp-panel-loss" tabindex="-1" data-lp-tab="loss" onkeydown="handleLinkProfileTabKeydown(event)" onclick="switchLinkProfileAuditTab('loss')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Loss <span class="lp-tab-badge">${escapeHtml(tabCounters.loss)}</span></button>
+                    <button type="button" id="lp-tab-btn-anchors" role="tab" aria-selected="false" aria-controls="lp-panel-anchors" tabindex="-1" data-lp-tab="anchors" onkeydown="handleLinkProfileTabKeydown(event)" onclick="switchLinkProfileAuditTab('anchors')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Anchors <span class="lp-tab-badge">${escapeHtml(tabCounters.anchors)}</span></button>
+                    <button type="button" id="lp-tab-btn-risks" role="tab" aria-selected="false" aria-controls="lp-panel-risks" tabindex="-1" data-lp-tab="risks" onkeydown="handleLinkProfileTabKeydown(event)" onclick="switchLinkProfileAuditTab('risks')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Risks <span class="lp-tab-badge">${escapeHtml(tabCounters.risks)}</span></button>
+                    <button type="button" id="lp-tab-btn-plan" role="tab" aria-selected="false" aria-controls="lp-panel-plan" tabindex="-1" data-lp-tab="plan" onkeydown="handleLinkProfileTabKeydown(event)" onclick="switchLinkProfileAuditTab('plan')" class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-slate-700 border">Plan <span class="lp-tab-badge">${escapeHtml(tabCounters.plan)}</span></button>
                 </div>
             </div>
 
@@ -2257,20 +2424,20 @@ function generateLinkProfileAuditHTML(data) {
                 </div>
             ` : ''}
 
-            <div data-lp-panel="executive" class="space-y-6">
-                ${renderTableGroups(executiveGroups, 'Нет executive-данных')}
+            <div id="lp-panel-executive" data-lp-panel="executive" role="tabpanel" aria-labelledby="lp-tab-btn-executive" aria-hidden="false" class="space-y-6">
+                ${renderLinkProfileTableGroups('executive', executiveGroups, 'Нет executive-данных')}
             </div>
 
-            <div data-lp-panel="competitors" class="space-y-6 hidden">
-                ${renderTableGroups(competitorGroups, 'Нет данных конкурентов')}
+            <div id="lp-panel-competitors" data-lp-panel="competitors" role="tabpanel" aria-labelledby="lp-tab-btn-competitors" aria-hidden="true" class="space-y-6 hidden">
+                ${renderLinkProfileTableGroups('competitors', competitorGroups, 'Нет данных конкурентов')}
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="font-semibold mb-3">Промпт: конкуренты</h4>
                     <p class="text-sm text-slate-700 whitespace-pre-line">${escapeHtml(prompts.competitors || 'Нет данных')}</p>
                 </div>
             </div>
 
-            <div data-lp-panel="gap" class="space-y-6 hidden">
-                ${renderTableGroups(gapGroups, 'Нет gap-данных')}
+            <div id="lp-panel-gap" data-lp-panel="gap" role="tabpanel" aria-labelledby="lp-tab-btn-gap" aria-hidden="true" class="space-y-6 hidden">
+                ${renderLinkProfileTableGroups('gap', gapGroups, 'Нет gap-данных')}
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="font-semibold mb-3">Промпт: сравнение</h4>
                     <p class="text-sm text-slate-700 whitespace-pre-line">${escapeHtml(prompts.comparison || 'Нет данных')}</p>
@@ -2281,32 +2448,32 @@ function generateLinkProfileAuditHTML(data) {
                 </div>
             </div>
 
-            <div data-lp-panel="quality" class="space-y-6 hidden">
-                ${renderTableGroups(qualityGroups, 'Нет quality-данных')}
+            <div id="lp-panel-quality" data-lp-panel="quality" role="tabpanel" aria-labelledby="lp-tab-btn-quality" aria-hidden="true" class="space-y-6 hidden">
+                ${renderLinkProfileTableGroups('quality', qualityGroups, 'Нет quality-данных')}
             </div>
 
-            <div data-lp-panel="loss" class="space-y-6 hidden">
-                ${renderTableGroups(lossGroups, 'Нет данных по потерям')}
+            <div id="lp-panel-loss" data-lp-panel="loss" role="tabpanel" aria-labelledby="lp-tab-btn-loss" aria-hidden="true" class="space-y-6 hidden">
+                ${renderLinkProfileTableGroups('loss', lossGroups, 'Нет данных по потерям')}
             </div>
 
-            <div data-lp-panel="anchors" class="space-y-6 hidden">
-                ${renderTableGroups(anchorTables, 'Нет данных по анкорам')}
+            <div id="lp-panel-anchors" data-lp-panel="anchors" role="tabpanel" aria-labelledby="lp-tab-btn-anchors" aria-hidden="true" class="space-y-6 hidden">
+                ${renderLinkProfileTableGroups('anchors', anchorTables, 'Нет данных по анкорам')}
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="font-semibold mb-3">Шаблон по анкорному профилю</h4>
                     <p class="text-sm text-slate-700 whitespace-pre-line">${escapeHtml(prompts.anchorTemplate || 'Нет данных')}</p>
                 </div>
             </div>
 
-            <div data-lp-panel="risks" class="space-y-6 hidden">
-                ${renderTableGroups(riskGroups, 'Нет риск-данных')}
+            <div id="lp-panel-risks" data-lp-panel="risks" role="tabpanel" aria-labelledby="lp-tab-btn-risks" aria-hidden="true" class="space-y-6 hidden">
+                ${renderLinkProfileTableGroups('risks', riskGroups, 'Нет риск-данных')}
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="font-semibold mb-3">Шаблон риск-анализа</h4>
                     <p class="text-sm text-slate-700 whitespace-pre-line">${escapeHtml(prompts.riskTemplate || 'Нет данных')}</p>
                 </div>
             </div>
 
-            <div data-lp-panel="plan" class="space-y-6 hidden">
-                ${renderTableGroups(planGroups, 'Нет данных по плану')}
+            <div id="lp-panel-plan" data-lp-panel="plan" role="tabpanel" aria-labelledby="lp-tab-btn-plan" aria-hidden="true" class="space-y-6 hidden">
+                ${renderLinkProfileTableGroups('plan', planGroups, 'Нет данных по плану')}
                 <div class="bg-white rounded-xl shadow-md p-6">
                     <h4 class="font-semibold mb-3">План действий (NLP-подсказка)</h4>
                     <p class="text-sm text-slate-700 whitespace-pre-line">${escapeHtml(prompts.plan || 'План не сформирован')}</p>

@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     SITEMAP_MAX_FILES: int = int(os.getenv("SITEMAP_MAX_FILES", "500"))
     SITEMAP_MAX_EXPORT_URLS: int = int(os.getenv("SITEMAP_MAX_EXPORT_URLS", "100000"))
 
+    # Link Profile upload limits
+    LINK_PROFILE_MAX_BACKLINK_FILES: int = int(os.getenv("LINK_PROFILE_MAX_BACKLINK_FILES", "20"))
+    LINK_PROFILE_MAX_FILE_SIZE_BYTES: int = int(os.getenv("LINK_PROFILE_MAX_FILE_SIZE_BYTES", str(35 * 1024 * 1024)))
+    LINK_PROFILE_MAX_BATCH_FILE_SIZE_BYTES: int = int(os.getenv("LINK_PROFILE_MAX_BATCH_FILE_SIZE_BYTES", str(5 * 1024 * 1024)))
+    LINK_PROFILE_MAX_TOTAL_UPLOAD_BYTES: int = int(os.getenv("LINK_PROFILE_MAX_TOTAL_UPLOAD_BYTES", str(150 * 1024 * 1024)))
+
     # Bot check v2
     BOT_CHECK_ENGINE: str = os.getenv("BOT_CHECK_ENGINE", "legacy")
     BOT_CHECK_TIMEOUT: int = int(os.getenv("BOT_CHECK_TIMEOUT", "15"))
