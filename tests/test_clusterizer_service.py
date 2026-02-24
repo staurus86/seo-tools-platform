@@ -166,6 +166,43 @@ class ClusterizerServiceTests(unittest.TestCase):
         summary = (result.get("results") or {}).get("summary") or {}
         self.assertAlmostEqual(float(summary.get("input_demand_total", -1.0)), 0.0, delta=0.001)
 
+    def test_cluster_counts_are_stable_for_keyword_order(self):
+        source_keywords = [
+            "купить iphone 16",
+            "iphone 16 цена",
+            "samsung galaxy s25",
+            "galaxy s25 купить",
+            "ремонт холодильника",
+            "ремонт холодильников срочно",
+        ]
+        reordered_keywords = [
+            "ремонт холодильников срочно",
+            "samsung galaxy s25",
+            "iphone 16 цена",
+            "ремонт холодильника",
+            "galaxy s25 купить",
+            "купить iphone 16",
+        ]
+        first_result = run_keyword_clusterizer(
+            keywords=source_keywords,
+            method="jaccard",
+            similarity_threshold=0.34,
+            min_cluster_size=2,
+            clustering_mode="balanced",
+        )
+        second_result = run_keyword_clusterizer(
+            keywords=reordered_keywords,
+            method="jaccard",
+            similarity_threshold=0.34,
+            min_cluster_size=2,
+            clustering_mode="balanced",
+        )
+        first_summary = (first_result.get("results") or {}).get("summary") or {}
+        second_summary = (second_result.get("results") or {}).get("summary") or {}
+        self.assertEqual(first_summary.get("clusters_total"), second_summary.get("clusters_total"))
+        self.assertEqual(first_summary.get("multi_keyword_clusters"), second_summary.get("multi_keyword_clusters"))
+        self.assertEqual(first_summary.get("singleton_clusters"), second_summary.get("singleton_clusters"))
+
 
 if __name__ == "__main__":
     unittest.main()

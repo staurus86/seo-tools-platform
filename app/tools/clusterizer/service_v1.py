@@ -6,7 +6,7 @@ from collections import Counter
 from datetime import datetime, timezone
 import math
 import re
-from typing import Any, Callable, Dict, List, Optional, Sequence, Set
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 SimilarityMethod = str
 ClusteringMode = str
@@ -311,30 +311,74 @@ def run_keyword_clusterizer(
     )
     clusters_state: List[Dict[str, Any]] = []
     similarity_checks = 0
+    similarity_cache: Dict[Tuple[int, int], float] = {}
+
+    def _similarity_by_idx(left_idx: int, right_idx: int) -> float:
+        nonlocal similarity_checks
+        if left_idx == right_idx:
+            return 1.0
+        pair = (left_idx, right_idx) if left_idx < right_idx else (right_idx, left_idx)
+        if pair in similarity_cache:
+            return similarity_cache[pair]
+        score = _hybrid_similarity(entries[left_idx], entries[right_idx], method_normalized)
+        similarity_cache[pair] = score
+        similarity_checks += 1
+        return score
+
+    def _cluster_probe_indexes(cluster: Dict[str, Any]) -> List[int]:
+        members = [int(idx) for idx in (cluster.get("members") or [])]
+        if not members:
+            return [int(cluster.get("rep_idx", 0))]
+        candidates = [
+            int(cluster.get("rep_idx", members[0])),
+            members[0],
+            members[len(members) // 2],
+            members[-1],
+            max(
+                members,
+                key=lambda idx: (
+                    float(entries[idx]["frequency"]),
+                    len(entries[idx]["stems"]),
+                    -idx,
+                ),
+            ),
+        ]
+        return sorted(set(candidates))
 
     for pos, entry in enumerate(sorted_entries, start=1):
         best_cluster_idx: Optional[int] = None
         best_score = 0.0
         best_common_stems = 0
+        best_max_probe = 0.0
         for cluster_idx, cluster in enumerate(clusters_state):
             rep_entry = entries[cluster["rep_idx"]]
-            similarity_checks += 1
-            rep_sim = _hybrid_similarity(entry, rep_entry, method_normalized)
+            rep_sim = _similarity_by_idx(entry["idx"], rep_entry["idx"])
             common_stems = len(entry["stems"] & rep_entry["stems"])
             top_cluster_stems = {token for token, _ in cluster["stem_counter"].most_common(8)}
             centroid_overlap = (
                 len(entry["stems"] & top_cluster_stems) / float(max(1, len(entry["stems"])))
             )
-            score = (rep_sim * 0.75) + (centroid_overlap * 0.25)
+            probe_indexes = _cluster_probe_indexes(cluster)
+            probe_scores = [_similarity_by_idx(entry["idx"], probe_idx) for probe_idx in probe_indexes]
+            avg_probe = (sum(probe_scores) / float(max(1, len(probe_scores)))) if probe_scores else 0.0
+            max_probe = max(probe_scores) if probe_scores else rep_sim
+            score = (rep_sim * 0.5) + (avg_probe * 0.3) + (centroid_overlap * 0.2)
             if common_stems >= 2:
-                score += 0.05
+                score += 0.04
+            if len(cluster["members"]) >= 20 and avg_probe < (effective_threshold + 0.02):
+                score -= 0.05
             score = min(1.0, score)
+            if max_probe < max(0.08, effective_threshold - 0.06) and centroid_overlap < 0.45:
+                continue
             if score > best_score:
                 best_score = score
                 best_cluster_idx = cluster_idx
                 best_common_stems = common_stems
+                best_max_probe = max_probe
 
         should_attach = best_cluster_idx is not None and best_score >= effective_threshold
+        if should_attach and best_common_stems == 0 and best_max_probe < (effective_threshold + 0.06):
+            should_attach = False
         if should_attach and len(entry["stems"]) >= 3 and best_common_stems == 0 and best_score < (effective_threshold + 0.12):
             should_attach = False
 
@@ -343,13 +387,44 @@ def run_keyword_clusterizer(
             target_cluster["members"].append(entry["idx"])
             target_cluster["stem_counter"].update(entry["stems"])
             target_cluster["token_counter"].update(entry["tokens"])
-            rep_entry = entries[target_cluster["rep_idx"]]
-            candidate_score = _hybrid_similarity(entry, rep_entry, method_normalized)
-            if (
-                len(entry["stems"]) > len(rep_entry["stems"])
-                and candidate_score >= (effective_threshold + 0.08)
-            ):
-                target_cluster["rep_idx"] = entry["idx"]
+            probe_indexes = _cluster_probe_indexes(target_cluster)
+            rep_candidates = {int(target_cluster["rep_idx"]), int(entry["idx"])}
+            rep_candidates.add(
+                max(
+                    target_cluster["members"],
+                    key=lambda idx: (
+                        float(entries[idx]["frequency"]),
+                        len(entries[idx]["stems"]),
+                        -idx,
+                    ),
+                )
+            )
+            max_candidate_freq = max(float(entries[idx]["frequency"]) for idx in rep_candidates)
+            max_candidate_log = math.log1p(max_candidate_freq) if max_candidate_freq > 0 else 0.0
+            best_rep_idx = int(target_cluster["rep_idx"])
+            best_rep_score = float("-inf")
+            for candidate_idx in sorted(rep_candidates):
+                sims = [
+                    _similarity_by_idx(candidate_idx, probe_idx)
+                    for probe_idx in probe_indexes
+                    if probe_idx != candidate_idx
+                ]
+                avg_sim = (sum(sims) / float(len(sims))) if sims else 1.0
+                demand = float(entries[candidate_idx]["frequency"])
+                demand_norm = (math.log1p(demand) / max_candidate_log) if max_candidate_log > 0 else 0.0
+                token_count = len(entries[candidate_idx]["tokens"])
+                token_shape = 0.03 if 2 <= token_count <= 6 else (-0.02 if token_count >= 9 else 0.0)
+                candidate_score = (
+                    (avg_sim * 0.62)
+                    + (demand_norm * 0.23)
+                    + token_shape
+                    + _representative_phrase_bonus(entries[candidate_idx])
+                    - _representative_penalty(entries[candidate_idx])
+                )
+                if candidate_score > best_rep_score:
+                    best_rep_score = candidate_score
+                    best_rep_idx = candidate_idx
+            target_cluster["rep_idx"] = best_rep_idx
         else:
             clusters_state.append(
                 {
@@ -378,11 +453,14 @@ def run_keyword_clusterizer(
             for j in range(i + 1, len(clusters_state)):
                 cluster_b = clusters_state[j]
                 rep_b = entries[cluster_b["rep_idx"]]
-                similarity_checks += 1
-                rep_sim = _hybrid_similarity(rep_a, rep_b, method_normalized)
+                rep_sim = _similarity_by_idx(rep_a["idx"], rep_b["idx"])
                 common_stems = len(rep_a["stems"] & rep_b["stems"])
+                top_a = {token for token, _ in cluster_a["stem_counter"].most_common(8)}
+                top_b = {token for token, _ in cluster_b["stem_counter"].most_common(8)}
+                centroid_overlap = len(top_a & top_b) / float(max(1, min(len(top_a), len(top_b))))
                 merge_threshold = effective_threshold + (0.12 if mode == "strict" else 0.08)
-                can_merge = rep_sim >= merge_threshold and common_stems >= 1
+                merge_score = (rep_sim * 0.75) + (centroid_overlap * 0.25)
+                can_merge = merge_score >= merge_threshold and (common_stems >= 1 or centroid_overlap >= 0.35)
                 if not can_merge and rep_sim >= 0.92:
                     can_merge = True
                 if not can_merge:
