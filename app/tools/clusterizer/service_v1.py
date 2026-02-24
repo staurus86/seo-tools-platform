@@ -61,14 +61,6 @@ _RU_PREPOSITIONS: Set[str] = {
     "к", "ко", "по", "для", "на", "с", "со", "в", "во", "из", "от", "до", "под", "без", "при", "о", "об", "про",
 }
 
-_REP_TOPIC_ENDINGS: Set[str] = {
-    "бег", "марафон", "полумарафон", "триатлон", "тренировки", "тренировок", "подготовка", "подготовки",
-}
-
-_REP_HEAD_WORDS: Set[str] = {"план", "программа", "схема", "график", "курс"}
-_REP_GENITIVE_GOOD: Set[str] = {"подготовки", "тренировок", "бега", "занятий"}
-_REP_NOMINAL_BAD: Set[str] = {"подготовка", "тренировка", "занятие"}
-
 
 def _normalize_keyword(value: str) -> str:
     text = str(value or "").strip().lower().replace("ё", "е")
@@ -216,20 +208,24 @@ def _representative_phrase_bonus(entry: Dict[str, Any]) -> float:
     if 3 <= word_count <= 6:
         bonus += 0.08
     elif word_count >= 8:
-        bonus -= 0.08
+        bonus -= min(0.14, 0.02 * float(word_count - 7))
     if has_prep:
         bonus += 0.09
-    if (
-        word_count >= 3
-        and words[-1] in _REP_TOPIC_ENDINGS
-        and not any(word in _RU_PREPOSITIONS for word in words[-2:])
-    ):
-        bonus -= 0.04
-    if word_count >= 2 and words[0] in _REP_HEAD_WORDS:
-        if words[1] in _REP_GENITIVE_GOOD:
-            bonus += 0.08
-        elif words[1] in _REP_NOMINAL_BAD:
-            bonus -= 0.09
+    alpha_words = [word for word in words if re.search(r"[a-zа-я]", word, flags=re.IGNORECASE)]
+    if alpha_words:
+        unique_ratio = len(set(alpha_words)) / float(len(alpha_words))
+        if unique_ratio >= 0.9:
+            bonus += 0.03
+        elif unique_ratio <= 0.6:
+            bonus -= 0.06
+    long_words_count = sum(1 for word in words if len(word) >= 18)
+    if long_words_count >= 2:
+        bonus -= 0.06
+    non_space = re.sub(r"\s+", "", display)
+    if non_space:
+        digit_ratio = sum(1 for ch in non_space if ch.isdigit()) / float(len(non_space))
+        if digit_ratio >= 0.35:
+            bonus -= 0.08
     return bonus
 
 
