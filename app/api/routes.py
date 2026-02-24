@@ -4411,6 +4411,26 @@ def check_onpage_audit(
     )
 
 
+def check_keywords_clusterizer(
+    *,
+    keywords: Optional[List[str]] = None,
+    method: str = "jaccard",
+    similarity_threshold: float = 0.35,
+    min_cluster_size: int = 2,
+    progress_callback=None,
+) -> Dict[str, Any]:
+    """Basic keyword clusterizer without SERP data."""
+    from app.tools.clusterizer import run_keyword_clusterizer
+
+    return run_keyword_clusterizer(
+        keywords=keywords or [],
+        method=method,
+        similarity_threshold=similarity_threshold,
+        min_cluster_size=min_cluster_size,
+        progress_callback=progress_callback,
+    )
+
+
 class SiteAnalyzeRequest(BaseModel):
     url: str
     max_pages: int = 20
@@ -4472,6 +4492,32 @@ class OnPageAuditRequest(BaseModel):
         if isinstance(value, list):
             return [str(v).strip() for v in value if str(v).strip()]
         return []
+
+
+class ClusterizerRequest(BaseModel):
+    keywords: Optional[List[str]] = None
+    keywords_text: Optional[str] = None
+    method: Optional[str] = "jaccard"
+    similarity_threshold_pct: int = 35
+    min_cluster_size: int = 2
+
+    @field_validator("keywords", mode="before")
+    @classmethod
+    def _normalize_keywords(cls, value):
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [x.strip() for x in re.split(r"[\r\n,;]+", value) if x.strip()]
+        if isinstance(value, list):
+            return [str(v).strip() for v in value if str(v).strip()]
+        return []
+
+    @field_validator("keywords_text", mode="before")
+    @classmethod
+    def _normalize_keywords_text(cls, value):
+        if value is None:
+            return ""
+        return str(value).strip()
 
 
 @router.post("/tasks/site-analyze")
@@ -4673,6 +4719,84 @@ async def create_onpage_audit(data: OnPageAuditRequest, background_tasks: Backgr
 
     background_tasks.add_task(_run_onpage_task)
     return {"task_id": task_id, "status": "PENDING", "message": "OnPage аудит запущен"}
+
+
+@router.post("/tasks/clusterizer")
+async def create_clusterizer_task(data: ClusterizerRequest, background_tasks: BackgroundTasks):
+    """Keyword clustering by textual similarity without search-engine fetching."""
+    from app.config import settings
+
+    keywords_raw: List[str] = []
+    keywords_raw.extend(list(data.keywords or []))
+    if data.keywords_text:
+        keywords_raw.extend([x.strip() for x in re.split(r"[\r\n,;]+", str(data.keywords_text)) if x.strip()])
+    keywords = [str(item or "").strip() for item in keywords_raw if str(item or "").strip()]
+
+    max_keywords = max(1, int(getattr(settings, "CLUSTERIZER_MAX_KEYWORDS", 2000) or 2000))
+    if not keywords:
+        raise HTTPException(status_code=422, detail="Добавьте хотя бы один ключ для кластеризации")
+    if len(keywords) > max_keywords:
+        raise HTTPException(status_code=422, detail=f"Слишком много ключей: максимум {max_keywords}")
+
+    method = str(data.method or "jaccard").strip().lower()
+    if method not in {"jaccard", "overlap", "dice"}:
+        method = "jaccard"
+    similarity_threshold_pct = max(1, min(100, int(data.similarity_threshold_pct or 35)))
+    min_cluster_size = max(1, min(50, int(data.min_cluster_size or 2)))
+    similarity_threshold = similarity_threshold_pct / 100.0
+
+    task_id = f"clusterizer-{datetime.now().timestamp()}"
+    create_task_pending(
+        task_id,
+        "clusterizer",
+        f"keywords:{len(keywords)}",
+        status_message="Задача поставлена в очередь",
+    )
+
+    def _run_clusterizer_task() -> None:
+        try:
+            update_task_state(
+                task_id,
+                status="RUNNING",
+                progress=5,
+                status_message="Подготовка ключей",
+            )
+
+            def _progress(progress: int, message: str) -> None:
+                update_task_state(
+                    task_id,
+                    status="RUNNING",
+                    progress=progress,
+                    status_message=message,
+                )
+
+            result = check_keywords_clusterizer(
+                keywords=keywords,
+                method=method,
+                similarity_threshold=similarity_threshold,
+                min_cluster_size=min_cluster_size,
+                progress_callback=_progress,
+            )
+
+            update_task_state(
+                task_id,
+                status="SUCCESS",
+                progress=100,
+                status_message="Кластеризация завершена",
+                result=result,
+                error=None,
+            )
+        except Exception as exc:
+            update_task_state(
+                task_id,
+                status="FAILURE",
+                progress=100,
+                status_message="Кластеризация завершилась с ошибкой",
+                error=str(exc),
+            )
+
+    background_tasks.add_task(_run_clusterizer_task)
+    return {"task_id": task_id, "status": "PENDING", "message": "Кластеризация ключей запущена"}
 
 
 @router.post("/tasks/link-profile-audit")

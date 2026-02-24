@@ -61,6 +61,7 @@ function getToolName(endpoint) {
         'render-audit': 'Аудит рендеринга',
         'mobile-check': 'Мобильная версия',
         'bot-check': 'Проверка ботов',
+        'clusterizer': 'Кластеризатор ключей',
         'link-profile-audit': 'Аудит ссылочного профиля'
     };
     return names[endpoint] || endpoint;
@@ -75,6 +76,7 @@ function getToolIcon(endpoint) {
         'render-audit': 'fa-code text-orange-500',
         'mobile-check': 'fa-mobile-alt text-pink-500',
         'bot-check': 'fa-spider text-red-500',
+        'clusterizer': 'fa-object-group text-cyan-500',
         'link-profile-audit': 'fa-link text-amber-500'
     };
     return icons[endpoint] || 'fa-search text-gray-500';

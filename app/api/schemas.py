@@ -16,6 +16,7 @@ class TaskType(str, Enum):
     RENDER_AUDIT = "render_audit"
     MOBILE_CHECK = "mobile_check"
     BOT_CHECK = "bot_check"
+    CLUSTERIZER = "clusterizer"
 
 
 class TaskStatus(str, Enum):
@@ -63,6 +64,14 @@ class MobileCheckRequest(BaseModel):
 class BotCheckRequest(BaseModel):
     """Запрос на проверку доступности для ботов"""
     url: HttpUrl = Field(..., description="URL сайта")
+
+
+class ClusterizerRequest(BaseModel):
+    """Запрос на кластеризацию ключевых слов"""
+    keywords: List[str] = Field(default_factory=list, description="Список ключей")
+    method: str = Field(default="jaccard", description="Метод схожести: jaccard|overlap|dice")
+    similarity_threshold_pct: int = Field(default=35, ge=1, le=100, description="Порог схожести в процентах")
+    min_cluster_size: int = Field(default=2, ge=1, le=50, description="Минимальный размер кластера")
 
 
 # Response Schemas

@@ -760,6 +760,12 @@ function showResults(data) {
             task_id: result.task_id || taskId,
             url: result.url || ''
         };
+    } else if (result.task_type === 'clusterizer') {
+        clusterizerData = {
+            ...result,
+            task_id: result.task_id || taskId,
+            url: result.url || ''
+        };
     } else if (result.task_type === 'link_profile_audit') {
         linkProfileData = {
             ...result,
@@ -793,6 +799,8 @@ function showResults(data) {
     } else if (result.task_type === 'onpage_audit') {
         resultsContent.innerHTML = generateOnPageAuditHTML(result);
         filterOnpageIssues('all');
+    } else if (result.task_type === 'clusterizer') {
+        resultsContent.innerHTML = generateClusterizerHTML(result);
     } else if (result.task_type === 'link_profile_audit') {
         resultsContent.innerHTML = generateLinkProfileAuditHTML(result);
         switchLinkProfileAuditTab('executive');
@@ -816,6 +824,7 @@ let renderData = null;
 let siteAuditProData = null;
 let siteAuditProIssuesState = { issues: [], filtered: [], filter: 'all', query: '', limit: 20, sort: 'severity', owner: 'all' };
 let onpageData = null;
+let clusterizerData = null;
 let linkProfileData = null;
 let linkProfileRenderPayload = null;
 let linkProfileRowsLimitByScope = {};
@@ -5029,6 +5038,116 @@ function generateOnPageAuditHTML(result) {
                 <div class="text-xs text-slate-500 mb-2">Показано: <span id="onpage-issues-count">${Math.min(25, issues.length)} / ${Math.min(25, issues.length)}</span></div>
                 <div id="onpage-issues-list">
                     ${issuesHtml || '<div class="text-sm text-gray-500">Проблемы не найдены.</div>'}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function generateClusterizerHTML(result) {
+    const r = result.results || {};
+    const summary = r.summary || {};
+    const settings = r.settings || {};
+    const clusters = Array.isArray(r.clusters) ? r.clusters : [];
+    const primaryClusters = Array.isArray(r.primary_clusters)
+        ? r.primary_clusters
+        : clusters.filter((row) => Number(row.size || 0) >= Number(settings.min_cluster_size || 2));
+    const unclusteredKeywords = Array.isArray(r.unclustered_keywords) ? r.unclustered_keywords : [];
+    const shownClusters = clusters.slice(0, 120);
+
+    const clusterRowsHtml = shownClusters.map((cluster) => {
+        const clusterId = Number(cluster.cluster_id || 0);
+        const size = Number(cluster.size || 0);
+        const representative = escapeHtml(String(cluster.representative || '-'));
+        const topTokens = Array.isArray(cluster.top_tokens)
+            ? cluster.top_tokens.slice(0, 8).map((token) => escapeHtml(String(token))).join(', ')
+            : '-';
+        const keywords = Array.isArray(cluster.keywords) ? cluster.keywords : [];
+        const keywordsPreview = keywords
+            .slice(0, 8)
+            .map((keyword) => escapeHtml(String(keyword)))
+            .join(', ');
+        const hiddenKeywords = Math.max(0, keywords.length - 8);
+        const densityPct = Math.round(Number(cluster.density || 0) * 1000) / 10;
+
+        return `
+            <tr class="border-b border-slate-100 text-sm">
+                <td class="py-2 pr-2 font-medium">${clusterId}</td>
+                <td class="py-2 pr-2">${size}</td>
+                <td class="py-2 pr-2 break-words">${representative}</td>
+                <td class="py-2 pr-2 break-words">${topTokens || '-'}</td>
+                <td class="py-2 pr-2">${densityPct}%</td>
+                <td class="py-2 pr-2 break-words">${keywordsPreview}${hiddenKeywords > 0 ? `, +${hiddenKeywords}` : ''}</td>
+            </tr>
+        `;
+    }).join('');
+
+    const unclusteredPreview = unclusteredKeywords
+        .slice(0, 40)
+        .map((keyword) => `<span class="px-2 py-1 rounded-md bg-slate-100 text-slate-700 text-xs">${escapeHtml(String(keyword))}</span>`)
+        .join('');
+
+    return `
+        <div class="space-y-6 sitepro-results">
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <div>
+                        <h3 class="text-lg font-semibold">Кластеризатор ключей</h3>
+                        <p class="text-sm text-gray-500">Метод: ${escapeHtml(String(settings.method || 'jaccard'))}, порог: ${Number(settings.similarity_threshold_pct || 0)}%</p>
+                    </div>
+                    <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3 text-sm">
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Входных ключей</div><div class="text-xl font-semibold">${Number(summary.keywords_input_total || 0)}</div></div>
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Уникальных</div><div class="text-xl font-semibold">${Number(summary.keywords_unique_total || 0)}</div></div>
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Кластеров</div><div class="text-xl font-semibold">${Number(summary.clusters_total || 0)}</div></div>
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Основных</div><div class="text-xl font-semibold">${Number(summary.primary_clusters_total || 0)}</div></div>
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Многоключевых</div><div class="text-xl font-semibold">${Number(summary.multi_keyword_clusters || 0)}</div></div>
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Одиночных</div><div class="text-xl font-semibold">${Number(summary.singleton_clusters || 0)}</div></div>
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Макс. размер</div><div class="text-xl font-semibold">${Number(summary.biggest_cluster_size || 0)}</div></div>
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Сравнений пар</div><div class="text-xl font-semibold">${Number(summary.comparisons_total || 0)}</div></div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
+                <div class="flex items-center justify-between mb-3">
+                    <h4 class="font-semibold">Кластеры</h4>
+                    <span class="text-xs text-slate-500">Показано ${shownClusters.length} из ${clusters.length}</span>
+                </div>
+                <table class="w-full min-w-[980px]">
+                    <thead class="sticky top-0 z-10 bg-white">
+                        <tr class="text-left text-xs text-gray-500 border-b">
+                            <th class="py-2 pr-2 bg-white">#</th>
+                            <th class="py-2 pr-2 bg-white">Размер</th>
+                            <th class="py-2 pr-2 bg-white">Репрезентативный ключ</th>
+                            <th class="py-2 pr-2 bg-white">Топ токены</th>
+                            <th class="py-2 pr-2 bg-white">Плотность</th>
+                            <th class="py-2 pr-2 bg-white">Ключи (превью)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${clusterRowsHtml || '<tr><td class="py-2 text-sm text-gray-500" colspan="6">Нет данных для отображения.</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Параметры запуска</h4>
+                    <div class="space-y-1 text-sm text-slate-700">
+                        <div><span class="text-slate-500">Метод:</span> <span class="font-medium">${escapeHtml(String(settings.method || 'jaccard'))}</span></div>
+                        <div><span class="text-slate-500">Порог схожести:</span> <span class="font-medium">${Number(settings.similarity_threshold_pct || 0)}%</span></div>
+                        <div><span class="text-slate-500">Мин. размер кластера:</span> <span class="font-medium">${Number(settings.min_cluster_size || 0)}</span></div>
+                        <div><span class="text-slate-500">Кластеры >= min size:</span> <span class="font-medium">${primaryClusters.length}</span></div>
+                        <div><span class="text-slate-500">Средний размер кластера:</span> <span class="font-medium">${Number(summary.avg_cluster_size || 0)}</span></div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h4 class="font-semibold mb-3">Одиночные ключи</h4>
+                    <div class="flex flex-wrap gap-2">
+                        ${unclusteredPreview || '<span class="text-sm text-slate-500">Одиночных ключей нет.</span>'}
+                    </div>
+                    ${unclusteredKeywords.length > 40 ? `<div class="mt-2 text-xs text-slate-500">И еще ${unclusteredKeywords.length - 40} ключей.</div>` : ''}
                 </div>
             </div>
         </div>

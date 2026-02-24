@@ -295,6 +295,59 @@
         </form>
     </div>
 
+    <!-- Tool 7: Keyword Clusterizer -->
+    <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-cyan-500">
+        <div class="flex items-center mb-4">
+            <div class="bg-cyan-100 p-3 rounded-lg mr-4">
+                <i class="fas fa-object-group text-cyan-600 text-xl"></i>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold text-gray-800">Кластеризатор</h3>
+                <p class="text-sm text-gray-500">Группировка по схожести ключей</p>
+            </div>
+        </div>
+        <p class="text-gray-600 mb-4 text-sm">Базовая кластеризация без SERP: до 2000 ключей, методы Jaccard/Overlap/Dice.</p>
+        <form class="space-y-3" onsubmit="startTask(event, 'clusterizer')">
+            <textarea
+                name="keywords_text"
+                rows="7"
+                required
+                placeholder="купить iphone 16&#10;iphone 16 цена&#10;samsung galaxy s25&#10;galaxy s25 купить"
+                class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm"
+            ></textarea>
+            <input type="hidden" name="url" value="Список ключей">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <select name="method" class="px-3 py-2 border rounded-lg text-sm">
+                    <option value="jaccard" selected>Jaccard</option>
+                    <option value="overlap">Overlap</option>
+                    <option value="dice">Dice</option>
+                </select>
+                <input
+                    type="number"
+                    name="similarity_threshold_pct"
+                    value="35"
+                    min="1"
+                    max="100"
+                    class="px-3 py-2 border rounded-lg text-sm"
+                    title="Порог схожести, %"
+                >
+                <input
+                    type="number"
+                    name="min_cluster_size"
+                    value="2"
+                    min="1"
+                    max="50"
+                    class="px-3 py-2 border rounded-lg text-sm"
+                    title="Минимальный размер кластера"
+                >
+            </div>
+            <p class="text-xs text-gray-500">Ключи можно разделять переносами строк, запятыми или точкой с запятой.</p>
+            <button type="submit" class="w-full bg-cyan-600 text-white py-2 rounded-lg hover:bg-cyan-700 transition">
+                <i class="fas fa-play mr-2"></i>Запустить кластеризацию
+            </button>
+        </form>
+    </div>
+
     <!-- Tool 8: Link Profile Audit -->
     <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-amber-500">
         <div class="flex items-center mb-4">

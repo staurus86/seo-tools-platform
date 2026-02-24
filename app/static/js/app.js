@@ -134,6 +134,22 @@ async function startTask(event, endpoint) {
         }
         delete data.batch_urls_text;
     }
+    if (endpoint === 'clusterizer') {
+        const rawKeywords = (data.keywords_text || '').toString();
+        const parsedKeywords = rawKeywords
+            .split(/[\r\n,;]+/)
+            .map((x) => x.trim())
+            .filter((x) => x.length > 0);
+        if (parsedKeywords.length === 0) {
+            showToast('Добавьте хотя бы один ключ', 'warning');
+            return;
+        }
+        if (parsedKeywords.length > 2000) {
+            showToast('Лимит кластеризатора: максимум 2000 ключей', 'warning');
+            return;
+        }
+        data.keywords_text = parsedKeywords.join('\n');
+    }
     
     // Show loading state
     const button = form.querySelector('button[type="submit"]');
