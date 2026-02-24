@@ -57,6 +57,18 @@ _REP_NOISE_STEMS: Set[str] = {
     "ютуб",
 }
 
+_RU_PREPOSITIONS: Set[str] = {
+    "к", "ко", "по", "для", "на", "с", "со", "в", "во", "из", "от", "до", "под", "без", "при", "о", "об", "про",
+}
+
+_REP_TOPIC_ENDINGS: Set[str] = {
+    "бег", "марафон", "полумарафон", "триатлон", "тренировки", "тренировок", "подготовка", "подготовки",
+}
+
+_REP_HEAD_WORDS: Set[str] = {"план", "программа", "схема", "график", "курс"}
+_REP_GENITIVE_GOOD: Set[str] = {"подготовки", "тренировок", "бега", "занятий"}
+_REP_NOMINAL_BAD: Set[str] = {"подготовка", "тренировка", "занятие"}
+
 
 def _normalize_keyword(value: str) -> str:
     text = str(value or "").strip().lower().replace("ё", "е")
@@ -191,6 +203,34 @@ def _representative_penalty(entry: Dict[str, Any]) -> float:
     if stems & _REP_NOISE_STEMS and token_count >= 4:
         penalty += 0.08
     return penalty
+
+
+def _representative_phrase_bonus(entry: Dict[str, Any]) -> float:
+    display = str(entry.get("display", "") or "").lower()
+    words = [w for w in re.findall(r"\w+", display, flags=re.UNICODE) if w]
+    if not words:
+        return 0.0
+    bonus = 0.0
+    word_count = len(words)
+    has_prep = any(word in _RU_PREPOSITIONS for word in words)
+    if 3 <= word_count <= 6:
+        bonus += 0.08
+    elif word_count >= 8:
+        bonus -= 0.08
+    if has_prep:
+        bonus += 0.09
+    if (
+        word_count >= 3
+        and words[-1] in _REP_TOPIC_ENDINGS
+        and not any(word in _RU_PREPOSITIONS for word in words[-2:])
+    ):
+        bonus -= 0.04
+    if word_count >= 2 and words[0] in _REP_HEAD_WORDS:
+        if words[1] in _REP_GENITIVE_GOOD:
+            bonus += 0.08
+        elif words[1] in _REP_NOMINAL_BAD:
+            bonus -= 0.09
+    return bonus
 
 
 def run_keyword_clusterizer(
@@ -443,12 +483,14 @@ def run_keyword_clusterizer(
                 elif token_count >= 9:
                     token_shape_bonus = -0.05
                 entry_meta = entries_by_normalized.get(str(item.get("normalized_keyword", "")), {})
+                phrase_bonus = _representative_phrase_bonus(entry_meta)
                 rep_score = (
                     (demand_norm * 0.55)
                     + (core_overlap * 0.2)
                     + (cluster_support * 0.1)
                     + (similarity_hint * 0.08)
                     + token_shape_bonus
+                    + phrase_bonus
                     - _representative_penalty(entry_meta)
                 )
                 representative_rank.append(

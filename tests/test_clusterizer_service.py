@@ -130,6 +130,28 @@ class ClusterizerServiceTests(unittest.TestCase):
             "программа тренировок на бег",
         })
 
+    def test_representative_prefers_natural_phrase_with_preposition_when_close(self):
+        result = run_keyword_clusterizer(
+            keyword_rows=[
+                {"keyword": "план подготовки марафон", "frequency": 640},
+                {"keyword": "планы подготовки к марафону", "frequency": 620},
+                {"keyword": "план подготовки к марафону", "frequency": 410},
+                {"keyword": "марафон план подготовки", "frequency": 570},
+                {"keyword": "подготовка к марафону план", "frequency": 420},
+            ],
+            method="jaccard",
+            similarity_threshold=0.3,
+            min_cluster_size=1,
+            clustering_mode="balanced",
+        )
+        clusters = (result.get("results") or {}).get("clusters") or []
+        self.assertTrue(clusters)
+        representative = str(clusters[0].get("representative", "")).lower()
+        self.assertIn(representative, {
+            "планы подготовки к марафону",
+            "план подготовки к марафону",
+        })
+
     def test_zero_frequency_is_preserved(self):
         result = run_keyword_clusterizer(
             keyword_rows=[
