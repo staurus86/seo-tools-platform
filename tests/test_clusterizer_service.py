@@ -103,6 +103,33 @@ class ClusterizerServiceTests(unittest.TestCase):
         self.assertGreater(float(top_cluster.get("demand_total", 0.0)), 700.0)
         self.assertGreater(float(summary.get("top_cluster_demand_share_pct", 0.0)), 70.0)
 
+    def test_representative_prefers_concise_high_demand_query(self):
+        result = run_keyword_clusterizer(
+            keyword_rows=[
+                {"keyword": "бег для всех доступная программа тренировок евгений яремчук скачать", "frequency": 3},
+                {"keyword": "бег для всех доступная программа тренировок евгений яремчук", "frequency": 3},
+                {"keyword": "бег для всех доступная программа тренировок скачать бесплатно", "frequency": 0},
+                {"keyword": "бег программы тренировок", "frequency": 3670},
+                {"keyword": "программы тренировок бег", "frequency": 3521},
+                {"keyword": "программа тренировок на бег", "frequency": 2737},
+                {"keyword": "программа тренировок с бегом", "frequency": 1832},
+            ],
+            method="jaccard",
+            similarity_threshold=0.3,
+            min_cluster_size=1,
+            clustering_mode="balanced",
+        )
+        clusters = (result.get("results") or {}).get("clusters") or []
+        self.assertTrue(clusters)
+        representative = str(clusters[0].get("representative", "")).lower()
+        self.assertNotIn("яремчук", representative)
+        self.assertNotIn("скач", representative)
+        self.assertIn(representative, {
+            "бег программы тренировок",
+            "программы тренировок бег",
+            "программа тренировок на бег",
+        })
+
     def test_zero_frequency_is_preserved(self):
         result = run_keyword_clusterizer(
             keyword_rows=[

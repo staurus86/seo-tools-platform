@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import datetime, timezone
+import math
 import re
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set
 
@@ -42,6 +43,18 @@ _INTENT_TOKENS: Dict[str, Set[str]] = {
     "brand": {
         "iphone", "samsung", "apple", "xiaomi", "huawei", "google", "yandex", "ozon", "wildberries", "dns",
     },
+}
+
+_REP_NOISE_STEMS: Set[str] = {
+    "скачать",
+    "скачат",
+    "бесплатн",
+    "download",
+    "watch",
+    "pdf",
+    "torrent",
+    "youtube",
+    "ютуб",
 }
 
 
@@ -163,6 +176,23 @@ def _detect_intent_from_stems(stems: Set[str]) -> str:
     return best_label
 
 
+def _representative_penalty(entry: Dict[str, Any]) -> float:
+    token_count = len(entry.get("tokens") or set())
+    stems = set(entry.get("stems") or set())
+    display = str(entry.get("display", "") or "")
+    char_len = len(display)
+    penalty = 0.0
+    if token_count <= 1:
+        penalty += 0.28
+    elif token_count >= 8:
+        penalty += min(0.45, 0.06 * float(token_count - 7))
+    if char_len >= 70:
+        penalty += min(0.35, (char_len - 70) / 90.0)
+    if stems & _REP_NOISE_STEMS and token_count >= 4:
+        penalty += 0.08
+    return penalty
+
+
 def run_keyword_clusterizer(
     *,
     keywords: Optional[Sequence[str]] = None,
@@ -231,6 +261,7 @@ def run_keyword_clusterizer(
                 "frequency": float(normalized_demand.get(normalized, 1.0)),
             }
         )
+    entries_by_normalized: Dict[str, Dict[str, Any]] = {entry["normalized"]: entry for entry in entries}
 
     unique_keywords_count = len(entries)
     comparisons_total_potential = (unique_keywords_count * (unique_keywords_count - 1)) // 2
@@ -351,6 +382,7 @@ def run_keyword_clusterizer(
         rep_idx = cluster["rep_idx"]
         rep_entry = entries[rep_idx]
         top_tokens = [token for token, _ in cluster["stem_counter"].most_common(8)]
+        core_stems = set(top_tokens[:4])
         cluster_stems: Set[str] = set()
         cluster_demand = 0.0
 
@@ -364,6 +396,15 @@ def run_keyword_clusterizer(
             score_to_rep = _hybrid_similarity(entry, rep_entry, method_normalized)
             duplicates_count = int(normalized_occurrence.get(entry["normalized"], 1))
             keyword_demand = float(normalized_demand.get(entry["normalized"], 1.0))
+            core_overlap = (
+                len(entry["stems"] & core_stems) / float(max(1, len(core_stems)))
+                if core_stems
+                else 0.0
+            )
+            cluster_support = (
+                sum(int(cluster["stem_counter"].get(stem, 0)) for stem in entry["stems"])
+                / float(max(1, len(member_indexes) * max(1, len(entry["stems"]))))
+            )
             cluster_demand += keyword_demand
             if len(member_indexes) > 1 and score_to_rep < (effective_threshold + 0.05):
                 low_confidence_keywords += 1
@@ -374,6 +415,9 @@ def run_keyword_clusterizer(
                     "score_to_representative": round(score_to_rep, 4),
                     "duplicates_count": duplicates_count,
                     "demand": round(keyword_demand, 4),
+                    "token_count": int(max(1, len(entry["tokens"]))),
+                    "core_overlap": round(core_overlap, 4),
+                    "cluster_support": round(cluster_support, 4),
                 }
             )
 
@@ -382,15 +426,49 @@ def run_keyword_clusterizer(
         )
 
         if keywords_detailed:
-            top_score = float(keywords_detailed[0].get("score_to_representative", 0.0))
-            rep_candidates = [
-                item for item in keywords_detailed
-                if float(item.get("score_to_representative", 0.0)) >= max(0.3, top_score - 0.08)
-            ]
-            representative_clean = sorted(
-                rep_candidates if rep_candidates else keywords_detailed,
-                key=lambda item: (len(str(item.get("keyword", ""))), -float(item.get("demand", 0.0))),
-            )[0].get("keyword", rep_entry["display"])
+            max_demand = max(float(item.get("demand", 0.0)) for item in keywords_detailed)
+            demand_log_base = math.log1p(max_demand) if max_demand > 0 else 0.0
+            representative_rank: List[Dict[str, Any]] = []
+            for item in keywords_detailed:
+                keyword = str(item.get("keyword", ""))
+                demand = float(item.get("demand", 0.0))
+                demand_norm = (math.log1p(demand) / demand_log_base) if demand_log_base > 0 else 0.0
+                similarity_hint = float(item.get("score_to_representative", 0.0))
+                core_overlap = float(item.get("core_overlap", 0.0))
+                cluster_support = float(item.get("cluster_support", 0.0))
+                token_count = int(item.get("token_count", 1))
+                token_shape_bonus = 0.0
+                if 2 <= token_count <= 6:
+                    token_shape_bonus = 0.07
+                elif token_count >= 9:
+                    token_shape_bonus = -0.05
+                entry_meta = entries_by_normalized.get(str(item.get("normalized_keyword", "")), {})
+                rep_score = (
+                    (demand_norm * 0.55)
+                    + (core_overlap * 0.2)
+                    + (cluster_support * 0.1)
+                    + (similarity_hint * 0.08)
+                    + token_shape_bonus
+                    - _representative_penalty(entry_meta)
+                )
+                representative_rank.append(
+                    {
+                        "item": item,
+                        "rep_score": rep_score,
+                        "demand": demand,
+                        "token_count": token_count,
+                        "keyword_len": len(keyword),
+                    }
+                )
+            representative_rank.sort(
+                key=lambda row: (
+                    -float(row["rep_score"]),
+                    -float(row["demand"]),
+                    int(row["token_count"]),
+                    int(row["keyword_len"]),
+                ),
+            )
+            representative_clean = str(representative_rank[0]["item"].get("keyword", rep_entry["display"]))
         else:
             representative_clean = rep_entry["display"]
 
