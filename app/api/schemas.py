@@ -69,6 +69,7 @@ class BotCheckRequest(BaseModel):
 class ClusterizerRequest(BaseModel):
     """Запрос на кластеризацию ключевых слов"""
     keywords: List[str] = Field(default_factory=list, description="Список ключей")
+    keywords_text: Optional[str] = Field(default=None, description="Строки ключей (по одному в строке), можно с частотой: ключ;123")
     method: str = Field(default="jaccard", description="Метод схожести: jaccard|overlap|dice")
     clustering_mode: str = Field(default="balanced", description="Режим кластеризации: strict|balanced|broad")
     similarity_threshold_pct: int = Field(default=35, ge=1, le=100, description="Порог схожести в процентах")

@@ -136,10 +136,26 @@ async function startTask(event, endpoint) {
     }
     if (endpoint === 'clusterizer') {
         const rawKeywords = (data.keywords_text || '').toString();
-        const parsedKeywords = rawKeywords
-            .split(/[\r\n,;]+/)
+        const lines = rawKeywords
+            .replace(/\r/g, '\n')
+            .split('\n')
             .map((x) => x.trim())
             .filter((x) => x.length > 0);
+        const parsedKeywords = [];
+        for (const line of lines) {
+            // Keep "keyword;123" or "keyword<TAB>123" lines intact.
+            if (/^.+(?:\t+|[;>|:]|,\s*)\s*\d+(?:[.,]\d+)?\s*$/u.test(line)) {
+                parsedKeywords.push(line);
+                continue;
+            }
+            // Backward compatibility for comma/semicolon keyword lists in one line.
+            if (!line.includes('\t') && /[;,]/.test(line)) {
+                const parts = line.split(/[;,]+/).map((x) => x.trim()).filter((x) => x.length > 0);
+                parsedKeywords.push(...parts);
+                continue;
+            }
+            parsedKeywords.push(line);
+        }
         if (parsedKeywords.length === 0) {
             showToast('Добавьте хотя бы один ключ', 'warning');
             return;

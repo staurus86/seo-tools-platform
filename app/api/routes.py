@@ -4452,9 +4452,77 @@ def check_onpage_audit(
     )
 
 
+def _parse_clusterizer_frequency(value: Any) -> Optional[float]:
+    raw = str(value or "").strip().replace(",", ".")
+    if not raw:
+        return None
+    try:
+        parsed = float(raw)
+    except Exception:
+        return None
+    if parsed <= 0:
+        return None
+    return min(parsed, 10**9)
+
+
+def _parse_clusterizer_keyword_line(raw_line: str) -> List[Dict[str, Any]]:
+    line = str(raw_line or "").strip()
+    if not line:
+        return []
+
+    # Preferred format: "keyword<TAB|;|,|>|:>frequency"
+    m = re.match(r"^(.*?)(?:\t+|[;>|:])\s*([0-9]+(?:[.,][0-9]+)?)\s*$", line)
+    if m:
+        keyword = str(m.group(1) or "").strip().strip("\"'")
+        freq = _parse_clusterizer_frequency(m.group(2))
+        if keyword and freq is not None:
+            return [{"keyword": keyword, "frequency": freq}]
+
+    # Support "keyword, frequency" when comma is used as delimiter.
+    if "," in line:
+        left, right = line.rsplit(",", 1)
+        freq = _parse_clusterizer_frequency(right)
+        if freq is not None and str(left or "").strip():
+            return [{"keyword": str(left).strip().strip("\"'"), "frequency": freq}]
+
+    # Backward compatibility: one line can still hold comma/semicolon-separated keywords without frequency.
+    if ("\t" not in line) and not re.search(r"[;>|:]\s*[0-9]+(?:[.,][0-9]+)?\s*$", line):
+        parts = [chunk.strip() for chunk in re.split(r"[;,]+", line) if chunk.strip()]
+        if len(parts) > 1:
+            return [{"keyword": part, "frequency": 1.0} for part in parts]
+
+    return [{"keyword": line.strip("\"'"), "frequency": 1.0}]
+
+
+def _collect_clusterizer_keyword_rows(keywords: Optional[List[str]], keywords_text: Optional[str]) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+
+    for item in keywords or []:
+        rows.extend(_parse_clusterizer_keyword_line(str(item or "")))
+
+    raw_text = str(keywords_text or "").replace("\r", "\n")
+    if raw_text.strip():
+        for line in raw_text.split("\n"):
+            rows.extend(_parse_clusterizer_keyword_line(line))
+
+    dedup: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        keyword = str(row.get("keyword") or "").strip()
+        if not keyword:
+            continue
+        freq = _parse_clusterizer_frequency(row.get("frequency", 1.0)) or 1.0
+        key = keyword.lower()
+        if key not in dedup:
+            dedup[key] = {"keyword": keyword, "frequency": 0.0}
+        dedup[key]["frequency"] = float(dedup[key]["frequency"]) + float(freq)
+
+    return list(dedup.values())
+
+
 def check_keywords_clusterizer(
     *,
     keywords: Optional[List[str]] = None,
+    keyword_rows: Optional[List[Dict[str, Any]]] = None,
     method: str = "jaccard",
     similarity_threshold: float = 0.35,
     min_cluster_size: int = 2,
@@ -4466,6 +4534,7 @@ def check_keywords_clusterizer(
 
     return run_keyword_clusterizer(
         keywords=keywords or [],
+        keyword_rows=keyword_rows or [],
         method=method,
         similarity_threshold=similarity_threshold,
         min_cluster_size=min_cluster_size,
@@ -4551,7 +4620,7 @@ class ClusterizerRequest(BaseModel):
         if value is None:
             return []
         if isinstance(value, str):
-            return [x.strip() for x in re.split(r"[\r\n,;]+", value) if x.strip()]
+            return [x.strip() for x in str(value).replace("\r", "\n").split("\n") if x.strip()]
         if isinstance(value, list):
             return [str(v).strip() for v in value if str(v).strip()]
         return []
@@ -4777,16 +4846,14 @@ async def create_clusterizer_task(data: ClusterizerRequest, background_tasks: Ba
     """Keyword clustering by textual similarity without search-engine fetching."""
     from app.config import settings
 
-    keywords_raw: List[str] = []
-    keywords_raw.extend(list(data.keywords or []))
-    if data.keywords_text:
-        keywords_raw.extend([x.strip() for x in re.split(r"[\r\n,;]+", str(data.keywords_text)) if x.strip()])
-    keywords = [str(item or "").strip() for item in keywords_raw if str(item or "").strip()]
+    keyword_rows = _collect_clusterizer_keyword_rows(data.keywords, data.keywords_text)
+    keywords = [str(item.get("keyword") or "").strip() for item in keyword_rows if str(item.get("keyword") or "").strip()]
+    input_demand_total = sum(float(item.get("frequency") or 0.0) for item in keyword_rows)
 
     max_keywords = max(1, int(getattr(settings, "CLUSTERIZER_MAX_KEYWORDS", 2000) or 2000))
     if not keywords:
         raise HTTPException(status_code=422, detail="Добавьте хотя бы один ключ для кластеризации")
-    if len(keywords) > max_keywords:
+    if len(keyword_rows) > max_keywords:
         raise HTTPException(status_code=422, detail=f"Слишком много ключей: максимум {max_keywords}")
 
     method = str(data.method or "jaccard").strip().lower()
@@ -4803,7 +4870,7 @@ async def create_clusterizer_task(data: ClusterizerRequest, background_tasks: Ba
     create_task_pending(
         task_id,
         "clusterizer",
-        f"keywords:{len(keywords)}",
+        f"keywords:{len(keyword_rows)}",
         status_message="Задача поставлена в очередь",
     )
 
@@ -4825,13 +4892,22 @@ async def create_clusterizer_task(data: ClusterizerRequest, background_tasks: Ba
                 )
 
             result = check_keywords_clusterizer(
-                keywords=keywords,
+                keywords=[],
+                keyword_rows=keyword_rows,
                 method=method,
                 similarity_threshold=similarity_threshold,
                 min_cluster_size=min_cluster_size,
                 clustering_mode=clustering_mode,
                 progress_callback=_progress,
             )
+
+            result_payload = result.get("results", {}) if isinstance(result, dict) else {}
+            summary_payload = result_payload.get("summary", {}) if isinstance(result_payload, dict) else {}
+            summary_payload["input_demand_total"] = round(float(summary_payload.get("input_demand_total") or input_demand_total), 4)
+            if isinstance(result_payload, dict):
+                result_payload["summary"] = summary_payload
+            if isinstance(result, dict):
+                result["results"] = result_payload
 
             update_task_state(
                 task_id,

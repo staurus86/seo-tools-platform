@@ -81,6 +81,28 @@ class ClusterizerServiceTests(unittest.TestCase):
             float(broad_settings.get("similarity_threshold", 0.0)),
         )
 
+    def test_frequency_changes_cluster_priority(self):
+        result = run_keyword_clusterizer(
+            keyword_rows=[
+                {"keyword": "купить iphone 16", "frequency": 500},
+                {"keyword": "iphone 16 цена", "frequency": 320},
+                {"keyword": "ремонт холодильника", "frequency": 40},
+                {"keyword": "ремонт холодильников срочно", "frequency": 25},
+            ],
+            method="jaccard",
+            similarity_threshold=0.34,
+            min_cluster_size=2,
+            clustering_mode="balanced",
+        )
+
+        summary = (result.get("results") or {}).get("summary") or {}
+        clusters = (result.get("results") or {}).get("clusters") or []
+        self.assertAlmostEqual(float(summary.get("input_demand_total", 0.0)), 885.0, delta=0.001)
+        self.assertTrue(len(clusters) >= 2)
+        top_cluster = clusters[0]
+        self.assertGreater(float(top_cluster.get("demand_total", 0.0)), 700.0)
+        self.assertGreater(float(summary.get("top_cluster_demand_share_pct", 0.0)), 70.0)
+
 
 if __name__ == "__main__":
     unittest.main()

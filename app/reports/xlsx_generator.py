@@ -4239,6 +4239,8 @@ class XLSXGenerator:
             ("Min cluster size", settings_payload.get("min_cluster_size", 2)),
             ("Keywords input total", summary.get("keywords_input_total", 0)),
             ("Keywords unique total", summary.get("keywords_unique_total", 0)),
+            ("Input demand total", summary.get("input_demand_total", 0)),
+            ("Unique demand total", summary.get("unique_demand_total", 0)),
             ("Duplicates removed", summary.get("duplicates_removed", 0)),
             ("Clusters total", summary.get("clusters_total", 0)),
             ("Primary clusters total", summary.get("primary_clusters_total", 0)),
@@ -4249,6 +4251,9 @@ class XLSXGenerator:
             ("Avg cluster cohesion", summary.get("avg_cluster_cohesion", 0)),
             ("High quality clusters", summary.get("high_quality_clusters", 0)),
             ("Low confidence keywords", summary.get("low_confidence_keywords", 0)),
+            ("Primary demand share %", summary.get("primary_demand_share_pct", 0)),
+            ("Singleton demand share %", summary.get("singleton_demand_share_pct", 0)),
+            ("Top cluster demand share %", summary.get("top_cluster_demand_share_pct", 0)),
             ("Similarity checks", summary.get("comparisons_total", 0)),
             ("Potential pairs", summary.get("comparisons_total_potential", 0)),
         ]
@@ -4267,6 +4272,10 @@ class XLSXGenerator:
             "Top tokens",
             "Density",
             "Avg similarity",
+            "Demand total",
+            "Demand share %",
+            "Intent",
+            "Priority score",
             "Cohesion",
             "Keywords preview",
         ]
@@ -4281,14 +4290,18 @@ class XLSXGenerator:
                 ", ".join(cluster.get("top_tokens", []) or []),
                 cluster.get("density", 0),
                 cluster.get("avg_similarity", 0),
+                cluster.get("demand_total", 0),
+                cluster.get("demand_share_pct", 0),
+                cluster.get("intent", "mixed"),
+                cluster.get("priority_score", 0),
                 cluster.get("cohesion", ""),
                 ", ".join((cluster.get("keywords", []) or [])[:12]),
             ]
             for col, value in enumerate(row_values, 1):
                 self._apply_style(ws_clusters.cell(row=row_idx, column=col, value=value), cell_style)
         ws_clusters.freeze_panes = "A2"
-        ws_clusters.auto_filter.ref = "A1:I1"
-        for col, width in enumerate([12, 10, 22, 46, 48, 12, 14, 12, 100], 1):
+        ws_clusters.auto_filter.ref = "A1:L1"
+        for col, width in enumerate([12, 10, 22, 46, 48, 12, 14, 14, 14, 14, 14, 100], 1):
             ws_clusters.column_dimensions[get_column_letter(col)].width = width
 
         ws_keywords = wb.create_sheet("Ключи")
@@ -4299,6 +4312,7 @@ class XLSXGenerator:
             "Keyword",
             "Score to representative",
             "Duplicates count",
+            "Demand",
         ]
         for col, header in enumerate(keyword_headers, 1):
             self._apply_style(ws_keywords.cell(row=1, column=col, value=header), header_style)
@@ -4311,6 +4325,7 @@ class XLSXGenerator:
                     item.get("keyword", ""),
                     item.get("score_to_representative", 0),
                     item.get("duplicates_count", 1),
+                    item.get("demand", 1),
                 ]
                 for col, value in enumerate(row_values, 1):
                     self._apply_style(ws_keywords.cell(row=row_idx, column=col, value=value), cell_style)
@@ -4325,13 +4340,14 @@ class XLSXGenerator:
                         keyword,
                         "",
                         1,
+                        1,
                     ]
                     for col, value in enumerate(row_values, 1):
                         self._apply_style(ws_keywords.cell(row=row_idx, column=col, value=value), cell_style)
                     row_idx += 1
         ws_keywords.freeze_panes = "A2"
-        ws_keywords.auto_filter.ref = "A1:F1"
-        for col, width in enumerate([12, 12, 46, 68, 20, 16], 1):
+        ws_keywords.auto_filter.ref = "A1:G1"
+        for col, width in enumerate([12, 12, 46, 68, 20, 16, 12], 1):
             ws_keywords.column_dimensions[get_column_letter(col)].width = width
 
         ws_unclustered = wb.create_sheet("Одиночные")

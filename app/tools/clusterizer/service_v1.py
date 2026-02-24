@@ -29,6 +29,21 @@ _MODE_OFFSETS = {
     "broad": -0.07,
 }
 
+_INTENT_TOKENS: Dict[str, Set[str]] = {
+    "commercial": {
+        "куп", "цена", "стоим", "заказ", "заказать", "достав", "shop", "buy", "price", "discount", "deal", "sale",
+    },
+    "informational": {
+        "как", "что", "почему", "гайд", "инструкц", "обзор", "сравнен", "review", "guide", "how", "what", "best",
+    },
+    "navigational": {
+        "официальн", "сайт", "вход", "контакт", "login", "official", "site", "homepage",
+    },
+    "brand": {
+        "iphone", "samsung", "apple", "xiaomi", "huawei", "google", "yandex", "ozon", "wildberries", "dns",
+    },
+}
+
 
 def _normalize_keyword(value: str) -> str:
     text = str(value or "").strip().lower().replace("ё", "е")
@@ -107,9 +122,40 @@ def _cluster_quality_label(avg_similarity: float) -> str:
     return "low"
 
 
+def _safe_frequency(value: Any) -> float:
+    try:
+        freq = float(str(value).replace(",", "."))
+        if freq > 0:
+            return min(freq, 10**9)
+    except Exception:
+        pass
+    return 1.0
+
+
+def _detect_intent_from_stems(stems: Set[str]) -> str:
+    if not stems:
+        return "unknown"
+    scores: Dict[str, int] = {}
+    for label, tokens in _INTENT_TOKENS.items():
+        score = 0
+        for stem in stems:
+            if stem in tokens:
+                score += 2
+                continue
+            if any(stem.startswith(token) or token.startswith(stem) for token in tokens):
+                score += 1
+        if score > 0:
+            scores[label] = score
+    if not scores:
+        return "mixed"
+    best_label = sorted(scores.items(), key=lambda item: (-item[1], item[0]))[0][0]
+    return best_label
+
+
 def run_keyword_clusterizer(
     *,
-    keywords: Sequence[str],
+    keywords: Optional[Sequence[str]] = None,
+    keyword_rows: Optional[Sequence[Dict[str, Any]]] = None,
     method: SimilarityMethod = "jaccard",
     similarity_threshold: float = 0.35,
     min_cluster_size: int = 2,
@@ -132,18 +178,30 @@ def run_keyword_clusterizer(
 
     normalized_to_display: Dict[str, str] = {}
     normalized_order: List[str] = []
-    normalized_freq: Counter[str] = Counter()
+    normalized_occurrence: Counter[str] = Counter()
+    normalized_demand: Counter[str] = Counter()
     total_input_keywords = 0
+    total_input_demand = 0.0
 
+    input_rows: List[Dict[str, Any]] = []
     for raw_keyword in keywords or []:
-        clean_keyword = str(raw_keyword or "").strip()
+        input_rows.append({"keyword": raw_keyword, "frequency": 1.0})
+    for row in keyword_rows or []:
+        if isinstance(row, dict):
+            input_rows.append({"keyword": row.get("keyword", ""), "frequency": row.get("frequency", 1.0)})
+
+    for raw_row in input_rows:
+        clean_keyword = str(raw_row.get("keyword", "") or "").strip()
         if not clean_keyword:
             continue
+        freq = _safe_frequency(raw_row.get("frequency", 1.0))
         total_input_keywords += 1
+        total_input_demand += freq
         normalized = _normalize_keyword(clean_keyword)
         if not normalized:
             continue
-        normalized_freq[normalized] += 1
+        normalized_occurrence[normalized] += 1
+        normalized_demand[normalized] += freq
         if normalized not in normalized_to_display:
             normalized_to_display[normalized] = clean_keyword
             normalized_order.append(normalized)
@@ -159,6 +217,7 @@ def run_keyword_clusterizer(
                 "tokens": tokens_data["tokens"],
                 "stems": tokens_data["stems"],
                 "ngrams": _char_ngrams(normalized),
+                "frequency": float(normalized_demand.get(normalized, 1.0)),
             }
         )
 
@@ -274,12 +333,15 @@ def run_keyword_clusterizer(
     flat_keywords_rows: List[Dict[str, Any]] = []
     cohesion_scores: List[float] = []
     low_confidence_keywords = 0
+    unique_demand_total = float(sum(normalized_demand.values()))
 
     for cluster_pos, cluster in enumerate(clusters_state, start=1):
         member_indexes = cluster["members"]
         rep_idx = cluster["rep_idx"]
         rep_entry = entries[rep_idx]
         top_tokens = [token for token, _ in cluster["stem_counter"].most_common(8)]
+        cluster_stems: Set[str] = set()
+        cluster_demand = 0.0
 
         edge_count = 0
         pair_count = 0
@@ -287,8 +349,11 @@ def run_keyword_clusterizer(
         keywords_detailed: List[Dict[str, Any]] = []
         for idx in member_indexes:
             entry = entries[idx]
+            cluster_stems.update(entry["stems"])
             score_to_rep = _hybrid_similarity(entry, rep_entry, method_normalized)
-            duplicates_count = int(normalized_freq.get(entry["normalized"], 1))
+            duplicates_count = int(normalized_occurrence.get(entry["normalized"], 1))
+            keyword_demand = float(normalized_demand.get(entry["normalized"], 1.0))
+            cluster_demand += keyword_demand
             if len(member_indexes) > 1 and score_to_rep < (effective_threshold + 0.05):
                 low_confidence_keywords += 1
             keywords_detailed.append(
@@ -297,6 +362,7 @@ def run_keyword_clusterizer(
                     "normalized_keyword": entry["normalized"],
                     "score_to_representative": round(score_to_rep, 4),
                     "duplicates_count": duplicates_count,
+                    "demand": round(keyword_demand, 4),
                 }
             )
 
@@ -317,8 +383,15 @@ def run_keyword_clusterizer(
         density = (edge_count / float(max_edges)) if max_edges else 0.0
         avg_similarity = (sim_sum / float(pair_count)) if pair_count else 1.0
         cohesion_scores.append(avg_similarity)
-        duplicates_in_cluster = sum(int(normalized_freq.get(entries[idx]["normalized"], 1)) for idx in member_indexes)
+        duplicates_in_cluster = sum(int(normalized_occurrence.get(entries[idx]["normalized"], 1)) for idx in member_indexes)
         keywords_in_cluster = [entries[idx]["display"] for idx in member_indexes]
+        demand_share_pct = (cluster_demand / unique_demand_total * 100.0) if unique_demand_total > 0 else 0.0
+        intent = _detect_intent_from_stems(cluster_stems)
+        cluster_priority = (
+            (cluster_demand * 0.55)
+            + (len(member_indexes) * 0.25)
+            + (avg_similarity * 100.0 * 0.2)
+        )
 
         cluster_payload = {
             "cluster_id": cluster_pos,
@@ -330,6 +403,10 @@ def run_keyword_clusterizer(
             "density": round(density, 4),
             "avg_similarity": round(avg_similarity, 4),
             "cohesion": _cluster_quality_label(avg_similarity),
+            "intent": intent,
+            "demand_total": round(cluster_demand, 4),
+            "demand_share_pct": round(demand_share_pct, 2),
+            "priority_score": round(cluster_priority, 2),
             "keywords": keywords_in_cluster,
             "keywords_detailed": keywords_detailed,
         }
@@ -344,11 +421,30 @@ def run_keyword_clusterizer(
                     "keyword": row["keyword"],
                     "score_to_representative": row["score_to_representative"],
                     "duplicates_count": row["duplicates_count"],
+                    "demand": row["demand"],
                 }
             )
 
         if len(member_indexes) == 1:
             unclustered_keywords.append(keywords_in_cluster[0])
+
+    clusters.sort(
+        key=lambda cluster: (
+            -float(cluster.get("demand_total", 0.0)),
+            -int(cluster.get("size", 0)),
+            -float(cluster.get("avg_similarity", 0.0)),
+            str(cluster.get("representative", "")),
+        )
+    )
+    cluster_id_map: Dict[int, int] = {}
+    for new_idx, cluster in enumerate(clusters, start=1):
+        old_idx = int(cluster.get("cluster_id", new_idx))
+        cluster_id_map[old_idx] = new_idx
+        cluster["cluster_id"] = new_idx
+    for row in flat_keywords_rows:
+        old_idx = int(row.get("cluster_id", 0) or 0)
+        if old_idx in cluster_id_map:
+            row["cluster_id"] = cluster_id_map[old_idx]
 
     primary_clusters = [cluster for cluster in clusters if int(cluster.get("size", 0)) >= min_size]
     singleton_clusters = sum(1 for cluster in clusters if int(cluster.get("size", 0)) == 1)
@@ -357,6 +453,20 @@ def run_keyword_clusterizer(
     avg_cluster_size = round(unique_keywords_count / float(len(clusters)), 2) if clusters else 0.0
     avg_cluster_cohesion = round(sum(cohesion_scores) / float(len(cohesion_scores)), 4) if cohesion_scores else 0.0
     high_quality_clusters = sum(1 for cluster in clusters if str(cluster.get("cohesion")) == "high")
+    singleton_demand_total = sum(float(cluster.get("demand_total", 0.0)) for cluster in clusters if int(cluster.get("size", 0)) == 1)
+    primary_clusters_demand_total = sum(float(cluster.get("demand_total", 0.0)) for cluster in primary_clusters)
+    singleton_demand_share_pct = (
+        round((singleton_demand_total / unique_demand_total) * 100.0, 2)
+        if unique_demand_total > 0
+        else 0.0
+    )
+    primary_demand_share_pct = (
+        round((primary_clusters_demand_total / unique_demand_total) * 100.0, 2)
+        if unique_demand_total > 0
+        else 0.0
+    )
+    top_cluster_demand_share_pct = round(float(clusters[0].get("demand_share_pct", 0.0)), 2) if clusters else 0.0
+    intent_distribution: Dict[str, int] = Counter(str(cluster.get("intent") or "mixed") for cluster in clusters)
 
     if progress_callback:
         progress_callback(100, "Кластеризация завершена")
@@ -379,6 +489,8 @@ def run_keyword_clusterizer(
                 "keywords_input_total": total_input_keywords,
                 "keywords_unique_total": unique_keywords_count,
                 "duplicates_removed": max(0, total_input_keywords - unique_keywords_count),
+                "input_demand_total": round(total_input_demand, 4),
+                "unique_demand_total": round(unique_demand_total, 4),
                 "clusters_total": len(clusters),
                 "primary_clusters_total": len(primary_clusters),
                 "multi_keyword_clusters": multi_keyword_clusters,
@@ -388,9 +500,13 @@ def run_keyword_clusterizer(
                 "avg_cluster_cohesion": avg_cluster_cohesion,
                 "high_quality_clusters": high_quality_clusters,
                 "low_confidence_keywords": low_confidence_keywords,
+                "primary_demand_share_pct": primary_demand_share_pct,
+                "singleton_demand_share_pct": singleton_demand_share_pct,
+                "top_cluster_demand_share_pct": top_cluster_demand_share_pct,
                 "comparisons_total": similarity_checks,
                 "comparisons_total_potential": comparisons_total_potential,
             },
+            "intent_distribution": dict(intent_distribution),
             "clusters": clusters,
             "primary_clusters": primary_clusters,
             "cluster_keywords_flat": flat_keywords_rows,

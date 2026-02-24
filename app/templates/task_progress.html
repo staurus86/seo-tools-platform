@@ -5085,6 +5085,7 @@ function generateClusterizerHTML(result) {
     const primaryClusters = Array.isArray(r.primary_clusters)
         ? r.primary_clusters
         : clusters.filter((row) => Number(row.size || 0) >= Number(settings.min_cluster_size || 2));
+    const intentDistribution = r.intent_distribution || {};
     const unclusteredKeywords = Array.isArray(r.unclustered_keywords) ? r.unclustered_keywords : [];
     const shownClusters = clusters.slice(0, 120);
 
@@ -5103,6 +5104,9 @@ function generateClusterizerHTML(result) {
         const hiddenKeywords = Math.max(0, keywords.length - 8);
         const densityPct = Math.round(Number(cluster.density || 0) * 1000) / 10;
         const avgSimPct = Math.round(Number(cluster.avg_similarity || 0) * 1000) / 10;
+        const demandTotal = Math.round(Number(cluster.demand_total || 0) * 100) / 100;
+        const demandShare = Math.round(Number(cluster.demand_share_pct || 0) * 10) / 10;
+        const intent = escapeHtml(String(cluster.intent || 'mixed'));
         const cohesion = String(cluster.cohesion || 'low');
         const cohesionLabel = cohesion === 'high' ? 'Высокая' : (cohesion === 'medium' ? 'Средняя' : 'Низкая');
 
@@ -5114,6 +5118,9 @@ function generateClusterizerHTML(result) {
                 <td class="py-2 pr-2 break-words">${topTokens || '-'}</td>
                 <td class="py-2 pr-2">${densityPct}%</td>
                 <td class="py-2 pr-2">${avgSimPct}%</td>
+                <td class="py-2 pr-2">${demandTotal}</td>
+                <td class="py-2 pr-2">${demandShare}%</td>
+                <td class="py-2 pr-2">${intent}</td>
                 <td class="py-2 pr-2">${cohesionLabel}</td>
                 <td class="py-2 pr-2 break-words">${keywordsPreview}${hiddenKeywords > 0 ? `, +${hiddenKeywords}` : ''}</td>
             </tr>
@@ -5123,6 +5130,10 @@ function generateClusterizerHTML(result) {
     const unclusteredPreview = unclusteredKeywords
         .slice(0, 40)
         .map((keyword) => `<span class="px-2 py-1 rounded-md bg-slate-100 text-slate-700 text-xs">${escapeHtml(String(keyword))}</span>`)
+        .join('');
+    const intentChips = Object.entries(intentDistribution)
+        .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))
+        .map(([intent, count]) => `<span class="px-2 py-1 rounded-md bg-cyan-50 text-cyan-800 text-xs border border-cyan-200">${escapeHtml(String(intent))}: ${Number(count || 0)}</span>`)
         .join('');
 
     return `
@@ -5141,6 +5152,7 @@ function generateClusterizerHTML(result) {
                 <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3 text-sm">
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Входных ключей</div><div class="text-xl font-semibold">${Number(summary.keywords_input_total || 0)}</div></div>
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Уникальных</div><div class="text-xl font-semibold">${Number(summary.keywords_unique_total || 0)}</div></div>
+                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Суммарный спрос</div><div class="text-xl font-semibold">${Math.round(Number(summary.unique_demand_total || summary.input_demand_total || 0) * 100) / 100}</div></div>
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Кластеров</div><div class="text-xl font-semibold">${Number(summary.clusters_total || 0)}</div></div>
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Основных</div><div class="text-xl font-semibold">${Number(summary.primary_clusters_total || 0)}</div></div>
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Многоключевых</div><div class="text-xl font-semibold">${Number(summary.multi_keyword_clusters || 0)}</div></div>
@@ -5148,6 +5160,7 @@ function generateClusterizerHTML(result) {
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Макс. размер</div><div class="text-xl font-semibold">${Number(summary.biggest_cluster_size || 0)}</div></div>
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Когезия кластеров</div><div class="text-xl font-semibold">${Math.round(Number(summary.avg_cluster_cohesion || 0) * 1000) / 10}%</div></div>
                 </div>
+                <div class="mt-3 flex flex-wrap gap-2">${intentChips || '<span class="text-xs text-slate-500">Intent-распределение недоступно.</span>'}</div>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
@@ -5155,7 +5168,7 @@ function generateClusterizerHTML(result) {
                     <h4 class="font-semibold">Кластеры</h4>
                     <span class="text-xs text-slate-500">Показано ${shownClusters.length} из ${clusters.length}</span>
                 </div>
-                <table class="w-full min-w-[980px]">
+                <table class="w-full min-w-[1240px]">
                     <thead class="sticky top-0 z-10 bg-white">
                         <tr class="text-left text-xs text-gray-500 border-b">
                             <th class="py-2 pr-2 bg-white">#</th>
@@ -5164,12 +5177,15 @@ function generateClusterizerHTML(result) {
                             <th class="py-2 pr-2 bg-white">Топ токены</th>
                             <th class="py-2 pr-2 bg-white">Плотность</th>
                             <th class="py-2 pr-2 bg-white">Сред. схожесть</th>
+                            <th class="py-2 pr-2 bg-white">Спрос</th>
+                            <th class="py-2 pr-2 bg-white">Доля спроса</th>
+                            <th class="py-2 pr-2 bg-white">Intent</th>
                             <th class="py-2 pr-2 bg-white">Качество</th>
                             <th class="py-2 pr-2 bg-white">Ключи (превью)</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${clusterRowsHtml || '<tr><td class="py-2 text-sm text-gray-500" colspan="8">Нет данных для отображения.</td></tr>'}
+                        ${clusterRowsHtml || '<tr><td class="py-2 text-sm text-gray-500" colspan="11">Нет данных для отображения.</td></tr>'}
                     </tbody>
                 </table>
             </div>
@@ -5184,6 +5200,9 @@ function generateClusterizerHTML(result) {
                         <div><span class="text-slate-500">Порог схожести:</span> <span class="font-medium">${Number(settings.similarity_threshold_pct || 0)}%</span></div>
                         <div><span class="text-slate-500">Мин. размер кластера:</span> <span class="font-medium">${Number(settings.min_cluster_size || 0)}</span></div>
                         <div><span class="text-slate-500">Кластеры >= min size:</span> <span class="font-medium">${primaryClusters.length}</span></div>
+                        <div><span class="text-slate-500">Доля спроса в основных кластерах:</span> <span class="font-medium">${Math.round(Number(summary.primary_demand_share_pct || 0) * 10) / 10}%</span></div>
+                        <div><span class="text-slate-500">Доля спроса одиночных ключей:</span> <span class="font-medium">${Math.round(Number(summary.singleton_demand_share_pct || 0) * 10) / 10}%</span></div>
+                        <div><span class="text-slate-500">Топ-кластер по спросу:</span> <span class="font-medium">${Math.round(Number(summary.top_cluster_demand_share_pct || 0) * 10) / 10}%</span></div>
                         <div><span class="text-slate-500">Средний размер кластера:</span> <span class="font-medium">${Number(summary.avg_cluster_size || 0)}</span></div>
                         <div><span class="text-slate-500">Ключей с низкой уверенностью:</span> <span class="font-medium">${Number(summary.low_confidence_keywords || 0)}</span></div>
                         <div><span class="text-slate-500">Сравнений:</span> <span class="font-medium">${Number(summary.comparisons_total || 0)} из ${Number(summary.comparisons_total_potential || 0)}</span></div>
