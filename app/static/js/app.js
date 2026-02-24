@@ -136,13 +136,50 @@ async function startTask(event, endpoint) {
     }
     if (endpoint === 'clusterizer') {
         const rawKeywords = (data.keywords_text || '').toString();
-        const lines = rawKeywords
-            .replace(/\r/g, '\n')
-            .split('\n')
-            .map((x) => x.trim())
-            .filter((x) => x.length > 0);
+        const sourceLines = rawKeywords.replace(/\r/g, '\n').split('\n');
+        const lines = [];
+        let quoteBuffer = [];
+        let inQuoteBlock = false;
+        for (const rawLine of sourceLines) {
+            const line = String(rawLine || '').trim();
+            if (!line && !inQuoteBlock) continue;
+            if (!inQuoteBlock) {
+                const startsQuote = /^["']/.test(line);
+                const endsQuote = /["']$/.test(line);
+                if (startsQuote && !endsQuote) {
+                    quoteBuffer = [line];
+                    inQuoteBlock = true;
+                    continue;
+                }
+                lines.push(line);
+                continue;
+            }
+            quoteBuffer.push(line);
+            if (/["']$/.test(line)) {
+                lines.push(quoteBuffer.join('\n'));
+                quoteBuffer = [];
+                inQuoteBlock = false;
+            }
+        }
+        if (quoteBuffer.length > 0) {
+            lines.push(quoteBuffer.join('\n'));
+        }
+
         const parsedKeywords = [];
         for (const line of lines) {
+            // Handle quoted multiline blocks: "keyword\n123"
+            if (line.includes('\n')) {
+                const normalized = line.replace(/\r/g, '\n');
+                const blockMatch = normalized.match(/^["']?(.+?)\n([0-9]+(?:[.,][0-9]+)?)["']?$/s);
+                if (blockMatch) {
+                    parsedKeywords.push(`${blockMatch[1].trim()};${blockMatch[2].trim()}`);
+                    continue;
+                }
+            }
+            // Ignore pure numeric leftovers (e.g. split frequency rows).
+            if (/^[+-]?\d+(?:[.,]\d+)?$/.test(line.replace(/["']/g, '').trim())) {
+                continue;
+            }
             // Keep "keyword;123" or "keyword<TAB>123" lines intact.
             if (/^.+(?:\t+|[;>|:]|,\s*)\s*\d+(?:[.,]\d+)?\s*$/u.test(line)) {
                 parsedKeywords.push(line);
