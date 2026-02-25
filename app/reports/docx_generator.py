@@ -2326,7 +2326,28 @@ class DOCXGenerator:
         doc.add_paragraph(f"Сформирован: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
         self._add_heading(doc, "1. Executive Summary", level=1)
-        if mode == "batch" or isinstance(results.get("sites"), list):
+        if mode == "competitor":
+            benchmark = results.get("benchmark", {}) or {}
+            self._add_table(
+                doc,
+                ["Показатель", "Значение"],
+                [
+                    ["Total URLs", summary.get("total_urls", 0)],
+                    ["Success", summary.get("successful_urls", 0)],
+                    ["Errors", summary.get("failed_urls", 0)],
+                    ["Primary URL", summary.get("primary_url", "-")],
+                    ["Primary score", _fmt(summary.get("primary_score"), 1)],
+                    ["Primary CWV", _status_label(summary.get("primary_cwv_status"))],
+                    ["Primary rank", summary.get("primary_rank", "-")],
+                    ["Market leader", summary.get("market_leader_url", "-")],
+                    ["Market leader score", _fmt(summary.get("market_leader_score"), 1)],
+                    ["Competitor median score", _fmt(benchmark.get("competitor_median_score"), 1)],
+                    ["Competitor median LCP (ms)", _fmt(benchmark.get("competitor_median_lcp_ms"), 1)],
+                    ["Competitor median INP (ms)", _fmt(benchmark.get("competitor_median_inp_ms"), 1)],
+                    ["Competitor median CLS", _fmt(benchmark.get("competitor_median_cls"), 3)],
+                ],
+            )
+        elif mode == "batch" or isinstance(results.get("sites"), list):
             self._add_table(
                 doc,
                 ["Показатель", "Значение"],
@@ -2354,7 +2375,145 @@ class DOCXGenerator:
                 ],
             )
 
-        if mode == "batch" or isinstance(results.get("sites"), list):
+        if mode == "competitor":
+            primary = results.get("primary", {}) or {}
+            primary_summary = primary.get("summary", {}) or {}
+            primary_metrics = primary.get("metrics", {}) or {}
+            comparison_rows = results.get("comparison_rows", []) or []
+            gaps_for_primary = results.get("gaps_for_primary", []) or []
+            strengths_of_primary = results.get("strengths_of_primary", []) or []
+            common_opportunities = results.get("common_opportunities", []) or []
+            recommendations = results.get("recommendations", []) or []
+            action_plan = results.get("action_plan", []) or []
+
+            self._add_heading(doc, "2. Primary Snapshot", level=1)
+            lcp_primary = (primary_metrics.get("lcp") or {}).get("field_value_ms")
+            if lcp_primary is None:
+                lcp_primary = (primary_metrics.get("lcp") or {}).get("lab_value_ms")
+            inp_primary = (primary_metrics.get("inp") or {}).get("field_value_ms")
+            if inp_primary is None:
+                inp_primary = (primary_metrics.get("inp") or {}).get("lab_value_ms")
+            cls_primary = (primary_metrics.get("cls") or {}).get("field_value")
+            if cls_primary is None:
+                cls_primary = (primary_metrics.get("cls") or {}).get("lab_value")
+
+            self._add_table(
+                doc,
+                ["Показатель", "Значение"],
+                [
+                    ["Primary URL", primary.get("url", "-")],
+                    ["Primary status", str(primary.get("status") or "-").upper()],
+                    ["Primary score", primary_summary.get("performance_score", "-")],
+                    ["Primary CWV", _status_label(primary_summary.get("core_web_vitals_status"))],
+                    ["Primary LCP (ms)", _fmt(lcp_primary, 1)],
+                    ["Primary INP (ms)", _fmt(inp_primary, 1)],
+                    ["Primary CLS", _fmt(cls_primary, 3)],
+                    ["Primary error", primary.get("error") or "-"],
+                ],
+            )
+
+            self._add_heading(doc, "3. Competitor Comparison", level=1)
+            if comparison_rows:
+                rows: List[List[Any]] = []
+                for idx, item in enumerate(comparison_rows, start=1):
+                    rows.append(
+                        [
+                            idx,
+                            item.get("url", "-"),
+                            _status_label(item.get("cwv_status")),
+                            _fmt(item.get("score"), 1),
+                            _fmt(item.get("lcp_ms"), 1),
+                            _fmt(item.get("inp_ms"), 1),
+                            _fmt(item.get("cls"), 3),
+                            _fmt(item.get("score_delta_vs_primary"), 1),
+                            _fmt(item.get("lcp_delta_ms_vs_primary"), 1),
+                            _fmt(item.get("inp_delta_ms_vs_primary"), 1),
+                            _fmt(item.get("cls_delta_vs_primary"), 3),
+                            item.get("top_focus") or item.get("error") or "-",
+                        ]
+                    )
+                self._add_table(
+                    doc,
+                    [
+                        "#",
+                        "Competitor URL",
+                        "CWV",
+                        "Score",
+                        "LCP",
+                        "INP",
+                        "CLS",
+                        "Δ Score",
+                        "Δ LCP",
+                        "Δ INP",
+                        "Δ CLS",
+                        "Focus",
+                    ],
+                    rows,
+                )
+            else:
+                doc.add_paragraph("Сравнение с конкурентами отсутствует.")
+
+            self._add_heading(doc, "4. Gap & Strength Analysis", level=1)
+            doc.add_paragraph("Primary gaps:")
+            if gaps_for_primary:
+                for rec in gaps_for_primary[:30]:
+                    doc.add_paragraph(str(rec), style="List Bullet")
+            else:
+                doc.add_paragraph("Явных отставаний не обнаружено.")
+            doc.add_paragraph("Primary strengths:")
+            if strengths_of_primary:
+                for rec in strengths_of_primary[:30]:
+                    doc.add_paragraph(str(rec), style="List Bullet")
+            else:
+                doc.add_paragraph("Явные преимущества не зафиксированы.")
+
+            self._add_heading(doc, "5. Common Competitor Issues", level=1)
+            if common_opportunities:
+                self._add_table(
+                    doc,
+                    ["Issue", "Group", "Count"],
+                    [
+                        [
+                            item.get("title") or item.get("id") or "-",
+                            item.get("group") or "-",
+                            item.get("count") or 0,
+                        ]
+                        for item in common_opportunities[:25]
+                    ],
+                )
+            else:
+                doc.add_paragraph("Частые проблемы у конкурентов не выявлены.")
+
+            self._add_heading(doc, "6. Action Plan (Primary)", level=1)
+            if action_plan:
+                rows: List[List[Any]] = []
+                for item in action_plan[:25]:
+                    if "affected_urls" in item:
+                        rows.append([item.get("priority") or "P2", item.get("action") or "-", item.get("affected_urls") or 0])
+                    else:
+                        rows.append(
+                            [
+                                item.get("priority") or "P3",
+                                item.get("area") or "-",
+                                item.get("owner") or "-",
+                                item.get("action") or "-",
+                                item.get("expected_impact") or "-",
+                            ]
+                        )
+                if rows and len(rows[0]) == 3:
+                    self._add_table(doc, ["Priority", "Action", "Affected URLs"], rows)
+                else:
+                    self._add_table(doc, ["Priority", "Area", "Owner", "Action", "Expected impact"], rows)
+            else:
+                doc.add_paragraph("Action plan не сформирован.")
+
+            self._add_heading(doc, "7. Recommendations", level=1)
+            if recommendations:
+                for rec in recommendations[:50]:
+                    doc.add_paragraph(str(rec), style="List Bullet")
+            else:
+                doc.add_paragraph("Рекомендации не сформированы.")
+        elif mode == "batch" or isinstance(results.get("sites"), list):
             sites = results.get("sites", []) or []
             self._add_heading(doc, "2. URL Details", level=1)
             detail_rows: List[List[Any]] = []

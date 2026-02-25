@@ -4922,7 +4922,132 @@ class XLSXGenerator:
         _write_row(ws_summary, 5, ["Source", source])
         _write_row(ws_summary, 6, ["Generated at", datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
 
-        if mode == "batch" or isinstance(results.get("sites"), list):
+        if mode == "competitor":
+            benchmark = results.get("benchmark", {}) or {}
+            _write_row(ws_summary, 8, ["KPI", "Value"], is_header=True)
+            summary_rows = [
+                ["Total URLs", summary.get("total_urls", 0)],
+                ["Success", summary.get("successful_urls", 0)],
+                ["Errors", summary.get("failed_urls", 0)],
+                ["Primary URL", summary.get("primary_url", "-")],
+                ["Primary score", _fmt(summary.get("primary_score"), 1)],
+                ["Primary CWV", _status_label(summary.get("primary_cwv_status"))],
+                ["Primary rank", summary.get("primary_rank", "-")],
+                ["Market leader URL", summary.get("market_leader_url", "-")],
+                ["Market leader score", _fmt(summary.get("market_leader_score"), 1)],
+                ["Competitor median score", _fmt(benchmark.get("competitor_median_score"), 1)],
+                ["Competitor median LCP (ms)", _fmt(benchmark.get("competitor_median_lcp_ms"), 1)],
+                ["Competitor median INP (ms)", _fmt(benchmark.get("competitor_median_inp_ms"), 1)],
+                ["Competitor median CLS", _fmt(benchmark.get("competitor_median_cls"), 3)],
+            ]
+            for offset, row in enumerate(summary_rows, start=9):
+                _write_row(ws_summary, offset, row)
+            _set_widths(ws_summary, [34, 44])
+
+            ws_cmp = wb.create_sheet("Comparison")
+            _write_row(
+                ws_cmp,
+                1,
+                [
+                    "#",
+                    "Competitor URL",
+                    "Status",
+                    "CWV",
+                    "Score",
+                    "LCP (ms)",
+                    "INP (ms)",
+                    "CLS",
+                    "Delta score vs primary",
+                    "Delta LCP vs primary",
+                    "Delta INP vs primary",
+                    "Delta CLS vs primary",
+                    "Top focus",
+                    "Error",
+                ],
+                is_header=True,
+            )
+            row_idx = 2
+            for idx, row in enumerate((results.get("comparison_rows", []) or []), start=1):
+                _write_row(
+                    ws_cmp,
+                    row_idx,
+                    [
+                        idx,
+                        row.get("url") or "-",
+                        str(row.get("status") or "-").upper(),
+                        _status_label(row.get("cwv_status")),
+                        _fmt(row.get("score"), 1),
+                        _fmt(row.get("lcp_ms"), 1),
+                        _fmt(row.get("inp_ms"), 1),
+                        _fmt(row.get("cls"), 3),
+                        _fmt(row.get("score_delta_vs_primary"), 1),
+                        _fmt(row.get("lcp_delta_ms_vs_primary"), 1),
+                        _fmt(row.get("inp_delta_ms_vs_primary"), 1),
+                        _fmt(row.get("cls_delta_vs_primary"), 3),
+                        row.get("top_focus") or "",
+                        row.get("error") or "",
+                    ],
+                )
+                row_idx += 1
+            _set_widths(ws_cmp, [6, 52, 12, 20, 10, 12, 12, 10, 14, 14, 14, 14, 44, 44])
+
+            ws_gap = wb.create_sheet("Gap_Analysis")
+            _write_row(ws_gap, 1, ["Type", "Insight"], is_header=True)
+            row_idx = 2
+            for item in (results.get("gaps_for_primary", []) or []):
+                _write_row(ws_gap, row_idx, ["Gap", str(item)])
+                row_idx += 1
+            for item in (results.get("strengths_of_primary", []) or []):
+                _write_row(ws_gap, row_idx, ["Strength", str(item)])
+                row_idx += 1
+            for item in (results.get("common_opportunities", []) or [])[:50]:
+                _write_row(
+                    ws_gap,
+                    row_idx,
+                    ["Competitor common issue", f"{item.get('title') or item.get('id') or '-'} (count: {item.get('count') or 0})"],
+                )
+                row_idx += 1
+            _set_widths(ws_gap, [24, 130])
+
+            ws_plan = wb.create_sheet("Primary_Action_Plan")
+            plan_rows = results.get("action_plan", []) or []
+            if plan_rows and isinstance(plan_rows[0], dict) and "affected_urls" in plan_rows[0]:
+                _write_row(ws_plan, 1, ["Priority", "Action", "Affected URLs"], is_header=True)
+                row_idx = 2
+                for item in plan_rows[:120]:
+                    _write_row(
+                        ws_plan,
+                        row_idx,
+                        [item.get("priority") or "P2", item.get("action") or "-", item.get("affected_urls") or 0],
+                    )
+                    row_idx += 1
+                _set_widths(ws_plan, [12, 90, 16])
+            else:
+                _write_row(ws_plan, 1, ["Priority", "Area", "Owner", "Action", "Expected impact"], is_header=True)
+                row_idx = 2
+                for item in plan_rows[:120]:
+                    _write_row(
+                        ws_plan,
+                        row_idx,
+                        [
+                            item.get("priority") or "P3",
+                            item.get("area") or "-",
+                            item.get("owner") or "-",
+                            item.get("action") or "-",
+                            item.get("expected_impact") or "-",
+                        ],
+                    )
+                    row_idx += 1
+                _set_widths(ws_plan, [12, 20, 22, 70, 50])
+
+            ws_recs = wb.create_sheet("Recommendations")
+            _write_row(ws_recs, 1, ["#", "Recommendation"], is_header=True)
+            row_idx = 2
+            for idx, rec in enumerate((results.get("recommendations", []) or [])[:150], start=1):
+                _write_row(ws_recs, row_idx, [idx, str(rec)])
+                row_idx += 1
+            _set_widths(ws_recs, [6, 130])
+        elif mode == "batch" or isinstance(results.get("sites"), list):
             _write_row(ws_summary, 8, ["KPI", "Value"], is_header=True)
             summary_rows = [
                 ["Total URLs", summary.get("total_urls", 0)],
