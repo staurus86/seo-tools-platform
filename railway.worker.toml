@@ -3,12 +3,11 @@ builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-# Neutral default. Use service-specific config files:
-# - railway.web.toml
-# - railway.worker.toml
 startCommand = "./entrypoint.sh"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 
 [deploy.env]
 PYTHONUNBUFFERED = "1"
+SERVICE_MODE = "llm-worker"
+

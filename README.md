@@ -52,6 +52,13 @@ Open: `http://localhost:8000`
 - `MAX_HTML_BYTES` (default `2000000`)
 - `LLM_CRAWLER_MAX_REDIRECT_HOPS` (default `8`)
 
+## Railway config-as-code (web + worker)
+- `railway.web.toml` for the web service (has `healthcheckPath = "/health"`).
+- `railway.worker.toml` for the worker service (no HTTP healthcheck).
+- In Railway service settings set:
+  - web service `Config as Code file path` -> `railway.web.toml`
+  - worker service `Config as Code file path` -> `railway.worker.toml`
+
 ## API Docs
 - Swagger: `/api/docs`
 
