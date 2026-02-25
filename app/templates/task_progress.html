@@ -2781,6 +2781,51 @@ function downloadRedirectCheckerCsv() {
     URL.revokeObjectURL(link.href);
 }
 
+async function downloadRedirectCheckerDocx() {
+    if (!redirectCheckerData) {
+        alert('Нет данных Redirect Checker');
+        return;
+    }
+
+    const exportTaskId = redirectCheckerData.task_id || taskId;
+    if (!exportTaskId) {
+        alert('Не найден task_id для экспорта DOCX');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/export/redirect-checker-docx', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task_id: exportTaskId })
+        });
+
+        if (!response.ok) {
+            let payload = null;
+            try {
+                payload = await response.json();
+            } catch (_) {
+                payload = null;
+            }
+            throw new Error((payload && payload.error) ? payload.error : 'Не удалось сформировать DOCX-отчет Redirect Checker');
+        }
+
+        const blob = await response.blob();
+        const a = document.createElement('a');
+        const cd = response.headers.get('content-disposition') || '';
+        const m = /filename=([^;]+)/i.exec(cd);
+        a.href = URL.createObjectURL(blob);
+        a.download = m ? m[1].replace(/\"/g, '') : `redirect-checker-report-${new Date().toISOString().slice(0,10)}.docx`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(a.href);
+    } catch (error) {
+        console.error('Ошибка скачивания Redirect Checker DOCX:', error);
+        alert(error.message || 'Не удалось скачать DOCX-отчет Redirect Checker');
+    }
+}
+
 function generateRedirectCheckerHTML(result) {
     const resultData = result.result || result;
     const r = resultData.results || resultData;
@@ -2893,6 +2938,9 @@ Codes: ${escapeHtml(formatChain(s.response_codes))}
                     <div class="flex flex-wrap gap-2">
                         <button type="button" onclick="downloadRedirectCheckerCsv()" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition">
                             <i class="fas fa-file-csv mr-1"></i>CSV
+                        </button>
+                        <button type="button" onclick="downloadRedirectCheckerDocx()" class="px-3 py-2 rounded-lg bg-sky-100 hover:bg-sky-200 text-sky-800 text-sm transition">
+                            <i class="fas fa-file-word mr-1"></i>DOCX
                         </button>
                         <button type="button" onclick="copyRedirectCheckerSummary()" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition">
                             <i class="fas fa-copy mr-1"></i>Копировать

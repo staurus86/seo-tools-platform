@@ -1912,6 +1912,360 @@ class DOCXGenerator:
         self._save_document(doc, filepath)
         return filepath
 
+    def generate_redirect_checker_report(self, task_id: str, data: Dict[str, Any]) -> str:
+        """Generate detailed DOCX report for redirect_checker."""
+        doc = Document()
+
+        results = data.get("results", {}) or {}
+        summary = results.get("summary", {}) or {}
+        scenarios = results.get("scenarios", []) or []
+        recommendations = results.get("recommendations", []) or []
+        selected_ua = results.get("selected_user_agent", {}) or {}
+        checked_url = data.get("url") or results.get("checked_url") or "н/д"
+
+        def _status_label(value: Any) -> str:
+            status = str(value or "").lower()
+            if status == "passed":
+                return "Passed"
+            if status == "warning":
+                return "Warning"
+            if status == "error":
+                return "Error"
+            return "Unknown"
+
+        def _priority_for_status(value: Any) -> str:
+            status = str(value or "").lower()
+            if status == "error":
+                return "P1"
+            if status == "warning":
+                return "P2"
+            return "P3"
+
+        def _sla_for_status(value: Any) -> str:
+            status = str(value or "").lower()
+            if status == "error":
+                return "24-48 часов"
+            if status == "warning":
+                return "до 7 дней"
+            return "планово"
+
+        def _owner_for_key(key: str) -> str:
+            mapping = {
+                "http_to_https": "DevOps/Backend",
+                "www_consistency": "DevOps/Backend",
+                "multiple_slashes": "Backend",
+                "url_case": "Backend",
+                "index_files": "Backend",
+                "trailing_slash": "Backend",
+                "legacy_extensions": "Backend",
+                "canonical_tag": "Frontend+SEO",
+                "missing_404": "Backend",
+                "redirect_chains": "Backend",
+                "user_agent_emulation": "DevOps/Security",
+            }
+            return mapping.get(str(key or ""), "SEO+Dev")
+
+        def _chain_codes(item: Dict[str, Any]) -> str:
+            codes = item.get("response_codes") or []
+            if not isinstance(codes, list) or not codes:
+                return "-"
+            return " -> ".join(str(code) for code in codes)
+
+        def _clip(value: Any, limit: int = 180) -> str:
+            text = str(value or "-")
+            return text if len(text) <= limit else text[: limit - 1] + "…"
+
+        def _safe_iso_dt(value: Any) -> str:
+            raw = str(value or "").strip()
+            if not raw:
+                return "н/д"
+            try:
+                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                return parsed.strftime("%Y-%m-%d %H:%M:%S")
+            except Exception:
+                return raw
+
+        title = doc.add_heading("Отчет Redirect Checker", 0)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        subtitle = doc.add_paragraph(
+            "Аудит 11 сценариев редиректов: статус-коды, цепочки, рекомендации, план исправлений и краткие ТЗ."
+        )
+        subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        doc.add_paragraph(f"URL: {checked_url}")
+        doc.add_paragraph(f"User-Agent: {selected_ua.get('label') or selected_ua.get('key') or 'н/д'}")
+        doc.add_paragraph(f"Проверено: {_safe_iso_dt(results.get('checked_at'))}")
+        doc.add_paragraph(f"Сформирован: {generated_at}")
+
+        total_scenarios = int(summary.get("total_scenarios") or len(scenarios))
+        passed_count = int(summary.get("passed") or 0)
+        warning_count = int(summary.get("warnings") or 0)
+        error_count = int(summary.get("errors") or 0)
+        quality_score = summary.get("quality_score", "н/д")
+        quality_grade = summary.get("quality_grade", "н/д")
+        duration_ms = summary.get("duration_ms", "н/д")
+
+        violations = [
+            scenario for scenario in scenarios
+            if str(scenario.get("status") or "").lower() in ("warning", "error")
+        ]
+        violations.sort(
+            key=lambda item: (
+                0 if str(item.get("status") or "").lower() == "error" else 1,
+                int(item.get("id") or 999),
+            )
+        )
+
+        if error_count > 0:
+            executive_status = "Обнаружены критические нарушения редиректов. Нужны исправления в ближайший спринт."
+        elif warning_count > 0:
+            executive_status = "Критичных ошибок нет, но есть предупреждения. Рекомендуется закрыть технический долг."
+        else:
+            executive_status = "Нарушения не выявлены. Структура редиректов консистентна."
+
+        self._add_heading(doc, "1. Executive summary", level=1)
+        self._add_table(
+            doc,
+            ["Метрика", "Значение"],
+            [
+                ["Всего сценариев", total_scenarios],
+                ["Passed", passed_count],
+                ["Warning", warning_count],
+                ["Error", error_count],
+                ["Score", f"{quality_score} ({quality_grade})"],
+                ["Время проверки", f"{duration_ms} ms"],
+            ],
+        )
+        doc.add_paragraph(executive_status)
+
+        self._add_heading(doc, "2. Детальная матрица сценариев", level=1)
+        if scenarios:
+            scenario_rows = []
+            for item in scenarios:
+                scenario_rows.append(
+                    [
+                        item.get("id", "-"),
+                        item.get("title", "-"),
+                        _status_label(item.get("status")),
+                        _chain_codes(item),
+                        item.get("hops", 0),
+                        _clip(item.get("expected"), 110),
+                        _clip(item.get("actual"), 150),
+                        _clip(item.get("recommendation"), 140),
+                    ]
+                )
+            self._add_table(
+                doc,
+                ["#", "Сценарий", "Статус", "Коды", "Хопы", "Expected", "Actual", "Рекомендация"],
+                scenario_rows,
+            )
+        else:
+            doc.add_paragraph("Сценарии не получены от сервиса Redirect Checker.")
+
+        self._add_heading(doc, "3. Нарушения и разбор", level=1)
+        if not violations:
+            doc.add_paragraph("Все сценарии в статусе Passed. Дополнительные действия не требуются.")
+        else:
+            for idx, item in enumerate(violations, start=1):
+                scenario_title = item.get("title") or item.get("key") or f"Сценарий {idx}"
+                self._add_heading(
+                    doc,
+                    f"3.{idx} [{_status_label(item.get('status')).upper()}] {scenario_title}",
+                    level=2,
+                )
+                doc.add_paragraph(f"Что проверялось: {item.get('what_checked') or '-'}")
+                doc.add_paragraph(f"Тестовый URL: {item.get('test_url') or '-'}")
+                doc.add_paragraph(f"Expected: {item.get('expected') or '-'}")
+                doc.add_paragraph(f"Actual: {item.get('actual') or '-'}")
+                doc.add_paragraph(f"Коды ответа: {_chain_codes(item)}")
+                doc.add_paragraph(f"Хопы: {item.get('hops', 0)}")
+                if item.get("final_url"):
+                    doc.add_paragraph(f"Финальный URL: {item.get('final_url')}")
+                if item.get("error"):
+                    doc.add_paragraph(f"Техническая ошибка: {item.get('error')}")
+                if item.get("recommendation"):
+                    doc.add_paragraph(f"Рекомендация: {item.get('recommendation')}")
+
+                chain = item.get("chain") or []
+                if isinstance(chain, list) and chain:
+                    chain_rows = []
+                    for pos, hop in enumerate(chain[:12], start=1):
+                        chain_rows.append(
+                            [
+                                pos,
+                                hop.get("url", "-"),
+                                hop.get("status_code", "-"),
+                                hop.get("location", "-") or "-",
+                            ]
+                        )
+                    self._add_table(doc, ["Шаг", "URL", "HTTP", "Location"], chain_rows)
+
+        self._add_heading(doc, "4. План действий при нарушениях", level=1)
+        if not violations:
+            doc.add_paragraph("План действий не требуется: нарушений не найдено.")
+        else:
+            action_rows = []
+            for item in violations:
+                key = str(item.get("key") or "")
+                action_rows.append(
+                    [
+                        _priority_for_status(item.get("status")),
+                        item.get("title") or key or "-",
+                        _owner_for_key(key),
+                        _sla_for_status(item.get("status")),
+                        item.get("recommendation") or "Свести поведение к каноническому сценарию.",
+                    ]
+                )
+            self._add_table(
+                doc,
+                ["Приоритет", "Сценарий", "Владелец", "SLA", "Действие"],
+                action_rows,
+            )
+
+        self._add_heading(doc, "5. Рекомендации", level=1)
+        if recommendations:
+            for rec in recommendations[:50]:
+                doc.add_paragraph(str(rec), style="List Bullet")
+        elif violations:
+            for item in violations[:50]:
+                rec = str(item.get("recommendation") or "").strip()
+                if rec:
+                    doc.add_paragraph(rec, style="List Bullet")
+        else:
+            doc.add_paragraph("Критических рекомендаций нет.")
+
+        self._add_heading(doc, "6. Краткие ТЗ на исправление", level=1)
+        tz_templates = {
+            "http_to_https": {
+                "goal": "Все запросы по HTTP должны вести на HTTPS одним постоянным редиректом.",
+                "tasks": [
+                    "Настроить 301/308 на уровне nginx/apache для всего хоста.",
+                    "Проверить отсутствие промежуточных URL в цепочке.",
+                    "Обновить внутренние ссылки и sitemap на HTTPS.",
+                ],
+                "done": "curl -I http://domain.tld возвращает 301/308 на https://domain.tld и далее один финальный 200.",
+            },
+            "www_consistency": {
+                "goal": "Версии с www и без www должны вести на единый канонический хост.",
+                "tasks": [
+                    "Выбрать канонический host (www или без www).",
+                    "Сделать постоянный 301/308 редирект со второй версии.",
+                    "Обновить canonical и sitemap на канонический host.",
+                ],
+                "done": "Оба варианта хоста приводят к одной финальной странице без цепочек 2+.",
+            },
+            "multiple_slashes": {
+                "goal": "URL с // должны нормализоваться до чистого пути.",
+                "tasks": [
+                    "Добавить rewrite-правило удаления повторных слешей.",
+                    "Направлять на нормализованный URL через 301.",
+                ],
+                "done": "Запросы с // не отдают дубль и ведут на единственный канонический путь.",
+            },
+            "url_case": {
+                "goal": "Единый регистр URL для исключения дублей.",
+                "tasks": [
+                    "Определить lowercase как стандарт URL.",
+                    "Сделать 301 с uppercase-вариантов на lowercase.",
+                ],
+                "done": "Uppercase URL не индексируются отдельно и ведут на lowercase-версию.",
+            },
+            "index_files": {
+                "goal": "Index-файлы не должны жить как отдельные URL.",
+                "tasks": [
+                    "Сделать 301 с /index.html (и /index.php при необходимости) на /.",
+                    "Проверить внутренние ссылки, чтобы не было ссылок на index-файлы.",
+                ],
+                "done": "Index URL не отдают 200 как отдельные страницы и не формируют дубли.",
+            },
+            "trailing_slash": {
+                "goal": "Нужна единая политика trailing slash по всему сайту.",
+                "tasks": [
+                    "Выбрать формат: /page или /page/.",
+                    "Настроить 301 с альтернативной формы.",
+                    "Привести canonical и внутренние ссылки к выбранному формату.",
+                ],
+                "done": "Обе версии URL сходятся в одну каноническую без циклов и лишних редиректов.",
+            },
+            "legacy_extensions": {
+                "goal": "Старые .html/.php URL не должны создавать дубли.",
+                "tasks": [
+                    "Настроить 301 с устаревших расширений на чистые URL.",
+                    "Проверить отсутствие 302 и цепочек при миграции.",
+                ],
+                "done": "Legacy URL корректно переезжают на чистые и не остаются в индексе отдельно.",
+            },
+            "canonical_tag": {
+                "goal": "Каждая страница должна иметь корректный canonical на канонический URL.",
+                "tasks": [
+                    "Добавить <link rel=\"canonical\"> в <head> шаблона.",
+                    "Проверить, что canonical указывает на правильный host/scheme/path.",
+                ],
+                "done": "Canonical присутствует и соответствует финальному URL страницы.",
+            },
+            "missing_404": {
+                "goal": "Несуществующие страницы должны отдавать 404/410, а не 200 или редирект на главную.",
+                "tasks": [
+                    "Настроить обработчик 404 в роутинге/веб-сервере.",
+                    "Убедиться, что soft-404 отсутствуют.",
+                ],
+                "done": "Случайный несуществующий URL стабильно возвращает 404 (или осознанный 410).",
+            },
+            "redirect_chains": {
+                "goal": "Сократить цепочки редиректов до одного шага.",
+                "tasks": [
+                    "Удалить промежуточные узлы A->B->C, оставить A->C.",
+                    "Проверить правила на уровне приложения и веб-сервера.",
+                ],
+                "done": "Максимум 1 редирект до финального URL по ключевым сценариям.",
+            },
+            "user_agent_emulation": {
+                "goal": "Для ключевых ботов должен быть одинаковый канонический результат.",
+                "tasks": [
+                    "Проверить WAF/rate-limit и исключить блокировку Googlebot/Yandex Bot.",
+                    "Синхронизировать редиректы и финальные коды между desktop/mobile/bot.",
+                ],
+                "done": "Googlebot Desktop, Googlebot Smartphone и Yandex Bot получают консистентные ответы.",
+            },
+        }
+
+        if not violations:
+            doc.add_paragraph("ТЗ не требуется: нарушений не найдено.")
+        else:
+            unique_violations = {}
+            for item in violations:
+                key = str(item.get("key") or "")
+                if key and key not in unique_violations:
+                    unique_violations[key] = item
+
+            for idx, (key, item) in enumerate(unique_violations.items(), start=1):
+                template = tz_templates.get(key, {})
+                title_tz = item.get("title") or key or f"Сценарий {idx}"
+                self._add_heading(doc, f"6.{idx} {title_tz}", level=2)
+                doc.add_paragraph(f"Цель: {template.get('goal') or 'Устранить нарушение и привести URL к канонической схеме.'}")
+                tasks = template.get("tasks") or []
+                if tasks:
+                    for task in tasks:
+                        doc.add_paragraph(str(task), style="List Bullet")
+                else:
+                    fallback_task = item.get("recommendation") or "Исправить правило редиректа и проверить повторно."
+                    doc.add_paragraph(str(fallback_task), style="List Bullet")
+                done_text = template.get("done") or "После исправления сценарий должен перейти в статус Passed."
+                doc.add_paragraph(f"Критерий приемки: {done_text}")
+
+        doc.add_paragraph()
+        footer = doc.add_paragraph(
+            f"Отчет сформирован SEO Tools Platform: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        footer.runs[0].font.size = Pt(8)
+        footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
+
+        filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
+        self._save_document(doc, filepath)
+        return filepath
+
     def generate_report(self, task_id: str, task_type: str, data: Dict[str, Any]) -> str:
         """Генерирует отчет в зависимости от типа задачи."""
         generators = {
@@ -1924,6 +2278,7 @@ class DOCXGenerator:
             'site_audit_pro': self.generate_site_audit_pro_report,
             'onpage_audit': self.generate_onpage_report,
             'link_profile_audit': self.generate_link_profile_report,
+            'redirect_checker': self.generate_redirect_checker_report,
         }
         
         generator = generators.get(task_type, self.generate_site_analyze_report)
