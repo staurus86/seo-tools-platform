@@ -64,12 +64,64 @@ class RedirectCheckerServiceTests(unittest.TestCase):
         summary = payload.get("summary", {})
         keyed = {item.get("key"): item for item in scenarios}
 
-        self.assertEqual(len(scenarios), 11)
-        self.assertEqual(summary.get("total_scenarios"), 11)
+        self.assertEqual(len(scenarios), 17)
+        self.assertEqual(summary.get("total_scenarios"), 17)
         self.assertEqual(keyed.get("http_to_https", {}).get("status"), "passed")
         self.assertEqual(keyed.get("canonical_tag", {}).get("status"), "passed")
         self.assertEqual(keyed.get("missing_404", {}).get("status"), "passed")
+        self.assertEqual(keyed.get("query_params_canonicalization", {}).get("status"), "passed")
+        self.assertEqual(keyed.get("soft_404_detection", {}).get("status"), "passed")
         self.assertEqual(summary.get("errors"), 0)
+        self.assertIn("applied_policy", payload)
+
+    @patch("app.tools.redirect_checker.service_v1._trace_url")
+    def test_policy_controls_affect_statuses(self, mock_trace):
+        def side_effect(url, user_agent, timeout=12, max_hops=10):  # noqa: ARG001
+            if url.startswith("http://example.com"):
+                return _mk_trace(url, [301, 200], "https://example.com/")
+            if "www.example.com" in url:
+                return _mk_trace(url, [301, 200], "https://example.com/")
+            if "/redirect-checker//probe//" in url:
+                return _mk_trace(url, [301, 200], "https://example.com/redirect-checker/probe/")
+            if url.endswith("/CART"):
+                return _mk_trace(url, [200], "https://example.com/CART")
+            if url.endswith("/index.html"):
+                return _mk_trace(url, [301, 200], "https://example.com/")
+            if url.endswith("/page"):
+                return _mk_trace(url, [200], "https://example.com/page")
+            if url.endswith("/page/"):
+                return _mk_trace(url, [200], "https://example.com/page/")
+            if url.endswith("/legacy-page.html"):
+                return _mk_trace(url, [301, 200], "https://example.com/legacy-page")
+            if url.endswith("/legacy-page.php"):
+                return _mk_trace(url, [404], url)
+            if "/redirect-checker-required-probe" in url:
+                return _mk_trace(url, [200], "https://example.com/redirect-checker-required-probe")
+            if "/redirect-checker-404-" in url:
+                return _mk_trace(url, [200], "https://example.com/")
+            return _mk_trace(url, [200], "https://example.com/", canonical_url="https://example.com/")
+
+        mock_trace.side_effect = side_effect
+
+        result = run_redirect_checker(
+            url="example.com",
+            user_agent_key="googlebot_desktop",
+            canonical_host_policy="www",
+            trailing_slash_policy="no-slash",
+            enforce_lowercase=False,
+            required_query_params=["page"],
+        )
+        payload = result.get("results", {})
+        keyed = {item.get("key"): item for item in (payload.get("scenarios", []) or [])}
+        policy = payload.get("applied_policy", {})
+
+        self.assertEqual(policy.get("canonical_host_policy"), "www")
+        self.assertEqual(policy.get("trailing_slash_policy"), "no-slash")
+        self.assertEqual(policy.get("enforce_lowercase"), False)
+        self.assertEqual(keyed.get("www_consistency", {}).get("status"), "error")
+        self.assertEqual(keyed.get("url_case", {}).get("status"), "passed")
+        self.assertEqual(keyed.get("trailing_slash", {}).get("status"), "warning")
+        self.assertEqual(keyed.get("required_query_params", {}).get("status"), "error")
 
 
 if __name__ == "__main__":

@@ -1921,6 +1921,7 @@ class DOCXGenerator:
         scenarios = results.get("scenarios", []) or []
         recommendations = results.get("recommendations", []) or []
         selected_ua = results.get("selected_user_agent", {}) or {}
+        applied_policy = results.get("applied_policy", {}) or {}
         checked_url = data.get("url") or results.get("checked_url") or "н/д"
 
         def _status_label(value: Any) -> str:
@@ -1995,6 +1996,16 @@ class DOCXGenerator:
         generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         doc.add_paragraph(f"URL: {checked_url}")
         doc.add_paragraph(f"User-Agent: {selected_ua.get('label') or selected_ua.get('key') or 'н/д'}")
+        doc.add_paragraph(
+            "Policy: "
+            f"host={applied_policy.get('canonical_host_policy', 'auto')}, "
+            f"slash={applied_policy.get('trailing_slash_policy', 'auto')}, "
+            f"lowercase={'on' if applied_policy.get('enforce_lowercase', True) else 'off'}"
+        )
+        if applied_policy.get("allowed_query_params"):
+            doc.add_paragraph(f"Allowed params: {', '.join(map(str, applied_policy.get('allowed_query_params') or []))}")
+        if applied_policy.get("required_query_params"):
+            doc.add_paragraph(f"Required params: {', '.join(map(str, applied_policy.get('required_query_params') or []))}")
         doc.add_paragraph(f"Проверено: {_safe_iso_dt(results.get('checked_at'))}")
         doc.add_paragraph(f"Сформирован: {generated_at}")
 
@@ -2046,6 +2057,7 @@ class DOCXGenerator:
                 scenario_rows.append(
                     [
                         item.get("id", "-"),
+                        item.get("key", "-"),
                         item.get("title", "-"),
                         _status_label(item.get("status")),
                         _chain_codes(item),
@@ -2057,7 +2069,7 @@ class DOCXGenerator:
                 )
             self._add_table(
                 doc,
-                ["#", "Сценарий", "Статус", "Коды", "Хопы", "Expected", "Actual", "Рекомендация"],
+                ["#", "Key", "Сценарий", "Статус", "Коды", "Хопы", "Expected", "Actual", "Рекомендация"],
                 scenario_rows,
             )
         else:

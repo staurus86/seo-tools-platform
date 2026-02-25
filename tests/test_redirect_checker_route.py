@@ -38,6 +38,44 @@ class RedirectCheckerRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(stored)
         self.assertEqual((stored or {}).get("task_type"), "redirect_checker")
 
+    async def test_route_passes_policy_parameters(self):
+        if importlib.util.find_spec("multipart") is None:
+            self.skipTest("python-multipart is not installed in this environment")
+        from app.api.routes import RedirectCheckerRequest, create_redirect_checker
+
+        fake_result = {
+            "task_type": "redirect_checker",
+            "url": "https://example.com/",
+            "results": {
+                "summary": {"total_scenarios": 17, "passed": 17, "warnings": 0, "errors": 0},
+                "scenarios": [],
+            },
+        }
+
+        with patch("app.api.routes.check_redirect_checker_full", return_value=fake_result) as mock_check:
+            payload = RedirectCheckerRequest(
+                url="example.com",
+                user_agent="googlebot_desktop",
+                canonical_host_policy="non-www",
+                trailing_slash_policy="no-slash",
+                enforce_lowercase=False,
+                allowed_query_params=["page", "sort"],
+                required_query_params=["page"],
+                ignore_query_params=["utm_source", "gclid"],
+            )
+            response = await create_redirect_checker(payload)
+
+        self.assertEqual(response.get("status"), "SUCCESS")
+        self.assertEqual(mock_check.call_count, 1)
+        _, kwargs = mock_check.call_args
+        self.assertEqual(kwargs.get("user_agent"), "googlebot_desktop")
+        self.assertEqual(kwargs.get("canonical_host_policy"), "non-www")
+        self.assertEqual(kwargs.get("trailing_slash_policy"), "no-slash")
+        self.assertEqual(kwargs.get("enforce_lowercase"), False)
+        self.assertEqual(kwargs.get("allowed_query_params"), ["page", "sort"])
+        self.assertEqual(kwargs.get("required_query_params"), ["page"])
+        self.assertEqual(kwargs.get("ignore_query_params"), ["utm_source", "gclid"])
+
     async def test_export_redirect_checker_docx(self):
         if importlib.util.find_spec("multipart") is None:
             self.skipTest("python-multipart is not installed in this environment")

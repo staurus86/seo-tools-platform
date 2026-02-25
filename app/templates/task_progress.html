@@ -2710,14 +2710,24 @@ function copyRedirectCheckerSummary() {
     const r = payload.results || payload;
     const summary = r.summary || {};
     const scenarios = Array.isArray(r.scenarios) ? r.scenarios : [];
+    const policy = r.applied_policy || {};
     const lines = [];
     lines.push('REDIRECT CHECKER');
     lines.push(`URL: ${payload.url || r.checked_url || ''}`);
     lines.push(`Scenarios: ${summary.total_scenarios || scenarios.length} | Passed: ${summary.passed || 0} | Warning: ${summary.warnings || 0} | Error: ${summary.errors || 0}`);
     lines.push(`Score: ${summary.quality_score || 0} (${summary.quality_grade || '-'})`);
+    lines.push(
+        `Policy: host=${policy.canonical_host_policy || 'auto'} | slash=${policy.trailing_slash_policy || 'auto'} | lowercase=${policy.enforce_lowercase === false ? 'off' : 'on'}`
+    );
+    if (Array.isArray(policy.allowed_query_params) && policy.allowed_query_params.length) {
+        lines.push(`Allowed params: ${policy.allowed_query_params.join(', ')}`);
+    }
+    if (Array.isArray(policy.required_query_params) && policy.required_query_params.length) {
+        lines.push(`Required params: ${policy.required_query_params.join(', ')}`);
+    }
     lines.push('');
     scenarios.forEach((s) => {
-        lines.push(`[${String(s.status || '').toUpperCase()}] ${s.id || '-'} ${s.title || ''}`);
+        lines.push(`[${String(s.status || '').toUpperCase()}] ${s.id || '-'} ${s.key || '-'} ${s.title || ''}`);
         lines.push(`Expected: ${s.expected || '-'}`);
         lines.push(`Actual: ${s.actual || '-'}`);
         if (s.recommendation) lines.push(`Fix: ${s.recommendation}`);
@@ -2739,9 +2749,11 @@ function downloadRedirectCheckerCsv() {
     const payload = redirectCheckerData.result || redirectCheckerData;
     const r = payload.results || payload;
     const scenarios = Array.isArray(r.scenarios) ? r.scenarios : [];
+    const policy = r.applied_policy || {};
     const rows = [];
     rows.push([
         'id',
+        'key',
         'scenario',
         'status',
         'what_checked',
@@ -2751,11 +2763,15 @@ function downloadRedirectCheckerCsv() {
         'hops',
         'test_url',
         'final_url',
-        'recommendation'
+        'recommendation',
+        'canonical_host_policy',
+        'trailing_slash_policy',
+        'enforce_lowercase'
     ]);
     scenarios.forEach((s) => {
         rows.push([
             s.id || '',
+            s.key || '',
             s.title || '',
             s.status || '',
             s.what_checked || '',
@@ -2765,7 +2781,10 @@ function downloadRedirectCheckerCsv() {
             s.hops || 0,
             s.test_url || '',
             s.final_url || '',
-            s.recommendation || ''
+            s.recommendation || '',
+            policy.canonical_host_policy || '',
+            policy.trailing_slash_policy || '',
+            (policy.enforce_lowercase === false ? 'false' : 'true')
         ]);
     });
     const csvBody = rows.map((row) => row.map(_redirectCsvCell).join(',')).join('\n');
@@ -2831,6 +2850,7 @@ function generateRedirectCheckerHTML(result) {
     const r = resultData.results || resultData;
     const summary = r.summary || {};
     const selectedUa = r.selected_user_agent || {};
+    const policy = r.applied_policy || {};
     const allScenarios = Array.isArray(r.scenarios) ? r.scenarios : [];
     const filter = redirectCheckerFilter || 'all';
     const scenarios = filter === 'all' ? allScenarios : allScenarios.filter((s) => (s.status || '') === filter);
@@ -2864,7 +2884,7 @@ function generateRedirectCheckerHTML(result) {
             <td class="redirectpro-cell text-center font-semibold">${escapeHtml(s.id || '-')}</td>
             <td class="redirectpro-cell">
                 <div class="font-semibold text-slate-900">${escapeHtml(s.title || '-')}</div>
-                <div class="redirectpro-meta">${escapeHtml(s.what_checked || '-')}</div>
+                <div class="redirectpro-meta">${escapeHtml(s.key || '-')} | ${escapeHtml(s.what_checked || '-')}</div>
             </td>
             <td class="redirectpro-cell">
                 <span class="redirectpro-status ${statusClass(s.status)}">
@@ -2903,6 +2923,11 @@ Codes: ${escapeHtml(formatChain(s.response_codes))}
                         <h3 class="text-lg font-semibold">Redirect Checker</h3>
                         <div class="text-sm text-emerald-50/95 mt-1">URL: ${escapeHtml(resultData.url || r.checked_url || '')}</div>
                         <div class="text-xs text-emerald-100/95 mt-1">User-Agent: ${escapeHtml(selectedUa.label || '-')}</div>
+                        <div class="text-xs text-emerald-100/95 mt-1">
+                            Policy: host=${escapeHtml(policy.canonical_host_policy || 'auto')},
+                            slash=${escapeHtml(policy.trailing_slash_policy || 'auto')},
+                            lowercase=${escapeHtml(policy.enforce_lowercase === false ? 'off' : 'on')}
+                        </div>
                     </div>
                     <div class="flex flex-wrap gap-2">
                         <span class="redirectpro-chip"><i class="fas fa-stopwatch"></i>${escapeHtml(summary.duration_ms || 0)} ms</span>
