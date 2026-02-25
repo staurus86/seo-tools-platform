@@ -766,6 +766,12 @@ function showResults(data) {
             task_id: result.task_id || taskId,
             url: result.url || ''
         };
+    } else if (result.task_type === 'redirect_checker') {
+        redirectCheckerData = {
+            ...result,
+            task_id: result.task_id || taskId,
+            url: result.url || ''
+        };
     } else if (result.task_type === 'link_profile_audit') {
         linkProfileData = {
             ...result,
@@ -801,6 +807,8 @@ function showResults(data) {
         filterOnpageIssues('all');
     } else if (result.task_type === 'clusterizer') {
         resultsContent.innerHTML = generateClusterizerHTML(result);
+    } else if (result.task_type === 'redirect_checker') {
+        resultsContent.innerHTML = generateRedirectCheckerHTML(result);
     } else if (result.task_type === 'link_profile_audit') {
         resultsContent.innerHTML = generateLinkProfileAuditHTML(result);
         switchLinkProfileAuditTab('executive');
@@ -825,6 +833,8 @@ let siteAuditProData = null;
 let siteAuditProIssuesState = { issues: [], filtered: [], filter: 'all', query: '', limit: 20, sort: 'severity', owner: 'all' };
 let onpageData = null;
 let clusterizerData = null;
+let redirectCheckerData = null;
+let redirectCheckerFilter = 'all';
 let linkProfileData = null;
 let linkProfileRenderPayload = null;
 let linkProfileRowsLimitByScope = {};
@@ -2535,6 +2545,210 @@ function generateGenericHTML(result) {
         <div class="bg-white rounded-xl shadow-md p-6">
             <h3 class="text-lg font-semibold mb-3">Результат</h3>
             <pre class="text-xs bg-slate-50 border rounded p-3 overflow-auto">${escapeHtml(JSON.stringify(safe, null, 2))}</pre>
+        </div>
+    `;
+}
+
+function setRedirectCheckerFilter(filter) {
+    redirectCheckerFilter = ['all', 'passed', 'warning', 'error'].includes(filter) ? filter : 'all';
+    if (lastTaskResult && lastTaskResult.task_type === 'redirect_checker') {
+        const resultsContent = document.getElementById('results-content');
+        if (resultsContent) {
+            resultsContent.innerHTML = generateRedirectCheckerHTML(lastTaskResult);
+        }
+    }
+}
+
+function copyRedirectCheckerSummary() {
+    if (!redirectCheckerData) {
+        alert('Нет данных Redirect Checker');
+        return;
+    }
+    const payload = redirectCheckerData.result || redirectCheckerData;
+    const r = payload.results || payload;
+    const summary = r.summary || {};
+    const scenarios = Array.isArray(r.scenarios) ? r.scenarios : [];
+    const lines = [];
+    lines.push('REDIRECT CHECKER');
+    lines.push(`URL: ${payload.url || r.checked_url || ''}`);
+    lines.push(`Scenarios: ${summary.total_scenarios || scenarios.length} | Passed: ${summary.passed || 0} | Warning: ${summary.warnings || 0} | Error: ${summary.errors || 0}`);
+    lines.push(`Score: ${summary.quality_score || 0} (${summary.quality_grade || '-'})`);
+    lines.push('');
+    scenarios.forEach((s) => {
+        lines.push(`[${String(s.status || '').toUpperCase()}] ${s.id || '-'} ${s.title || ''}`);
+        lines.push(`Expected: ${s.expected || '-'}`);
+        lines.push(`Actual: ${s.actual || '-'}`);
+        if (s.recommendation) lines.push(`Fix: ${s.recommendation}`);
+        lines.push('');
+    });
+    copyToClipboard(lines.join('\n'));
+}
+
+function _redirectCsvCell(v) {
+    const text = String(v == null ? '' : v).replace(/"/g, '""');
+    return `"${text}"`;
+}
+
+function downloadRedirectCheckerCsv() {
+    if (!redirectCheckerData) {
+        alert('Нет данных Redirect Checker');
+        return;
+    }
+    const payload = redirectCheckerData.result || redirectCheckerData;
+    const r = payload.results || payload;
+    const scenarios = Array.isArray(r.scenarios) ? r.scenarios : [];
+    const rows = [];
+    rows.push([
+        'id',
+        'scenario',
+        'status',
+        'what_checked',
+        'expected',
+        'actual',
+        'response_codes',
+        'hops',
+        'test_url',
+        'final_url',
+        'recommendation'
+    ]);
+    scenarios.forEach((s) => {
+        rows.push([
+            s.id || '',
+            s.title || '',
+            s.status || '',
+            s.what_checked || '',
+            s.expected || '',
+            s.actual || '',
+            Array.isArray(s.response_codes) ? s.response_codes.join(' -> ') : '',
+            s.hops || 0,
+            s.test_url || '',
+            s.final_url || '',
+            s.recommendation || ''
+        ]);
+    });
+    const csvBody = rows.map((row) => row.map(_redirectCsvCell).join(',')).join('\n');
+    const csv = '\ufeff' + csvBody;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const safeDomain = String((payload.url || r.checked_url || 'site')).replace(/[^a-zA-Z0-9._-]+/g, '_');
+    link.href = URL.createObjectURL(blob);
+    link.download = `redirect_checker_${safeDomain}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+}
+
+function generateRedirectCheckerHTML(result) {
+    const resultData = result.result || result;
+    const r = resultData.results || resultData;
+    const summary = r.summary || {};
+    const selectedUa = r.selected_user_agent || {};
+    const allScenarios = Array.isArray(r.scenarios) ? r.scenarios : [];
+    const filter = redirectCheckerFilter || 'all';
+    const scenarios = filter === 'all' ? allScenarios : allScenarios.filter((s) => (s.status || '') === filter);
+    const recommendations = Array.isArray(r.recommendations) ? r.recommendations : [];
+
+    const badge = (status) => {
+        const s = String(status || '').toLowerCase();
+        if (s === 'passed') return '<span class="inline-flex px-2 py-1 rounded-full text-xs bg-green-100 text-green-700">Passed</span>';
+        if (s === 'warning') return '<span class="inline-flex px-2 py-1 rounded-full text-xs bg-amber-100 text-amber-700">Warning</span>';
+        if (s === 'error') return '<span class="inline-flex px-2 py-1 rounded-full text-xs bg-red-100 text-red-700">Error</span>';
+        return '<span class="inline-flex px-2 py-1 rounded-full text-xs bg-slate-100 text-slate-700">Unknown</span>';
+    };
+
+    const scenarioRows = scenarios.map((s) => `
+        <tr class="border-b border-slate-100 align-top">
+            <td class="py-3 pr-3 text-sm">${escapeHtml(s.id)}</td>
+            <td class="py-3 pr-3 text-sm">
+                <div class="font-medium text-slate-900">${escapeHtml(s.title)}</div>
+                <div class="text-xs text-slate-500 mt-1">${escapeHtml(s.what_checked || '')}</div>
+            </td>
+            <td class="py-3 pr-3 text-sm">${badge(s.status)}</td>
+            <td class="py-3 pr-3 text-xs text-slate-700 whitespace-pre-wrap break-words">${escapeHtml((s.response_codes || []).join(' -> ') || '-')}</td>
+            <td class="py-3 pr-3 text-sm">${escapeHtml(s.hops || 0)}</td>
+            <td class="py-3 pr-3 text-xs text-slate-700 whitespace-pre-wrap break-words">${escapeHtml(s.actual || '-')}</td>
+            <td class="py-3 pr-3 text-xs text-slate-700 whitespace-pre-wrap break-words">${escapeHtml(s.recommendation || '-')}</td>
+        </tr>
+    `).join('');
+
+    const activeClass = (key) => (filter === key ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200');
+    return `
+        <div class="space-y-6">
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <div class="flex flex-wrap items-start justify-between gap-4 mb-4">
+                    <div>
+                        <h3 class="text-lg font-semibold">Redirect Checker</h3>
+                        <div class="text-sm text-slate-600 mt-1">URL: ${escapeHtml(resultData.url || r.checked_url || '')}</div>
+                        <div class="text-xs text-slate-500 mt-1">User-Agent: ${escapeHtml(selectedUa.label || '-')}</div>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" onclick="downloadRedirectCheckerCsv()" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition">
+                            <i class="fas fa-file-csv mr-1"></i>CSV
+                        </button>
+                        <button type="button" onclick="copyRedirectCheckerSummary()" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition">
+                            <i class="fas fa-copy mr-1"></i>Копировать
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <div class="text-xs text-slate-500">Всего</div>
+                        <div class="text-lg font-semibold">${escapeHtml(summary.total_scenarios || allScenarios.length || 0)}</div>
+                    </div>
+                    <div class="rounded-lg border border-green-200 bg-green-50 p-3">
+                        <div class="text-xs text-green-700">Passed</div>
+                        <div class="text-lg font-semibold text-green-800">${escapeHtml(summary.passed || 0)}</div>
+                    </div>
+                    <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                        <div class="text-xs text-amber-700">Warning</div>
+                        <div class="text-lg font-semibold text-amber-800">${escapeHtml(summary.warnings || 0)}</div>
+                    </div>
+                    <div class="rounded-lg border border-red-200 bg-red-50 p-3">
+                        <div class="text-xs text-red-700">Error</div>
+                        <div class="text-lg font-semibold text-red-800">${escapeHtml(summary.errors || 0)}</div>
+                    </div>
+                    <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+                        <div class="text-xs text-indigo-700">Score</div>
+                        <div class="text-lg font-semibold text-indigo-800">${escapeHtml(summary.quality_score || 0)} <span class="text-sm">(${escapeHtml(summary.quality_grade || '-')})</span></div>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap gap-2 mb-4">
+                    <button type="button" onclick="setRedirectCheckerFilter('all')" class="px-3 py-1.5 rounded-lg text-sm ${activeClass('all')}">Все</button>
+                    <button type="button" onclick="setRedirectCheckerFilter('passed')" class="px-3 py-1.5 rounded-lg text-sm ${activeClass('passed')}">Passed</button>
+                    <button type="button" onclick="setRedirectCheckerFilter('warning')" class="px-3 py-1.5 rounded-lg text-sm ${activeClass('warning')}">Warning</button>
+                    <button type="button" onclick="setRedirectCheckerFilter('error')" class="px-3 py-1.5 rounded-lg text-sm ${activeClass('error')}">Error</button>
+                </div>
+
+                <div class="overflow-auto rounded-lg border border-slate-200">
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-slate-50 text-slate-700">
+                            <tr>
+                                <th style="resize:horizontal; overflow:auto; min-width:60px;" class="py-2 px-3 text-left">#</th>
+                                <th style="resize:horizontal; overflow:auto; min-width:180px;" class="py-2 px-3 text-left">Сценарий</th>
+                                <th style="resize:horizontal; overflow:auto; min-width:110px;" class="py-2 px-3 text-left">Статус</th>
+                                <th style="resize:horizontal; overflow:auto; min-width:120px;" class="py-2 px-3 text-left">Коды</th>
+                                <th style="resize:horizontal; overflow:auto; min-width:70px;" class="py-2 px-3 text-left">Хопы</th>
+                                <th style="resize:horizontal; overflow:auto; min-width:260px;" class="py-2 px-3 text-left">Факт</th>
+                                <th style="resize:horizontal; overflow:auto; min-width:260px;" class="py-2 px-3 text-left">Рекомендация</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${scenarioRows || '<tr><td colspan="7" class="py-4 px-3 text-center text-slate-500">Нет данных для выбранного фильтра</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h4 class="font-semibold mb-3">Приоритетные рекомендации</h4>
+                ${(recommendations.length
+                    ? `<ul class="space-y-2 text-sm text-slate-700">${recommendations.map((x) => `<li class="border-l-4 border-emerald-500 pl-3">${escapeHtml(x)}</li>`).join('')}</ul>`
+                    : '<div class="text-sm text-slate-500">Критических рекомендаций нет.</div>'
+                )}
+            </div>
         </div>
     `;
 }

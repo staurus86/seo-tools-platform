@@ -56,13 +56,16 @@ function clearHistory() {
 function getToolName(endpoint) {
     const names = {
         'site-analyze': 'Анализ сайта',
+        'onpage-audit': 'OnPage-аудит',
+        'site-audit-pro': 'Site Audit Pro',
         'robots-check': 'Robots.txt',
         'sitemap-validate': 'Sitemap.xml',
         'render-audit': 'Аудит рендеринга',
         'mobile-check': 'Мобильная версия',
         'bot-check': 'Проверка ботов',
         'clusterizer': 'Кластеризатор ключей',
-        'link-profile-audit': 'Аудит ссылочного профиля'
+        'link-profile-audit': 'Аудит ссылочного профиля',
+        'redirect-checker': 'Redirect Checker'
     };
     return names[endpoint] || endpoint;
 }
@@ -71,13 +74,16 @@ function getToolName(endpoint) {
 function getToolIcon(endpoint) {
     const icons = {
         'site-analyze': 'fa-sitemap text-blue-500',
+        'onpage-audit': 'fa-file-alt text-blue-500',
+        'site-audit-pro': 'fa-layer-group text-indigo-500',
         'robots-check': 'fa-robot text-green-500',
         'sitemap-validate': 'fa-map text-purple-500',
         'render-audit': 'fa-code text-orange-500',
         'mobile-check': 'fa-mobile-alt text-pink-500',
         'bot-check': 'fa-spider text-red-500',
         'clusterizer': 'fa-object-group text-cyan-500',
-        'link-profile-audit': 'fa-link text-amber-500'
+        'link-profile-audit': 'fa-link text-amber-500',
+        'redirect-checker': 'fa-random text-emerald-500'
     };
     return icons[endpoint] || 'fa-search text-gray-500';
 }

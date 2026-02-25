@@ -4500,6 +4500,12 @@ def check_keywords_clusterizer(
     )
 
 
+def check_redirect_checker_full(url: str, user_agent: str = "googlebot_desktop") -> Dict[str, Any]:
+    from app.tools.redirect_checker import run_redirect_checker
+
+    return run_redirect_checker(url=url, user_agent_key=user_agent)
+
+
 class SiteAnalyzeRequest(BaseModel):
     url: str
     max_pages: int = 20
@@ -4595,6 +4601,11 @@ class ClusterizerRequest(BaseModel):
         if value is None:
             return "balanced"
         return str(value).strip().lower()
+
+
+class RedirectCheckerRequest(BaseModel):
+    url: str
+    user_agent: Optional[str] = "googlebot_desktop"
 
 
 @router.post("/tasks/site-analyze")
@@ -4885,6 +4896,32 @@ async def create_clusterizer_task(data: ClusterizerRequest, background_tasks: Ba
 
     background_tasks.add_task(_run_clusterizer_task)
     return {"task_id": task_id, "status": "PENDING", "message": "Кластеризация ключей запущена"}
+
+
+@router.post("/tasks/redirect-checker")
+async def create_redirect_checker(data: RedirectCheckerRequest):
+    """Run redirect checker (11 scenarios)."""
+    url = _normalize_http_input(data.url or "")
+    if not url:
+        raise HTTPException(status_code=422, detail="Введите корректный URL сайта (домен или http/https URL).")
+
+    user_agent = str(data.user_agent or "googlebot_desktop").strip().lower()
+    print(f"[API] Redirect checker for: {url}, ua={user_agent}")
+
+    try:
+        result = check_redirect_checker_full(url, user_agent=user_agent)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Redirect checker failed: {exc}")
+
+    task_id = f"redirect-{datetime.now().timestamp()}"
+    create_task_result(task_id, "redirect_checker", url, result)
+    return {
+        "task_id": task_id,
+        "status": "SUCCESS",
+        "message": "Redirect checker completed",
+    }
 
 
 @router.post("/tasks/link-profile-audit")

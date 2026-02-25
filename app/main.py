@@ -67,7 +67,7 @@ logger.info("Creating FastAPI app...")
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="Asynchronous SEO analysis platform with 6 powerful tools",
+    description="Asynchronous SEO analysis platform with 10 tools",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
 )

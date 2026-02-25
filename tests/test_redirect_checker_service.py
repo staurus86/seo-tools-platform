@@ -1,0 +1,76 @@
+import unittest
+from unittest.mock import patch
+
+from app.tools.redirect_checker.service_v1 import run_redirect_checker
+
+
+def _mk_trace(start_url, codes, final_url=None, canonical_url=""):
+    final_url = final_url or start_url
+    chain = []
+    for idx, code in enumerate(codes):
+        chain.append(
+            {
+                "url": start_url if idx == 0 else final_url,
+                "status_code": int(code),
+                "location": final_url if idx < len(codes) - 1 else "",
+            }
+        )
+    return {
+        "start_url": start_url,
+        "final_url": final_url,
+        "final_status_code": int(codes[-1]) if codes else None,
+        "hops": max(0, len(codes) - 1),
+        "chain": chain,
+        "error": "",
+        "loop_detected": False,
+        "duration_ms": 10,
+        "content_type": "text/html; charset=utf-8",
+        "canonical_url": canonical_url,
+        "canonical_source": "html" if canonical_url else "",
+    }
+
+
+class RedirectCheckerServiceTests(unittest.TestCase):
+    @patch("app.tools.redirect_checker.service_v1._trace_url")
+    def test_returns_all_11_scenarios(self, mock_trace):
+        def side_effect(url, user_agent, timeout=12, max_hops=10):  # noqa: ARG001
+            if url.startswith("http://example.com"):
+                return _mk_trace(url, [301, 200], "https://example.com/")
+            if "www.example.com" in url:
+                return _mk_trace(url, [301, 200], "https://example.com/")
+            if "/redirect-checker//probe//" in url:
+                return _mk_trace(url, [301, 200], "https://example.com/redirect-checker/probe/")
+            if url.endswith("/CART"):
+                return _mk_trace(url, [301, 200], "https://example.com/cart")
+            if url.endswith("/index.html"):
+                return _mk_trace(url, [301, 200], "https://example.com/")
+            if url.endswith("/page"):
+                return _mk_trace(url, [301, 200], "https://example.com/page/")
+            if url.endswith("/page/"):
+                return _mk_trace(url, [200], "https://example.com/page/")
+            if url.endswith("/legacy-page.html"):
+                return _mk_trace(url, [301, 200], "https://example.com/legacy-page")
+            if url.endswith("/legacy-page.php"):
+                return _mk_trace(url, [404], url)
+            if "/redirect-checker-404-" in url:
+                return _mk_trace(url, [404], url)
+            return _mk_trace(url, [200], "https://example.com/", canonical_url="https://example.com/")
+
+        mock_trace.side_effect = side_effect
+
+        result = run_redirect_checker(url="example.com", user_agent_key="googlebot_desktop")
+        payload = result.get("results", {})
+        scenarios = payload.get("scenarios", [])
+        summary = payload.get("summary", {})
+        keyed = {item.get("key"): item for item in scenarios}
+
+        self.assertEqual(len(scenarios), 11)
+        self.assertEqual(summary.get("total_scenarios"), 11)
+        self.assertEqual(keyed.get("http_to_https", {}).get("status"), "passed")
+        self.assertEqual(keyed.get("canonical_tag", {}).get("status"), "passed")
+        self.assertEqual(keyed.get("missing_404", {}).get("status"), "passed")
+        self.assertEqual(summary.get("errors"), 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
