@@ -2278,6 +2278,298 @@ class DOCXGenerator:
         self._save_document(doc, filepath)
         return filepath
 
+    def generate_core_web_vitals_report(self, task_id: str, data: Dict[str, Any]) -> str:
+        """Generate Core Web Vitals report (single or batch) to DOCX."""
+        doc = Document()
+
+        def _as_float(value: Any) -> Any:
+            try:
+                if value is None:
+                    return None
+                return float(value)
+            except Exception:
+                return None
+
+        def _fmt(value: Any, digits: int = 1) -> str:
+            num = _as_float(value)
+            if num is None:
+                return "-"
+            if digits <= 0:
+                return str(int(round(num)))
+            return f"{num:.{digits}f}"
+
+        def _status_label(value: Any) -> str:
+            token = str(value or "unknown").strip().lower()
+            if token == "good":
+                return "GOOD"
+            if token == "needs_improvement":
+                return "NEEDS IMPROVEMENT"
+            if token == "poor":
+                return "POOR"
+            if token == "error":
+                return "ERROR"
+            return "UNKNOWN"
+
+        results = data.get("results", {}) or {}
+        mode = str(results.get("mode") or "single").strip().lower()
+        strategy = str(results.get("strategy") or "").upper() or "-"
+        source = str(results.get("source") or "pagespeed_insights_api")
+        url = str(data.get("url") or results.get("url") or "-")
+        summary = results.get("summary", {}) or {}
+
+        title = doc.add_heading("Core Web Vitals Report", 0)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        doc.add_paragraph(f"URL: {url}")
+        doc.add_paragraph(f"Strategy: {strategy}")
+        doc.add_paragraph(f"Mode: {mode}")
+        doc.add_paragraph(f"Источник: {source}")
+        doc.add_paragraph(f"Сформирован: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+        self._add_heading(doc, "1. Executive Summary", level=1)
+        if mode == "batch" or isinstance(results.get("sites"), list):
+            self._add_table(
+                doc,
+                ["Показатель", "Значение"],
+                [
+                    ["Total URLs", summary.get("total_urls", 0)],
+                    ["Success", summary.get("successful_urls", 0)],
+                    ["Errors", summary.get("failed_urls", 0)],
+                    ["CWV status", _status_label(summary.get("core_web_vitals_status"))],
+                    ["Avg score", _fmt(summary.get("average_performance_score"), 1)],
+                    ["Median score", _fmt(summary.get("median_performance_score"), 1)],
+                    ["Min score", _fmt(summary.get("min_performance_score"), 1)],
+                    ["Max score", _fmt(summary.get("max_performance_score"), 1)],
+                ],
+            )
+        else:
+            self._add_table(
+                doc,
+                ["Показатель", "Значение"],
+                [
+                    ["Performance score", summary.get("performance_score", "-")],
+                    ["CWV status", _status_label(summary.get("core_web_vitals_status"))],
+                    ["Health index", summary.get("health_index", "-")],
+                    ["Risk level", str(summary.get("risk_level") or "-").upper()],
+                    ["Grade", summary.get("grade", "-")],
+                ],
+            )
+
+        if mode == "batch" or isinstance(results.get("sites"), list):
+            sites = results.get("sites", []) or []
+            self._add_heading(doc, "2. URL Details", level=1)
+            detail_rows: List[List[Any]] = []
+            for idx, site in enumerate(sites, start=1):
+                site_url = str(site.get("url") or "-")
+                if str(site.get("status") or "").lower() != "success":
+                    detail_rows.append(
+                        [
+                            idx,
+                            site_url,
+                            "ERROR",
+                            "-",
+                            "-",
+                            "-",
+                            "-",
+                            str(site.get("error") or "scan error"),
+                        ]
+                    )
+                    continue
+                site_summary = site.get("summary", {}) or {}
+                metrics = site.get("metrics", {}) or {}
+                lcp = (metrics.get("lcp") or {}).get("field_value_ms")
+                if lcp is None:
+                    lcp = (metrics.get("lcp") or {}).get("lab_value_ms")
+                inp = (metrics.get("inp") or {}).get("field_value_ms")
+                if inp is None:
+                    inp = (metrics.get("inp") or {}).get("lab_value_ms")
+                cls = (metrics.get("cls") or {}).get("field_value")
+                if cls is None:
+                    cls = (metrics.get("cls") or {}).get("lab_value")
+                opportunities = site.get("opportunities", []) or []
+                recommendations = site.get("recommendations", []) or []
+                focus = "-"
+                if opportunities and isinstance(opportunities[0], dict):
+                    focus = str(opportunities[0].get("title") or "-")
+                elif recommendations:
+                    focus = str(recommendations[0] or "-")
+                detail_rows.append(
+                    [
+                        idx,
+                        site_url,
+                        _status_label(site_summary.get("core_web_vitals_status")),
+                        site_summary.get("performance_score", "-"),
+                        _fmt(lcp, 0),
+                        _fmt(inp, 0),
+                        _fmt(cls, 3),
+                        focus,
+                    ]
+                )
+            if detail_rows:
+                self._add_table(
+                    doc,
+                    ["#", "URL", "CWV", "Score", "LCP (ms)", "INP (ms)", "CLS", "Priority Focus"],
+                    detail_rows,
+                )
+            else:
+                doc.add_paragraph("Детали по URL отсутствуют.")
+
+            common_opportunities = results.get("common_opportunities", []) or []
+            self._add_heading(doc, "3. Common Opportunities", level=1)
+            if common_opportunities:
+                rows = []
+                for item in common_opportunities[:20]:
+                    rows.append(
+                        [
+                            item.get("title") or item.get("id") or "-",
+                            item.get("group") or "-",
+                            item.get("count") or 0,
+                            f"{item.get('critical_count') or 0}/{item.get('high_count') or 0}",
+                            _fmt(item.get("total_savings_ms"), 1),
+                            _fmt(item.get("total_savings_kib"), 1),
+                        ]
+                    )
+                self._add_table(
+                    doc,
+                    ["Проблема", "Group", "URL count", "Critical/High", "Savings ms", "Savings KiB"],
+                    rows,
+                )
+            else:
+                doc.add_paragraph("Частые opportunities не обнаружены.")
+
+            self._add_heading(doc, "4. Batch Action Plan", level=1)
+            batch_action_plan = results.get("action_plan", []) or []
+            if batch_action_plan:
+                self._add_table(
+                    doc,
+                    ["Priority", "Action", "Affected URLs"],
+                    [
+                        [
+                            item.get("priority") or "P2",
+                            item.get("action") or "-",
+                            item.get("affected_urls") or 0,
+                        ]
+                        for item in batch_action_plan[:20]
+                    ],
+                )
+            else:
+                doc.add_paragraph("Batch action plan не сформирован.")
+        else:
+            metrics = results.get("metrics", {}) or {}
+            categories = results.get("categories", {}) or {}
+            diagnostics = results.get("diagnostics", {}) or {}
+            opportunities = results.get("opportunities", []) or []
+            action_plan = results.get("action_plan", []) or []
+            recommendations = results.get("recommendations", []) or []
+
+            self._add_heading(doc, "2. Metrics", level=1)
+            metric_rows: List[List[Any]] = []
+            for key, label, field_key, lab_key in [
+                ("lcp", "LCP", "field_value_ms", "lab_value_ms"),
+                ("inp", "INP", "field_value_ms", "lab_value_ms"),
+                ("cls", "CLS", "field_value", "lab_value"),
+                ("fcp", "FCP", None, "lab_value_ms"),
+                ("ttfb", "TTFB", None, "lab_value_ms"),
+                ("speed_index", "Speed Index", None, "lab_value_ms"),
+                ("tbt", "TBT", None, "lab_value_ms"),
+                ("tti", "TTI", None, "lab_value_ms"),
+            ]:
+                payload = metrics.get(key) or {}
+                field_val = payload.get(field_key) if field_key else None
+                lab_val = payload.get(lab_key) if lab_key else None
+                metric_rows.append(
+                    [
+                        label,
+                        _fmt(field_val, 3 if key == "cls" else 1) if field_val is not None else "-",
+                        _fmt(lab_val, 3 if key == "cls" else 1) if lab_val is not None else "-",
+                        _status_label(payload.get("status")),
+                    ]
+                )
+            self._add_table(doc, ["Metric", "Field", "Lab", "Status"], metric_rows)
+
+            self._add_heading(doc, "3. Lighthouse Categories", level=1)
+            self._add_table(
+                doc,
+                ["Category", "Score"],
+                [
+                    ["Performance", categories.get("performance", "-")],
+                    ["Accessibility", categories.get("accessibility", "-")],
+                    ["Best Practices", categories.get("best_practices", "-")],
+                    ["SEO", categories.get("seo", "-")],
+                ],
+            )
+
+            self._add_heading(doc, "4. Technical Diagnostics", level=1)
+            self._add_table(
+                doc,
+                ["Показатель", "Значение"],
+                [
+                    ["Requests", diagnostics.get("num_requests", "-")],
+                    ["Scripts", diagnostics.get("num_scripts", "-")],
+                    ["Stylesheets", diagnostics.get("num_stylesheets", "-")],
+                    ["Tasks > 50ms", diagnostics.get("num_tasks_over_50ms", "-")],
+                    ["Tasks > 100ms", diagnostics.get("num_tasks_over_100ms", "-")],
+                    ["Total byte weight (KiB)", _fmt(diagnostics.get("total_byte_weight_kib"), 1)],
+                ],
+            )
+
+            self._add_heading(doc, "5. Top Opportunities", level=1)
+            if opportunities:
+                self._add_table(
+                    doc,
+                    ["Priority", "Title", "Group", "Score", "Savings ms", "Savings KiB"],
+                    [
+                        [
+                            str(item.get("priority") or "medium").upper(),
+                            item.get("title") or item.get("id") or "-",
+                            item.get("group") or "-",
+                            _fmt(item.get("score"), 3),
+                            _fmt(item.get("savings_ms"), 1),
+                            _fmt(item.get("savings_kib"), 1),
+                        ]
+                        for item in opportunities[:25]
+                    ],
+                )
+            else:
+                doc.add_paragraph("Серьезных opportunities не найдено.")
+
+            self._add_heading(doc, "6. Action Plan", level=1)
+            if action_plan:
+                self._add_table(
+                    doc,
+                    ["Priority", "Area", "Owner", "Action", "Expected Impact"],
+                    [
+                        [
+                            item.get("priority") or "P3",
+                            item.get("area") or "-",
+                            item.get("owner") or "-",
+                            item.get("action") or "-",
+                            item.get("expected_impact") or "-",
+                        ]
+                        for item in action_plan[:25]
+                    ],
+                )
+            else:
+                doc.add_paragraph("Action plan не сформирован.")
+
+            self._add_heading(doc, "7. Recommendations", level=1)
+            if recommendations:
+                for rec in recommendations[:40]:
+                    doc.add_paragraph(str(rec), style="List Bullet")
+            else:
+                doc.add_paragraph("Рекомендации не сформированы.")
+
+        doc.add_paragraph()
+        footer = doc.add_paragraph(
+            f"Отчет сформирован SEO Tools Platform: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        footer.runs[0].font.size = Pt(8)
+        footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
+
+        filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
+        self._save_document(doc, filepath)
+        return filepath
+
     def generate_report(self, task_id: str, task_type: str, data: Dict[str, Any]) -> str:
         """Генерирует отчет в зависимости от типа задачи."""
         generators = {
@@ -2291,6 +2583,7 @@ class DOCXGenerator:
             'onpage_audit': self.generate_onpage_report,
             'link_profile_audit': self.generate_link_profile_report,
             'redirect_checker': self.generate_redirect_checker_report,
+            'core_web_vitals': self.generate_core_web_vitals_report,
         }
         
         generator = generators.get(task_type, self.generate_site_analyze_report)

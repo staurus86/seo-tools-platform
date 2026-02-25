@@ -9,6 +9,7 @@ import re
 import json
 import time
 import random
+import math
 import requests
 from urllib.parse import urljoin, urlparse
 
@@ -2658,6 +2659,94 @@ async def export_redirect_checker_docx(data: ExportRequest):
         return {"error": str(e)}
 
 
+@router.post("/export/core-web-vitals-docx")
+async def export_core_web_vitals_docx(data: ExportRequest):
+    """Export Core Web Vitals report to DOCX."""
+    import os
+    import re
+    from fastapi.responses import Response
+    from app.reports.docx_generator import docx_generator
+
+    try:
+        task_id = data.task_id
+        task = get_task_result(task_id)
+        if not task:
+            return {"error": "Task not found", "task_id": task_id}
+
+        task_type = task.get("task_type")
+        if task_type != "core_web_vitals":
+            return {"error": f"Unsupported task type for core web vitals DOCX export: {task_type}"}
+
+        task_result = task.get("result", {}) or {}
+        url = task.get("url", "") or task_result.get("url", "")
+        report_payload = {
+            "url": url,
+            "results": task_result.get("results", task_result),
+        }
+        filepath = docx_generator.generate_core_web_vitals_report(task_id, report_payload)
+        if not filepath or not os.path.exists(filepath):
+            return {"error": "Failed to generate report"}
+        append_task_artifact(task_id, filepath, kind="export")
+
+        with open(filepath, "rb") as f:
+            content = f.read()
+
+        domain = re.sub(r"[^a-zA-Z0-9._-]+", "_", (urlparse(url).netloc or "site"))
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+        filename = f"core_web_vitals_report_{domain}_{timestamp}.docx"
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.post("/export/core-web-vitals-xlsx")
+async def export_core_web_vitals_xlsx(data: ExportRequest):
+    """Export Core Web Vitals report to XLSX."""
+    import os
+    import re
+    from fastapi.responses import Response
+    from app.reports.xlsx_generator import xlsx_generator
+
+    try:
+        task_id = data.task_id
+        task = get_task_result(task_id)
+        if not task:
+            return {"error": "Task not found", "task_id": task_id}
+
+        task_type = task.get("task_type")
+        if task_type != "core_web_vitals":
+            return {"error": f"Unsupported task type for core web vitals XLSX export: {task_type}"}
+
+        task_result = task.get("result", {}) or {}
+        url = task.get("url", "") or task_result.get("url", "")
+        report_payload = {
+            "url": url,
+            "results": task_result.get("results", task_result),
+        }
+        filepath = xlsx_generator.generate_core_web_vitals_report(task_id, report_payload)
+        if not filepath or not os.path.exists(filepath):
+            return {"error": "Failed to generate report"}
+        append_task_artifact(task_id, filepath, kind="export")
+
+        with open(filepath, "rb") as f:
+            content = f.read()
+
+        domain = re.sub(r"[^a-zA-Z0-9._-]+", "_", (urlparse(url).netloc or "site"))
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+        filename = f"core_web_vitals_report_{domain}_{timestamp}.xlsx"
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.post("/export/site-audit-pro-docx")
 async def export_site_audit_pro_docx(data: ExportRequest):
     """Export Site Audit Pro report to DOCX."""
@@ -4741,9 +4830,40 @@ def _build_core_web_vitals_batch_result(
     source: str,
     sites: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
+    def _as_float(value: Any) -> Optional[float]:
+        try:
+            if value is None:
+                return None
+            return float(value)
+        except Exception:
+            return None
+
+    def _median(values: List[float]) -> Optional[float]:
+        arr = [float(x) for x in values if x is not None]
+        if not arr:
+            return None
+        arr.sort()
+        n = len(arr)
+        mid = n // 2
+        if n % 2 == 1:
+            return arr[mid]
+        return (arr[mid - 1] + arr[mid]) / 2.0
+
     score_values: List[float] = []
+    metric_lcp_values: List[float] = []
+    metric_inp_values: List[float] = []
+    metric_cls_values: List[float] = []
+    category_acc: Dict[str, List[float]] = {
+        "performance": [],
+        "accessibility": [],
+        "best_practices": [],
+        "seo": [],
+    }
     status_counts = {"good": 0, "needs_improvement": 0, "poor": 0, "unknown": 0}
     top_recommendations: Dict[str, int] = {}
+    common_opportunities: Dict[str, Dict[str, Any]] = {}
+    plan_counts: Dict[str, int] = {}
+    risk_counts = {"low": 0, "medium": 0, "high": 0}
     failed_urls: List[Dict[str, str]] = []
     successful_urls = 0
 
@@ -4771,11 +4891,81 @@ def _build_core_web_vitals_batch_result(
         except Exception:
             pass
 
+        metrics = site.get("metrics") or {}
+        lcp = _as_float(((metrics.get("lcp") or {}).get("field_value_ms")))
+        if lcp is None:
+            lcp = _as_float(((metrics.get("lcp") or {}).get("lab_value_ms")))
+        inp = _as_float(((metrics.get("inp") or {}).get("field_value_ms")))
+        if inp is None:
+            inp = _as_float(((metrics.get("inp") or {}).get("lab_value_ms")))
+        cls = _as_float(((metrics.get("cls") or {}).get("field_value")))
+        if cls is None:
+            cls = _as_float(((metrics.get("cls") or {}).get("lab_value")))
+        if lcp is not None:
+            metric_lcp_values.append(lcp)
+        if inp is not None:
+            metric_inp_values.append(inp)
+        if cls is not None:
+            metric_cls_values.append(cls)
+
+        categories = site.get("categories") or {}
+        for key in category_acc.keys():
+            cat_val = _as_float(categories.get(key))
+            if cat_val is not None:
+                category_acc[key].append(cat_val)
+
+        analysis = site.get("analysis") or {}
+        risk_level = str(analysis.get("risk_level") or "").lower()
+        if risk_level in risk_counts:
+            risk_counts[risk_level] += 1
+
         for rec in (site.get("recommendations") or []):
             text = str(rec or "").strip()
             if not text:
                 continue
             top_recommendations[text] = int(top_recommendations.get(text, 0) or 0) + 1
+
+        for plan_item in (site.get("action_plan") or []):
+            if not isinstance(plan_item, dict):
+                continue
+            title = str(plan_item.get("action") or "").strip()
+            if not title:
+                continue
+            plan_counts[title] = int(plan_counts.get(title, 0) or 0) + 1
+
+        for opp in (site.get("opportunities") or []):
+            if not isinstance(opp, dict):
+                continue
+            opp_id = str(opp.get("id") or "")
+            opp_title = str(opp.get("title") or opp_id or "").strip()
+            if not opp_title:
+                continue
+            key = opp_id or opp_title
+            bucket = common_opportunities.setdefault(
+                key,
+                {
+                    "id": opp_id,
+                    "title": opp_title,
+                    "count": 0,
+                    "critical_count": 0,
+                    "high_count": 0,
+                    "total_savings_ms": 0.0,
+                    "total_savings_bytes": 0.0,
+                    "group": str(opp.get("group") or ""),
+                },
+            )
+            bucket["count"] = int(bucket.get("count") or 0) + 1
+            priority = str(opp.get("priority") or "").lower()
+            if priority == "critical":
+                bucket["critical_count"] = int(bucket.get("critical_count") or 0) + 1
+            if priority == "high":
+                bucket["high_count"] = int(bucket.get("high_count") or 0) + 1
+            ms = _as_float(opp.get("savings_ms"))
+            b = _as_float(opp.get("savings_bytes"))
+            if ms is not None:
+                bucket["total_savings_ms"] = float(bucket.get("total_savings_ms") or 0.0) + ms
+            if b is not None:
+                bucket["total_savings_bytes"] = float(bucket.get("total_savings_bytes") or 0.0) + b
 
     if status_counts["poor"] > 0:
         batch_status = "poor"
@@ -4794,8 +4984,83 @@ def _build_core_web_vitals_batch_result(
             recommendations.append(text)
 
     avg_score = round(sum(score_values) / len(score_values), 1) if score_values else None
+    median_score = round(_median(score_values), 1) if score_values else None
+    min_score = round(min(score_values), 1) if score_values else None
+    max_score = round(max(score_values), 1) if score_values else None
     total_urls = len(sites)
     failed_count = len(failed_urls)
+    common_opportunities_rows: List[Dict[str, Any]] = []
+    for value in common_opportunities.values():
+        ms_total = float(value.get("total_savings_ms") or 0.0)
+        bytes_total = float(value.get("total_savings_bytes") or 0.0)
+        common_opportunities_rows.append(
+            {
+                "id": value.get("id") or "",
+                "title": value.get("title") or "",
+                "group": value.get("group") or "",
+                "count": int(value.get("count") or 0),
+                "critical_count": int(value.get("critical_count") or 0),
+                "high_count": int(value.get("high_count") or 0),
+                "total_savings_ms": round(ms_total, 1),
+                "total_savings_kib": round(bytes_total / 1024.0, 1),
+            }
+        )
+    common_opportunities_rows.sort(
+        key=lambda item: (
+            -int(item.get("count") or 0),
+            -int(item.get("critical_count") or 0),
+            -float(item.get("total_savings_ms") or 0.0),
+            -float(item.get("total_savings_kib") or 0.0),
+        )
+    )
+    common_opportunities_rows = common_opportunities_rows[:12]
+
+    priority_urls = []
+    for site in sites:
+        if str(site.get("status") or "").lower() != "success":
+            priority_urls.append(
+                {
+                    "url": str(site.get("url") or ""),
+                    "status": "error",
+                    "score": None,
+                    "reason": str(site.get("error") or "scan error"),
+                }
+            )
+            continue
+        site_summary = site.get("summary") or {}
+        site_score = _as_float(site_summary.get("performance_score"))
+        cwv = str(site_summary.get("core_web_vitals_status") or "unknown").lower()
+        top_issue = ""
+        opps = site.get("opportunities") or []
+        if isinstance(opps, list) and opps:
+            top_issue = str((opps[0] or {}).get("title") or "")
+        reason = top_issue or f"CWV: {cwv}"
+        priority_urls.append(
+            {
+                "url": str(site.get("url") or ""),
+                "status": cwv,
+                "score": site_score,
+                "reason": reason,
+            }
+        )
+    priority_urls.sort(
+        key=lambda item: (
+            0 if str(item.get("status") or "") == "error" else 1,
+            0 if str(item.get("status") or "") == "poor" else 1 if str(item.get("status") or "") == "needs_improvement" else 2,
+            float(item.get("score") if item.get("score") is not None else 101.0),
+        )
+    )
+    priority_urls = priority_urls[:8]
+
+    batch_action_plan = []
+    for action, count in sorted(plan_counts.items(), key=lambda item: (-item[1], item[0].lower()))[:8]:
+        batch_action_plan.append(
+            {
+                "action": action,
+                "affected_urls": count,
+                "priority": "P1" if count >= max(2, math.ceil(total_urls * 0.5)) else "P2",
+            }
+        )
 
     return {
         "mode": "batch",
@@ -4806,12 +5071,36 @@ def _build_core_web_vitals_batch_result(
             "successful_urls": successful_urls,
             "failed_urls": failed_count,
             "average_performance_score": avg_score,
+            "median_performance_score": median_score,
+            "min_performance_score": min_score,
+            "max_performance_score": max_score,
             "core_web_vitals_status": batch_status,
             "status_counts": status_counts,
+            "metrics_average": {
+                "lcp_ms": round(sum(metric_lcp_values) / len(metric_lcp_values), 1) if metric_lcp_values else None,
+                "inp_ms": round(sum(metric_inp_values) / len(metric_inp_values), 1) if metric_inp_values else None,
+                "cls": round(sum(metric_cls_values) / len(metric_cls_values), 3) if metric_cls_values else None,
+            },
+            "categories_average": {
+                "performance": round(sum(category_acc["performance"]) / len(category_acc["performance"]), 1)
+                if category_acc["performance"]
+                else None,
+                "accessibility": round(sum(category_acc["accessibility"]) / len(category_acc["accessibility"]), 1)
+                if category_acc["accessibility"]
+                else None,
+                "best_practices": round(sum(category_acc["best_practices"]) / len(category_acc["best_practices"]), 1)
+                if category_acc["best_practices"]
+                else None,
+                "seo": round(sum(category_acc["seo"]) / len(category_acc["seo"]), 1) if category_acc["seo"] else None,
+            },
+            "risk_counts": risk_counts,
         },
         "sites": sites,
         "failed_urls": failed_urls,
         "recommendations": recommendations,
+        "common_opportunities": common_opportunities_rows,
+        "priority_urls": priority_urls,
+        "action_plan": batch_action_plan,
         "checked_at": datetime.utcnow().isoformat(),
     }
 
@@ -5240,8 +5529,12 @@ async def create_core_web_vitals(data: CoreWebVitalsRequest, background_tasks: B
                         payload = scan_result.get("results", {}) if isinstance(scan_result, dict) else {}
                         summary = payload.get("summary", {}) if isinstance(payload, dict) else {}
                         metrics = payload.get("metrics", {}) if isinstance(payload, dict) else {}
+                        categories = payload.get("categories", {}) if isinstance(payload, dict) else {}
+                        diagnostics = payload.get("diagnostics", {}) if isinstance(payload, dict) else {}
+                        analysis = payload.get("analysis", {}) if isinstance(payload, dict) else {}
                         opportunities = payload.get("opportunities", []) if isinstance(payload, dict) else []
                         recommendations = payload.get("recommendations", []) if isinstance(payload, dict) else []
+                        action_plan = payload.get("action_plan", []) if isinstance(payload, dict) else []
                         source = str(payload.get("source") or source)
                         sites.append(
                             {
@@ -5249,8 +5542,12 @@ async def create_core_web_vitals(data: CoreWebVitalsRequest, background_tasks: B
                                 "status": "success",
                                 "summary": summary,
                                 "metrics": metrics,
+                                "categories": categories,
+                                "diagnostics": diagnostics,
+                                "analysis": analysis,
                                 "opportunities": opportunities[:8] if isinstance(opportunities, list) else [],
                                 "recommendations": recommendations if isinstance(recommendations, list) else [],
+                                "action_plan": action_plan[:8] if isinstance(action_plan, list) else [],
                                 "checked_at": payload.get("checked_at"),
                             }
                         )

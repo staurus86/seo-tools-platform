@@ -4862,6 +4862,310 @@ class XLSXGenerator:
         wb.close()
         return filepath
 
+    def generate_core_web_vitals_report(self, task_id: str, data: Dict[str, Any]) -> str:
+        """Generate Core Web Vitals report to XLSX (single or batch)."""
+        wb = Workbook()
+        header_style = self._create_header_style()
+        cell_style = self._create_cell_style()
+
+        def _as_float(value: Any) -> Any:
+            try:
+                if value is None:
+                    return None
+                return float(value)
+            except Exception:
+                return None
+
+        def _fmt(value: Any, digits: int = 1) -> Any:
+            num = _as_float(value)
+            if num is None:
+                return "-"
+            if digits <= 0:
+                return int(round(num))
+            return round(num, digits)
+
+        def _status_label(value: Any) -> str:
+            token = str(value or "unknown").strip().lower()
+            if token == "good":
+                return "GOOD"
+            if token == "needs_improvement":
+                return "NEEDS IMPROVEMENT"
+            if token == "poor":
+                return "POOR"
+            if token == "error":
+                return "ERROR"
+            return "UNKNOWN"
+
+        def _write_row(ws, row_idx: int, values: List[Any], *, is_header: bool = False) -> None:
+            style = header_style if is_header else cell_style
+            for col_idx, value in enumerate(values, start=1):
+                cell = ws.cell(row=row_idx, column=col_idx, value=value)
+                self._apply_style(cell, style)
+
+        def _set_widths(ws, widths: List[int]) -> None:
+            for col_idx, width in enumerate(widths, start=1):
+                ws.column_dimensions[get_column_letter(col_idx)].width = width
+
+        results = data.get("results", {}) or {}
+        mode = str(results.get("mode") or "single").strip().lower()
+        summary = results.get("summary", {}) or {}
+        url = str(data.get("url") or results.get("url") or "-")
+        strategy = str(results.get("strategy") or "").upper() or "-"
+        source = str(results.get("source") or "pagespeed_insights_api")
+
+        ws_summary = wb.active
+        ws_summary.title = "Summary"
+        _write_row(ws_summary, 1, ["Core Web Vitals Report"], is_header=True)
+        _write_row(ws_summary, 2, ["URL", url])
+        _write_row(ws_summary, 3, ["Strategy", strategy])
+        _write_row(ws_summary, 4, ["Mode", mode])
+        _write_row(ws_summary, 5, ["Source", source])
+        _write_row(ws_summary, 6, ["Generated at", datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
+
+        if mode == "batch" or isinstance(results.get("sites"), list):
+            _write_row(ws_summary, 8, ["KPI", "Value"], is_header=True)
+            summary_rows = [
+                ["Total URLs", summary.get("total_urls", 0)],
+                ["Success", summary.get("successful_urls", 0)],
+                ["Errors", summary.get("failed_urls", 0)],
+                ["CWV status", _status_label(summary.get("core_web_vitals_status"))],
+                ["Average score", _fmt(summary.get("average_performance_score"), 1)],
+                ["Median score", _fmt(summary.get("median_performance_score"), 1)],
+                ["Min score", _fmt(summary.get("min_performance_score"), 1)],
+                ["Max score", _fmt(summary.get("max_performance_score"), 1)],
+                ["Avg LCP (ms)", _fmt(((summary.get("metrics_average") or {}).get("lcp_ms")), 1)],
+                ["Avg INP (ms)", _fmt(((summary.get("metrics_average") or {}).get("inp_ms")), 1)],
+                ["Avg CLS", _fmt(((summary.get("metrics_average") or {}).get("cls")), 3)],
+            ]
+            for offset, row in enumerate(summary_rows, start=9):
+                _write_row(ws_summary, offset, row)
+            _set_widths(ws_summary, [34, 26])
+
+            ws_urls = wb.create_sheet("URLs")
+            _write_row(
+                ws_urls,
+                1,
+                ["#", "URL", "Status", "Score", "LCP (ms)", "INP (ms)", "CLS", "Priority focus", "Error"],
+                is_header=True,
+            )
+            sites = results.get("sites", []) or []
+            row_idx = 2
+            for idx, site in enumerate(sites, start=1):
+                site_url = str(site.get("url") or "-")
+                if str(site.get("status") or "").lower() != "success":
+                    _write_row(ws_urls, row_idx, [idx, site_url, "ERROR", "-", "-", "-", "-", "-", str(site.get("error") or "scan error")])
+                    row_idx += 1
+                    continue
+                site_summary = site.get("summary", {}) or {}
+                metrics = site.get("metrics", {}) or {}
+                lcp = (metrics.get("lcp") or {}).get("field_value_ms")
+                if lcp is None:
+                    lcp = (metrics.get("lcp") or {}).get("lab_value_ms")
+                inp = (metrics.get("inp") or {}).get("field_value_ms")
+                if inp is None:
+                    inp = (metrics.get("inp") or {}).get("lab_value_ms")
+                cls = (metrics.get("cls") or {}).get("field_value")
+                if cls is None:
+                    cls = (metrics.get("cls") or {}).get("lab_value")
+                opportunities = site.get("opportunities", []) or []
+                recommendations = site.get("recommendations", []) or []
+                focus = "-"
+                if opportunities and isinstance(opportunities[0], dict):
+                    focus = str(opportunities[0].get("title") or "-")
+                elif recommendations:
+                    focus = str(recommendations[0] or "-")
+                _write_row(
+                    ws_urls,
+                    row_idx,
+                    [
+                        idx,
+                        site_url,
+                        _status_label(site_summary.get("core_web_vitals_status")),
+                        site_summary.get("performance_score", "-"),
+                        _fmt(lcp, 0),
+                        _fmt(inp, 0),
+                        _fmt(cls, 3),
+                        focus,
+                        "",
+                    ],
+                )
+                row_idx += 1
+            _set_widths(ws_urls, [6, 54, 22, 10, 12, 12, 10, 44, 50])
+
+            ws_common = wb.create_sheet("Common Issues")
+            _write_row(
+                ws_common,
+                1,
+                ["Issue", "Group", "URL count", "Critical", "High", "Savings ms", "Savings KiB"],
+                is_header=True,
+            )
+            row_idx = 2
+            for item in (results.get("common_opportunities", []) or [])[:50]:
+                _write_row(
+                    ws_common,
+                    row_idx,
+                    [
+                        item.get("title") or item.get("id") or "-",
+                        item.get("group") or "-",
+                        item.get("count") or 0,
+                        item.get("critical_count") or 0,
+                        item.get("high_count") or 0,
+                        _fmt(item.get("total_savings_ms"), 1),
+                        _fmt(item.get("total_savings_kib"), 1),
+                    ],
+                )
+                row_idx += 1
+            _set_widths(ws_common, [50, 22, 12, 10, 10, 14, 14])
+
+            ws_plan = wb.create_sheet("Action Plan")
+            _write_row(ws_plan, 1, ["Priority", "Action", "Affected URLs"], is_header=True)
+            row_idx = 2
+            for item in (results.get("action_plan", []) or [])[:50]:
+                _write_row(
+                    ws_plan,
+                    row_idx,
+                    [
+                        item.get("priority") or "P2",
+                        item.get("action") or "-",
+                        item.get("affected_urls") or 0,
+                    ],
+                )
+                row_idx += 1
+            _set_widths(ws_plan, [12, 90, 16])
+
+            ws_recs = wb.create_sheet("Recommendations")
+            _write_row(ws_recs, 1, ["#", "Recommendation"], is_header=True)
+            row_idx = 2
+            for idx, rec in enumerate((results.get("recommendations", []) or [])[:120], start=1):
+                _write_row(ws_recs, row_idx, [idx, str(rec)])
+                row_idx += 1
+            _set_widths(ws_recs, [6, 130])
+        else:
+            _write_row(ws_summary, 8, ["KPI", "Value"], is_header=True)
+            summary_rows = [
+                ["Performance score", summary.get("performance_score", "-")],
+                ["CWV status", _status_label(summary.get("core_web_vitals_status"))],
+                ["Health index", summary.get("health_index", "-")],
+                ["Risk level", str(summary.get("risk_level") or "-").upper()],
+                ["Grade", summary.get("grade", "-")],
+            ]
+            for offset, row in enumerate(summary_rows, start=9):
+                _write_row(ws_summary, offset, row)
+            _set_widths(ws_summary, [34, 26])
+
+            metrics = results.get("metrics", {}) or {}
+            categories = results.get("categories", {}) or {}
+            diagnostics = results.get("diagnostics", {}) or {}
+
+            ws_metrics = wb.create_sheet("Metrics")
+            _write_row(ws_metrics, 1, ["Metric", "Field", "Lab", "Status"], is_header=True)
+            row_idx = 2
+            for key, label, field_key, lab_key, digits in [
+                ("lcp", "LCP", "field_value_ms", "lab_value_ms", 1),
+                ("inp", "INP", "field_value_ms", "lab_value_ms", 1),
+                ("cls", "CLS", "field_value", "lab_value", 3),
+                ("fcp", "FCP", None, "lab_value_ms", 1),
+                ("ttfb", "TTFB", None, "lab_value_ms", 1),
+                ("speed_index", "Speed Index", None, "lab_value_ms", 1),
+                ("tbt", "TBT", None, "lab_value_ms", 1),
+                ("tti", "TTI", None, "lab_value_ms", 1),
+            ]:
+                payload = metrics.get(key) or {}
+                field_val = payload.get(field_key) if field_key else None
+                lab_val = payload.get(lab_key) if lab_key else None
+                _write_row(
+                    ws_metrics,
+                    row_idx,
+                    [
+                        label,
+                        _fmt(field_val, digits) if field_val is not None else "-",
+                        _fmt(lab_val, digits) if lab_val is not None else "-",
+                        _status_label(payload.get("status")),
+                    ],
+                )
+                row_idx += 1
+            _set_widths(ws_metrics, [20, 16, 16, 22])
+
+            ws_categories = wb.create_sheet("Categories")
+            _write_row(ws_categories, 1, ["Category", "Score"], is_header=True)
+            _write_row(ws_categories, 2, ["Performance", categories.get("performance", "-")])
+            _write_row(ws_categories, 3, ["Accessibility", categories.get("accessibility", "-")])
+            _write_row(ws_categories, 4, ["Best Practices", categories.get("best_practices", "-")])
+            _write_row(ws_categories, 5, ["SEO", categories.get("seo", "-")])
+            _set_widths(ws_categories, [28, 16])
+
+            ws_diag = wb.create_sheet("Diagnostics")
+            _write_row(ws_diag, 1, ["Metric", "Value"], is_header=True)
+            diag_rows = [
+                ["Requests", diagnostics.get("num_requests", "-")],
+                ["Scripts", diagnostics.get("num_scripts", "-")],
+                ["Stylesheets", diagnostics.get("num_stylesheets", "-")],
+                ["Tasks > 50ms", diagnostics.get("num_tasks_over_50ms", "-")],
+                ["Tasks > 100ms", diagnostics.get("num_tasks_over_100ms", "-")],
+                ["Max RTT ms", diagnostics.get("max_rtt_ms", "-")],
+                ["Total byte weight KiB", _fmt(diagnostics.get("total_byte_weight_kib"), 1)],
+            ]
+            for idx, row in enumerate(diag_rows, start=2):
+                _write_row(ws_diag, idx, row)
+            _set_widths(ws_diag, [34, 20])
+
+            ws_opps = wb.create_sheet("Opportunities")
+            _write_row(
+                ws_opps,
+                1,
+                ["Priority", "Title", "Group", "Score", "Impact", "Savings ms", "Savings KiB", "Display value"],
+                is_header=True,
+            )
+            row_idx = 2
+            for item in (results.get("opportunities", []) or [])[:150]:
+                _write_row(
+                    ws_opps,
+                    row_idx,
+                    [
+                        str(item.get("priority") or "medium").upper(),
+                        item.get("title") or item.get("id") or "-",
+                        item.get("group") or "-",
+                        _fmt(item.get("score"), 3),
+                        _fmt(item.get("impact_score"), 1),
+                        _fmt(item.get("savings_ms"), 1),
+                        _fmt(item.get("savings_kib"), 1),
+                        item.get("display_value") or "",
+                    ],
+                )
+                row_idx += 1
+            _set_widths(ws_opps, [12, 50, 18, 10, 10, 14, 14, 50])
+
+            ws_plan = wb.create_sheet("Action Plan")
+            _write_row(ws_plan, 1, ["Priority", "Area", "Owner", "Action", "Expected impact"], is_header=True)
+            row_idx = 2
+            for item in (results.get("action_plan", []) or [])[:120]:
+                _write_row(
+                    ws_plan,
+                    row_idx,
+                    [
+                        item.get("priority") or "P3",
+                        item.get("area") or "-",
+                        item.get("owner") or "-",
+                        item.get("action") or "-",
+                        item.get("expected_impact") or "-",
+                    ],
+                )
+                row_idx += 1
+            _set_widths(ws_plan, [12, 20, 22, 70, 50])
+
+            ws_recs = wb.create_sheet("Recommendations")
+            _write_row(ws_recs, 1, ["#", "Recommendation"], is_header=True)
+            row_idx = 2
+            for idx, rec in enumerate((results.get("recommendations", []) or [])[:150], start=1):
+                _write_row(ws_recs, row_idx, [idx, str(rec)])
+                row_idx += 1
+            _set_widths(ws_recs, [6, 130])
+
+        filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
+        self._save_workbook(wb, filepath)
+        wb.close()
+        return filepath
+
     def generate_report(self, task_id: str, task_type: str, data: Dict[str, Any]) -> str:
         """Dispatch report generation by task type."""
         generators = {
@@ -4875,6 +5179,7 @@ class XLSXGenerator:
             'onpage_audit': self.generate_onpage_report,
             'clusterizer': self.generate_clusterizer_report,
             'link_profile_audit': self.generate_link_profile_report,
+            'core_web_vitals': self.generate_core_web_vitals_report,
         }
         
         generator = generators.get(task_type, self.generate_site_analyze_report)
