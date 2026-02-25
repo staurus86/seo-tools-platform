@@ -56,15 +56,11 @@ elif [ "$SERVICE_MODE" = "llm-worker" ]; then
         exit 1
     fi
     export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/ms-playwright}"
-    if ! compgen -G "${PLAYWRIGHT_BROWSERS_PATH}/chromium_headless_shell-*/chrome-linux/headless_shell" > /dev/null; then
-        if [ "${PLAYWRIGHT_AUTO_INSTALL_ON_BOOT:-0}" = "1" ]; then
-            echo "Playwright headless shell is missing. Auto-install is enabled, installing browsers..."
-            python -m playwright install chromium chromium-headless-shell
-        else
-            echo "ERROR: Playwright browser binaries are missing at ${PLAYWRIGHT_BROWSERS_PATH}."
-            echo "Build image with Playwright preinstalled or set PLAYWRIGHT_AUTO_INSTALL_ON_BOOT=1."
-            exit 1
-        fi
+    if ! compgen -G "${PLAYWRIGHT_BROWSERS_PATH}/chromium_headless_shell-*/chrome-linux/headless_shell" > /dev/null 2>&1; then
+        echo "WARNING: Playwright headless_shell binary not found at expected path. Listing available browsers:"
+        ls "${PLAYWRIGHT_BROWSERS_PATH}/" 2>/dev/null || echo "(directory empty or missing)"
+        echo "Attempting to install missing browsers..."
+        python -m playwright install chromium chromium-headless-shell
     fi
     echo "REDIS_URL is set to: ${REDIS_URL//:*@/:***@}"
     echo "JOB_CONCURRENCY: ${JOB_CONCURRENCY:-2}"
