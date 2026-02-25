@@ -914,6 +914,12 @@ function showResults(data) {
             task_id: result.task_id || taskId,
             url: result.url || ''
         };
+    } else if (result.task_type === 'core_web_vitals') {
+        coreWebVitalsData = {
+            ...result,
+            task_id: result.task_id || taskId,
+            url: result.url || ''
+        };
     } else if (result.task_type === 'link_profile_audit') {
         linkProfileData = {
             ...result,
@@ -951,6 +957,8 @@ function showResults(data) {
         resultsContent.innerHTML = generateClusterizerHTML(result);
     } else if (result.task_type === 'redirect_checker') {
         resultsContent.innerHTML = generateRedirectCheckerHTML(result);
+    } else if (result.task_type === 'core_web_vitals') {
+        resultsContent.innerHTML = generateCoreWebVitalsHTML(result);
     } else if (result.task_type === 'link_profile_audit') {
         resultsContent.innerHTML = generateLinkProfileAuditHTML(result);
         switchLinkProfileAuditTab('executive');
@@ -977,6 +985,7 @@ let onpageData = null;
 let clusterizerData = null;
 let redirectCheckerData = null;
 let redirectCheckerFilter = 'all';
+let coreWebVitalsData = null;
 let linkProfileData = null;
 let linkProfileRenderPayload = null;
 let linkProfileRowsLimitByScope = {};
@@ -3015,6 +3024,153 @@ Codes: ${escapeHtml(formatChain(s.response_codes))}
                     ? `<ul class="space-y-2 text-sm text-slate-700">${recommendations.map((x) => `<li class="border-l-4 border-emerald-500 pl-3">${escapeHtml(x)}</li>`).join('')}</ul>`
                     : '<div class="text-sm text-slate-500">Критических рекомендаций нет.</div>'
                 )}
+            </div>
+        </div>
+    `;
+}
+
+function generateCoreWebVitalsHTML(result) {
+    const resultData = result.result || result;
+    const r = resultData.results || resultData;
+    const summary = r.summary || {};
+    const metrics = r.metrics || {};
+    const opportunities = Array.isArray(r.opportunities) ? r.opportunities : [];
+    const recommendations = Array.isArray(r.recommendations) ? r.recommendations : [];
+    const strategy = r.strategy || 'desktop';
+    const score = Number(summary.performance_score ?? 0);
+    const cwvStatus = String(summary.core_web_vitals_status || 'unknown');
+
+    const statusClass = (status) => {
+        const s = String(status || '').toLowerCase();
+        if (s === 'good') return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+        if (s === 'needs_improvement') return 'border-amber-200 bg-amber-50 text-amber-800';
+        if (s === 'poor') return 'border-red-200 bg-red-50 text-red-800';
+        return 'border-slate-200 bg-slate-50 text-slate-700';
+    };
+
+    const statusLabel = (status) => {
+        const s = String(status || '').toLowerCase();
+        if (s === 'good') return 'GOOD';
+        if (s === 'needs_improvement') return 'NEEDS IMPROVEMENT';
+        if (s === 'poor') return 'POOR';
+        return 'UNKNOWN';
+    };
+
+    const metricCards = [
+        {
+            key: 'lcp',
+            title: 'LCP',
+            value: metrics.lcp?.field_value_ms ?? metrics.lcp?.lab_value_ms,
+            unit: 'ms',
+            status: metrics.lcp?.status
+        },
+        {
+            key: 'inp',
+            title: 'INP',
+            value: metrics.inp?.field_value_ms ?? metrics.inp?.lab_value_ms,
+            unit: 'ms',
+            status: metrics.inp?.status
+        },
+        {
+            key: 'cls',
+            title: 'CLS',
+            value: metrics.cls?.field_value ?? metrics.cls?.lab_value,
+            unit: '',
+            status: metrics.cls?.status
+        },
+        {
+            key: 'fcp',
+            title: 'FCP',
+            value: metrics.fcp?.lab_value_ms,
+            unit: 'ms',
+            status: metrics.fcp?.status
+        },
+        {
+            key: 'ttfb',
+            title: 'TTFB',
+            value: metrics.ttfb?.lab_value_ms,
+            unit: 'ms',
+            status: metrics.ttfb?.status
+        },
+    ];
+
+    return `
+        <div class="space-y-6">
+            <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
+                <div class="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                        <h3 class="text-lg font-semibold">Core Web Vitals Scanner</h3>
+                        <div class="text-sm text-slate-600 mt-1">URL: ${escapeHtml(resultData.url || r.url || '')}</div>
+                        <div class="text-xs text-slate-500 mt-1">Strategy: ${escapeHtml(String(strategy).toUpperCase())}</div>
+                        <div class="text-xs text-slate-500 mt-1">Источник: ${escapeHtml(r.source || 'pagespeed_insights_api')}</div>
+                    </div>
+                    <div class="grid grid-cols-1 gap-2 min-w-[220px]">
+                        <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+                            <div class="text-xs text-indigo-700">Performance score</div>
+                            <div class="text-2xl font-semibold text-indigo-900">${escapeHtml(score || 0)}</div>
+                        </div>
+                        <div class="rounded-lg border p-3 ${statusClass(cwvStatus)}">
+                            <div class="text-xs">Core Web Vitals</div>
+                            <div class="text-sm font-semibold">${escapeHtml(statusLabel(cwvStatus))}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
+                <h4 class="font-semibold mb-3">Метрики</h4>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                    ${metricCards.map((item) => {
+                        const raw = item.value;
+                        const formatted = (raw == null || raw === '') ? 'н/д' : (item.key === 'cls' ? Number(raw).toFixed(3) : Math.round(Number(raw)));
+                        return `
+                            <div class="rounded-lg border p-3 ${statusClass(item.status)}">
+                                <div class="text-xs opacity-80">${escapeHtml(item.title)}</div>
+                                <div class="text-xl font-semibold mt-1">${escapeHtml(formatted)}${item.unit ? ` <span class="text-xs font-normal">${escapeHtml(item.unit)}</span>` : ''}</div>
+                                <div class="text-[11px] mt-1">${escapeHtml(statusLabel(item.status))}</div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
+                <h4 class="font-semibold mb-3">Top opportunities</h4>
+                ${opportunities.length > 0 ? `
+                    <div class="overflow-auto border rounded-lg">
+                        <table class="w-full min-w-[760px] text-sm">
+                            <thead>
+                                <tr class="text-left text-xs text-slate-500 border-b bg-slate-50">
+                                    <th class="py-2 px-3">ID</th>
+                                    <th class="py-2 px-3">Проблема</th>
+                                    <th class="py-2 px-3">Score</th>
+                                    <th class="py-2 px-3">Значение</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${opportunities.map((item) => `
+                                    <tr class="border-b">
+                                        <td class="py-2 px-3 font-mono text-xs">${escapeHtml(item.id || '-')}</td>
+                                        <td class="py-2 px-3">
+                                            <div class="font-medium">${escapeHtml(item.title || '-')}</div>
+                                            <div class="text-xs text-slate-500">${escapeHtml(item.description || '')}</div>
+                                        </td>
+                                        <td class="py-2 px-3">${escapeHtml(item.score ?? '-')}</td>
+                                        <td class="py-2 px-3">${escapeHtml(item.display_value || '-')}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                ` : '<div class="text-sm text-slate-500">Серьёзных opportunity не найдено.</div>'}
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
+                <h4 class="font-semibold mb-3">Рекомендации</h4>
+                ${recommendations.length > 0
+                    ? `<ul class="space-y-2 text-sm text-slate-700">${recommendations.map((rec) => `<li class="border-l-4 border-cyan-500 pl-3">${escapeHtml(rec)}</li>`).join('')}</ul>`
+                    : '<div class="text-sm text-slate-500">Рекомендации не сформированы.</div>'
+                }
             </div>
         </div>
     `;

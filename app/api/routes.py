@@ -4568,6 +4568,12 @@ def check_redirect_checker_full(
     )
 
 
+def check_core_web_vitals(url: str, strategy: str = "desktop") -> Dict[str, Any]:
+    from app.tools.core_web_vitals import run_core_web_vitals
+
+    return run_core_web_vitals(url=url, strategy=strategy)
+
+
 class SiteAnalyzeRequest(BaseModel):
     url: str
     max_pages: int = 20
@@ -4697,6 +4703,17 @@ class RedirectCheckerRequest(BaseModel):
         if isinstance(value, list):
             return [str(item).strip() for item in value if str(item).strip()]
         return []
+
+
+class CoreWebVitalsRequest(BaseModel):
+    url: str
+    strategy: Optional[str] = "desktop"
+
+    @field_validator("strategy", mode="before")
+    @classmethod
+    def _normalize_strategy(cls, value):
+        token = str(value or "desktop").strip().lower()
+        return token if token in {"mobile", "desktop"} else "desktop"
 
 
 @router.post("/tasks/site-analyze")
@@ -5030,6 +5047,34 @@ async def create_redirect_checker(data: RedirectCheckerRequest):
         "task_id": task_id,
         "status": "SUCCESS",
         "message": "Redirect checker completed",
+    }
+
+
+@router.post("/tasks/core-web-vitals")
+async def create_core_web_vitals(data: CoreWebVitalsRequest):
+    """Run Core Web Vitals scan via PageSpeed Insights API."""
+    url = _normalize_http_input(data.url or "")
+    if not url:
+        raise HTTPException(status_code=422, detail="Введите корректный URL сайта (домен или http/https URL).")
+
+    strategy = str(data.strategy or "desktop").strip().lower()
+    if strategy not in {"mobile", "desktop"}:
+        strategy = "desktop"
+    print(f"[API] Core Web Vitals scan for: {url}, strategy={strategy}")
+
+    try:
+        result = check_core_web_vitals(url, strategy=strategy)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Core Web Vitals scan failed: {exc}")
+
+    task_id = f"cwv-{datetime.now().timestamp()}"
+    create_task_result(task_id, "core_web_vitals", url, result)
+    return {
+        "task_id": task_id,
+        "status": "SUCCESS",
+        "message": "Core Web Vitals scan completed",
     }
 
 

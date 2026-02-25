@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     # Clusterizer
     CLUSTERIZER_MAX_KEYWORDS: int = int(os.getenv("CLUSTERIZER_MAX_KEYWORDS", "2000"))
 
+    # Core Web Vitals (Google PageSpeed Insights API)
+    PAGESPEED_API_KEY: str = os.getenv("PAGESPEED_API_KEY", "")
+
     # Bot check v2
     BOT_CHECK_ENGINE: str = os.getenv("BOT_CHECK_ENGINE", "legacy")
     BOT_CHECK_TIMEOUT: int = int(os.getenv("BOT_CHECK_TIMEOUT", "15"))

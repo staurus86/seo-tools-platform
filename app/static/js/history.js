@@ -65,7 +65,8 @@ function getToolName(endpoint) {
         'bot-check': 'Проверка ботов',
         'clusterizer': 'Кластеризатор ключей',
         'link-profile-audit': 'Аудит ссылочного профиля',
-        'redirect-checker': 'Redirect Checker'
+        'redirect-checker': 'Redirect Checker',
+        'core-web-vitals': 'Core Web Vitals Scanner'
     };
     return names[endpoint] || endpoint;
 }
@@ -83,7 +84,8 @@ function getToolIcon(endpoint) {
         'bot-check': 'fa-spider text-red-500',
         'clusterizer': 'fa-object-group text-cyan-500',
         'link-profile-audit': 'fa-link text-amber-500',
-        'redirect-checker': 'fa-random text-emerald-500'
+        'redirect-checker': 'fa-random text-emerald-500',
+        'core-web-vitals': 'fa-tachometer-alt text-cyan-500'
     };
     return icons[endpoint] || 'fa-search text-gray-500';
 }
