@@ -540,6 +540,63 @@
             </button>
         </form>
     </div>
+
+    {% if feature_llm_crawler_enabled %}
+    <!-- Tool 12: LLM Crawler Simulation -->
+    <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-slate-700">
+        <div class="flex items-center mb-4">
+            <div class="bg-slate-100 p-3 rounded-lg mr-4">
+                <i class="fas fa-microchip text-slate-700 text-xl"></i>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold text-gray-800">LLM Crawler Simulation</h3>
+                <p class="text-sm text-gray-500">Simulate No-JS/Rendered crawl, robots/policies, AI-ready score</p>
+            </div>
+        </div>
+        <p class="text-gray-600 mb-4 text-sm">
+            Моделирование извлечения контента AI-краулером в режимах no-JS/rendered, проверка robots/policies и итоговый AI-ready score.
+        </p>
+        <form class="space-y-3" onsubmit="startLlmCrawlerTask(event)">
+            <input type="text" name="url" placeholder="example.com или https://example.com/page" required
+                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" name="renderJs" value="true" class="rounded border-gray-300 text-slate-700 focus:ring-slate-500">
+                    Render JS
+                </label>
+                <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" name="showHeaders" value="true" class="rounded border-gray-300 text-slate-700 focus:ring-slate-500">
+                    Show headers
+                </label>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Profiles</label>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+                    <label class="inline-flex items-center gap-2 text-gray-700">
+                        <input type="checkbox" name="profile" value="generic-bot" checked class="rounded border-gray-300 text-slate-700 focus:ring-slate-500">
+                        generic-bot
+                    </label>
+                    <label class="inline-flex items-center gap-2 text-gray-700">
+                        <input type="checkbox" name="profile" value="search-bot" checked class="rounded border-gray-300 text-slate-700 focus:ring-slate-500">
+                        search-bot
+                    </label>
+                    <label class="inline-flex items-center gap-2 text-gray-700">
+                        <input type="checkbox" name="profile" value="ai-bot" checked class="rounded border-gray-300 text-slate-700 focus:ring-slate-500">
+                        ai-bot
+                    </label>
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Timeout (ms)</label>
+                <input type="number" name="timeoutMs" value="20000" min="3000" max="120000"
+                       class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent">
+            </div>
+            <button type="submit" class="w-full bg-slate-700 text-white py-2 rounded-lg hover:bg-slate-800 transition">
+                <i class="fas fa-play mr-2"></i>Run LLM Crawler Simulation
+            </button>
+        </form>
+    </div>
+    {% endif %}
 </div>
 
 <!-- History Section -->
@@ -577,4 +634,5 @@
 
 {% block extra_js %}
 <script src="/static/js/history.js"></script>
+<script src="/static/js/llm-crawler.js"></script>
 {% endblock %}

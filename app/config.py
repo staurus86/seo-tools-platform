@@ -63,6 +63,21 @@ class Settings(BaseSettings):
     PAGESPEED_TIMEOUT_SEC: int = int(os.getenv("PAGESPEED_TIMEOUT_SEC", "60"))
     PAGESPEED_MAX_RETRIES: int = int(os.getenv("PAGESPEED_MAX_RETRIES", "3"))
 
+    # LLM Crawler Simulation rollout and limits
+    FEATURE_LLM_CRAWLER: bool = os.getenv("FEATURE_LLM_CRAWLER", "false").lower() == "true"
+    LLM_CRAWLER_ALLOWLIST: str = os.getenv("LLM_CRAWLER_ALLOWLIST", "")
+    LLM_CRAWLER_ALLOW_ADMIN: bool = os.getenv("LLM_CRAWLER_ALLOW_ADMIN", "true").lower() == "true"
+    JOB_CONCURRENCY: int = int(os.getenv("JOB_CONCURRENCY", "2"))
+    FETCH_TIMEOUT_MS: int = int(os.getenv("FETCH_TIMEOUT_MS", "20000"))
+    MAX_HTML_BYTES: int = int(os.getenv("MAX_HTML_BYTES", "2000000"))
+    LLM_CRAWLER_MAX_REDIRECT_HOPS: int = int(os.getenv("LLM_CRAWLER_MAX_REDIRECT_HOPS", "8"))
+    LLM_CRAWLER_JOB_TTL_SEC: int = int(os.getenv("LLM_CRAWLER_JOB_TTL_SEC", str(72 * 3600)))
+    LLM_CRAWLER_RATE_LIMIT_PER_MINUTE: int = int(os.getenv("LLM_CRAWLER_RATE_LIMIT_PER_MINUTE", "5"))
+    LLM_CRAWLER_RENDER_RATE_LIMIT_PER_DAY: int = int(os.getenv("LLM_CRAWLER_RENDER_RATE_LIMIT_PER_DAY", "20"))
+    LLM_CRAWLER_QUEUE_KEY: str = os.getenv("LLM_CRAWLER_QUEUE_KEY", "llmCrawler:queue")
+    LLM_CRAWLER_WORKER_HEARTBEAT_KEY: str = os.getenv("LLM_CRAWLER_WORKER_HEARTBEAT_KEY", "llmCrawler:worker:heartbeat")
+    LLM_CRAWLER_WORKER_HEARTBEAT_TTL_SEC: int = int(os.getenv("LLM_CRAWLER_WORKER_HEARTBEAT_TTL_SEC", "120"))
+
     # Bot check v2
     BOT_CHECK_ENGINE: str = os.getenv("BOT_CHECK_ENGINE", "legacy")
     BOT_CHECK_TIMEOUT: int = int(os.getenv("BOT_CHECK_TIMEOUT", "15"))

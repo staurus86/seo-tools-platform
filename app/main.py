@@ -123,11 +123,33 @@ if templates is None:
 # API routes
 app.include_router(api_router)
 
+# LLM crawler isolated router (safe behind feature gate).
+try:
+    from app.tools.llmCrawler.router import router as llm_crawler_router
+
+    app.include_router(llm_crawler_router)
+    logger.info("[OK] LLM crawler routes included")
+except Exception as e:
+    logger.warning(f"LLM crawler routes not included: {e}")
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Main page with tools."""
     if templates:
-        return templates.TemplateResponse("index.html", {"request": request})
+        llm_enabled = False
+        try:
+            from app.tools.llmCrawler.feature_gate import is_llm_crawler_enabled_for_request
+
+            llm_enabled = bool(is_llm_crawler_enabled_for_request(request))
+        except Exception:
+            llm_enabled = False
+        return templates.TemplateResponse(
+            "index.html",
+            {
+                "request": request,
+                "feature_llm_crawler_enabled": llm_enabled,
+            },
+        )
     return HTMLResponse("<h1>SEO Tools Platform</h1><p>Templates not loaded</p>")
 
 
@@ -140,6 +162,17 @@ async def results_page(request: Request, task_id: str):
             {"request": request, "task_id": task_id}
         )
     return HTMLResponse(f"<h1>Results</h1><p>Task: {task_id}</p>")
+
+
+@app.get("/llm-crawler/results/{job_id}", response_class=HTMLResponse)
+async def llm_crawler_results_page(request: Request, job_id: str):
+    """LLM crawler dedicated results page."""
+    if templates:
+        return templates.TemplateResponse(
+            "llm_crawler_result.html",
+            {"request": request, "job_id": job_id},
+        )
+    return HTMLResponse(f"<h1>LLM Crawler Result</h1><p>Job: {job_id}</p>")
 
 
 @app.get("/health")

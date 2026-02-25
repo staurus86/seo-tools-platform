@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}LLM Crawler Simulation Result{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <div class="mb-6">
+        <a href="/" class="text-blue-600 hover:text-blue-800 mb-2 inline-block">
+            <i class="fas fa-arrow-left mr-1"></i>Назад к инструментам
+        </a>
+        <h2 class="text-2xl font-bold text-gray-800">LLM Crawler Simulation</h2>
+        <p class="text-gray-600">Job ID: <span class="font-mono text-sm">{{ job_id }}</span></p>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-md p-6 mb-6">
+        <div class="flex items-center justify-between mb-3">
+            <div>
+                <h3 class="text-lg font-semibold text-gray-800">Прогресс</h3>
+                <p id="llm-status-text" class="text-gray-600 text-sm">queued</p>
+            </div>
+            <div id="llm-status-badge"></div>
+        </div>
+        <div class="w-full bg-gray-200 rounded-full h-4">
+            <div id="llm-progress-bar" class="bg-slate-700 h-4 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+        <div class="mt-2 text-sm text-gray-600">Progress: <span id="llm-progress-value">0%</span></div>
+        <div class="mt-4">
+            <button id="llm-download-json" disabled class="opacity-50 bg-slate-700 text-white px-4 py-2 rounded-lg hover:bg-slate-800">
+                <i class="fas fa-download mr-2"></i>Download JSON
+            </button>
+        </div>
+    </div>
+
+    <div id="llm-error-box" class="hidden bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 mb-6 text-sm"></div>
+    <div id="llm-result-box" class="bg-white rounded-xl shadow-md p-6"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/llm-crawler.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        window.initLlmCrawlerResult("{{ job_id }}");
+    });
+</script>
+{% endblock %}
+

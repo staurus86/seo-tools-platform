@@ -48,6 +48,15 @@ if [ "$SERVICE_MODE" = "worker" ]; then
     echo ""
     
     exec celery -A app.core.celery_app worker --loglevel=info --concurrency=2 -Q seo
+elif [ "$SERVICE_MODE" = "llm-worker" ]; then
+    echo "Starting in LLM WORKER mode..."
+    echo ""
+    echo "REDIS_URL is set to: ${REDIS_URL//:*@/:***@}"
+    echo "JOB_CONCURRENCY: ${JOB_CONCURRENCY:-2}"
+    echo "FETCH_TIMEOUT_MS: ${FETCH_TIMEOUT_MS:-20000}"
+    echo "MAX_HTML_BYTES: ${MAX_HTML_BYTES:-2000000}"
+    echo ""
+    exec python -m app.tools.llmCrawler.worker
 else
     echo "Starting in WEB mode..."
     echo ""
