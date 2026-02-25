@@ -4,6 +4,14 @@
 
 const LLM_API_BASE = '/api/tools/llm-crawler';
 
+function _humanizeNetworkError(error) {
+    const msg = String(error?.message || '');
+    if (msg.toLowerCase().includes('failed to fetch')) {
+        return 'Сеть недоступна или сервис перезапускается. Проверьте деплой web/worker и повторите.';
+    }
+    return msg || 'Request failed';
+}
+
 function _escapeHtml(input) {
     return String(input ?? '')
         .replace(/&/g, '&amp;')
@@ -94,7 +102,7 @@ async function startLlmCrawlerTask(event) {
             window.location.href = `/llm-crawler/results/${jobId}`;
         }, 500);
     } catch (error) {
-        showToast(error?.message || 'Failed to start LLM crawler job', 'error');
+        showToast(_humanizeNetworkError(error) || 'Failed to start LLM crawler job', 'error');
     } finally {
         if (button) {
             button.disabled = false;
@@ -322,7 +330,7 @@ function initLlmCrawlerResult(jobId) {
         } catch (error) {
             if (errorBox) {
                 errorBox.classList.remove('hidden');
-                errorBox.textContent = error?.message || 'Polling failed';
+                errorBox.textContent = _humanizeNetworkError(error) || 'Polling failed';
             }
             if (pollHandle) {
                 clearInterval(pollHandle);
@@ -351,4 +359,3 @@ function initLlmCrawlerResult(jobId) {
 
 window.startLlmCrawlerTask = startLlmCrawlerTask;
 window.initLlmCrawlerResult = initLlmCrawlerResult;
-

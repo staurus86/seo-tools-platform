@@ -53,6 +53,8 @@ Open: `http://localhost:8000`
 - `LLM_CRAWLER_MAX_REDIRECT_HOPS` (default `8`)
 - `PLAYWRIGHT_BROWSERS_PATH` (default `/ms-playwright` in Railway configs)
 - `PLAYWRIGHT_AUTO_INSTALL_ON_BOOT` (default `0`; set `1` only if you intentionally allow slow runtime browser install)
+- `LLM_CRAWLER_REQUIRE_HEALTHY_WORKER` (default `true`; reject new jobs if worker heartbeat is stale/missing)
+- `LLM_CRAWLER_STUCK_JOB_TIMEOUT_SEC` (default `300`; convert stuck queued/running jobs to error)
 
 ## Railway config-as-code (web + worker)
 - `railway.web.toml` for the web service (has `healthcheckPath = "/health"`).

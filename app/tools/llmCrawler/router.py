@@ -18,6 +18,7 @@ from .queue import (
     get_worker_heartbeat,
     new_job_id,
     queue_depth,
+    update_job_record,
 )
 from .schemas import LlmCrawlerJobStatusResponse, LlmCrawlerRunRequest
 
@@ -38,9 +39,51 @@ def _request_id(request: Request) -> str:
     return header_id or f"req-{uuid.uuid4().hex[:12]}"
 
 
+def _heartbeat_age_sec(heartbeat: Dict[str, Any] | None) -> int | None:
+    if not heartbeat or not heartbeat.get("updatedAt"):
+        return None
+    try:
+        ts = datetime.fromisoformat(str(heartbeat["updatedAt"]).replace("Z", "+00:00"))
+        return int((datetime.now(timezone.utc) - ts).total_seconds())
+    except Exception:
+        return None
+
+
+def _worker_is_healthy() -> bool:
+    heartbeat = get_worker_heartbeat()
+    age_sec = _heartbeat_age_sec(heartbeat)
+    if heartbeat is None or age_sec is None:
+        return False
+    ttl = max(30, int(getattr(settings, "LLM_CRAWLER_WORKER_HEARTBEAT_TTL_SEC", 120) or 120))
+    return age_sec <= max(60, ttl * 2)
+
+
+def _ensure_worker_available() -> None:
+    if not bool(getattr(settings, "LLM_CRAWLER_REQUIRE_HEALTHY_WORKER", True)):
+        return
+    if _worker_is_healthy():
+        return
+    raise HTTPException(
+        status_code=503,
+        detail="LLM worker is unavailable or stale. Check worker deployment and REDIS_URL, then retry.",
+    )
+
+
+def _job_age_sec(job: Dict[str, Any]) -> int | None:
+    raw = job.get("createdAt") or job.get("updatedAt")
+    if not raw:
+        return None
+    try:
+        ts = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        return int((datetime.now(timezone.utc) - ts).total_seconds())
+    except Exception:
+        return None
+
+
 @router.post("/run")
 async def run_llm_crawler(payload: LlmCrawlerRunRequest, request: Request) -> Dict[str, str]:
     _ensure_feature_enabled(request)
+    _ensure_worker_available()
     request_id = _request_id(request)
 
     subject = request_subject(request)
@@ -94,6 +137,17 @@ async def get_llm_crawler_job(job_id: str, request: Request) -> Dict[str, Any]:
     job = get_job_record(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    status = str(job.get("status") or "queued")
+    if status in {"queued", "running"}:
+        timeout_sec = max(60, int(getattr(settings, "LLM_CRAWLER_STUCK_JOB_TIMEOUT_SEC", 300) or 300))
+        age_sec = _job_age_sec(job)
+        if age_sec is not None and age_sec >= timeout_sec and not _worker_is_healthy():
+            job = update_job_record(
+                job_id,
+                status="error",
+                progress=100,
+                error="Job timed out in queue: worker unavailable.",
+            )
     return {
         "jobId": str(job.get("jobId") or job_id),
         "requestId": str(job.get("requestId") or ""),
@@ -109,17 +163,10 @@ async def llm_worker_health(request: Request) -> Dict[str, Any]:
     _ensure_feature_enabled(request)
     heartbeat = get_worker_heartbeat()
     queue_size = queue_depth()
-    age_sec = None
-    if heartbeat and heartbeat.get("updatedAt"):
-        try:
-            ts = datetime.fromisoformat(str(heartbeat["updatedAt"]).replace("Z", "+00:00"))
-            age_sec = int((datetime.now(timezone.utc) - ts).total_seconds())
-        except Exception:
-            age_sec = None
+    age_sec = _heartbeat_age_sec(heartbeat)
     return {
         "queue_depth": queue_size,
         "worker_heartbeat": heartbeat,
         "worker_heartbeat_age_sec": age_sec,
-        "status": "healthy" if heartbeat else "unknown",
+        "status": "healthy" if _worker_is_healthy() else "unknown",
     }
-

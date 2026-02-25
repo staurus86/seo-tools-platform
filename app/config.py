@@ -77,6 +77,8 @@ class Settings(BaseSettings):
     LLM_CRAWLER_QUEUE_KEY: str = os.getenv("LLM_CRAWLER_QUEUE_KEY", "llmCrawler:queue")
     LLM_CRAWLER_WORKER_HEARTBEAT_KEY: str = os.getenv("LLM_CRAWLER_WORKER_HEARTBEAT_KEY", "llmCrawler:worker:heartbeat")
     LLM_CRAWLER_WORKER_HEARTBEAT_TTL_SEC: int = int(os.getenv("LLM_CRAWLER_WORKER_HEARTBEAT_TTL_SEC", "120"))
+    LLM_CRAWLER_REQUIRE_HEALTHY_WORKER: bool = os.getenv("LLM_CRAWLER_REQUIRE_HEALTHY_WORKER", "true").lower() == "true"
+    LLM_CRAWLER_STUCK_JOB_TIMEOUT_SEC: int = int(os.getenv("LLM_CRAWLER_STUCK_JOB_TIMEOUT_SEC", "300"))
 
     # Bot check v2
     BOT_CHECK_ENGINE: str = os.getenv("BOT_CHECK_ENGINE", "legacy")

@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -15,6 +16,9 @@ class _FakeRequest:
 
 
 class LlmCrawlerRouteTests(unittest.IsolatedAsyncioTestCase):
+    def _healthy_heartbeat(self):
+        return {"updatedAt": datetime.now(timezone.utc).isoformat()}
+
     async def test_feature_flag_off_returns_404(self):
         payload = LlmCrawlerRunRequest(url="example.com")
         req = _FakeRequest()
@@ -29,10 +33,22 @@ class LlmCrawlerRouteTests(unittest.IsolatedAsyncioTestCase):
         payload = LlmCrawlerRunRequest(url="example.com")
         req = _FakeRequest(headers={"x-role": "admin"})
         with patch("app.tools.llmCrawler.router.settings.FEATURE_LLM_CRAWLER", True), patch(
+            "app.tools.llmCrawler.router.get_worker_heartbeat", return_value=self._healthy_heartbeat()
+        ), patch(
             "app.tools.llmCrawler.router.enqueue_job", return_value="llmcrawler-test-1"
         ):
             response = await run_llm_crawler(payload, req)
         self.assertTrue(str(response.get("jobId", "")).startswith("llmcrawler-"))
+
+    async def test_run_returns_503_when_worker_unavailable(self):
+        payload = LlmCrawlerRunRequest(url="example.com")
+        req = _FakeRequest(headers={"x-role": "admin"})
+        with patch("app.tools.llmCrawler.router.settings.FEATURE_LLM_CRAWLER", True), patch(
+            "app.tools.llmCrawler.router.settings.LLM_CRAWLER_REQUIRE_HEALTHY_WORKER", True
+        ), patch("app.tools.llmCrawler.router.get_worker_heartbeat", return_value=None):
+            with self.assertRaises(HTTPException) as ctx:
+                await run_llm_crawler(payload, req)
+        self.assertEqual(ctx.exception.status_code, 503)
 
     async def test_get_job_status(self):
         req = _FakeRequest(headers={"x-role": "admin"})
@@ -54,4 +70,3 @@ class LlmCrawlerRouteTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
