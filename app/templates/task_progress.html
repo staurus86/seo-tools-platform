@@ -834,8 +834,9 @@ function updateProgress(data) {
     statusIcon.innerHTML = '<i class="fas fa-spinner fa-spin text-blue-500"></i>';
 
     const isSitePro = (data.task_type === 'site_audit_pro');
+    const isCwvBatch = (data.task_type === 'core_web_vitals') && Number(progressMeta.total_pages || 0) > 1;
     const totalPages = Number(progressMeta.total_pages || 0);
-    if (isSitePro && totalPages > 0) {
+    if ((isSitePro || isCwvBatch) && totalPages > 0) {
         const processedPages = Number(progressMeta.processed_pages || 0);
         const queueSize = Number(progressMeta.queue_size || 0);
         processedEl.textContent = String(processedPages);
@@ -1185,7 +1186,7 @@ function copyToClipboard(text) {
 }
 
 function escapeHtml(text) {
-    return String(text || '')
+    return String(text ?? '')
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
@@ -2039,6 +2040,27 @@ async function downloadOnpageXlsxReport() {
         console.error('Ошибка скачивания OnPage XLSX:', error);
         alert(error.message || 'Не удалось скачать XLSX-отчет');
     }
+}
+
+function renderMarkdownLinks(text) {
+    const source = String(text || '');
+    const pattern = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+    let out = '';
+    let lastIndex = 0;
+    let match;
+    while ((match = pattern.exec(source)) !== null) {
+        out += escapeHtml(source.slice(lastIndex, match.index));
+        const href = sanitizeHttpUrl(match[2]);
+        const label = escapeHtml(match[1]);
+        if (href) {
+            out += `<a href="${href}" target="_blank" rel="noopener noreferrer" class="text-cyan-700 hover:text-cyan-900 underline">${label}</a>`;
+        } else {
+            out += escapeHtml(match[0]);
+        }
+        lastIndex = pattern.lastIndex;
+    }
+    out += escapeHtml(source.slice(lastIndex));
+    return out;
 }
 
 async function downloadClusterizerXlsxReport() {
@@ -3033,18 +3055,18 @@ function generateCoreWebVitalsHTML(result) {
     const resultData = result.result || result;
     const r = resultData.results || resultData;
     const summary = r.summary || {};
-    const metrics = r.metrics || {};
-    const opportunities = Array.isArray(r.opportunities) ? r.opportunities : [];
-    const recommendations = Array.isArray(r.recommendations) ? r.recommendations : [];
     const strategy = r.strategy || 'desktop';
-    const score = Number(summary.performance_score ?? 0);
-    const cwvStatus = String(summary.core_web_vitals_status || 'unknown');
+    const source = r.source || 'pagespeed_insights_api';
+    const mode = String(r.mode || 'single').toLowerCase();
+    const sites = Array.isArray(r.sites) ? r.sites : [];
+    const isBatch = mode === 'batch' || sites.length > 0;
 
     const statusClass = (status) => {
         const s = String(status || '').toLowerCase();
         if (s === 'good') return 'border-emerald-200 bg-emerald-50 text-emerald-800';
         if (s === 'needs_improvement') return 'border-amber-200 bg-amber-50 text-amber-800';
         if (s === 'poor') return 'border-red-200 bg-red-50 text-red-800';
+        if (s === 'error') return 'border-red-200 bg-red-50 text-red-800';
         return 'border-slate-200 bg-slate-50 text-slate-700';
     };
 
@@ -3053,46 +3075,197 @@ function generateCoreWebVitalsHTML(result) {
         if (s === 'good') return 'GOOD';
         if (s === 'needs_improvement') return 'NEEDS IMPROVEMENT';
         if (s === 'poor') return 'POOR';
+        if (s === 'error') return 'ERROR';
         return 'UNKNOWN';
     };
 
+    const formatMetric = (metricKey, rawValue) => {
+        if (rawValue == null || rawValue === '' || !Number.isFinite(Number(rawValue))) return 'н/д';
+        if (metricKey === 'cls') return Number(rawValue).toFixed(3);
+        return String(Math.round(Number(rawValue)));
+    };
+
+    const scoreBadgeClass = (rawScore) => {
+        const score = Number(rawScore);
+        if (!Number.isFinite(score)) return 'border-slate-200 bg-slate-50 text-slate-700';
+        if (score >= 90) return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+        if (score >= 50) return 'border-amber-200 bg-amber-50 text-amber-800';
+        return 'border-red-200 bg-red-50 text-red-800';
+    };
+
+    if (isBatch) {
+        const batchSummary = r.summary || {};
+        const statusCounts = batchSummary.status_counts || {};
+        const totalUrls = Number(batchSummary.total_urls ?? sites.length ?? 0);
+        const successUrls = Number(batchSummary.successful_urls ?? 0);
+        const failedUrls = Number(batchSummary.failed_urls ?? Math.max(0, totalUrls - successUrls));
+        const avgScore = batchSummary.average_performance_score;
+        const recommendations = Array.isArray(r.recommendations) ? r.recommendations : [];
+        const sortedSites = [...sites].sort((a, b) => {
+            const rank = (site) => {
+                if (String(site?.status || '').toLowerCase() !== 'success') return 0;
+                const cwv = String(site?.summary?.core_web_vitals_status || 'unknown').toLowerCase();
+                if (cwv === 'poor') return 1;
+                if (cwv === 'needs_improvement') return 2;
+                if (cwv === 'unknown') return 3;
+                return 4;
+            };
+            const rankDelta = rank(a) - rank(b);
+            if (rankDelta !== 0) return rankDelta;
+            const scoreA = Number(a?.summary?.performance_score ?? 101);
+            const scoreB = Number(b?.summary?.performance_score ?? 101);
+            return scoreA - scoreB;
+        });
+
+        const rows = sortedSites.map((site, idx) => {
+            const status = String(site.status || 'error').toLowerCase();
+            const url = site.url || '-';
+            if (status !== 'success') {
+                return `
+                    <tr class="border-b align-top">
+                        <td class="py-2 px-3 text-xs text-slate-500">${idx + 1}</td>
+                        <td class="py-2 px-3 font-medium break-all">${escapeHtml(url)}</td>
+                        <td class="py-2 px-3"><span class="inline-flex px-2 py-1 rounded border text-xs font-semibold ${statusClass('error')}">${statusLabel('error')}</span></td>
+                        <td class="py-2 px-3 text-slate-500">-</td>
+                        <td class="py-2 px-3 text-slate-500">-</td>
+                        <td class="py-2 px-3 text-slate-500">-</td>
+                        <td class="py-2 px-3 text-slate-500">-</td>
+                        <td class="py-2 px-3 text-xs text-red-700">${escapeHtml(site.error || 'Scan failed')}</td>
+                    </tr>
+                `;
+            }
+
+            const siteSummary = site.summary || {};
+            const metrics = site.metrics || {};
+            const score = siteSummary.performance_score;
+            const cwv = siteSummary.core_web_vitals_status || 'unknown';
+            const lcp = metrics.lcp?.field_value_ms ?? metrics.lcp?.lab_value_ms;
+            const inp = metrics.inp?.field_value_ms ?? metrics.inp?.lab_value_ms;
+            const cls = metrics.cls?.field_value ?? metrics.cls?.lab_value;
+            const opportunities = Array.isArray(site.opportunities) ? site.opportunities : [];
+            opportunities.sort((x, y) => Number(x?.score ?? 1) - Number(y?.score ?? 1));
+            const topItem = opportunities[0];
+            const fallbackRec = Array.isArray(site.recommendations) ? site.recommendations[0] : '';
+            const focusText = topItem?.title || fallbackRec || '-';
+
+            return `
+                <tr class="border-b align-top">
+                    <td class="py-2 px-3 text-xs text-slate-500">${idx + 1}</td>
+                    <td class="py-2 px-3 font-medium break-all">${escapeHtml(url)}</td>
+                    <td class="py-2 px-3"><span class="inline-flex px-2 py-1 rounded border text-xs font-semibold ${statusClass(cwv)}">${statusLabel(cwv)}</span></td>
+                    <td class="py-2 px-3"><span class="inline-flex px-2 py-1 rounded border text-xs font-semibold ${scoreBadgeClass(score)}">${escapeHtml(score ?? 'н/д')}</span></td>
+                    <td class="py-2 px-3">${escapeHtml(formatMetric('lcp', lcp))} <span class="text-xs text-slate-400">ms</span></td>
+                    <td class="py-2 px-3">${escapeHtml(formatMetric('inp', inp))} <span class="text-xs text-slate-400">ms</span></td>
+                    <td class="py-2 px-3">${escapeHtml(formatMetric('cls', cls))}</td>
+                    <td class="py-2 px-3 text-xs text-slate-700">${escapeHtml(focusText)}</td>
+                </tr>
+            `;
+        }).join('');
+
+        return `
+            <div class="space-y-6">
+                <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
+                    <div class="flex flex-wrap items-start justify-between gap-4">
+                        <div>
+                            <h3 class="text-lg font-semibold">Core Web Vitals Scanner: Batch</h3>
+                            <div class="text-sm text-slate-600 mt-1">Проверено URL: ${escapeHtml(totalUrls)}</div>
+                            <div class="text-xs text-slate-500 mt-1">Strategy: ${escapeHtml(String(strategy).toUpperCase())}</div>
+                            <div class="text-xs text-slate-500 mt-1">Источник: ${escapeHtml(source)}</div>
+                        </div>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 min-w-[280px]">
+                            <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+                                <div class="text-xs text-indigo-700">Total URLs</div>
+                                <div class="text-xl font-semibold text-indigo-900">${escapeHtml(totalUrls)}</div>
+                            </div>
+                            <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                                <div class="text-xs text-emerald-700">Success</div>
+                                <div class="text-xl font-semibold text-emerald-900">${escapeHtml(successUrls)}</div>
+                            </div>
+                            <div class="rounded-lg border border-red-200 bg-red-50 p-3">
+                                <div class="text-xs text-red-700">Errors</div>
+                                <div class="text-xl font-semibold text-red-900">${escapeHtml(failedUrls)}</div>
+                            </div>
+                            <div class="rounded-lg border p-3 ${statusClass(batchSummary.core_web_vitals_status)}">
+                                <div class="text-xs">CWV статус</div>
+                                <div class="text-sm font-semibold">${escapeHtml(statusLabel(batchSummary.core_web_vitals_status))}</div>
+                            </div>
+                            <div class="rounded-lg border p-3 ${scoreBadgeClass(avgScore)}">
+                                <div class="text-xs">Avg score</div>
+                                <div class="text-sm font-semibold">${escapeHtml(avgScore ?? 'н/д')}</div>
+                            </div>
+                            <div class="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+                                <div>GOOD: <span class="font-semibold">${escapeHtml(Number(statusCounts.good || 0))}</span></div>
+                                <div>NI: <span class="font-semibold">${escapeHtml(Number(statusCounts.needs_improvement || 0))}</span></div>
+                                <div>POOR: <span class="font-semibold">${escapeHtml(Number(statusCounts.poor || 0))}</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
+                    <h4 class="font-semibold mb-3">Детали по URL</h4>
+                    <div class="overflow-auto border rounded-lg">
+                        <table class="w-full min-w-[1100px] text-sm">
+                            <thead>
+                                <tr class="text-left text-xs text-slate-500 border-b bg-slate-50">
+                                    <th class="py-2 px-3">#</th>
+                                    <th class="py-2 px-3">URL</th>
+                                    <th class="py-2 px-3">CWV</th>
+                                    <th class="py-2 px-3">Score</th>
+                                    <th class="py-2 px-3">LCP</th>
+                                    <th class="py-2 px-3">INP</th>
+                                    <th class="py-2 px-3">CLS</th>
+                                    <th class="py-2 px-3">Приоритетный фокус</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rows || '<tr><td colspan="8" class="py-4 px-3 text-center text-slate-500">Нет данных по URL</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
+                    <h4 class="font-semibold mb-3">Сводные рекомендации</h4>
+                    ${recommendations.length > 0
+                        ? `<ul class="space-y-2 text-sm text-slate-700">${recommendations.map((rec) => `<li class="border-l-4 border-cyan-500 pl-3">${escapeHtml(rec)}</li>`).join('')}</ul>`
+                        : '<div class="text-sm text-slate-500">Рекомендации не сформированы.</div>'
+                    }
+                </div>
+            </div>
+        `;
+    }
+
+    const metrics = r.metrics || {};
+    const opportunities = Array.isArray(r.opportunities) ? r.opportunities : [];
+    opportunities.sort((a, b) => Number(a?.score ?? 1) - Number(b?.score ?? 1));
+    const recommendations = Array.isArray(r.recommendations) ? r.recommendations : [];
+    const score = summary.performance_score;
+    const cwvStatus = String(summary.core_web_vitals_status || 'unknown');
+
     const metricCards = [
-        {
-            key: 'lcp',
-            title: 'LCP',
-            value: metrics.lcp?.field_value_ms ?? metrics.lcp?.lab_value_ms,
-            unit: 'ms',
-            status: metrics.lcp?.status
-        },
-        {
-            key: 'inp',
-            title: 'INP',
-            value: metrics.inp?.field_value_ms ?? metrics.inp?.lab_value_ms,
-            unit: 'ms',
-            status: metrics.inp?.status
-        },
-        {
-            key: 'cls',
-            title: 'CLS',
-            value: metrics.cls?.field_value ?? metrics.cls?.lab_value,
-            unit: '',
-            status: metrics.cls?.status
-        },
-        {
-            key: 'fcp',
-            title: 'FCP',
-            value: metrics.fcp?.lab_value_ms,
-            unit: 'ms',
-            status: metrics.fcp?.status
-        },
-        {
-            key: 'ttfb',
-            title: 'TTFB',
-            value: metrics.ttfb?.lab_value_ms,
-            unit: 'ms',
-            status: metrics.ttfb?.status
-        },
+        { key: 'lcp', title: 'LCP', value: metrics.lcp?.field_value_ms ?? metrics.lcp?.lab_value_ms, unit: 'ms', status: metrics.lcp?.status },
+        { key: 'inp', title: 'INP', value: metrics.inp?.field_value_ms ?? metrics.inp?.lab_value_ms, unit: 'ms', status: metrics.inp?.status },
+        { key: 'cls', title: 'CLS', value: metrics.cls?.field_value ?? metrics.cls?.lab_value, unit: '', status: metrics.cls?.status },
+        { key: 'fcp', title: 'FCP', value: metrics.fcp?.lab_value_ms, unit: 'ms', status: metrics.fcp?.status },
+        { key: 'ttfb', title: 'TTFB', value: metrics.ttfb?.lab_value_ms, unit: 'ms', status: metrics.ttfb?.status },
     ];
+
+    const priorityLabel = (scoreValue) => {
+        const raw = Number(scoreValue);
+        if (!Number.isFinite(raw)) return 'INFO';
+        if (raw < 0.5) return 'CRITICAL';
+        if (raw < 0.75) return 'HIGH';
+        return 'MEDIUM';
+    };
+
+    const priorityClass = (scoreValue) => {
+        const raw = Number(scoreValue);
+        if (!Number.isFinite(raw)) return 'border-slate-200 bg-slate-50 text-slate-700';
+        if (raw < 0.5) return 'border-red-200 bg-red-50 text-red-800';
+        if (raw < 0.75) return 'border-amber-200 bg-amber-50 text-amber-800';
+        return 'border-sky-200 bg-sky-50 text-sky-800';
+    };
 
     return `
         <div class="space-y-6">
@@ -3102,12 +3275,12 @@ function generateCoreWebVitalsHTML(result) {
                         <h3 class="text-lg font-semibold">Core Web Vitals Scanner</h3>
                         <div class="text-sm text-slate-600 mt-1">URL: ${escapeHtml(resultData.url || r.url || '')}</div>
                         <div class="text-xs text-slate-500 mt-1">Strategy: ${escapeHtml(String(strategy).toUpperCase())}</div>
-                        <div class="text-xs text-slate-500 mt-1">Источник: ${escapeHtml(r.source || 'pagespeed_insights_api')}</div>
+                        <div class="text-xs text-slate-500 mt-1">Источник: ${escapeHtml(source)}</div>
                     </div>
                     <div class="grid grid-cols-1 gap-2 min-w-[220px]">
-                        <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
-                            <div class="text-xs text-indigo-700">Performance score</div>
-                            <div class="text-2xl font-semibold text-indigo-900">${escapeHtml(score || 0)}</div>
+                        <div class="rounded-lg border p-3 ${scoreBadgeClass(score)}">
+                            <div class="text-xs">Performance score</div>
+                            <div class="text-2xl font-semibold">${escapeHtml(score ?? 'н/д')}</div>
                         </div>
                         <div class="rounded-lg border p-3 ${statusClass(cwvStatus)}">
                             <div class="text-xs">Core Web Vitals</div>
@@ -3120,17 +3293,16 @@ function generateCoreWebVitalsHTML(result) {
             <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
                 <h4 class="font-semibold mb-3">Метрики</h4>
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                    ${metricCards.map((item) => {
-                        const raw = item.value;
-                        const formatted = (raw == null || raw === '') ? 'н/д' : (item.key === 'cls' ? Number(raw).toFixed(3) : Math.round(Number(raw)));
-                        return `
-                            <div class="rounded-lg border p-3 ${statusClass(item.status)}">
-                                <div class="text-xs opacity-80">${escapeHtml(item.title)}</div>
-                                <div class="text-xl font-semibold mt-1">${escapeHtml(formatted)}${item.unit ? ` <span class="text-xs font-normal">${escapeHtml(item.unit)}</span>` : ''}</div>
-                                <div class="text-[11px] mt-1">${escapeHtml(statusLabel(item.status))}</div>
+                    ${metricCards.map((item) => `
+                        <div class="rounded-lg border p-3 ${statusClass(item.status)}">
+                            <div class="text-xs opacity-80">${escapeHtml(item.title)}</div>
+                            <div class="text-xl font-semibold mt-1">
+                                ${escapeHtml(formatMetric(item.key, item.value))}
+                                ${item.unit && formatMetric(item.key, item.value) !== 'н/д' ? `<span class="text-xs font-normal">${escapeHtml(item.unit)}</span>` : ''}
                             </div>
-                        `;
-                    }).join('')}
+                            <div class="text-[11px] mt-1">${escapeHtml(statusLabel(item.status))}</div>
+                        </div>
+                    `).join('')}
                 </div>
             </div>
 
@@ -3138,22 +3310,24 @@ function generateCoreWebVitalsHTML(result) {
                 <h4 class="font-semibold mb-3">Top opportunities</h4>
                 ${opportunities.length > 0 ? `
                     <div class="overflow-auto border rounded-lg">
-                        <table class="w-full min-w-[760px] text-sm">
+                        <table class="w-full min-w-[860px] text-sm">
                             <thead>
                                 <tr class="text-left text-xs text-slate-500 border-b bg-slate-50">
-                                    <th class="py-2 px-3">ID</th>
+                                    <th class="py-2 px-3">Priority</th>
                                     <th class="py-2 px-3">Проблема</th>
                                     <th class="py-2 px-3">Score</th>
-                                    <th class="py-2 px-3">Значение</th>
+                                    <th class="py-2 px-3">Эффект</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 ${opportunities.map((item) => `
-                                    <tr class="border-b">
-                                        <td class="py-2 px-3 font-mono text-xs">${escapeHtml(item.id || '-')}</td>
+                                    <tr class="border-b align-top">
+                                        <td class="py-2 px-3">
+                                            <span class="inline-flex px-2 py-1 rounded border text-xs font-semibold ${priorityClass(item.score)}">${escapeHtml(priorityLabel(item.score))}</span>
+                                        </td>
                                         <td class="py-2 px-3">
                                             <div class="font-medium">${escapeHtml(item.title || '-')}</div>
-                                            <div class="text-xs text-slate-500">${escapeHtml(item.description || '')}</div>
+                                            <div class="text-xs text-slate-500 mt-0.5">${renderMarkdownLinks(item.description || '')}</div>
                                         </td>
                                         <td class="py-2 px-3">${escapeHtml(item.score ?? '-')}</td>
                                         <td class="py-2 px-3">${escapeHtml(item.display_value || '-')}</td>

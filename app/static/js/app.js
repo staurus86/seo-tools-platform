@@ -134,6 +134,34 @@ async function startTask(event, endpoint) {
         }
         delete data.batch_urls_text;
     }
+    if (endpoint === 'core-web-vitals') {
+        const scanMode = (data.scan_mode || 'single').toString();
+        const batchMode = scanMode === 'batch';
+        const rawBatch = (data.batch_urls_text || '').toString();
+        const parsedBatchUrls = rawBatch
+            .split(/\r?\n/)
+            .map((x) => x.trim())
+            .filter((x) => x.length > 0);
+        if (batchMode && parsedBatchUrls.length > 10) {
+            showToast('Batch Core Web Vitals limit: maximum 10 URLs', 'warning');
+            return;
+        }
+        const batchUrls = parsedBatchUrls.slice(0, 10);
+        data.scan_mode = batchMode ? 'batch' : 'single';
+        if (batchMode) {
+            if (batchUrls.length === 0) {
+                showToast('Add at least one URL for Core Web Vitals batch scan', 'warning');
+                return;
+            }
+            data.batch_urls = batchUrls;
+            if (!data.url || String(data.url).trim() === '') {
+                data.url = batchUrls[0];
+            }
+        } else {
+            delete data.batch_urls;
+        }
+        delete data.batch_urls_text;
+    }
     if (endpoint === 'clusterizer') {
         const rawKeywords = (data.keywords_text || '').toString();
         const sourceLines = rawKeywords.replace(/\r/g, '\n').split('\n');
@@ -389,6 +417,23 @@ function initBotBatchUI() {
     sync();
 }
 
+function initCoreWebVitalsBatchUI() {
+    const form = document.querySelector("form[onsubmit*=\"core-web-vitals\"]");
+    if (!form) return;
+    const modeSelect = form.querySelector('.js-cwv-scan-mode');
+    const batchBox = form.querySelector('.js-cwv-batch-box');
+    const urlInput = form.querySelector('.js-cwv-url');
+    if (!modeSelect || !batchBox || !urlInput) return;
+
+    const sync = () => {
+        const isBatch = modeSelect.value === 'batch';
+        batchBox.classList.toggle('hidden', !isBatch);
+        urlInput.required = !isBatch;
+    };
+    modeSelect.addEventListener('change', sync);
+    sync();
+}
+
 // Show rate limit modal
 function showRateLimitModal(detail) {
     const modal = document.getElementById('rate-limit-modal');
@@ -436,6 +481,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateRateLimitBadge();
     initSiteAuditProBatchUI();
     initBotBatchUI();
+    initCoreWebVitalsBatchUI();
     
     // Update badge every minute
     setInterval(updateRateLimitBadge, 60000);

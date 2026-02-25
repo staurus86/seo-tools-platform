@@ -4706,14 +4706,114 @@ class RedirectCheckerRequest(BaseModel):
 
 
 class CoreWebVitalsRequest(BaseModel):
-    url: str
+    url: Optional[str] = ""
     strategy: Optional[str] = "desktop"
+    scan_mode: Optional[str] = "single"
+    batch_urls: Optional[List[str]] = None
 
     @field_validator("strategy", mode="before")
     @classmethod
     def _normalize_strategy(cls, value):
         token = str(value or "desktop").strip().lower()
         return token if token in {"mobile", "desktop"} else "desktop"
+
+    @field_validator("scan_mode", mode="before")
+    @classmethod
+    def _normalize_scan_mode(cls, value):
+        token = str(value or "single").strip().lower()
+        return token if token in {"single", "batch"} else "single"
+
+    @field_validator("batch_urls", mode="before")
+    @classmethod
+    def _normalize_batch_urls(cls, value):
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [x.strip() for x in re.split(r"[\r\n,;]+", value) if x.strip()]
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return []
+
+
+def _build_core_web_vitals_batch_result(
+    *,
+    strategy: str,
+    source: str,
+    sites: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    score_values: List[float] = []
+    status_counts = {"good": 0, "needs_improvement": 0, "poor": 0, "unknown": 0}
+    top_recommendations: Dict[str, int] = {}
+    failed_urls: List[Dict[str, str]] = []
+    successful_urls = 0
+
+    for site in sites:
+        if str(site.get("status") or "").lower() != "success":
+            failed_urls.append(
+                {
+                    "url": str(site.get("url") or ""),
+                    "error": str(site.get("error") or "Scan failed"),
+                }
+            )
+            continue
+
+        successful_urls += 1
+        summary = site.get("summary") or {}
+        status = str(summary.get("core_web_vitals_status") or "unknown").strip().lower()
+        if status not in status_counts:
+            status = "unknown"
+        status_counts[status] += 1
+
+        score_raw = summary.get("performance_score")
+        try:
+            if score_raw is not None:
+                score_values.append(float(score_raw))
+        except Exception:
+            pass
+
+        for rec in (site.get("recommendations") or []):
+            text = str(rec or "").strip()
+            if not text:
+                continue
+            top_recommendations[text] = int(top_recommendations.get(text, 0) or 0) + 1
+
+    if status_counts["poor"] > 0:
+        batch_status = "poor"
+    elif status_counts["needs_improvement"] > 0:
+        batch_status = "needs_improvement"
+    elif successful_urls > 0 and status_counts["good"] == successful_urls:
+        batch_status = "good"
+    else:
+        batch_status = "unknown"
+
+    recommendations = []
+    for text, count in sorted(top_recommendations.items(), key=lambda item: (-item[1], item[0].lower()))[:8]:
+        if count > 1:
+            recommendations.append(f"{text} (повторяется на {count} URL)")
+        else:
+            recommendations.append(text)
+
+    avg_score = round(sum(score_values) / len(score_values), 1) if score_values else None
+    total_urls = len(sites)
+    failed_count = len(failed_urls)
+
+    return {
+        "mode": "batch",
+        "strategy": strategy,
+        "source": source,
+        "summary": {
+            "total_urls": total_urls,
+            "successful_urls": successful_urls,
+            "failed_urls": failed_count,
+            "average_performance_score": avg_score,
+            "core_web_vitals_status": batch_status,
+            "status_counts": status_counts,
+        },
+        "sites": sites,
+        "failed_urls": failed_urls,
+        "recommendations": recommendations,
+        "checked_at": datetime.utcnow().isoformat(),
+    }
 
 
 @router.post("/tasks/site-analyze")
@@ -5051,30 +5151,238 @@ async def create_redirect_checker(data: RedirectCheckerRequest):
 
 
 @router.post("/tasks/core-web-vitals")
-async def create_core_web_vitals(data: CoreWebVitalsRequest):
-    """Run Core Web Vitals scan via PageSpeed Insights API."""
+async def create_core_web_vitals(data: CoreWebVitalsRequest, background_tasks: BackgroundTasks):
+    """Run Core Web Vitals scan via PageSpeed Insights API (single or batch up to 10 URLs)."""
+    strategy = str(data.strategy or "desktop").strip().lower()
+    if strategy not in {"mobile", "desktop"}:
+        strategy = "desktop"
+    scan_mode = str(data.scan_mode or "single").strip().lower()
+    if scan_mode not in {"single", "batch"}:
+        scan_mode = "single"
+
+    max_batch_urls = 10
+    raw_batch_urls = [str(item or "").strip() for item in (data.batch_urls or []) if str(item or "").strip()]
+    if scan_mode == "batch" and not raw_batch_urls and str(data.url or "").strip():
+        raw_batch_urls = [str(data.url).strip()]
+
+    if scan_mode == "batch":
+        if not raw_batch_urls:
+            raise HTTPException(status_code=422, detail="Добавьте хотя бы один URL для batch Core Web Vitals сканирования.")
+        if len(raw_batch_urls) > max_batch_urls:
+            raise HTTPException(status_code=422, detail=f"Лимит batch Core Web Vitals: максимум {max_batch_urls} URL.")
+
+        normalized_urls: List[str] = []
+        seen = set()
+        invalid_urls: List[str] = []
+        for raw_value in raw_batch_urls:
+            normalized = _normalize_http_input(raw_value)
+            if not normalized:
+                invalid_urls.append(raw_value)
+                continue
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            normalized_urls.append(normalized)
+
+        if invalid_urls:
+            preview = ", ".join(invalid_urls[:3])
+            raise HTTPException(
+                status_code=422,
+                detail=f"Некорректные URL в batch-списке: {preview}",
+            )
+        if not normalized_urls:
+            raise HTTPException(status_code=422, detail="Не удалось подготовить список URL для batch сканирования.")
+        if len(normalized_urls) > max_batch_urls:
+            raise HTTPException(status_code=422, detail=f"Лимит batch Core Web Vitals: максимум {max_batch_urls} URL.")
+
+        task_id = f"cwv-{datetime.now().timestamp()}"
+        create_task_pending(task_id, "core_web_vitals", normalized_urls[0], status_message="Задача поставлена в очередь")
+        print(
+            f"[API] Core Web Vitals batch queued: urls={len(normalized_urls)}, "
+            f"strategy={strategy}, task_id={task_id}"
+        )
+
+        def _run_core_web_vitals_batch_task() -> None:
+            total = len(normalized_urls)
+            sites: List[Dict[str, Any]] = []
+            source = "pagespeed_insights_api"
+            try:
+                update_task_state(
+                    task_id,
+                    status="RUNNING",
+                    progress=5,
+                    status_message="Подготовка batch Core Web Vitals сканирования",
+                    progress_meta={
+                        "processed_pages": 0,
+                        "total_pages": total,
+                        "queue_size": total,
+                        "current_url": normalized_urls[0] if normalized_urls else "",
+                    },
+                )
+
+                for index, target_url in enumerate(normalized_urls, start=1):
+                    before_progress = 5 + int(((index - 1) / max(1, total)) * 85)
+                    update_task_state(
+                        task_id,
+                        status="RUNNING",
+                        progress=min(95, max(5, before_progress)),
+                        status_message=f"Core Web Vitals: {index}/{total}",
+                        progress_meta={
+                            "processed_pages": index - 1,
+                            "total_pages": total,
+                            "queue_size": max(0, total - index + 1),
+                            "current_url": target_url,
+                        },
+                    )
+
+                    try:
+                        scan_result = check_core_web_vitals(target_url, strategy=strategy)
+                        payload = scan_result.get("results", {}) if isinstance(scan_result, dict) else {}
+                        summary = payload.get("summary", {}) if isinstance(payload, dict) else {}
+                        metrics = payload.get("metrics", {}) if isinstance(payload, dict) else {}
+                        opportunities = payload.get("opportunities", []) if isinstance(payload, dict) else []
+                        recommendations = payload.get("recommendations", []) if isinstance(payload, dict) else []
+                        source = str(payload.get("source") or source)
+                        sites.append(
+                            {
+                                "url": str(scan_result.get("url") or target_url),
+                                "status": "success",
+                                "summary": summary,
+                                "metrics": metrics,
+                                "opportunities": opportunities[:8] if isinstance(opportunities, list) else [],
+                                "recommendations": recommendations if isinstance(recommendations, list) else [],
+                                "checked_at": payload.get("checked_at"),
+                            }
+                        )
+                    except Exception as exc:
+                        sites.append(
+                            {
+                                "url": target_url,
+                                "status": "error",
+                                "error": str(exc),
+                            }
+                        )
+
+                    after_progress = 5 + int((index / max(1, total)) * 85)
+                    update_task_state(
+                        task_id,
+                        status="RUNNING",
+                        progress=min(95, max(5, after_progress)),
+                        status_message=f"Core Web Vitals: {index}/{total} завершено",
+                        progress_meta={
+                            "processed_pages": index,
+                            "total_pages": total,
+                            "queue_size": max(0, total - index),
+                            "current_url": target_url,
+                        },
+                    )
+
+                batch_payload = _build_core_web_vitals_batch_result(
+                    strategy=strategy,
+                    source=source,
+                    sites=sites,
+                )
+                failed_count = int((batch_payload.get("summary") or {}).get("failed_urls") or 0)
+                success_count = int((batch_payload.get("summary") or {}).get("successful_urls") or 0)
+                status_message = (
+                    f"Batch Core Web Vitals завершен: успех {success_count}, ошибки {failed_count}"
+                    if failed_count > 0
+                    else f"Batch Core Web Vitals завершен: проверено {success_count} URL"
+                )
+                result_payload = {
+                    "task_type": "core_web_vitals",
+                    "url": normalized_urls[0],
+                    "results": batch_payload,
+                }
+                update_task_state(
+                    task_id,
+                    status="SUCCESS",
+                    progress=100,
+                    status_message=status_message,
+                    progress_meta={
+                        "processed_pages": total,
+                        "total_pages": total,
+                        "queue_size": 0,
+                        "current_url": normalized_urls[-1] if normalized_urls else "",
+                    },
+                    result=result_payload,
+                    error=None,
+                )
+            except Exception as exc:
+                update_task_state(
+                    task_id,
+                    status="FAILURE",
+                    progress=100,
+                    status_message="Ошибка batch Core Web Vitals сканирования",
+                    error=str(exc),
+                )
+
+        background_tasks.add_task(_run_core_web_vitals_batch_task)
+        return {
+            "task_id": task_id,
+            "status": "PENDING",
+            "message": "Core Web Vitals batch scan queued",
+        }
+
     url = _normalize_http_input(data.url or "")
     if not url:
         raise HTTPException(status_code=422, detail="Введите корректный URL сайта (домен или http/https URL).")
 
-    strategy = str(data.strategy or "desktop").strip().lower()
-    if strategy not in {"mobile", "desktop"}:
-        strategy = "desktop"
-    print(f"[API] Core Web Vitals scan for: {url}, strategy={strategy}")
-
-    try:
-        result = check_core_web_vitals(url, strategy=strategy)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Core Web Vitals scan failed: {exc}")
-
     task_id = f"cwv-{datetime.now().timestamp()}"
-    create_task_result(task_id, "core_web_vitals", url, result)
+    create_task_pending(task_id, "core_web_vitals", url, status_message="Задача поставлена в очередь")
+    print(f"[API] Core Web Vitals single queued for: {url}, strategy={strategy}, task_id={task_id}")
+
+    def _run_core_web_vitals_single_task() -> None:
+        try:
+            update_task_state(
+                task_id,
+                status="RUNNING",
+                progress=10,
+                status_message="Запуск Core Web Vitals сканирования",
+                progress_meta={
+                    "processed_pages": 0,
+                    "total_pages": 1,
+                    "queue_size": 1,
+                    "current_url": url,
+                },
+            )
+            result = check_core_web_vitals(url, strategy=strategy)
+            update_task_state(
+                task_id,
+                status="SUCCESS",
+                progress=100,
+                status_message="Core Web Vitals scan completed",
+                progress_meta={
+                    "processed_pages": 1,
+                    "total_pages": 1,
+                    "queue_size": 0,
+                    "current_url": url,
+                },
+                result=result,
+                error=None,
+            )
+        except ValueError as exc:
+            update_task_state(
+                task_id,
+                status="FAILURE",
+                progress=100,
+                status_message="Ошибка Core Web Vitals сканирования",
+                error=str(exc),
+            )
+        except Exception as exc:
+            update_task_state(
+                task_id,
+                status="FAILURE",
+                progress=100,
+                status_message="Ошибка Core Web Vitals сканирования",
+                error=f"Core Web Vitals scan failed: {exc}",
+            )
+
+    background_tasks.add_task(_run_core_web_vitals_single_task)
     return {
         "task_id": task_id,
-        "status": "SUCCESS",
-        "message": "Core Web Vitals scan completed",
+        "status": "PENDING",
+        "message": "Core Web Vitals scan queued",
     }
 
 
