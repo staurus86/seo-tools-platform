@@ -2187,7 +2187,46 @@ function downloadCoreWebVitalsCsvReport() {
         return text;
     };
     const mode = String(r.mode || 'single').toLowerCase();
-    if (mode === 'batch' || Array.isArray(r.sites)) {
+    if (mode === 'competitor') {
+        lines.push(['url', 'role', 'status', 'score', 'cwv', 'lcp_ms', 'inp_ms', 'cls', 'score_delta_vs_primary', 'lcp_delta_ms_vs_primary', 'inp_delta_ms_vs_primary', 'cls_delta_vs_primary', 'top_focus', 'error'].join(','));
+        const primary = r.primary || {};
+        const primarySummary = primary.summary || {};
+        const primaryMetrics = primary.metrics || {};
+        lines.push([
+            primary.url || '',
+            'primary',
+            primary.status || '',
+            primarySummary.performance_score ?? '',
+            primarySummary.core_web_vitals_status || '',
+            primaryMetrics.lcp?.field_value_ms ?? primaryMetrics.lcp?.lab_value_ms ?? '',
+            primaryMetrics.inp?.field_value_ms ?? primaryMetrics.inp?.lab_value_ms ?? '',
+            primaryMetrics.cls?.field_value ?? primaryMetrics.cls?.lab_value ?? '',
+            '',
+            '',
+            '',
+            '',
+            ((primary.opportunities || [])[0] || {}).title || ((primary.recommendations || [])[0] || ''),
+            primary.error || '',
+        ].map(toCsv).join(','));
+        (r.comparison_rows || []).forEach((row) => {
+            lines.push([
+                row.url || '',
+                'competitor',
+                row.status || '',
+                row.score ?? '',
+                row.cwv_status || '',
+                row.lcp_ms ?? '',
+                row.inp_ms ?? '',
+                row.cls ?? '',
+                row.score_delta_vs_primary ?? '',
+                row.lcp_delta_ms_vs_primary ?? '',
+                row.inp_delta_ms_vs_primary ?? '',
+                row.cls_delta_vs_primary ?? '',
+                row.top_focus || '',
+                row.error || '',
+            ].map(toCsv).join(','));
+        });
+    } else if (mode === 'batch' || Array.isArray(r.sites)) {
         lines.push(['url', 'status', 'score', 'cwv', 'lcp_ms', 'inp_ms', 'cls', 'top_focus', 'error'].join(','));
         const sites = Array.isArray(r.sites) ? r.sites : [];
         sites.forEach((site) => {
@@ -2259,6 +2298,29 @@ function copyCoreWebVitalsSummary() {
     const resultData = coreWebVitalsData.result || coreWebVitalsData;
     const r = resultData.results || resultData;
     const mode = String(r.mode || 'single').toLowerCase();
+    if (mode === 'competitor') {
+        const summary = r.summary || {};
+        const benchmark = r.benchmark || {};
+        const primary = r.primary || {};
+        const primarySummary = primary.summary || {};
+        const lines = [
+            `Core Web Vitals Competitor Analysis`,
+            `Primary: ${summary.primary_url || primary.url || ''}`,
+            `Primary score: ${primarySummary.performance_score ?? summary.primary_score ?? 'n/a'}`,
+            `Primary CWV: ${primarySummary.core_web_vitals_status || summary.primary_cwv_status || 'unknown'}`,
+            `Primary rank: ${summary.primary_rank || 'n/a'}`,
+            `Leader: ${summary.market_leader_url || benchmark.market_leader_url || 'n/a'}`,
+            `Competitors total: ${summary.competitors_total ?? ((r.competitors || []).length ?? 0)}`,
+        ];
+        const gaps = (r.gaps_for_primary || []).slice(0, 5);
+        if (gaps.length) {
+            lines.push('');
+            lines.push('Primary gaps:');
+            gaps.forEach((item, idx) => lines.push(`${idx + 1}. ${item}`));
+        }
+        copyToClipboard(lines.join('\n'));
+        return;
+    }
     if (mode === 'batch' || Array.isArray(r.sites)) {
         const summary = r.summary || {};
         const lines = [
@@ -3372,6 +3434,184 @@ function generateCoreWebVitalsHTML(result) {
             </button>
         </div>
     `;
+
+    if (mode === 'competitor') {
+        const competitors = Array.isArray(r.competitors) ? r.competitors : (sites.length > 1 ? sites.slice(1) : []);
+        const primary = r.primary || (sites[0] || {});
+        const primarySummary = primary.summary || {};
+        const primaryMetrics = primary.metrics || {};
+        const benchmark = r.benchmark || {};
+        const comparisonRows = Array.isArray(r.comparison_rows) ? r.comparison_rows : [];
+        const gaps = Array.isArray(r.gaps_for_primary) ? r.gaps_for_primary : [];
+        const strengths = Array.isArray(r.strengths_of_primary) ? r.strengths_of_primary : [];
+        const commonOpportunities = Array.isArray(r.common_opportunities) ? r.common_opportunities : [];
+        const actionPlan = Array.isArray(r.action_plan) ? r.action_plan : [];
+        const recommendations = Array.isArray(r.recommendations) ? r.recommendations : [];
+        const competitorSummary = r.summary || {};
+
+        const primaryScore = primarySummary.performance_score;
+        const primaryCwv = primarySummary.core_web_vitals_status || competitorSummary.primary_cwv_status || 'unknown';
+        const primaryLcp = primaryMetrics.lcp?.field_value_ms ?? primaryMetrics.lcp?.lab_value_ms;
+        const primaryInp = primaryMetrics.inp?.field_value_ms ?? primaryMetrics.inp?.lab_value_ms;
+        const primaryCls = primaryMetrics.cls?.field_value ?? primaryMetrics.cls?.lab_value;
+
+        const deltaBadge = (value, positiveIsGood = true, unit = '') => {
+            const num = Number(value);
+            if (!Number.isFinite(num)) return '<span class="text-slate-400">-</span>';
+            const sign = num > 0 ? '+' : '';
+            const absGood = positiveIsGood ? num >= 0 : num <= 0;
+            const cls = absGood ? 'text-emerald-700' : 'text-red-700';
+            const display = `${sign}${Math.round(num * 10) / 10}${unit}`;
+            return `<span class="${cls} font-semibold">${escapeHtml(display)}</span>`;
+        };
+
+        const rows = comparisonRows.map((row, idx) => {
+            const status = String(row.status || 'error').toLowerCase();
+            const cwv = row.cwv_status || 'unknown';
+            return `
+                <tr class="border-b align-top">
+                    <td class="py-2 px-3 text-xs text-slate-500">${idx + 1}</td>
+                    <td class="py-2 px-3 font-medium break-all">${escapeHtml(row.url || '-')}</td>
+                    <td class="py-2 px-3"><span class="inline-flex px-2 py-1 rounded border text-xs font-semibold ${statusClass(cwv)}">${statusLabel(cwv)}</span></td>
+                    <td class="py-2 px-3"><span class="inline-flex px-2 py-1 rounded border text-xs font-semibold ${scoreBadgeClass(row.score)}">${escapeHtml(row.score ?? 'н/д')}</span></td>
+                    <td class="py-2 px-3">${escapeHtml(formatMetric('lcp', row.lcp_ms))} <span class="text-xs text-slate-400">ms</span></td>
+                    <td class="py-2 px-3">${escapeHtml(formatMetric('inp', row.inp_ms))} <span class="text-xs text-slate-400">ms</span></td>
+                    <td class="py-2 px-3">${escapeHtml(formatMetric('cls', row.cls))}</td>
+                    <td class="py-2 px-3">${deltaBadge(row.score_delta_vs_primary, false, ' score')}</td>
+                    <td class="py-2 px-3">${deltaBadge(row.lcp_delta_ms_vs_primary, true, ' ms')}</td>
+                    <td class="py-2 px-3">${deltaBadge(row.inp_delta_ms_vs_primary, true, ' ms')}</td>
+                    <td class="py-2 px-3">${deltaBadge(row.cls_delta_vs_primary, true, '')}</td>
+                    <td class="py-2 px-3 text-xs text-slate-700">${escapeHtml(row.top_focus || row.error || (status === 'success' ? '-' : 'Scan failed'))}</td>
+                </tr>
+            `;
+        }).join('');
+
+        return `
+            <div class="space-y-6 cwvpro-results">
+                <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
+                    <div class="flex flex-wrap items-start justify-between gap-4">
+                        <div>
+                            <h3 class="text-lg font-semibold">Core Web Vitals: Анализ конкурентов</h3>
+                            <div class="text-sm text-slate-600 mt-1">Primary: ${escapeHtml(competitorSummary.primary_url || primary.url || '-')}</div>
+                            <div class="text-xs text-slate-500 mt-1">Strategy: ${escapeHtml(String(strategy).toUpperCase())}</div>
+                            <div class="text-xs text-slate-500 mt-1">Источник: ${escapeHtml(source)}</div>
+                        </div>
+                        ${exportButtons}
+                    </div>
+                    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2 mt-4 text-sm">
+                        <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-3"><div class="text-xs">Total</div><div class="font-semibold text-lg">${fmtInt(competitorSummary.total_urls)}</div></div>
+                        <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-3"><div class="text-xs">Success</div><div class="font-semibold text-lg">${fmtInt(competitorSummary.successful_urls)}</div></div>
+                        <div class="rounded-lg border border-red-200 bg-red-50 p-3"><div class="text-xs">Errors</div><div class="font-semibold text-lg">${fmtInt(competitorSummary.failed_urls)}</div></div>
+                        <div class="rounded-lg border p-3 ${statusClass(primaryCwv)}"><div class="text-xs">Primary CWV</div><div class="font-semibold">${statusLabel(primaryCwv)}</div></div>
+                        <div class="rounded-lg border p-3 ${scoreBadgeClass(primaryScore)}"><div class="text-xs">Primary score</div><div class="font-semibold">${fmt1(primaryScore)}</div></div>
+                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3"><div class="text-xs">Primary rank</div><div class="font-semibold">${escapeHtml(competitorSummary.primary_rank || '-')}</div></div>
+                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3"><div class="text-xs">Leader</div><div class="font-semibold text-xs">${escapeHtml(competitorSummary.market_leader_url || benchmark.market_leader_url || '-')}</div></div>
+                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3"><div class="text-xs">Competitors</div><div class="font-semibold">${fmtInt(competitorSummary.competitors_total || competitors.length)}</div></div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mt-3 text-xs">
+                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">Primary LCP/INP/CLS: <span class="font-semibold">${fmt1(primaryLcp)} ms</span> / <span class="font-semibold">${fmt1(primaryInp)} ms</span> / <span class="font-semibold">${fmt3(primaryCls)}</span></div>
+                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">Median competitors score: <span class="font-semibold">${fmt1(benchmark.competitor_median_score)}</span></div>
+                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">Median competitors LCP: <span class="font-semibold">${fmt1(benchmark.competitor_median_lcp_ms)} ms</span></div>
+                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">Median competitors INP/CLS: <span class="font-semibold">${fmt1(benchmark.competitor_median_inp_ms)} ms</span> / <span class="font-semibold">${fmt3(benchmark.competitor_median_cls)}</span></div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
+                    <h4 class="font-semibold mb-3">Сравнение с конкурентами</h4>
+                    <div class="overflow-auto border rounded-lg">
+                        <table class="w-full min-w-[1450px] text-sm">
+                            <thead>
+                                <tr class="text-left text-xs text-slate-500 border-b bg-slate-50">
+                                    <th class="py-2 px-3">#</th>
+                                    <th class="py-2 px-3">URL</th>
+                                    <th class="py-2 px-3">CWV</th>
+                                    <th class="py-2 px-3">Score</th>
+                                    <th class="py-2 px-3">LCP</th>
+                                    <th class="py-2 px-3">INP</th>
+                                    <th class="py-2 px-3">CLS</th>
+                                    <th class="py-2 px-3">Δ Score vs primary</th>
+                                    <th class="py-2 px-3">Δ LCP vs primary</th>
+                                    <th class="py-2 px-3">Δ INP vs primary</th>
+                                    <th class="py-2 px-3">Δ CLS vs primary</th>
+                                    <th class="py-2 px-3">Фокус</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rows || '<tr><td colspan="12" class="py-4 px-3 text-center text-slate-500">Нет данных по конкурентам</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
+                        <h4 class="font-semibold mb-3">Где primary отстаёт</h4>
+                        ${gaps.length > 0
+                            ? `<ul class="space-y-2 text-sm text-slate-700">${gaps.map((item) => `<li class="border-l-4 border-red-400 pl-3">${escapeHtml(item)}</li>`).join('')}</ul>`
+                            : '<div class="text-sm text-slate-500">Критичных отставаний не выявлено.</div>'
+                        }
+                    </div>
+                    <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
+                        <h4 class="font-semibold mb-3">Сильные стороны primary</h4>
+                        ${strengths.length > 0
+                            ? `<ul class="space-y-2 text-sm text-slate-700">${strengths.map((item) => `<li class="border-l-4 border-emerald-400 pl-3">${escapeHtml(item)}</li>`).join('')}</ul>`
+                            : '<div class="text-sm text-slate-500">Явных преимуществ над конкурентами пока нет.</div>'
+                        }
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
+                        <h4 class="font-semibold mb-3">Частые проблемы у конкурентов</h4>
+                        ${commonOpportunities.length > 0 ? `
+                            <div class="overflow-auto border rounded-lg">
+                                <table class="w-full min-w-[620px] text-sm">
+                                    <thead>
+                                        <tr class="text-left text-xs text-slate-500 border-b bg-slate-50">
+                                            <th class="py-2 px-3">Проблема</th>
+                                            <th class="py-2 px-3">Group</th>
+                                            <th class="py-2 px-3">Count</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${commonOpportunities.map((item) => `
+                                            <tr class="border-b">
+                                                <td class="py-2 px-3">${escapeHtml(item.title || item.id || '-')}</td>
+                                                <td class="py-2 px-3">${escapeHtml(item.group || '-')}</td>
+                                                <td class="py-2 px-3">${fmtInt(item.count)}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ` : '<div class="text-sm text-slate-500">Недостаточно данных для группировки проблем конкурентов.</div>'}
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
+                        <h4 class="font-semibold mb-3">Action Plan (primary)</h4>
+                        ${actionPlan.length > 0 ? `
+                            <ul class="space-y-2 text-sm">
+                                ${actionPlan.map((item) => `
+                                    <li class="border-l-4 border-cyan-500 pl-3">
+                                        <span class="font-semibold">${escapeHtml(item.priority || 'P2')}</span>:
+                                        ${escapeHtml(item.action || '-')}
+                                    </li>
+                                `).join('')}
+                            </ul>
+                        ` : '<div class="text-sm text-slate-500">Action plan не сформирован.</div>'}
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
+                    <h4 class="font-semibold mb-3">Рекомендации</h4>
+                    ${recommendations.length > 0
+                        ? `<ul class="space-y-2 text-sm text-slate-700">${recommendations.map((rec) => `<li class="border-l-4 border-cyan-500 pl-3">${escapeHtml(rec)}</li>`).join('')}</ul>`
+                        : '<div class="text-sm text-slate-500">Рекомендации не сформированы.</div>'
+                    }
+                </div>
+            </div>
+        `;
+    }
 
     if (isBatch) {
         const batchSummary = r.summary || {};

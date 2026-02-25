@@ -136,7 +136,11 @@ async function startTask(event, endpoint) {
     }
     if (endpoint === 'core-web-vitals') {
         const scanMode = (data.scan_mode || 'single').toString();
-        const batchMode = scanMode === 'batch';
+        let batchMode = scanMode === 'batch';
+        const competitorMode = Boolean(data.competitor_mode);
+        if (competitorMode) {
+            batchMode = true;
+        }
         const rawBatch = (data.batch_urls_text || '').toString();
         const parsedBatchUrls = rawBatch
             .split(/\r?\n/)
@@ -148,17 +152,43 @@ async function startTask(event, endpoint) {
         }
         const batchUrls = parsedBatchUrls.slice(0, 10);
         data.scan_mode = batchMode ? 'batch' : 'single';
+        data.competitor_mode = competitorMode;
         if (batchMode) {
-            if (batchUrls.length === 0) {
-                showToast('Add at least one URL for Core Web Vitals batch scan', 'warning');
-                return;
-            }
-            data.batch_urls = batchUrls;
-            if (!data.url || String(data.url).trim() === '') {
-                data.url = batchUrls[0];
+            if (competitorMode) {
+                const primaryUrl = String(data.url || '').trim();
+                if (!primaryUrl) {
+                    showToast('Укажите ваш сайт в поле URL для режима "Анализ конкурентов"', 'warning');
+                    return;
+                }
+                const seen = new Set();
+                const combined = [primaryUrl, ...batchUrls].filter((item) => {
+                    if (!item || seen.has(item)) return false;
+                    seen.add(item);
+                    return true;
+                });
+                if (combined.length > 10) {
+                    showToast('В режиме "Анализ конкурентов" максимум 10 URL (включая ваш сайт)', 'warning');
+                    return;
+                }
+                if (combined.length < 2) {
+                    showToast('Добавьте минимум один URL конкурента (второй URL в списке)', 'warning');
+                    return;
+                }
+                data.batch_urls = combined;
+                data.url = combined[0];
+            } else {
+                if (batchUrls.length === 0) {
+                    showToast('Add at least one URL for Core Web Vitals batch scan', 'warning');
+                    return;
+                }
+                data.batch_urls = batchUrls;
+                if (!data.url || String(data.url).trim() === '') {
+                    data.url = batchUrls[0];
+                }
             }
         } else {
             delete data.batch_urls;
+            data.competitor_mode = false;
         }
         delete data.batch_urls_text;
     }
@@ -423,14 +453,32 @@ function initCoreWebVitalsBatchUI() {
     const modeSelect = form.querySelector('.js-cwv-scan-mode');
     const batchBox = form.querySelector('.js-cwv-batch-box');
     const urlInput = form.querySelector('.js-cwv-url');
+    const competitorCheckbox = form.querySelector('.js-cwv-competitor-mode');
+    const competitorHint = form.querySelector('.js-cwv-competitor-hint');
     if (!modeSelect || !batchBox || !urlInput) return;
 
     const sync = () => {
         const isBatch = modeSelect.value === 'batch';
+        const competitorMode = Boolean(competitorCheckbox?.checked);
         batchBox.classList.toggle('hidden', !isBatch);
-        urlInput.required = !isBatch;
+        if (!isBatch && competitorCheckbox) {
+            competitorCheckbox.checked = false;
+        }
+        if (isBatch && competitorMode) {
+            urlInput.required = true;
+            urlInput.placeholder = 'Ваш сайт (primary), например https://example.com';
+        } else {
+            urlInput.required = !isBatch;
+            urlInput.placeholder = 'example.com или https://example.com/page';
+        }
+        if (competitorHint) {
+            competitorHint.classList.toggle('hidden', !(isBatch && competitorMode));
+        }
     };
     modeSelect.addEventListener('change', sync);
+    if (competitorCheckbox) {
+        competitorCheckbox.addEventListener('change', sync);
+    }
     sync();
 }
 
