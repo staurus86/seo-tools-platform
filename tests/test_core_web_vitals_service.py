@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import patch
 
+import requests
+
 from app.tools.core_web_vitals.service_v1 import run_core_web_vitals
 
 
@@ -57,6 +59,31 @@ class CoreWebVitalsServiceTests(unittest.TestCase):
         self.assertTrue(len(r.get("opportunities") or []) >= 1)
         self.assertTrue(len(r.get("recommendations") or []) >= 1)
         self.assertTrue((r.get("api") or {}).get("has_key"))
+
+    @patch("app.tools.core_web_vitals.service_v1.requests.get")
+    def test_retries_after_timeout(self, mock_get):
+        payload = {
+            "lighthouseResult": {
+                "categories": {"performance": {"score": 0.9}},
+                "audits": {
+                    "largest-contentful-paint": {"numericValue": 2100},
+                    "interaction-to-next-paint": {"numericValue": 140},
+                    "cumulative-layout-shift": {"numericValue": 0.08},
+                    "first-contentful-paint": {"numericValue": 1200},
+                    "server-response-time": {"numericValue": 450},
+                },
+            },
+            "loadingExperience": {"metrics": {}},
+        }
+        mock_get.side_effect = [
+            requests.Timeout("Read timed out"),
+            _FakeResponse(200, payload),
+        ]
+
+        result = run_core_web_vitals(url="example.com", strategy="desktop")
+        r = result.get("results", {})
+        self.assertEqual((r.get("summary") or {}).get("performance_score"), 90)
+        self.assertGreaterEqual((r.get("api") or {}).get("retries_used", 0), 1)
 
     @patch("app.tools.core_web_vitals.service_v1.requests.get")
     def test_raises_on_api_error(self, mock_get):

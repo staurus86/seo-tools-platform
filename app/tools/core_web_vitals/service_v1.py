@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import re
+import time
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse, urlunparse
 
@@ -12,7 +13,7 @@ import requests
 from app.config import settings
 
 
-PSI_ENDPOINT = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
+PSI_ENDPOINT = "https://pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed"
 
 
 def _normalize_http_input(raw_value: str) -> str:
@@ -87,7 +88,7 @@ def run_core_web_vitals(
     *,
     url: str,
     strategy: str = "desktop",
-    timeout: int = 30,
+    timeout: int = 60,
     api_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     normalized_url = _normalize_http_input(url)
@@ -105,10 +106,43 @@ def run_core_web_vitals(
     if token:
         params["key"] = token
 
-    try:
-        response = requests.get(PSI_ENDPOINT, params=params, timeout=timeout)
-    except requests.RequestException as exc:
-        raise RuntimeError(f"PSI request failed: {exc}") from exc
+    configured_timeout = int(timeout or getattr(settings, "PAGESPEED_TIMEOUT_SEC", 60) or 60)
+    configured_timeout = max(20, configured_timeout)
+    max_retries = int(getattr(settings, "PAGESPEED_MAX_RETRIES", 3) or 3)
+    max_retries = max(1, min(5, max_retries))
+
+    response = None
+    last_exception: Optional[Exception] = None
+    retries_used = 0
+    for attempt in range(max_retries):
+        read_timeout = configured_timeout + (attempt * 15)
+        try:
+            response = requests.get(
+                PSI_ENDPOINT,
+                params=params,
+                timeout=(10, read_timeout),
+            )
+            if response.status_code in (500, 502, 503, 504) and attempt < (max_retries - 1):
+                retries_used += 1
+                time.sleep(min(2.0, 0.35 * (2 ** attempt)))
+                continue
+            break
+        except requests.Timeout as exc:
+            last_exception = exc
+            if attempt >= (max_retries - 1):
+                break
+            retries_used += 1
+            time.sleep(min(2.0, 0.35 * (2 ** attempt)))
+            continue
+        except requests.RequestException as exc:
+            raise RuntimeError(f"PSI request failed: {exc}") from exc
+
+    if response is None:
+        message = str(last_exception) if last_exception else "unknown timeout"
+        raise RuntimeError(
+            f"PSI request failed after {max_retries} attempts: {message}. "
+            "Попробуйте повторить запрос или увеличить PAGESPEED_TIMEOUT_SEC."
+        )
 
     if response.status_code != 200:
         error_text = ""
@@ -256,6 +290,8 @@ def run_core_web_vitals(
             "api": {
                 "has_key": bool(token),
                 "endpoint": PSI_ENDPOINT,
+                "retries_used": retries_used,
+                "timeout_sec": configured_timeout,
             },
             "checked_at": fetched_at,
         },

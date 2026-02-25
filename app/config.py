@@ -60,6 +60,8 @@ class Settings(BaseSettings):
 
     # Core Web Vitals (Google PageSpeed Insights API)
     PAGESPEED_API_KEY: str = os.getenv("PAGESPEED_API_KEY", "")
+    PAGESPEED_TIMEOUT_SEC: int = int(os.getenv("PAGESPEED_TIMEOUT_SEC", "60"))
+    PAGESPEED_MAX_RETRIES: int = int(os.getenv("PAGESPEED_MAX_RETRIES", "3"))
 
     # Bot check v2
     BOT_CHECK_ENGINE: str = os.getenv("BOT_CHECK_ENGINE", "legacy")
