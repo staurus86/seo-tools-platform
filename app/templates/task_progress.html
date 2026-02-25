@@ -354,6 +354,148 @@
         background: #f8fafc;
         color: #334155;
     }
+    .redirectpro-results {
+        --rd-bg-soft: linear-gradient(180deg, #f4fbf8 0%, #f8fafc 100%);
+        --rd-card-border: #d9e7df;
+        --rd-card-shadow: 0 10px 28px rgba(2, 6, 23, 0.06);
+        --rd-card-shadow-hover: 0 14px 32px rgba(2, 6, 23, 0.1);
+        --rd-title: #0f172a;
+        --rd-muted: #475569;
+        background: var(--rd-bg-soft);
+        border: 1px solid #dbe7e1;
+        border-radius: 1rem;
+        padding: 1rem;
+    }
+    .redirectpro-results .bg-white.rounded-xl.shadow-md {
+        border: 1px solid var(--rd-card-border);
+        box-shadow: var(--rd-card-shadow);
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+        animation: auditpro-fade-in 0.3s ease both;
+    }
+    .redirectpro-results .bg-white.rounded-xl.shadow-md:hover {
+        transform: translateY(-2px);
+        border-color: #b8dcc6;
+        box-shadow: var(--rd-card-shadow-hover);
+    }
+    .redirectpro-results h3,
+    .redirectpro-results h4 {
+        color: var(--rd-title);
+        letter-spacing: -0.01em;
+    }
+    .redirectpro-results .text-gray-600,
+    .redirectpro-results .text-slate-500 {
+        color: var(--rd-muted) !important;
+    }
+    .redirectpro-hero {
+        background: linear-gradient(120deg, #047857 0%, #0f766e 45%, #0369a1 100%);
+        color: #f8fafc;
+        border-radius: 1rem;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        padding: 1rem;
+        position: relative;
+        overflow: hidden;
+    }
+    .redirectpro-hero::before {
+        content: "";
+        position: absolute;
+        width: 280px;
+        height: 280px;
+        border-radius: 999px;
+        background: radial-gradient(circle, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.01) 70%);
+        left: -80px;
+        top: -80px;
+        pointer-events: none;
+    }
+    .redirectpro-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        background: rgba(255, 255, 255, 0.16);
+        padding: 0.25rem 0.7rem;
+        font-size: 0.72rem;
+        font-weight: 600;
+    }
+    .redirectpro-table-wrap {
+        border: 1px solid #dbe7e1;
+        border-radius: 0.75rem;
+        overflow: auto;
+    }
+    .redirectpro-table {
+        width: 100%;
+        min-width: 1120px;
+        table-layout: fixed;
+        border-collapse: collapse;
+    }
+    .redirectpro-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: #f8fafc;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        font-size: 0.72rem;
+        color: #475569;
+    }
+    .redirectpro-table tbody tr:nth-child(even) {
+        background: #fcfdfd;
+    }
+    .redirectpro-table tbody tr:hover {
+        background: #f2f9f5;
+    }
+    .redirectpro-cell {
+        vertical-align: top;
+        padding: 0.75rem;
+        font-size: 0.84rem;
+        color: #334155;
+        border-bottom: 1px solid #edf3ef;
+        word-break: break-word;
+    }
+    .redirectpro-meta {
+        margin-top: 0.35rem;
+        font-size: 0.75rem;
+        color: #64748b;
+    }
+    .redirectpro-details summary {
+        cursor: pointer;
+        color: #0369a1;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    .redirectpro-details .body {
+        margin-top: 0.4rem;
+        font-size: 0.75rem;
+        color: #475569;
+        line-height: 1.45;
+        white-space: pre-wrap;
+    }
+    .redirectpro-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.2rem 0.55rem;
+        border-radius: 999px;
+        border: 1px solid #cbd5e1;
+        background: #f8fafc;
+        font-size: 0.72rem;
+        font-weight: 600;
+    }
+    .redirectpro-status.passed {
+        background: #ecfdf3;
+        border-color: #86efac;
+        color: #166534;
+    }
+    .redirectpro-status.warning {
+        background: #fffbeb;
+        border-color: #fcd34d;
+        color: #92400e;
+    }
+    .redirectpro-status.error {
+        background: #fef2f2;
+        border-color: #fca5a5;
+        color: #991b1b;
+    }
     @keyframes auditpro-fade-in {
         from {
             opacity: 0;
@@ -2649,38 +2791,104 @@ function generateRedirectCheckerHTML(result) {
     const scenarios = filter === 'all' ? allScenarios : allScenarios.filter((s) => (s.status || '') === filter);
     const recommendations = Array.isArray(r.recommendations) ? r.recommendations : [];
 
-    const badge = (status) => {
+    const formatChain = (codes) => Array.isArray(codes) && codes.length ? codes.join(' -> ') : '-';
+    const statusClass = (status) => {
         const s = String(status || '').toLowerCase();
-        if (s === 'passed') return '<span class="inline-flex px-2 py-1 rounded-full text-xs bg-green-100 text-green-700">Passed</span>';
-        if (s === 'warning') return '<span class="inline-flex px-2 py-1 rounded-full text-xs bg-amber-100 text-amber-700">Warning</span>';
-        if (s === 'error') return '<span class="inline-flex px-2 py-1 rounded-full text-xs bg-red-100 text-red-700">Error</span>';
-        return '<span class="inline-flex px-2 py-1 rounded-full text-xs bg-slate-100 text-slate-700">Unknown</span>';
+        if (s === 'passed') return 'passed';
+        if (s === 'warning') return 'warning';
+        if (s === 'error') return 'error';
+        return '';
+    };
+    const statusIcon = (status) => {
+        const s = String(status || '').toLowerCase();
+        if (s === 'passed') return '<i class="fas fa-check-circle"></i>';
+        if (s === 'warning') return '<i class="fas fa-exclamation-triangle"></i>';
+        if (s === 'error') return '<i class="fas fa-times-circle"></i>';
+        return '<i class="fas fa-info-circle"></i>';
+    };
+
+    const counters = {
+        all: allScenarios.length,
+        passed: allScenarios.filter((s) => String(s.status || '').toLowerCase() === 'passed').length,
+        warning: allScenarios.filter((s) => String(s.status || '').toLowerCase() === 'warning').length,
+        error: allScenarios.filter((s) => String(s.status || '').toLowerCase() === 'error').length,
     };
 
     const scenarioRows = scenarios.map((s) => `
-        <tr class="border-b border-slate-100 align-top">
-            <td class="py-3 pr-3 text-sm">${escapeHtml(s.id)}</td>
-            <td class="py-3 pr-3 text-sm">
-                <div class="font-medium text-slate-900">${escapeHtml(s.title)}</div>
-                <div class="text-xs text-slate-500 mt-1">${escapeHtml(s.what_checked || '')}</div>
+        <tr>
+            <td class="redirectpro-cell text-center font-semibold">${escapeHtml(s.id || '-')}</td>
+            <td class="redirectpro-cell">
+                <div class="font-semibold text-slate-900">${escapeHtml(s.title || '-')}</div>
+                <div class="redirectpro-meta">${escapeHtml(s.what_checked || '-')}</div>
             </td>
-            <td class="py-3 pr-3 text-sm">${badge(s.status)}</td>
-            <td class="py-3 pr-3 text-xs text-slate-700 whitespace-pre-wrap break-words">${escapeHtml((s.response_codes || []).join(' -> ') || '-')}</td>
-            <td class="py-3 pr-3 text-sm">${escapeHtml(s.hops || 0)}</td>
-            <td class="py-3 pr-3 text-xs text-slate-700 whitespace-pre-wrap break-words">${escapeHtml(s.actual || '-')}</td>
-            <td class="py-3 pr-3 text-xs text-slate-700 whitespace-pre-wrap break-words">${escapeHtml(s.recommendation || '-')}</td>
+            <td class="redirectpro-cell">
+                <span class="redirectpro-status ${statusClass(s.status)}">
+                    ${statusIcon(s.status)} ${escapeHtml(String(s.status || 'unknown').toUpperCase())}
+                </span>
+                <div class="redirectpro-meta mt-1">Хопы: <span class="font-medium">${escapeHtml(s.hops || 0)}</span></div>
+            </td>
+            <td class="redirectpro-cell">
+                <div class="font-medium text-slate-800">${escapeHtml(formatChain(s.response_codes))}</div>
+                <div class="redirectpro-meta mt-1">Final: ${escapeHtml(s.final_url || '-')}</div>
+            </td>
+            <td class="redirectpro-cell">
+                <div><span class="text-slate-500">Expected:</span> ${escapeHtml(s.expected || '-')}</div>
+                <div class="mt-2"><span class="text-slate-500">Actual:</span> ${escapeHtml(s.actual || '-')}</div>
+            </td>
+            <td class="redirectpro-cell">${escapeHtml(s.recommendation || '-')}</td>
+            <td class="redirectpro-cell">
+                <details class="redirectpro-details">
+                    <summary>Подробнее</summary>
+                    <div class="body">Test URL: ${escapeHtml(s.test_url || '-')}
+Error: ${escapeHtml(s.error || '-')}
+Final URL: ${escapeHtml(s.final_url || '-')}
+Codes: ${escapeHtml(formatChain(s.response_codes))}
+                    </div>
+                </details>
+            </td>
         </tr>
     `).join('');
 
     const activeClass = (key) => (filter === key ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200');
     return `
-        <div class="space-y-6">
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <div class="flex flex-wrap items-start justify-between gap-4 mb-4">
+        <div class="redirectpro-results space-y-6">
+            <div class="redirectpro-hero">
+                <div class="flex flex-wrap items-start justify-between gap-3 relative z-10">
                     <div>
                         <h3 class="text-lg font-semibold">Redirect Checker</h3>
-                        <div class="text-sm text-slate-600 mt-1">URL: ${escapeHtml(resultData.url || r.checked_url || '')}</div>
-                        <div class="text-xs text-slate-500 mt-1">User-Agent: ${escapeHtml(selectedUa.label || '-')}</div>
+                        <div class="text-sm text-emerald-50/95 mt-1">URL: ${escapeHtml(resultData.url || r.checked_url || '')}</div>
+                        <div class="text-xs text-emerald-100/95 mt-1">User-Agent: ${escapeHtml(selectedUa.label || '-')}</div>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <span class="redirectpro-chip"><i class="fas fa-stopwatch"></i>${escapeHtml(summary.duration_ms || 0)} ms</span>
+                        <span class="redirectpro-chip"><i class="fas fa-medal"></i>Score ${escapeHtml(summary.quality_score || 0)} (${escapeHtml(summary.quality_grade || '-')})</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3 min-w-[120px]">
+                            <div class="text-xs text-slate-500">Всего</div>
+                            <div class="text-lg font-semibold">${escapeHtml(summary.total_scenarios || counters.all || 0)}</div>
+                        </div>
+                        <div class="rounded-lg border border-green-200 bg-green-50 p-3 min-w-[120px]">
+                            <div class="text-xs text-green-700">Passed</div>
+                            <div class="text-lg font-semibold text-green-800">${escapeHtml(summary.passed || counters.passed || 0)}</div>
+                        </div>
+                        <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 min-w-[120px]">
+                            <div class="text-xs text-amber-700">Warning</div>
+                            <div class="text-lg font-semibold text-amber-800">${escapeHtml(summary.warnings || counters.warning || 0)}</div>
+                        </div>
+                        <div class="rounded-lg border border-red-200 bg-red-50 p-3 min-w-[120px]">
+                            <div class="text-xs text-red-700">Error</div>
+                            <div class="text-lg font-semibold text-red-800">${escapeHtml(summary.errors || counters.error || 0)}</div>
+                        </div>
+                        <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-3 min-w-[120px]">
+                            <div class="text-xs text-indigo-700">UA</div>
+                            <div class="text-sm font-semibold text-indigo-800">${escapeHtml(selectedUa.label || '-')}</div>
+                        </div>
                     </div>
                     <div class="flex flex-wrap gap-2">
                         <button type="button" onclick="downloadRedirectCheckerCsv()" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition">
@@ -2692,47 +2900,33 @@ function generateRedirectCheckerHTML(result) {
                     </div>
                 </div>
 
-                <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                        <div class="text-xs text-slate-500">Всего</div>
-                        <div class="text-lg font-semibold">${escapeHtml(summary.total_scenarios || allScenarios.length || 0)}</div>
-                    </div>
-                    <div class="rounded-lg border border-green-200 bg-green-50 p-3">
-                        <div class="text-xs text-green-700">Passed</div>
-                        <div class="text-lg font-semibold text-green-800">${escapeHtml(summary.passed || 0)}</div>
-                    </div>
-                    <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                        <div class="text-xs text-amber-700">Warning</div>
-                        <div class="text-lg font-semibold text-amber-800">${escapeHtml(summary.warnings || 0)}</div>
-                    </div>
-                    <div class="rounded-lg border border-red-200 bg-red-50 p-3">
-                        <div class="text-xs text-red-700">Error</div>
-                        <div class="text-lg font-semibold text-red-800">${escapeHtml(summary.errors || 0)}</div>
-                    </div>
-                    <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
-                        <div class="text-xs text-indigo-700">Score</div>
-                        <div class="text-lg font-semibold text-indigo-800">${escapeHtml(summary.quality_score || 0)} <span class="text-sm">(${escapeHtml(summary.quality_grade || '-')})</span></div>
-                    </div>
-                </div>
-
                 <div class="flex flex-wrap gap-2 mb-4">
-                    <button type="button" onclick="setRedirectCheckerFilter('all')" class="px-3 py-1.5 rounded-lg text-sm ${activeClass('all')}">Все</button>
-                    <button type="button" onclick="setRedirectCheckerFilter('passed')" class="px-3 py-1.5 rounded-lg text-sm ${activeClass('passed')}">Passed</button>
-                    <button type="button" onclick="setRedirectCheckerFilter('warning')" class="px-3 py-1.5 rounded-lg text-sm ${activeClass('warning')}">Warning</button>
-                    <button type="button" onclick="setRedirectCheckerFilter('error')" class="px-3 py-1.5 rounded-lg text-sm ${activeClass('error')}">Error</button>
+                    <button type="button" onclick="setRedirectCheckerFilter('all')" class="px-3 py-1.5 rounded-lg text-sm ${activeClass('all')}">Все (${counters.all})</button>
+                    <button type="button" onclick="setRedirectCheckerFilter('passed')" class="px-3 py-1.5 rounded-lg text-sm ${activeClass('passed')}">Passed (${counters.passed})</button>
+                    <button type="button" onclick="setRedirectCheckerFilter('warning')" class="px-3 py-1.5 rounded-lg text-sm ${activeClass('warning')}">Warning (${counters.warning})</button>
+                    <button type="button" onclick="setRedirectCheckerFilter('error')" class="px-3 py-1.5 rounded-lg text-sm ${activeClass('error')}">Error (${counters.error})</button>
                 </div>
 
-                <div class="overflow-auto rounded-lg border border-slate-200">
-                    <table class="min-w-full text-sm">
-                        <thead class="bg-slate-50 text-slate-700">
+                <div class="redirectpro-table-wrap">
+                    <table class="redirectpro-table">
+                        <colgroup>
+                            <col style="width:56px;">
+                            <col style="width:220px;">
+                            <col style="width:130px;">
+                            <col style="width:220px;">
+                            <col style="width:320px;">
+                            <col style="width:300px;">
+                            <col style="width:130px;">
+                        </colgroup>
+                        <thead>
                             <tr>
-                                <th style="resize:horizontal; overflow:auto; min-width:60px;" class="py-2 px-3 text-left">#</th>
-                                <th style="resize:horizontal; overflow:auto; min-width:180px;" class="py-2 px-3 text-left">Сценарий</th>
-                                <th style="resize:horizontal; overflow:auto; min-width:110px;" class="py-2 px-3 text-left">Статус</th>
-                                <th style="resize:horizontal; overflow:auto; min-width:120px;" class="py-2 px-3 text-left">Коды</th>
-                                <th style="resize:horizontal; overflow:auto; min-width:70px;" class="py-2 px-3 text-left">Хопы</th>
-                                <th style="resize:horizontal; overflow:auto; min-width:260px;" class="py-2 px-3 text-left">Факт</th>
-                                <th style="resize:horizontal; overflow:auto; min-width:260px;" class="py-2 px-3 text-left">Рекомендация</th>
+                                <th class="py-2 px-3 text-left">#</th>
+                                <th class="py-2 px-3 text-left">Сценарий</th>
+                                <th class="py-2 px-3 text-left">Статус</th>
+                                <th class="py-2 px-3 text-left">Цепочка</th>
+                                <th class="py-2 px-3 text-left">Expected / Actual</th>
+                                <th class="py-2 px-3 text-left">Рекомендация</th>
+                                <th class="py-2 px-3 text-left">Детали</th>
                             </tr>
                         </thead>
                         <tbody>

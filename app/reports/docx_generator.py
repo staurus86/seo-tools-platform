@@ -1355,7 +1355,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph(baseline_diff.get("message", "Базовый срез (baseline) не найден."))
 
-        self._add_heading(doc, "7. История тренда", level=1)
+        self._add_heading(doc, "7. Trend History", level=1)
         trend_history = trend.get("history", []) or []
         trend_delta = trend.get("delta_vs_previous", {}) or {}
         if trend_history:
@@ -1368,10 +1368,10 @@ class DOCXGenerator:
             if previous:
                 doc.add_paragraph(f"Предыдущий запуск: {previous.get('timestamp', 'н/д')}.")
                 doc.add_paragraph(
-                    "Дельта к предыдущему: "
-                    f"индексируемо {trend_delta.get('indexable', 0)}, "
-                    f"критичных {trend_delta.get('critical_issues', 0)}, "
-                    f"средний ответ, мс {trend_delta.get('avg_response_time_ms', 0)}."
+                    "Delta vs previous: "
+                    f"indexable {trend_delta.get('indexable', 0)}, "
+                    f"critical issues {trend_delta.get('critical_issues', 0)}, "
+                    f"avg response ms {trend_delta.get('avg_response_time_ms', 0)}."
                 )
             rows = []
             for item in trend_history[:10]:
@@ -1390,7 +1390,7 @@ class DOCXGenerator:
                 rows,
             )
         else:
-            doc.add_paragraph("История тренда недоступна.")
+            doc.add_paragraph("Trend history unavailable.")
 
         self._add_heading(doc, "8. Рекомендации", level=1)
         recs = results.get("recommendations", []) or []

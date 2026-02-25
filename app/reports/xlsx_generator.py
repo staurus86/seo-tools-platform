@@ -1045,8 +1045,8 @@ class XLSXGenerator:
         recommendations = results.get("recommendations", []) or []
 
         ws = wb.active
-        ws.title = "Сводка"
-        ws["A1"] = "Отчет по доступности ботов"
+        ws.title = "Summary"
+        ws["A1"] = "Bot Access Check - Summary"
         ws["A1"].font = Font(bold=True, size=16)
         ws.merge_cells("A1:E1")
 
@@ -1074,8 +1074,8 @@ class XLSXGenerator:
         ws.column_dimensions["A"].width = 30
         ws.column_dimensions["B"].width = 90
 
-        exec_ws = wb.create_sheet("Краткая сводка", 1)
-        exec_ws["A1"] = "Проверка доступности ботов - краткая сводка"
+        exec_ws = wb.create_sheet("Executive Summary", 1)
+        exec_ws["A1"] = "Bot Access Check - Executive Summary"
         exec_ws["A1"].font = Font(bold=True, size=16)
         exec_ws.merge_cells("A1:G1")
 
@@ -1086,12 +1086,12 @@ class XLSXGenerator:
         waf_detected = int(summary.get("waf_cdn_detected", 0) or 0)
 
         executive_kpis = [
-            ("URL", report_url, "Область"),
-            ("Ботов проверено", total_bots, "Всего протестированных user-agent"),
-            ("Индексируемые боты", indexable_bots, "Боты, которые могут индексировать контент"),
-            ("Доля индексируемых", f"{indexable_pct}%", "Цель зависит от SLA-профиля"),
-            ("Категорий ниже SLA", sla_breaches, "Категории ниже SLA-цели"),
-            ("Обнаружений WAF/CDN", waf_detected, "Потенциальные anti-bot ограничения"),
+            ("URL", report_url, "Scope"),
+            ("Bots checked", total_bots, "Total tested user-agents"),
+            ("Indexable bots", indexable_bots, "Bots that can index content"),
+            ("Indexable share", f"{indexable_pct}%", "Target depends on SLA profile"),
+            ("Categories below SLA", sla_breaches, "Categories under SLA target"),
+            ("WAF/CDN detections", waf_detected, "Potential anti-bot restrictions"),
         ]
         for row_idx, (metric, value, note) in enumerate(executive_kpis, start=3):
             self._apply_style(exec_ws.cell(row=row_idx, column=1, value=metric), header_style)
@@ -1110,7 +1110,7 @@ class XLSXGenerator:
             reverse=True,
         )[:5]
         blocker_header_row = 11
-        blocker_headers = ["Ранг", "Код", "Заголовок", "Приоритет", "Затронуто ботов", "Владелец", "Топ действий"]
+        blocker_headers = ["Rank", "Code", "Title", "Priority", "Affected bots", "Owner", "Top actions"]
         for col, header in enumerate(blocker_headers, 1):
             self._apply_style(exec_ws.cell(row=blocker_header_row, column=col, value=header), header_style)
 
@@ -1137,17 +1137,17 @@ class XLSXGenerator:
             self._apply_row_severity_fill(exec_ws, row_idx, 1, len(blocker_headers), severity)
             self._apply_severity_cell_style(exec_ws.cell(row=row_idx, column=4), severity)
 
-        bucket_headers = ["Этап спринта", "Владелец", "Заголовок действия", "Приоритет", "Действия"]
+        bucket_headers = ["Sprint stage", "Owner", "Action title", "Priority", "Actions"]
         bucket_start = blocker_header_row + max(2, len(top_blockers) + 3)
         for col, header in enumerate(bucket_headers, 1):
             self._apply_style(exec_ws.cell(row=bucket_start, column=col, value=header), header_style)
 
         def _bucket_name(priority_score: float) -> str:
             if priority_score >= 20:
-                return "Сейчас"
+                return "Now"
             if priority_score >= 12:
-                return "Далее"
-            return "Позже"
+                return "Next"
+            return "Later"
 
         for idx, pb in enumerate(playbooks[:15], start=1):
             score = float(pb.get("priority_score", 0) or 0)
@@ -1312,8 +1312,8 @@ class XLSXGenerator:
         for col, width in enumerate([20, 30, 14, 14, 14, 48, 62], 1):
             blockers_ws.column_dimensions[get_column_letter(col)].width = width
 
-        playbooks_ws = wb.create_sheet("Плейбуки")
-        playbook_headers = ["Код блокера", "Владелец", "Заголовок", "Оценка приоритета", "Действия"]
+        playbooks_ws = wb.create_sheet("Playbooks")
+        playbook_headers = ["Blocker code", "Owner", "Title", "Priority score", "Actions"]
         for col, header in enumerate(playbook_headers, 1):
             self._apply_style(playbooks_ws.cell(row=1, column=col, value=header), header_style)
         for row_idx, item in enumerate(playbooks, start=2):
@@ -1385,20 +1385,20 @@ class XLSXGenerator:
         diff_ws.column_dimensions["C"].width = 14
         diff_ws.column_dimensions["D"].width = 14
 
-        trend_ws = wb.create_sheet("История тренда")
+        trend_ws = wb.create_sheet("Trend History")
         trend_headers = [
-            "Время запуска",
-            "Индексируемо",
-            "Сканируемо",
-            "Рендерится",
-            "Доступно",
-            "Средний ответ, мс",
-            "Критично",
-            "Предупреждения",
+            "Run time",
+            "Indexable",
+            "Crawlable",
+            "Renderable",
+            "Accessible",
+            "Avg response ms",
+            "Critical issues",
+            "Warnings",
             "WAF/CDN",
             "Retry profile",
-            "Критичность",
-            "Профиль SLA",
+            "Criticality profile",
+            "SLA profile",
         ]
         for col, header in enumerate(trend_headers, 1):
             self._apply_style(trend_ws.cell(row=1, column=col, value=header), header_style)
@@ -1422,7 +1422,7 @@ class XLSXGenerator:
                 for col, value in enumerate(values, 1):
                     self._apply_style(trend_ws.cell(row=row_idx, column=col, value=value), cell_style)
         else:
-            self._apply_style(trend_ws.cell(row=2, column=1, value="История тренда недоступна"), cell_style)
+            self._apply_style(trend_ws.cell(row=2, column=1, value="Trend history unavailable"), cell_style)
         trend_ws.freeze_panes = "A2"
         trend_ws.auto_filter.ref = "A1:L1"
         for col, width in enumerate([24, 10, 10, 10, 10, 14, 10, 10, 10, 14, 14, 12], 1):
@@ -2308,7 +2308,7 @@ class XLSXGenerator:
 
         # Sheet 1: Executive summary + formula-based issue rates
         ws = wb.active
-        ws.title = "1_Сводка"
+        ws.title = "1_Executive"
         ws["A1"] = "Отчет Site Audit Pro"
         ws["A1"].font = Font(bold=True, size=16)
         ws.merge_cells("A1:D1")
@@ -2431,10 +2431,10 @@ class XLSXGenerator:
         # Sheet 2: OnPage + Structured
         onpage_headers = [
             "URL", "Title", "Длина title", "Ширина title, px", "Meta description", "Длина description", "Ширина description, px", "Риск обрезки в SERP", "Кол-во H1", "Текст H1",
-            "Canonical URL", "Статус canonical", "Meta robots", "X-Robots", "Кол-во schema",
+            "Canonical URL", "Статус canonical", "Meta robots", "X-Robots", "Schema count",
             "JSON-LD", "Microdata", "RDFa", "Типы structured", "Кол-во hreflang",
             "Хлебные крошки", "Mobile hint", "Charset", "Viewport", "Дубликаты meta robots",
-            "Кол-во title-тегов", "Кол-во description-тегов", "Дубли title", "Дубли description", "Self-match canonical", "OnPage-скор", "OnPage-дельта до цели", "OnPage-решение", "Критичность",
+            "Кол-во title-тегов", "Кол-во description-тегов", "Дубли title", "Дубли description", "Self-match canonical", "OnPage-скор", "OnPage-дельта до цели", "OnPage-решение", "Severity",
         ]
         onpage_rows = []
         for page in pages:
@@ -2492,12 +2492,12 @@ class XLSXGenerator:
 
         # Sheet 3: Technical
         tech_headers = [
-            "URL", "Итоговый URL", "Статус", "Строка статуса", "Ответ, мс", "Размер, KB", "HTML байт", "DOM-узлы", "Редиректы",
+            "URL", "Итоговый URL", "Status", "Строка статуса", "Response ms", "Размер, KB", "HTML байт", "DOM-узлы", "Редиректы",
             "HTTPS", "Compression", "Compression algo", "Cache enabled", "Cache-Control",
             "Last-Modified", "Freshness days", "JS assets", "CSS assets", "Render-blocking JS", "Preload hints",
             "Perf light score", "Path depth", "URL params", "Crawl budget risk",
             "Security headers score", "CSP", "HSTS", "X-Frame-Options", "Referrer-Policy", "Permissions-Policy", "Mixed content refs",
-            "Оценка качества HTML", "Кол-во устаревших тегов", "Причина неиндексируемости", "TTFB, мс", "Соотношение HTML/JS", "Риск цепочки редиректов", "Транспортный риск", "Уровень транспорта", "Технический скор", "Техническая дельта до цели", "Техническое решение", "Критичность",
+            "Оценка качества HTML", "Кол-во устаревших тегов", "Причина неиндексируемости", "TTFB, мс", "Соотношение HTML/JS", "Риск цепочки редиректов", "Транспортный риск", "Уровень транспорта", "Технический скор", "Техническая дельта до цели", "Техническое решение", "Severity",
         ]
         tech_rows = []
         for page in pages:
@@ -2574,7 +2574,7 @@ class XLSXGenerator:
 
         # Sheet 4: Content + AI
         content_headers = [
-            "URL", "Кол-во слов", "Уникальных слов", "Уникальность, %", "Лексическое разнообразие", "Скор читабельности",
+            "URL", "Word count", "Уникальных слов", "Уникальность, %", "Лексическое разнообразие", "Скор читабельности",
             "Ср. длина предложения", "Ср. длина слова", "Сложные слова, %", "Скор keyword stuffing",
             "Плотность контента, %", "Boilerplate, %", "Toxicity-скор", "Доля «воды»",
             "Фразы-наполнители", "Кол-во AI-маркеров", "Список AI-маркеров", "Пример AI-маркеров",
@@ -2583,7 +2583,7 @@ class XLSXGenerator:
             "Соотношение контент/шаблон", "Кол-во абзацев", "Ср. длина абзаца", "Критичность скрытого",
             "Кол-во CTA", "Качество CTA", "Микс типов CTA", "Кол-во списков", "Кол-во таблиц",
             "Близкие дубли", "URL близких дублей",
-            "Контент-скор", "Контент-дельта до цели", "Контент-решение", "Критичность",
+            "Контент-скор", "Контент-дельта до цели", "Контент-решение", "Severity",
         ]
         content_rows = []
         for page in pages:
@@ -2669,8 +2669,8 @@ class XLSXGenerator:
         link_headers = [
             "URL", "Входящие внутренние", "Исходящие внутренние", "Исходящие внешние", "Страница-сирота",
             "Тематический хаб", "Глубина клика", "PageRank", "Доля слабых анкоров", "Качество анкоров", "Качество ссылок",
-            "Всего follow-ссылок", "Всего nofollow-ссылок", "Кол-во семантических ссылок", "Возможности внутренней перелинковки", "Битые внутренние цели", "Алерт переиспользования анкоров",
-            "Link-скор", "Link-дельта до цели", "Решение по перелинковке", "Критичность",
+            "Всего follow-ссылок", "External nofollow", "Кол-во семантических ссылок", "Возможности внутренней перелинковки", "Битые внутренние цели", "Алерт переиспользования анкоров",
+            "Link-скор", "Link-дельта до цели", "Решение по перелинковке", "Severity",
         ]
         link_rows = []
         for page in pages:
@@ -2721,7 +2721,7 @@ class XLSXGenerator:
             "Современные форматы", "Дубли src", "Внешние изображения", "Generic ALT", "Декоративные с ALT",
             "Всего внешних", "Внешние follow", "Внешние nofollow", "Доля follow, %",
             "Макс. размер изображения, KB", "Без srcset", "Домены внешних изображений", "Релевантность ALT",
-            "Медиа-скор", "Медиа-дельта до цели", "Решение по изображениям+внешним", "Критичность",
+            "Медиа-скор", "Медиа-дельта до цели", "Решение по изображениям+внешним", "Severity",
         ]
         img_rows = []
         for page in pages:
@@ -2775,9 +2775,9 @@ class XLSXGenerator:
 
         # Sheet 7: Hierarchy + Errors
         issue_headers = [
-            "URL", "Статус иерархии", "Проблемы иерархии", "Всего заголовков", "Кол-во H1",
-            "Outline заголовков", "Код", "Заголовок проблемы", "Детали проблемы", "H2 до H1", "Скор глубины outline", "Дубли текстов заголовков", "TOC-ready",
-            "Hierarchy-скор", "Hierarchy-дельта до цели", "Решение по иерархии", "Критичность",
+            "URL", "Статус иерархии", "Проблемы иерархии", "Всего заголовков", "H1 count (Hierarchy)",
+            "Outline заголовков", "Code", "Заголовок проблемы", "Детали проблемы", "H2 до H1", "Скор глубины outline", "Дубли текстов заголовков", "TOC-ready",
+            "Hierarchy-скор", "Hierarchy-дельта до цели", "Решение по иерархии", "Severity",
         ]
         issue_rows = []
         for page in pages:
@@ -2831,10 +2831,10 @@ class XLSXGenerator:
 
         # Sheet 8: Keywords
         keyword_headers = [
-            "URL", "Тема", "Топ терминов (TF-IDF)", "Топ ключей", "TF-IDF #1", "TF-IDF #2", "TF-IDF #3",
+            "URL", "Тема", "Top terms (TF-IDF)", "Топ ключей", "TF-IDF #1", "TF-IDF #2", "TF-IDF #3",
             "Профиль плотности ключей", "TF-IDF термины", "Энтропия ключей", "Доля топ-ключа, %",
             "SPAM-алерт", "Вода, %", "BM25-подобная релевантность", "Точное в Title", "Точное в H1", "Точное в URL", "Уверенность интента",
-            "Уровень интента", "Keyword-скор", "Keyword-дельта до цели", "Решение по ключам", "Критичность",
+            "Уровень интента", "Keyword-скор", "Keyword-дельта до цели", "Решение по ключам", "Severity",
         ]
         keyword_rows = []
         total_pages = max(1, int(summary.get("total_pages", len(pages)) or len(pages) or 1))
