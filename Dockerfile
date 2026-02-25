@@ -47,8 +47,9 @@ COPY *.txt /app/
 COPY *.toml /app/
 COPY *.md /app/
 
-# Install Playwright Chromium for mobile checks
-RUN mkdir -p /ms-playwright && python -m playwright install --with-deps chromium
+# Install Playwright browsers for render/mobile/llm crawler checks.
+# Keep both chromium and chromium-headless-shell to avoid runtime launch errors.
+RUN mkdir -p /ms-playwright && python -m playwright install --with-deps chromium chromium-headless-shell
 
 # Make entrypoint executable and create reports dir
 RUN chmod +x entrypoint.sh && mkdir -p reports_output

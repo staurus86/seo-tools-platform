@@ -51,10 +51,16 @@ if [ "$SERVICE_MODE" = "worker" ]; then
 elif [ "$SERVICE_MODE" = "llm-worker" ]; then
     echo "Starting in LLM WORKER mode..."
     echo ""
+    export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/ms-playwright}"
+    if ! compgen -G "${PLAYWRIGHT_BROWSERS_PATH}/chromium_headless_shell-*/chrome-linux/headless_shell" > /dev/null; then
+        echo "Playwright headless shell is missing. Installing Playwright browsers..."
+        python -m playwright install chromium chromium-headless-shell
+    fi
     echo "REDIS_URL is set to: ${REDIS_URL//:*@/:***@}"
     echo "JOB_CONCURRENCY: ${JOB_CONCURRENCY:-2}"
     echo "FETCH_TIMEOUT_MS: ${FETCH_TIMEOUT_MS:-20000}"
     echo "MAX_HTML_BYTES: ${MAX_HTML_BYTES:-2000000}"
+    echo "PLAYWRIGHT_BROWSERS_PATH: ${PLAYWRIGHT_BROWSERS_PATH}"
     echo ""
     exec python -m app.tools.llmCrawler.worker
 else

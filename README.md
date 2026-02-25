@@ -58,6 +58,7 @@ Open: `http://localhost:8000`
 - In Railway service settings set:
   - web service `Config as Code file path` -> `railway.web.toml`
   - worker service `Config as Code file path` -> `railway.worker.toml`
+- Both configs pin `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`.
 
 ## API Docs
 - Swagger: `/api/docs`

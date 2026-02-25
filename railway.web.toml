@@ -12,4 +12,4 @@ restartPolicyMaxRetries = 3
 [deploy.env]
 PYTHONUNBUFFERED = "1"
 SERVICE_MODE = "web"
-
+PLAYWRIGHT_BROWSERS_PATH = "/ms-playwright"
