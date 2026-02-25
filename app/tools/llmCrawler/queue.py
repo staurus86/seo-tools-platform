@@ -16,7 +16,7 @@ from app.config import settings
 
 
 _redis_client: Optional[Any] = None
-_redis_available: bool = True
+_redis_retry_after_ts: float = 0.0
 
 
 def _utc_now() -> str:
@@ -24,16 +24,27 @@ def _utc_now() -> str:
 
 
 def get_redis_client() -> Optional[Any]:
-    global _redis_client, _redis_available
+    global _redis_client, _redis_retry_after_ts
     if redis is None:
         return None
-    if _redis_client is None and _redis_available:
+    now_ts = time.time()
+    if _redis_client is not None:
         try:
-            _redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
             _redis_client.ping()
+            return _redis_client
         except Exception:
-            _redis_available = False
             _redis_client = None
+            _redis_retry_after_ts = now_ts + 5.0
+            return None
+    if now_ts < _redis_retry_after_ts:
+        return None
+    try:
+        _redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+        _redis_client.ping()
+        _redis_retry_after_ts = 0.0
+    except Exception:
+        _redis_client = None
+        _redis_retry_after_ts = now_ts + 5.0
     return _redis_client
 
 

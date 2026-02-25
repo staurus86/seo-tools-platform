@@ -51,10 +51,20 @@ if [ "$SERVICE_MODE" = "worker" ]; then
 elif [ "$SERVICE_MODE" = "llm-worker" ]; then
     echo "Starting in LLM WORKER mode..."
     echo ""
+    if [ -z "$REDIS_URL" ]; then
+        echo "ERROR: REDIS_URL is empty for llm-worker. Configure Redis service variables first."
+        exit 1
+    fi
     export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/ms-playwright}"
     if ! compgen -G "${PLAYWRIGHT_BROWSERS_PATH}/chromium_headless_shell-*/chrome-linux/headless_shell" > /dev/null; then
-        echo "Playwright headless shell is missing. Installing Playwright browsers..."
-        python -m playwright install chromium chromium-headless-shell
+        if [ "${PLAYWRIGHT_AUTO_INSTALL_ON_BOOT:-0}" = "1" ]; then
+            echo "Playwright headless shell is missing. Auto-install is enabled, installing browsers..."
+            python -m playwright install chromium chromium-headless-shell
+        else
+            echo "ERROR: Playwright browser binaries are missing at ${PLAYWRIGHT_BROWSERS_PATH}."
+            echo "Build image with Playwright preinstalled or set PLAYWRIGHT_AUTO_INSTALL_ON_BOOT=1."
+            exit 1
+        fi
     fi
     echo "REDIS_URL is set to: ${REDIS_URL//:*@/:***@}"
     echo "JOB_CONCURRENCY: ${JOB_CONCURRENCY:-2}"

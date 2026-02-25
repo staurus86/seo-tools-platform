@@ -51,6 +51,8 @@ Open: `http://localhost:8000`
 - `FETCH_TIMEOUT_MS` (default `20000`)
 - `MAX_HTML_BYTES` (default `2000000`)
 - `LLM_CRAWLER_MAX_REDIRECT_HOPS` (default `8`)
+- `PLAYWRIGHT_BROWSERS_PATH` (default `/ms-playwright` in Railway configs)
+- `PLAYWRIGHT_AUTO_INSTALL_ON_BOOT` (default `0`; set `1` only if you intentionally allow slow runtime browser install)
 
 ## Railway config-as-code (web + worker)
 - `railway.web.toml` for the web service (has `healthcheckPath = "/health"`).
