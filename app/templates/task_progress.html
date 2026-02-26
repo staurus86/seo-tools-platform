@@ -312,72 +312,14 @@
         background: #f8fbff;
     }
     .linkpro-results {
-        --lp-hero: linear-gradient(120deg, #0f766e 0%, #0f4c81 50%, #1d4ed8 100%);
         --lp-chip-bg: rgba(255, 255, 255, 0.16);
         --lp-chip-br: rgba(255, 255, 255, 0.28);
-        --lp-glass: rgba(255, 255, 255, 0.14);
-    }
-    .linkpro-results .lp-hero {
-        background: var(--lp-hero);
-        color: #f8fafc;
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        position: relative;
-        overflow: hidden;
-    }
-    .linkpro-results .lp-hero::before {
-        content: "";
-        position: absolute;
-        inset: -40% auto auto -20%;
-        width: 320px;
-        height: 320px;
-        border-radius: 999px;
-        background: radial-gradient(circle, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.01) 70%);
-        pointer-events: none;
-    }
-    .linkpro-results .lp-hero::after {
-        content: "";
-        position: absolute;
-        right: -90px;
-        bottom: -90px;
-        width: 240px;
-        height: 240px;
-        border-radius: 999px;
-        background: radial-gradient(circle, rgba(56, 189, 248, 0.22) 0%, rgba(56, 189, 248, 0.02) 72%);
-        pointer-events: none;
-    }
-    .linkpro-results .lp-chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.35rem;
-        border-radius: 999px;
-        border: 1px solid var(--lp-chip-br);
-        background: var(--lp-chip-bg);
-        padding: 0.25rem 0.7rem;
-        font-size: 0.72rem;
-        font-weight: 600;
     }
     .linkpro-results .lp-stat {
         border: 1px solid #dbe4f0;
         border-radius: 0.9rem;
         background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
         box-shadow: 0 8px 22px rgba(2, 6, 23, 0.05);
-    }
-    .linkpro-results .lp-glass {
-        border: 1px solid rgba(255, 255, 255, 0.26);
-        background: var(--lp-glass);
-        backdrop-filter: blur(6px);
-    }
-    .linkpro-results .lp-health {
-        border-radius: 1rem;
-        min-width: 180px;
-        text-align: center;
-        padding: 0.9rem 1rem;
-    }
-    .linkpro-results .lp-health .score {
-        font-size: 2rem;
-        line-height: 1;
-        font-weight: 800;
-        letter-spacing: -0.02em;
     }
     .linkpro-results [data-lp-tab] {
         transition: all 0.2s ease;
@@ -427,37 +369,6 @@
     .redirectpro-results .text-gray-600,
     .redirectpro-results .text-slate-500 {
         color: var(--rd-muted) !important;
-    }
-    .redirectpro-hero {
-        background: linear-gradient(120deg, #047857 0%, #0f766e 45%, #0369a1 100%);
-        color: #f8fafc;
-        border-radius: 1rem;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        padding: 1rem;
-        position: relative;
-        overflow: hidden;
-    }
-    .redirectpro-hero::before {
-        content: "";
-        position: absolute;
-        width: 280px;
-        height: 280px;
-        border-radius: 999px;
-        background: radial-gradient(circle, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.01) 70%);
-        left: -80px;
-        top: -80px;
-        pointer-events: none;
-    }
-    .redirectpro-chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.35rem;
-        border-radius: 999px;
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        background: rgba(255, 255, 255, 0.16);
-        padding: 0.25rem 0.7rem;
-        font-size: 0.72rem;
-        font-weight: 600;
     }
     .redirectpro-table-wrap {
         border: 1px solid #dbe7e1;
@@ -2792,6 +2703,108 @@ function switchLinkProfileSubTab(scope, tabId) {
     });
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared UI helpers (Sitemap visual language applied to all tools)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function buildToolHeader({ gradient, label, title, subtitle, score, scoreLabel, scoreGrade,
+                           badges, metaLines, actionButtons }) {
+    const pct = Math.max(0, Math.min(100, Number(score ?? 0)));
+    const ringColor = (score === null || score === undefined) ? '#94a3b8'
+        : pct >= 70 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444';
+    const ringStyle = `background:conic-gradient(${ringColor} ${pct}%,#e2e8f0 ${pct}% 100%);`;
+    return `
+<div class="rounded-2xl overflow-hidden shadow-md border border-slate-200">
+  <div class="bg-gradient-to-r ${gradient} text-white p-6">
+    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+      <div>
+        ${label ? `<div class="text-xs uppercase tracking-[0.18em] text-white/70 mb-2">${label}</div>` : ''}
+        <h3 class="text-2xl font-semibold mb-2">${title}</h3>
+        ${subtitle ? `<div class="text-sm text-white/80 break-all">${subtitle}</div>` : ''}
+        ${badges?.length ? `<div class="mt-3 flex flex-wrap gap-2">${badges.map(b =>
+          `<span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${b.cls}">${b.text}</span>`
+        ).join('')}</div>` : ''}
+      </div>
+      <div class="flex items-center gap-4 flex-shrink-0">
+        ${score !== null && score !== undefined ? `
+        <div class="relative w-24 h-24 rounded-full p-2" style="${ringStyle}">
+          <div class="w-full h-full rounded-full bg-slate-900/80 backdrop-blur flex items-center justify-center">
+            <div class="text-center">
+              <div class="text-xl font-bold">${Math.round(pct)}</div>
+              <div class="text-[10px] text-slate-300">${scoreLabel || 'оценка'}${scoreGrade ? ` (${scoreGrade})` : ''}</div>
+            </div>
+          </div>
+        </div>` : ''}
+        ${metaLines?.length ? `<div class="text-xs text-white/80 space-y-1">${metaLines.map(l=>`<div>${l}</div>`).join('')}</div>` : ''}
+      </div>
+    </div>
+  </div>
+  ${actionButtons ? `<div class="bg-white p-4 border-t border-slate-200"><div class="flex flex-wrap gap-2">${actionButtons}</div></div>` : ''}
+</div>`;
+}
+
+function buildMetricCard(label, value, sub) {
+    return `<div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm hover:shadow-md transition">
+      <div class="text-xs text-slate-500">${label}</div>
+      <div class="text-xl font-semibold">${value}</div>
+      ${sub ? `<div class="text-[11px] text-slate-500">${sub}</div>` : ''}
+    </div>`;
+}
+
+function buildFindingsGrid(critical, warning, info) {
+    const levelClass = { critical:'bg-rose-50 border-rose-200 text-rose-800',
+                         warning:'bg-amber-50 border-amber-200 text-amber-800',
+                         info:'bg-sky-50 border-sky-200 text-sky-800' };
+    const levelLabel = { critical:'Критично', warning:'Предупреждение', info:'Инфо' };
+    const render = (level, items) => `
+      <div class="rounded-lg border p-3 ${levelClass[level]}">
+        <div class="font-semibold text-sm mb-2 uppercase">${levelLabel[level]}</div>
+        ${items.length ? items.slice(0,8).map(it => `
+          <div class="mb-2 pb-2 border-b border-current/20 last:border-0 last:mb-0 last:pb-0">
+            <div class="text-sm font-medium">${escapeHtml(String(it.title||it.issue||it.code||it))}</div>
+            ${it.details ? `<div class="text-xs opacity-90">${escapeHtml(String(it.details))}</div>` : ''}
+          </div>`).join('') : '<div class="text-xs opacity-75">Нет пунктов</div>'}
+      </div>`;
+    const total = critical.length + warning.length + info.length;
+    if (!total) return '';
+    return `<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+      <div class="flex items-center justify-between mb-3">
+        <h4 class="font-semibold text-slate-800">Приоритизированные Находки</h4>
+        <div class="text-xs text-slate-600">критично: <span class="font-semibold">${critical.length}</span>, предупреждений: <span class="font-semibold">${warning.length}</span>, инфо: <span class="font-semibold">${info.length}</span></div>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        ${render('critical',critical)}${render('warning',warning)}${render('info',info)}
+      </div>
+    </div>`;
+}
+
+function buildRecommendations(recs) {
+    if (!recs?.length) return '';
+    return `<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+      <h4 class="font-semibold text-blue-700 mb-3">Рекомендации</h4>
+      <div class="space-y-2">${recs.map(r=>{
+        const text = typeof r === 'string' ? r : (r.text || r.action || String(r));
+        return `<div class="text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded p-2">${escapeHtml(text)}</div>`;
+      }).join('')}</div>
+    </div>`;
+}
+
+function buildActionPlan(plan) {
+    if (!plan?.length) return '';
+    return `<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+      <h4 class="font-semibold text-slate-800 mb-3">План Исправлений</h4>
+      <div class="space-y-2">${plan.slice(0,20).map(it=>`
+        <div class="border rounded-lg p-3 bg-slate-50">
+          <div class="text-xs text-slate-600 mb-1">${escapeHtml(String(it.priority||'P2'))} | ${escapeHtml(String(it.owner||'SEO'))} | SLA: ${escapeHtml(String(it.sla||'н/д'))}</div>
+          <div class="text-sm font-medium text-slate-800">${escapeHtml(String(it.issue||it.title||''))}</div>
+          <div class="text-sm text-slate-700">${escapeHtml(String(it.action||it.details||''))}</div>
+        </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 function generateLinkProfileAuditHTML(data) {
     const resultData = data.result || data;
     const r = resultData.results || {};
@@ -2887,51 +2900,35 @@ function generateLinkProfileAuditHTML(data) {
         plan: countGroupRows(planGroups),
     };
 
+    const lpActionBtns = `
+        <button id="lp-export-docx-btn" onclick="downloadLinkProfileDocxReport()" class="px-3 py-2 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-800 text-sm transition" aria-label="Скачать DOCX отчет"><i class="fas fa-file-word mr-1"></i>DOCX</button>
+        <button id="lp-export-xlsx-btn" onclick="downloadLinkProfileXlsxReport()" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition" aria-label="Скачать XLSX отчет"><i class="fas fa-file-excel mr-1"></i>XLSX</button>`;
+
     return `
         <div class="space-y-6 auditpro-results linkpro-results" id="link-profile-tabs-root">
-            <div class="lp-hero rounded-2xl shadow-lg p-6">
-                <div class="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                        <h3 class="text-2xl font-semibold mb-1">Аудит ссылочного профиля</h3>
-                        <p class="text-sm text-cyan-100">Структура результатов: Executive / Competitors / Gap / Quality / Loss / Anchors / Risks / Plan.</p>
-                        <div class="mt-3 flex flex-wrap gap-2">
-                            ${badgePairs.map((x) => `<span class="lp-chip">${escapeHtml(x)}</span>`).join('')}
-                        </div>
-                    </div>
-                    <div class="flex flex-col items-end gap-2">
-                        <div class="lp-glass lp-health">
-                            <div class="text-xs uppercase tracking-wide text-slate-100/90">Profile Health</div>
-                            <div class="score ${healthTone}">${escapeHtml(healthScore)}</div>
-                            <div class="text-xs text-slate-100/90">validation err: ${escapeHtml(validationErrors)} | warn: ${escapeHtml(validationWarnings)}</div>
-                        </div>
-                        <div class="flex flex-wrap gap-2">
-                            <button id="lp-export-docx-btn" onclick="downloadLinkProfileDocxReport()" class="px-4 py-2 bg-white/15 border border-white/30 text-white rounded-lg hover:bg-white/25 transition text-sm" aria-label="Скачать DOCX отчет">
-                                <i class="fas fa-file-word mr-1"></i><span data-lp-export-label>DOCX</span>
-                            </button>
-                            <button id="lp-export-xlsx-btn" onclick="downloadLinkProfileXlsxReport()" class="px-4 py-2 bg-white/15 border border-white/30 text-white rounded-lg hover:bg-white/25 transition text-sm" aria-label="Скачать XLSX отчет">
-                                <i class="fas fa-file-excel mr-1"></i><span data-lp-export-label>XLSX</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                <div id="link-profile-live-status" class="mt-3 text-xs text-sky-700" role="status" aria-live="polite" aria-atomic="true">Результаты готовы. Используйте вкладки для анализа.</div>
-            </div>
+            ${buildToolHeader({
+                gradient: 'from-cyan-700 via-sky-700 to-blue-700',
+                label: 'Link Profile',
+                title: 'Аудит ссылочного профиля',
+                subtitle: summary.our_domain || resultData.url || data.url || '',
+                score: Number.isFinite(Number(healthScore)) ? Number(healthScore) : null,
+                scoreLabel: 'health',
+                badges: [
+                    ...badgePairs.slice(0, 3).map(x => ({ cls: 'bg-white/10 border border-white/20 text-white/90', text: escapeHtml(x) })),
+                    ...(validationErrors > 0 ? [{ cls: 'bg-rose-500/20 border border-rose-400/40 text-rose-100', text: `${validationErrors} val.err` }] : []),
+                ],
+                metaLines: [
+                    `Rows: ${escapeHtml(String(summary.rows_total ?? 0))}`,
+                    `Доноры: ${escapeHtml(String(summary.unique_ref_domains ?? 0))}`,
+                    `Dup: ${escapeHtml(String(summary.duplicates_with_our_site ?? 0))}`,
+                ],
+                actionButtons: lpActionBtns,
+            })}
 
-            <div class="bg-white rounded-xl shadow-md p-4">
-                <div class="mt-4 flex flex-wrap gap-2">
-                    <span class="text-xs px-2 py-1 rounded-full bg-sky-50 border border-sky-200 text-sky-700">Наш домен: ${escapeHtml(summary.our_domain || resultData.url || data.url || '-')}</span>
-                    <span class="text-xs px-2 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700">Rows: ${escapeHtml(summary.rows_total ?? 0)}</span>
-                    <span class="text-xs px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700">Dup with our site: ${escapeHtml(summary.duplicates_with_our_site ?? 0)}</span>
-                </div>
-            </div>
+            <div id="link-profile-live-status" class="text-xs text-slate-500 px-1" role="status" aria-live="polite" aria-atomic="true">Результаты готовы. Используйте вкладки для анализа.</div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                ${summaryCards.map(([label, value]) => `
-                    <div class="lp-stat p-4">
-                        <div class="text-xs text-slate-500 mb-1">${escapeHtml(label)}</div>
-                        <div class="text-lg font-semibold text-slate-900">${escapeHtml(value)}</div>
-                    </div>
-                `).join('')}
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                ${summaryCards.map(([label, value]) => buildMetricCard(escapeHtml(label), escapeHtml(String(value)))).join('')}
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-4 flex flex-wrap items-center justify-between gap-3">
@@ -3266,64 +3263,44 @@ Codes: ${escapeHtml(formatChain(s.response_codes))}
     `).join('');
 
     const activeClass = (key) => (filter === key ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200');
+    const rdActionBtns = `
+        <button type="button" onclick="downloadRedirectCheckerCsv()" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition"><i class="fas fa-file-csv mr-1"></i>CSV</button>
+        <button type="button" onclick="downloadRedirectCheckerDocx()" class="px-3 py-2 rounded-lg bg-sky-100 hover:bg-sky-200 text-sky-800 text-sm transition"><i class="fas fa-file-word mr-1"></i>DOCX</button>
+        <button type="button" onclick="copyRedirectCheckerSummary()" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition"><i class="fas fa-copy mr-1"></i>Копировать</button>`;
     return `
         <div class="redirectpro-results space-y-6">
-            <div class="redirectpro-hero">
-                <div class="flex flex-wrap items-start justify-between gap-3 relative z-10">
-                    <div>
-                        <h3 class="text-lg font-semibold">Redirect Checker</h3>
-                        <div class="text-sm text-emerald-50/95 mt-1">URL: ${escapeHtml(resultData.url || r.checked_url || '')}</div>
-                        <div class="text-xs text-emerald-100/95 mt-1">User-Agent: ${escapeHtml(selectedUa.label || '-')}</div>
-                        <div class="text-xs text-emerald-100/95 mt-1">
-                            Policy: host=${escapeHtml(policy.canonical_host_policy || 'auto')},
-                            slash=${escapeHtml(policy.trailing_slash_policy || 'auto')},
-                            lowercase=${escapeHtml(policy.enforce_lowercase === false ? 'off' : 'on')}
-                        </div>
-                    </div>
-                    <div class="flex flex-wrap gap-2">
-                        <span class="redirectpro-chip"><i class="fas fa-stopwatch"></i>${escapeHtml(summary.duration_ms || 0)} ms</span>
-                        <span class="redirectpro-chip"><i class="fas fa-medal"></i>Score ${escapeHtml(summary.quality_score || 0)} (${escapeHtml(summary.quality_grade || '-')})</span>
-                    </div>
-                </div>
+            ${buildToolHeader({
+                gradient: 'from-emerald-700 via-green-700 to-teal-700',
+                label: 'Redirect Checker',
+                title: 'Анализ редиректов',
+                subtitle: resultData.url || r.checked_url || '',
+                score: Number.isFinite(Number(summary.quality_score)) ? Number(summary.quality_score) : null,
+                scoreLabel: 'качество',
+                scoreGrade: summary.quality_grade || null,
+                badges: [
+                    { cls: 'bg-emerald-500/20 border border-emerald-400/40 text-emerald-100', text: `${counters.passed} passed` },
+                    ...(counters.warning > 0 ? [{ cls: 'bg-amber-400/20 border border-amber-300/40 text-amber-100', text: `${counters.warning} warning` }] : []),
+                    ...(counters.error > 0 ? [{ cls: 'bg-rose-500/20 border border-rose-400/40 text-rose-100', text: `${counters.error} error` }] : []),
+                ],
+                metaLines: [
+                    `UA: ${escapeHtml(selectedUa.label || '-')}`,
+                    `Длительность: ${escapeHtml(String(summary.duration_ms || 0))} ms`,
+                    `Policy: host=${escapeHtml(policy.canonical_host_policy || 'auto')}`,
+                ],
+                actionButtons: rdActionBtns,
+            })}
+
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+                ${buildMetricCard('Всего', escapeHtml(String(summary.total_scenarios || counters.all || 0)))}
+                ${buildMetricCard('Passed', escapeHtml(String(summary.passed || counters.passed || 0)))}
+                ${buildMetricCard('Warning', escapeHtml(String(summary.warnings || counters.warning || 0)))}
+                ${buildMetricCard('Error', escapeHtml(String(summary.errors || counters.error || 0)))}
+                ${buildMetricCard('UA', escapeHtml(selectedUa.label || '-'))}
             </div>
 
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-                    <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
-                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3 min-w-[120px]">
-                            <div class="text-xs text-slate-500">Всего</div>
-                            <div class="text-lg font-semibold">${escapeHtml(summary.total_scenarios || counters.all || 0)}</div>
-                        </div>
-                        <div class="rounded-lg border border-green-200 bg-green-50 p-3 min-w-[120px]">
-                            <div class="text-xs text-green-700">Passed</div>
-                            <div class="text-lg font-semibold text-green-800">${escapeHtml(summary.passed || counters.passed || 0)}</div>
-                        </div>
-                        <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 min-w-[120px]">
-                            <div class="text-xs text-amber-700">Warning</div>
-                            <div class="text-lg font-semibold text-amber-800">${escapeHtml(summary.warnings || counters.warning || 0)}</div>
-                        </div>
-                        <div class="rounded-lg border border-red-200 bg-red-50 p-3 min-w-[120px]">
-                            <div class="text-xs text-red-700">Error</div>
-                            <div class="text-lg font-semibold text-red-800">${escapeHtml(summary.errors || counters.error || 0)}</div>
-                        </div>
-                        <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-3 min-w-[120px]">
-                            <div class="text-xs text-indigo-700">UA</div>
-                            <div class="text-sm font-semibold text-indigo-800">${escapeHtml(selectedUa.label || '-')}</div>
-                        </div>
-                    </div>
-                    <div class="flex flex-wrap gap-2">
-                        <button type="button" onclick="downloadRedirectCheckerCsv()" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition">
-                            <i class="fas fa-file-csv mr-1"></i>CSV
-                        </button>
-                        <button type="button" onclick="downloadRedirectCheckerDocx()" class="px-3 py-2 rounded-lg bg-sky-100 hover:bg-sky-200 text-sky-800 text-sm transition">
-                            <i class="fas fa-file-word mr-1"></i>DOCX
-                        </button>
-                        <button type="button" onclick="copyRedirectCheckerSummary()" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition">
-                            <i class="fas fa-copy mr-1"></i>Копировать
-                        </button>
-                    </div>
-                </div>
+            ${buildRecommendations(recommendations)}
 
+            <div class="bg-white rounded-xl shadow-md p-6">
                 <div class="flex flex-wrap gap-2 mb-4">
                     <button type="button" onclick="setRedirectCheckerFilter('all')" class="px-3 py-1.5 rounded-lg text-sm ${activeClass('all')}">Все (${counters.all})</button>
                     <button type="button" onclick="setRedirectCheckerFilter('passed')" class="px-3 py-1.5 rounded-lg text-sm ${activeClass('passed')}">Passed (${counters.passed})</button>
@@ -3360,13 +3337,6 @@ Codes: ${escapeHtml(formatChain(s.response_codes))}
                 </div>
             </div>
 
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-3">Приоритетные рекомендации</h4>
-                ${(recommendations.length
-                    ? `<ul class="space-y-2 text-sm text-slate-700">${recommendations.map((x) => `<li class="border-l-4 border-emerald-500 pl-3">${escapeHtml(x)}</li>`).join('')}</ul>`
-                    : '<div class="text-sm text-slate-500">Критических рекомендаций нет.</div>'
-                )}
-            </div>
         </div>
     `;
 }
@@ -3488,32 +3458,31 @@ function generateCoreWebVitalsHTML(result) {
 
         return `
             <div class="space-y-6 cwvpro-results">
-                <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
-                    <div class="flex flex-wrap items-start justify-between gap-4">
-                        <div>
-                            <h3 class="text-lg font-semibold">Core Web Vitals: Анализ конкурентов</h3>
-                            <div class="text-sm text-slate-600 mt-1">Primary: ${escapeHtml(competitorSummary.primary_url || primary.url || '-')}</div>
-                            <div class="text-xs text-slate-500 mt-1">Strategy: ${escapeHtml(String(strategy).toUpperCase())}</div>
-                            <div class="text-xs text-slate-500 mt-1">Источник: ${escapeHtml(source)}</div>
-                        </div>
-                        ${exportButtons}
-                    </div>
-                    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2 mt-4 text-sm">
-                        <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-3"><div class="text-xs">Total</div><div class="font-semibold text-lg">${fmtInt(competitorSummary.total_urls)}</div></div>
-                        <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-3"><div class="text-xs">Success</div><div class="font-semibold text-lg">${fmtInt(competitorSummary.successful_urls)}</div></div>
-                        <div class="rounded-lg border border-red-200 bg-red-50 p-3"><div class="text-xs">Errors</div><div class="font-semibold text-lg">${fmtInt(competitorSummary.failed_urls)}</div></div>
-                        <div class="rounded-lg border p-3 ${statusClass(primaryCwv)}"><div class="text-xs">Primary CWV</div><div class="font-semibold">${statusLabel(primaryCwv)}</div></div>
-                        <div class="rounded-lg border p-3 ${scoreBadgeClass(primaryScore)}"><div class="text-xs">Primary score</div><div class="font-semibold">${fmt1(primaryScore)}</div></div>
-                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3"><div class="text-xs">Primary rank</div><div class="font-semibold">${escapeHtml(competitorSummary.primary_rank || '-')}</div></div>
-                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3"><div class="text-xs">Leader</div><div class="font-semibold text-xs">${escapeHtml(competitorSummary.market_leader_url || benchmark.market_leader_url || '-')}</div></div>
-                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3"><div class="text-xs">Competitors</div><div class="font-semibold">${fmtInt(competitorSummary.competitors_total || competitors.length)}</div></div>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mt-3 text-xs">
-                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">Primary LCP/INP/CLS: <span class="font-semibold">${fmt1(primaryLcp)} ms</span> / <span class="font-semibold">${fmt1(primaryInp)} ms</span> / <span class="font-semibold">${fmt3(primaryCls)}</span></div>
-                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">Median competitors score: <span class="font-semibold">${fmt1(benchmark.competitor_median_score)}</span></div>
-                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">Median competitors LCP: <span class="font-semibold">${fmt1(benchmark.competitor_median_lcp_ms)} ms</span></div>
-                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">Median competitors INP/CLS: <span class="font-semibold">${fmt1(benchmark.competitor_median_inp_ms)} ms</span> / <span class="font-semibold">${fmt3(benchmark.competitor_median_cls)}</span></div>
-                    </div>
+                ${buildToolHeader({
+                    gradient: 'from-sky-700 via-blue-700 to-indigo-700',
+                    label: 'Core Web Vitals: Конкуренты',
+                    title: 'Анализ конкурентов',
+                    subtitle: competitorSummary.primary_url || primary.url || '',
+                    score: Number.isFinite(Number(primaryScore)) ? Number(primaryScore) : null,
+                    scoreLabel: 'Primary',
+                    badges: [
+                        { cls: `${statusClass(primaryCwv)} border`, text: `CWV: ${statusLabel(primaryCwv)}` },
+                        { cls: 'bg-white/10 border border-white/20 text-white/90', text: `${fmtInt(competitorSummary.competitors_total || competitors.length)} конкурентов` },
+                        { cls: 'bg-white/10 border border-white/20 text-white/90', text: `Strategy: ${escapeHtml(String(strategy).toUpperCase())}` },
+                    ],
+                    metaLines: [
+                        `Rank: ${escapeHtml(String(competitorSummary.primary_rank || '-'))}`,
+                        `LCP: ${fmt1(primaryLcp)} ms / INP: ${fmt1(primaryInp)} ms`,
+                        `CLS: ${fmt3(primaryCls)}`,
+                    ],
+                    actionButtons: exportButtons,
+                })}
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    ${buildMetricCard('Total URLs', fmtInt(competitorSummary.total_urls))}
+                    ${buildMetricCard('Success', fmtInt(competitorSummary.successful_urls))}
+                    ${buildMetricCard('Errors', fmtInt(competitorSummary.failed_urls))}
+                    ${buildMetricCard('Конкурентов', fmtInt(competitorSummary.competitors_total || competitors.length))}
                 </div>
 
                 <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
@@ -3587,28 +3556,10 @@ function generateCoreWebVitalsHTML(result) {
                         ` : '<div class="text-sm text-slate-500">Недостаточно данных для группировки проблем конкурентов.</div>'}
                     </div>
 
-                    <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
-                        <h4 class="font-semibold mb-3">Action Plan (primary)</h4>
-                        ${actionPlan.length > 0 ? `
-                            <ul class="space-y-2 text-sm">
-                                ${actionPlan.map((item) => `
-                                    <li class="border-l-4 border-cyan-500 pl-3">
-                                        <span class="font-semibold">${escapeHtml(item.priority || 'P2')}</span>:
-                                        ${escapeHtml(item.action || '-')}
-                                    </li>
-                                `).join('')}
-                            </ul>
-                        ` : '<div class="text-sm text-slate-500">Action plan не сформирован.</div>'}
-                    </div>
+                    ${buildActionPlan(actionPlan)}
                 </div>
 
-                <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
-                    <h4 class="font-semibold mb-3">Рекомендации</h4>
-                    ${recommendations.length > 0
-                        ? `<ul class="space-y-2 text-sm text-slate-700">${recommendations.map((rec) => `<li class="border-l-4 border-cyan-500 pl-3">${escapeHtml(rec)}</li>`).join('')}</ul>`
-                        : '<div class="text-sm text-slate-500">Рекомендации не сформированы.</div>'
-                    }
-                </div>
+                ${buildRecommendations(recommendations)}
             </div>
         `;
     }
@@ -3693,37 +3644,30 @@ function generateCoreWebVitalsHTML(result) {
 
         return `
             <div class="space-y-6 cwvpro-results">
-                <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
-                    <div class="flex flex-wrap items-start justify-between gap-4">
-                        <div>
-                            <h3 class="text-lg font-semibold">Core Web Vitals Scanner: Batch</h3>
-                            <div class="text-sm text-slate-600 mt-1">Проверено URL: ${escapeHtml(totalUrls)}</div>
-                            <div class="text-xs text-slate-500 mt-1">Strategy: ${escapeHtml(String(strategy).toUpperCase())}</div>
-                            <div class="text-xs text-slate-500 mt-1">Источник: ${escapeHtml(source)}</div>
-                        </div>
-                        ${exportButtons}
-                    </div>
-                    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2 mt-4 text-sm">
-                        <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-3"><div class="text-xs">Total</div><div class="font-semibold text-lg">${fmtInt(totalUrls)}</div></div>
-                        <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-3"><div class="text-xs">Success</div><div class="font-semibold text-lg">${fmtInt(successUrls)}</div></div>
-                        <div class="rounded-lg border border-red-200 bg-red-50 p-3"><div class="text-xs">Errors</div><div class="font-semibold text-lg">${fmtInt(failedUrls)}</div></div>
-                        <div class="rounded-lg border p-3 ${statusClass(batchSummary.core_web_vitals_status)}"><div class="text-xs">CWV</div><div class="font-semibold">${statusLabel(batchSummary.core_web_vitals_status)}</div></div>
-                        <div class="rounded-lg border p-3 ${scoreBadgeClass(avgScore)}"><div class="text-xs">Avg</div><div class="font-semibold">${fmt1(avgScore)}</div></div>
-                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3"><div class="text-xs">Median</div><div class="font-semibold">${fmt1(medianScore)}</div></div>
-                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3"><div class="text-xs">Min</div><div class="font-semibold">${fmt1(minScore)}</div></div>
-                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3"><div class="text-xs">Max</div><div class="font-semibold">${fmt1(maxScore)}</div></div>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3 text-xs">
-                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">GOOD: <span class="font-semibold">${fmtInt(statusCounts.good || 0)}</span> | NI: <span class="font-semibold">${fmtInt(statusCounts.needs_improvement || 0)}</span> | POOR: <span class="font-semibold">${fmtInt(statusCounts.poor || 0)}</span></div>
-                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">Risk low/med/high: <span class="font-semibold">${fmtInt(riskCounts.low || 0)}</span> / <span class="font-semibold">${fmtInt(riskCounts.medium || 0)}</span> / <span class="font-semibold">${fmtInt(riskCounts.high || 0)}</span></div>
-                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">Avg LCP/INP/CLS: <span class="font-semibold">${fmt1(metricsAvg.lcp_ms)} ms</span> / <span class="font-semibold">${fmt1(metricsAvg.inp_ms)} ms</span> / <span class="font-semibold">${fmt3(metricsAvg.cls)}</span></div>
-                    </div>
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3 text-xs">
-                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-2">Perf: <span class="font-semibold">${fmt1(categoriesAvg.performance)}</span></div>
-                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-2">Access: <span class="font-semibold">${fmt1(categoriesAvg.accessibility)}</span></div>
-                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-2">Best Practices: <span class="font-semibold">${fmt1(categoriesAvg.best_practices)}</span></div>
-                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-2">SEO: <span class="font-semibold">${fmt1(categoriesAvg.seo)}</span></div>
-                    </div>
+                ${buildToolHeader({
+                    gradient: 'from-sky-700 via-blue-700 to-indigo-700',
+                    label: 'Core Web Vitals: Batch',
+                    title: 'CWV Scanner: Batch',
+                    score: Number.isFinite(Number(avgScore)) ? Number(avgScore) : null,
+                    scoreLabel: 'Avg',
+                    badges: [
+                        { cls: `${statusClass(batchSummary.core_web_vitals_status)} border`, text: `CWV: ${statusLabel(batchSummary.core_web_vitals_status)}` },
+                        { cls: 'bg-white/10 border border-white/20 text-white/90', text: `${fmtInt(totalUrls)} URLs` },
+                        { cls: 'bg-white/10 border border-white/20 text-white/90', text: `Strategy: ${escapeHtml(String(strategy).toUpperCase())}` },
+                    ],
+                    metaLines: [
+                        `Success: ${fmtInt(successUrls)} / ${fmtInt(totalUrls)}`,
+                        `Avg LCP: ${fmt1(metricsAvg.lcp_ms)} ms`,
+                        `Avg CLS: ${fmt3(metricsAvg.cls)}`,
+                    ],
+                    actionButtons: exportButtons,
+                })}
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    ${buildMetricCard('Total URLs', fmtInt(totalUrls))}
+                    ${buildMetricCard('Success', fmtInt(successUrls))}
+                    ${buildMetricCard('Avg Score', fmt1(avgScore))}
+                    ${buildMetricCard('Errors', fmtInt(failedUrls))}
                 </div>
 
                 <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
@@ -3777,36 +3721,28 @@ function generateCoreWebVitalsHTML(result) {
                             </div>
                         ` : '<div class="text-sm text-slate-500">Нет данных по common opportunities.</div>'}
                     </div>
-                    <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
-                        <h4 class="font-semibold mb-3">Batch Action Plan</h4>
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                        <h4 class="font-semibold text-slate-800 mb-3">Batch Action Plan</h4>
                         ${batchActionPlan.length > 0 ? `
-                            <ul class="space-y-2 text-sm">
-                                ${batchActionPlan.map((item) => `
-                                    <li class="border-l-4 border-cyan-500 pl-3">
-                                        <span class="font-semibold">${escapeHtml(item.priority || 'P2')}</span>:
-                                        ${escapeHtml(item.action || '-')} (${fmtInt(item.affected_urls)} URL)
-                                    </li>
-                                `).join('')}
-                            </ul>
+                            <div class="space-y-2">${batchActionPlan.slice(0, 20).map((item) => `
+                                <div class="border rounded-lg p-3 bg-slate-50">
+                                    <div class="text-xs text-slate-600 mb-1">${escapeHtml(item.priority || 'P2')} | затронуто URL: ${fmtInt(item.affected_urls)}</div>
+                                    <div class="text-sm font-medium text-slate-800">${escapeHtml(item.action || '-')}</div>
+                                </div>`).join('')}
+                            </div>
                         ` : '<div class="text-sm text-slate-500">Action plan не сформирован.</div>'}
                         ${priorityUrls.length > 0 ? `
                             <div class="mt-4">
-                                <div class="text-sm font-semibold mb-2">Priority URLs</div>
-                                <ul class="space-y-2 text-xs text-slate-700">
-                                    ${priorityUrls.map((item) => `<li class="rounded border border-slate-200 p-2"><span class="font-semibold">${escapeHtml(item.url || '-')}</span><br><span class="text-slate-500">${escapeHtml(item.reason || '')}</span></li>`).join('')}
-                                </ul>
+                                <div class="text-sm font-semibold text-slate-700 mb-2">Priority URLs</div>
+                                <div class="space-y-1 text-xs text-slate-700">
+                                    ${priorityUrls.map((item) => `<div class="rounded border border-slate-200 p-2 bg-slate-50"><span class="font-semibold break-all">${escapeHtml(item.url || '-')}</span><br><span class="text-slate-500">${escapeHtml(item.reason || '')}</span></div>`).join('')}
+                                </div>
                             </div>
                         ` : ''}
                     </div>
                 </div>
 
-                <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
-                    <h4 class="font-semibold mb-3">Сводные рекомендации</h4>
-                    ${recommendations.length > 0
-                        ? `<ul class="space-y-2 text-sm text-slate-700">${recommendations.map((rec) => `<li class="border-l-4 border-cyan-500 pl-3">${escapeHtml(rec)}</li>`).join('')}</ul>`
-                        : '<div class="text-sm text-slate-500">Рекомендации не сформированы.</div>'
-                    }
-                </div>
+                ${buildRecommendations(recommendations)}
             </div>
         `;
     }
@@ -3861,38 +3797,33 @@ function generateCoreWebVitalsHTML(result) {
 
     return `
         <div class="space-y-6 cwvpro-results">
-            <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
-                <div class="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                        <h3 class="text-lg font-semibold">Core Web Vitals Scanner</h3>
-                        <div class="text-sm text-slate-600 mt-1">URL: ${escapeHtml(resultData.url || r.url || '')}</div>
-                        <div class="text-xs text-slate-500 mt-1">Strategy: ${escapeHtml(String(strategy).toUpperCase())}</div>
-                        <div class="text-xs text-slate-500 mt-1">Источник: ${escapeHtml(source)}</div>
-                    </div>
-                    ${exportButtons}
-                </div>
-                <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mt-4">
-                    <div class="rounded-lg border p-3 ${scoreBadgeClass(score)}">
-                        <div class="text-xs">Performance</div>
-                        <div class="text-2xl font-semibold">${fmtInt(score)}</div>
-                    </div>
-                    <div class="rounded-lg border p-3 ${statusClass(cwvStatus)}">
-                        <div class="text-xs">CWV</div>
-                        <div class="text-sm font-semibold">${statusLabel(cwvStatus)}</div>
-                    </div>
-                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                        <div class="text-xs">Health Index</div>
-                        <div class="text-xl font-semibold">${fmtInt(summary.health_index)}</div>
-                    </div>
-                    <div class="rounded-lg border p-3 ${statusClass(summary.risk_level)}">
-                        <div class="text-xs">Risk</div>
-                        <div class="text-sm font-semibold">${escapeHtml(String(summary.risk_level || 'unknown').toUpperCase())}</div>
-                    </div>
-                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                        <div class="text-xs">Grade</div>
-                        <div class="text-xl font-semibold">${escapeHtml(summary.grade || '-')}</div>
-                    </div>
-                </div>
+            ${buildToolHeader({
+                gradient: 'from-sky-700 via-blue-700 to-indigo-700',
+                label: 'Core Web Vitals Scanner',
+                title: 'Core Web Vitals',
+                subtitle: resultData.url || r.url || '',
+                score: Number.isFinite(Number(score)) ? Number(score) : null,
+                scoreLabel: 'Performance',
+                scoreGrade: summary.grade || null,
+                badges: [
+                    { cls: `${statusClass(cwvStatus)} border`, text: `CWV: ${statusLabel(cwvStatus)}` },
+                    { cls: `${statusClass(summary.risk_level)} border`, text: `Risk: ${escapeHtml(String(summary.risk_level || 'unknown').toUpperCase())}` },
+                    { cls: 'bg-white/10 border border-white/20 text-white/90', text: `Strategy: ${escapeHtml(String(strategy).toUpperCase())}` },
+                ],
+                metaLines: [
+                    `Health Index: ${fmtInt(summary.health_index)}`,
+                    `LCP: ${formatMetric('lcp', metrics.lcp?.field_value_ms ?? metrics.lcp?.lab_value_ms)} ms`,
+                    `CLS: ${formatMetric('cls', metrics.cls?.field_value ?? metrics.cls?.lab_value)}`,
+                ],
+                actionButtons: exportButtons,
+            })}
+
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+                ${buildMetricCard('Performance', fmtInt(score))}
+                ${buildMetricCard('CWV', statusLabel(cwvStatus))}
+                ${buildMetricCard('Health Index', fmtInt(summary.health_index))}
+                ${buildMetricCard('Risk', escapeHtml(String(summary.risk_level || 'unknown').toUpperCase()))}
+                ${buildMetricCard('Grade', escapeHtml(summary.grade || '-'))}
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
@@ -3989,8 +3920,8 @@ function generateCoreWebVitalsHTML(result) {
                 </div>
             </div>
 
-            <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
-                <h4 class="font-semibold mb-3">Action Plan</h4>
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                <h4 class="font-semibold text-slate-800 mb-3">Action Plan</h4>
                 ${actionPlan.length > 0 ? `
                     <div class="overflow-auto border rounded-lg">
                         <table class="w-full min-w-[760px] text-sm">
@@ -4056,21 +3987,14 @@ function generateCoreWebVitalsHTML(result) {
                 ` : '<div class="text-sm text-slate-500">Серьёзных opportunity не найдено.</div>'}
             </div>
 
-            <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
-                <h4 class="font-semibold mb-3">Рекомендации</h4>
-                ${recommendations.length > 0
-                    ? `<ul class="space-y-2 text-sm text-slate-700">${recommendations.map((rec) => `<li class="border-l-4 border-cyan-500 pl-3">${escapeHtml(rec)}</li>`).join('')}</ul>`
-                    : '<div class="text-sm text-slate-500">Рекомендации не сформированы.</div>'
-                }
-                ${(analysis.dominant_issues || []).length > 0 ? `
-                    <div class="mt-4 text-sm">
-                        <div class="font-semibold mb-1">Dominant issues</div>
-                        <div class="flex flex-wrap gap-2">
-                            ${(analysis.dominant_issues || []).slice(0, 8).map((item) => `<span class="px-2 py-1 rounded-full border border-slate-300 bg-slate-50 text-xs">${escapeHtml(item)}</span>`).join('')}
-                        </div>
-                    </div>
-                ` : ''}
-            </div>
+            ${buildRecommendations(recommendations)}
+            ${(analysis.dominant_issues || []).length > 0 ? `
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                <h4 class="font-semibold text-slate-800 mb-3">Dominant Issues</h4>
+                <div class="flex flex-wrap gap-2">
+                    ${(analysis.dominant_issues || []).slice(0, 8).map((item) => `<span class="px-2 py-1 rounded-full border border-slate-300 bg-slate-50 text-xs">${escapeHtml(item)}</span>`).join('')}
+                </div>
+            </div>` : ''}
         </div>
     `;
 }
@@ -4317,69 +4241,43 @@ function generateRobotsHTML(data) {
         `).join('');
     }
     
+    const robotsActionBtns = `
+        <button onclick="downloadTextReport()" class="px-3 py-2 rounded-lg bg-blue-100 hover:bg-blue-200 text-blue-800 text-sm transition"><i class="fas fa-file-download mr-1"></i>TXT</button>
+        <button onclick="downloadWordReport()" class="px-3 py-2 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-800 text-sm transition"><i class="fas fa-file-word mr-1"></i>DOCX</button>
+        <button onclick="copyToClipboard(JSON.stringify(robotsData, null, 2))" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition"><i class="fas fa-copy mr-1"></i>JSON</button>
+        <button onclick='copyToClipboard(${JSON.stringify(rawContent)})' class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition"><i class="fas fa-file-alt mr-1"></i>robots.txt</button>`;
+
     return `
         <div class="space-y-6 auditpro-results">
-            <!-- Actions -->
-            <div class="bg-white rounded-xl shadow-md p-4 flex flex-wrap gap-3">
-                <button onclick="downloadTextReport()" class="inline-flex items-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition cursor-pointer">
-                    <i class="fas fa-file-download mr-2"></i>
-                    Скачать отчет (.txt)
-                </button>
-                <button onclick="downloadWordReport()" class="inline-flex items-center bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition cursor-pointer">
-                    <i class="fas fa-file-word mr-2"></i>
-                    Скачать отчет (.docx)
-                </button>
-                <button onclick="copyToClipboard(JSON.stringify(robotsData, null, 2))" class="inline-flex items-center bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition">
-                    <i class="fas fa-copy mr-2"></i>
-                    Копировать JSON
-                </button>
+            ${buildToolHeader({
+                gradient: 'from-slate-700 via-gray-700 to-zinc-800',
+                label: 'Robots.txt Checker',
+                title: 'Проверка Robots.txt',
+                subtitle: sourceUrl,
+                score: qualityScore,
+                scoreLabel: 'качество',
+                scoreGrade: qualityGrade,
+                badges: [
+                    { cls: productionReady ? 'bg-emerald-500/20 border border-emerald-400/40 text-emerald-100' : 'bg-amber-400/20 border border-amber-300/40 text-amber-100',
+                      text: productionReady ? 'Production Ready' : 'Нужны правки' },
+                    ...(issues.length > 0 ? [{ cls: 'bg-rose-500/20 border border-rose-400/40 text-rose-100', text: `${issues.length} ошибок` }] : []),
+                    ...(warnings.length > 0 ? [{ cls: 'bg-amber-400/20 border border-amber-300/40 text-amber-100', text: `${warnings.length} предупреждений` }] : []),
+                ],
+                metaLines: [
+                    `User-Agents: ${userAgentCount}`,
+                    `Disallow: ${disallowRulesCount} / Allow: ${allowRulesCount}`,
+                    `Размер: ${r.content_length || 0} байт`,
+                ],
+                actionButtons: robotsActionBtns,
+            })}
 
-                <button onclick='copyToClipboard(${JSON.stringify(rawContent)})' class="inline-flex items-center bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition">
-                    <i class="fas fa-file-alt mr-2"></i>
-                    Копировать robots.txt
-                </button>
-
-            </div>
-            
-            <!-- Summary Stats -->
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-lg font-semibold">Проверка Robots.txt</h3>
-                </div>
-                
-                <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-4">
-                    <div class="text-center p-3 ${productionReady ? 'bg-emerald-50' : 'bg-amber-50'} rounded-lg">
-                        <div class="text-2xl font-bold ${productionReady ? 'text-emerald-600' : 'text-amber-600'}">${qualityScore}</div>
-                        <div class="text-xs text-gray-500">Оценка (${qualityGrade})</div>
-                    </div>
-                    <div class="text-center p-3 bg-blue-50 rounded-lg">
-                        <div class="text-2xl font-bold text-blue-600">${userAgentCount}</div>
-                        <div class="text-xs text-gray-500">User-Agents</div>
-                    </div>
-                    <div class="text-center p-3 bg-red-50 rounded-lg">
-                        <div class="text-2xl font-bold text-red-600">${disallowRulesCount}</div>
-                        <div class="text-xs text-gray-500">Disallow</div>
-                    </div>
-                    <div class="text-center p-3 bg-green-50 rounded-lg">
-                        <div class="text-2xl font-bold text-green-600">${allowRulesCount}</div>
-                        <div class="text-xs text-gray-500">Allow</div>
-                    </div>
-                    <div class="text-center p-3 bg-purple-50 rounded-lg">
-                        <div class="text-2xl font-bold text-purple-600">${r.content_length || 0}</div>
-                        <div class="text-xs text-gray-500">Байт</div>
-                    </div>
-                    <div class="text-center p-3 bg-gray-50 rounded-lg">
-                        <div class="text-2xl font-bold text-gray-600">${r.lines_count || 0}</div>
-                        <div class="text-xs text-gray-500">Строки</div>
-                    </div>
-                </div>
-                
-                <div class="text-sm text-gray-600 border-t pt-3">
-                    <span class="font-medium">URL:</span> <a href="${sourceUrl}" target="_blank" class="text-blue-600 hover:underline">${sourceUrl}</a>
-                    <span class="mx-2">|</span>
-                    <span class="font-medium">Robots.txt:</span> 
-                    <a href="${sourceUrl.replace(/\/$/, '')}/robots.txt" target="_blank" class="text-blue-600 hover:underline">показать файл</a>
-                </div>
+            <div class="grid grid-cols-2 md:grid-cols-6 gap-3">
+                ${buildMetricCard('User-Agents', userAgentCount)}
+                ${buildMetricCard('Disallow', disallowRulesCount)}
+                ${buildMetricCard('Allow', allowRulesCount)}
+                ${buildMetricCard('Ошибок', issues.length)}
+                ${buildMetricCard('Байт', r.content_length || 0)}
+                ${buildMetricCard('Строк', r.lines_count || 0)}
             </div>
             
             <!-- Issues -->
@@ -4520,15 +4418,7 @@ function generateRobotsHTML(data) {
                 </div>
             ` : ''}
             
-            <!-- Recommendations -->
-            ${recommendationsHTML ? `
-                <div class="bg-white rounded-xl shadow-md p-6">
-                    <h4 class="text-lg font-semibold text-blue-600 mb-3">
-                        <i class="fas fa-lightbulb mr-2"></i>Рекомендации
-                    </h4>
-                    ${recommendationsHTML}
-                </div>
-            ` : ''}
+            ${buildRecommendations(recommendations)}
             
             ${topFixesHTML ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
@@ -5203,50 +5093,48 @@ function generateBotHTML(result) {
         </tr>
     `).join('');
 
+    const botScore = summary.total ? Math.round((summary.indexable || 0) / summary.total * 100) : null;
+    const botActionBtns = `
+        <button onclick="downloadBotDocxReport()" class="px-3 py-2 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-800 text-sm transition"><i class="fas fa-file-word mr-1"></i>DOCX</button>
+        <button onclick="downloadBotXlsxReport()" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition"><i class="fas fa-file-excel mr-1"></i>XLSX</button>
+        <button onclick="copyBotPlaybooksAsJira()" class="px-3 py-2 rounded-lg bg-sky-100 hover:bg-sky-200 text-sky-800 text-sm transition"><i class="fas fa-list-check mr-1"></i>Jira задачи</button>
+        <button onclick="downloadBotTrendHistoryJson()" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition"><i class="fas fa-chart-line mr-1"></i>Тренды JSON</button>`;
+
     return `
-        <div class="auditpro-results">
-            <div class="bg-white rounded-xl shadow-md p-6">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-semibold">Проверка доступности ботов</h3>
-                <div class="flex gap-3">
-                    <button onclick="downloadBotDocxReport()" class="text-indigo-600 hover:text-indigo-800 text-sm">
-                        <i class="fas fa-file-word mr-1"></i>Скачать DOCX
-                    </button>
-                    <button onclick="downloadBotXlsxReport()" class="text-green-600 hover:text-green-800 text-sm">
-                        <i class="fas fa-file-excel mr-1"></i>Скачать XLSX
-                    </button>
-                    <button onclick="copyBotPlaybooksAsJira()" class="text-sky-600 hover:text-sky-800 text-sm">
-                        <i class="fas fa-list-check mr-1"></i>Копировать задачи Jira
-                    </button>
-                    <button onclick="downloadBotTrendHistoryJson()" class="text-emerald-600 hover:text-emerald-800 text-sm">
-                        <i class="fas fa-chart-line mr-1"></i>Экспорт трендов JSON
-                    </button>
-                    <button onclick="copyToClipboard('${result.url}')" class="text-blue-600 hover:text-blue-800 text-sm">
-                        <i class="fas fa-copy mr-1"></i>Копировать URL
-                    </button>
-                </div>
+        <div class="auditpro-results space-y-6">
+            ${buildToolHeader({
+                gradient: 'from-violet-700 via-purple-700 to-indigo-700',
+                label: 'Bot Accessibility Checker v2',
+                title: 'Проверка доступности ботов',
+                subtitle: result.url,
+                score: botScore,
+                scoreLabel: 'индекс',
+                badges: [
+                    { cls: 'bg-white/10 border border-white/20 text-white/90', text: `${(r.bots_checked || []).length || botRows.length} ботов` },
+                    ...(summary.total ? [{ cls: 'bg-emerald-500/20 border border-emerald-400/40 text-emerald-100', text: `${summary.indexable || 0}/${summary.total} индекс.` }] : []),
+                    ...(issues.filter(i => i.severity === 'critical').length > 0 ? [{ cls: 'bg-rose-500/20 border border-rose-400/40 text-rose-100', text: `${issues.filter(i=>i.severity==='critical').length} критичных` }] : []),
+                ],
+                metaLines: [
+                    `Сканируемо: ${summary.crawlable || 0}/${summary.total || 0}`,
+                    `Ср. ответ: ${summary.avg_response_time_ms || 0} ms`,
+                    `AI-блокировки: ${r.ai_block_expected ? 'да' : 'нет'}`,
+                ],
+                actionButtons: botActionBtns,
+            })}
+
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+                ${buildMetricCard('Ботов', (r.bots_checked || []).length || botRows.length)}
+                ${buildMetricCard('Доступно', `${summary.accessible || 0}/${summary.total || 0}`)}
+                ${buildMetricCard('Индексируемо', `${summary.indexable || 0}/${summary.total || 0}`)}
+                ${buildMetricCard('Рендерится', `${summary.renderable || 0}/${summary.total || 0}`)}
+                ${buildMetricCard('Ср. ответ', `${summary.avg_response_time_ms || 0} ms`)}
             </div>
-            <p class="text-sm text-gray-600 mb-4">
-                Матричный вид доступности/индексации ботов с приоритизацией блокеров по критичности.
-            </p>
-            <div class="grid grid-cols-2 gap-4 text-sm mb-4">
-                <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
-                <div><span class="text-gray-600">Ботов проверено:</span> <span class="font-medium">${(r.bots_checked || []).length}</span></div>
-                ${summary.total ? `<div><span class="text-gray-600">Сканируемо:</span> <span class="font-medium">${summary.crawlable || 0}/${summary.total}</span></div>` : ''}
-                ${summary.total ? `<div><span class="text-gray-600">Рендерится:</span> <span class="font-medium">${summary.renderable || 0}/${summary.total}</span></div>` : ''}
-                ${summary.total ? `<div><span class="text-gray-600">Доступно:</span> <span class="font-medium">${summary.accessible || 0}/${summary.total}</span></div>` : ''}
-                ${summary.total ? `<div><span class="text-gray-600">Индексируемо:</span> <span class="font-medium">${summary.indexable || 0}/${summary.total}</span></div>` : ''}
-                ${summary.total ? `<div><span class="text-gray-600">Не индексируемо:</span> <span class="font-medium">${summary.non_indexable || 0}</span></div>` : ''}
-                ${summary.avg_response_time_ms ? `<div><span class="text-gray-600">Средний ответ:</span> <span class="font-medium">${summary.avg_response_time_ms} ms</span></div>` : ''}
-                <div><span class="text-gray-600">Профиль ретраев:</span> <span class="font-medium">${formatPolicyProfile(r.retry_profile || 'standard', 'retry')}</span></div>
-                <div><span class="text-gray-600">Критичность/SLA:</span> <span class="font-medium">${formatPolicyProfile(r.criticality_profile || 'balanced', 'criticality')} / ${formatPolicyProfile(r.sla_profile || 'standard', 'sla')}</span></div>
-                <div><span class="text-gray-600">Режим AI-политики:</span> <span class="font-medium">${r.ai_block_expected ? 'намеренные блокировки AI' : 'строгая доступность'}</span></div>
-                ${r.ai_block_expected ? `<div><span class="text-gray-600">Ожидаемо заблокировано AI:</span> <span class="font-medium">${summary.expected_ai_policy_blocked || 0}</span></div>` : ''}
-                ${latestTrend ? `<div><span class="text-gray-600">Снимков тренда:</span> <span class="font-medium">${trendSnapshots.length}</span></div>` : ''}
-                ${previousTrend ? `<div><span class="text-gray-600">Дельта индексируемых:</span> <span class="font-medium">${formatTrendDelta(latestTrend.indexable || 0, previousTrend.indexable || 0)}</span></div>` : ''}
-                ${previousTrend ? `<div><span class="text-gray-600">Дельта критических проблем:</span> <span class="font-medium">${formatTrendDelta(latestTrend.critical_issues || 0, previousTrend.critical_issues || 0)}</span></div>` : ''}
-                ${previousTrend ? `<div><span class="text-gray-600">Дельта среднего ответа (мс):</span> <span class="font-medium">${formatTrendDelta(latestTrend.avg_response_time_ms || 0, previousTrend.avg_response_time_ms || 0)}</span></div>` : ''}
-            </div>
+
+            ${buildFindingsGrid(
+                issues.filter(i => i.severity === 'critical'),
+                issues.filter(i => i.severity === 'warning'),
+                issues.filter(i => i.severity !== 'critical' && i.severity !== 'warning')
+            )}
 
             ${r.batch_mode ? `
             <div class="border-t pt-4 mt-4">
@@ -5563,146 +5451,91 @@ function generateSiteAnalysisHTML(result) {
     const avgPercent = Math.round((avgPages / totalPages) * 100);
     const badPercent = Math.round((badPages / totalPages) * 100);
     
+    const scoreGradeLabel = score >= 80 ? 'Отлично' : score >= 70 ? 'Хорошо' : score >= 50 ? 'Средне' : score >= 30 ? 'Низко' : 'Критично';
+    const siteAnalyzeActionBtns = `<button onclick="copyCurrentTaskJson()" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>`;
+
     return `
         <div class="space-y-6 auditpro-results">
-            <!-- Summary Card -->
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <div class="flex justify-between items-start mb-4">
-                    <div>
-                        <h3 class="text-lg font-semibold">Анализ сайта</h3>
-                        <p class="text-gray-500 text-sm break-all">${result.url}</p>
-                    </div>
-                    <button onclick="copyCurrentTaskJson()" class="text-blue-600 hover:text-blue-800 text-sm">
-                        <i class="fas fa-copy mr-1"></i>Копировать JSON
-                    </button>
-                </div>
-                
-                <!-- Score -->
-                <div class="flex items-center mb-6 p-4 rounded-lg ${scoreBadge}">
-                    <div class="text-4xl font-bold mr-4">${score}</div>
-                    <div>
-                        <div class="font-semibold text-lg">SEO Оценка</div>
-                        <div class="text-sm opacity-90">
-                            ${score >= 80 ? 'Отличный результат!' : 
-                              score >= 70 ? 'Хороший результат' : 
-                              score >= 50 ? 'Требует улучшения' : 
-                              score >= 30 ? 'Низкий результат' : 
-                              'Критически низкий!'}
+            ${buildToolHeader({
+                gradient: 'from-blue-700 via-sky-700 to-cyan-700',
+                label: 'Site Analyze',
+                title: 'Анализ сайта',
+                subtitle: result.url,
+                score: score,
+                scoreLabel: 'SEO',
+                scoreGrade: scoreGradeLabel,
+                badges: [
+                    { cls: 'bg-white/10 border border-white/20 text-white/90', text: `${summary.pages_crawled || 0} страниц` },
+                    ...(critical.length > 0 ? [{ cls: 'bg-rose-500/20 border border-rose-400/40 text-rose-100', text: `${critical.length} критичных` }] : []),
+                    ...(warnings.length > 0 ? [{ cls: 'bg-amber-400/20 border border-amber-300/40 text-amber-100', text: `${warnings.length} предупреждений` }] : []),
+                ],
+                metaLines: [
+                    `Внутренних ссылок: ${summary.internal_links_count || 0}`,
+                    `Битых ссылок: ${summary.broken_links_count || 0}`,
+                    `Редиректов: ${summary.redirects_count || 0}`,
+                ],
+                actionButtons: siteAnalyzeActionBtns,
+            })}
+
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                ${buildMetricCard('Страниц', summary.pages_crawled || 0)}
+                ${buildMetricCard('Внутренних ссылок', summary.internal_links_count || 0)}
+                ${buildMetricCard('Битых ссылок', summary.broken_links_count || 0)}
+                ${buildMetricCard('Всего проблем', (summary.critical_issues || 0) + (summary.warning_issues || 0))}
+            </div>
+
+            <!-- Pages Quality -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                <h4 class="font-semibold text-slate-800 mb-3">Качество страниц</h4>
+                <div class="space-y-2">
+                    <div class="flex items-center">
+                        <div class="w-24 text-sm text-slate-600">Хорошие</div>
+                        <div class="flex-1 bg-slate-200 rounded-full h-3 mx-2">
+                            <div class="bg-emerald-500 h-3 rounded-full" style="width: ${goodPercent}%"></div>
                         </div>
+                        <div class="w-16 text-right text-sm font-medium">${goodPercent}%</div>
                     </div>
-                </div>
-                
-                <!-- Stats Grid -->
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                    <div class="text-center p-3 bg-gray-50 rounded-lg">
-                        <div class="text-2xl font-bold text-blue-600">${summary.pages_crawled || 0}</div>
-                        <div class="text-xs text-gray-500">Страниц просканировано</div>
-                    </div>
-                    <div class="text-center p-3 bg-gray-50 rounded-lg">
-                        <div class="text-2xl font-bold text-green-600">${summary.internal_links_count || 0}</div>
-                        <div class="text-xs text-gray-500">Внутренних ссыл</div>
-                    </div>
-                    <div class="text-center p-3 bg-gray-50 rounded-lg">
-                        <div class="text-2xl font-bold text-red-600">${summary.broken_links_count || 0}</div>
-                        <div class="text-xs text-gray-500">Битых ссыл</div>
-                    </div>
-                    <div class="text-center p-3 bg-gray-50 rounded-lg">
-                        <div class="text-2xl font-bold text-orange-600">${(summary.critical_issues || 0) + (summary.warning_issues || 0)}</div>
-                        <div class="text-xs text-gray-500">Все проблем</div>
-                    </div>
-                </div>
-                
-                <!-- Pages Quality -->
-                <div class="border-t pt-4">
-                    <h4 class="font-semibold text-gray-700 mb-3">Качест страниц:</h4>
-                    <div class="space-y-2">
-                        <div class="flex items-center">
-                            <div class="w-20 text-sm text-gray-600">Хорошие</div>
-                            <div class="flex-1 bg-gray-200 rounded-full h-3 mx-2">
-                                <div class="bg-green-500 h-3 rounded-full" style="width: ${goodPercent}%"></div>
-                            </div>
-                            <div class="w-16 text-right text-sm font-medium">${goodPercent}%</div>
+                    <div class="flex items-center">
+                        <div class="w-24 text-sm text-slate-600">Средние</div>
+                        <div class="flex-1 bg-slate-200 rounded-full h-3 mx-2">
+                            <div class="bg-amber-500 h-3 rounded-full" style="width: ${avgPercent}%"></div>
                         </div>
-                        <div class="flex items-center">
-                            <div class="w-20 text-sm text-gray-600">Средние</div>
-                            <div class="flex-1 bg-gray-200 rounded-full h-3 mx-2">
-                                <div class="bg-yellow-500 h-3 rounded-full" style="width: ${avgPercent}%"></div>
-                            </div>
-                            <div class="w-16 text-right text-sm font-medium">${avgPercent}%</div>
+                        <div class="w-16 text-right text-sm font-medium">${avgPercent}%</div>
+                    </div>
+                    <div class="flex items-center">
+                        <div class="w-24 text-sm text-slate-600">Проблемные</div>
+                        <div class="flex-1 bg-slate-200 rounded-full h-3 mx-2">
+                            <div class="bg-rose-500 h-3 rounded-full" style="width: ${badPercent}%"></div>
                         </div>
-                        <div class="flex items-center">
-                            <div class="w-20 text-sm text-gray-600">Проблемные</div>
-                            <div class="flex-1 bg-gray-200 rounded-full h-3 mx-2">
-                                <div class="bg-red-500 h-3 rounded-full" style="width: ${badPercent}%"></div>
-                            </div>
-                            <div class="w-16 text-right text-sm font-medium">${badPercent}%</div>
-                        </div>
+                        <div class="w-16 text-right text-sm font-medium">${badPercent}%</div>
                     </div>
                 </div>
             </div>
-            
+
+            ${buildFindingsGrid(critical, warnings, info)}
+
             <!-- Content Analysis -->
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <h3 class="text-lg font-semibold mb-4"><i class="fas fa-chart-bar mr-2 text-blue-500"></i>Анализ контента</h3>
-                <div class="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                    <div class="p-2 bg-gray-50 rounded">
-                        <span class="text-gray-600">Все изображений:</span>
-                        <span class="font-medium ml-2">${content.total_images || 0}</span>
-                    </div>
-                    <div class="p-2 bg-red-50 rounded">
-                        <span class="text-gray-600">Без alt-текста:</span>
-                        <span class="font-medium ml-2 text-red-600">${content.images_without_alt || 0}</span>
-                    </div>
-                    <div class="p-2 bg-gray-50 rounded">
-                        <span class="text-gray-600">Все ссыл:</span>
-                        <span class="font-medium ml-2">${content.total_links || 0}</span>
-                    </div>
-                    <div class="p-2 bg-gray-50 rounded">
-                        <span class="text-gray-600">Страниц с Title:</span>
-                        <span class="font-medium ml-2">${content.pages_with_title || 0}/${summary.pages_crawled || 0}</span>
-                    </div>
-                    <div class="p-2 bg-gray-50 rounded">
-                        <span class="text-gray-600">Страниц с H1:</span>
-                        <span class="font-medium ml-2">${content.pages_with_h1 || 0}/${summary.pages_crawled || 0}</span>
-                    </div>
-                    <div class="p-2 bg-gray-50 rounded">
-                        <span class="text-gray-600">Страниц  Schema:</span>
-                        <span class="font-medium ml-2">${content.pages_with_schema_org || 0}/${summary.pages_crawled || 0}</span>
-                    </div>
-                    <div class="p-2 bg-gray-50 rounded">
-                        <span class="text-gray-600">Среднее сл на странице:</span>
-                        <span class="font-medium ml-2">${Math.round(content.average_word_count || 0)}</span>
-                    </div>
-                    <div class="p-2 bg-gray-50 rounded">
-                        <span class="text-gray-600">Вре загрузки:</span>
-                        <span class="font-medium ml-2">${(content.average_load_time || 0) * 1000}ms</span>
-                    </div>
-                    <div class="p-2 bg-gray-50 rounded">
-                        <span class="text-gray-600">Редиректы:</span>
-                        <span class="font-medium ml-2">${summary.redirects_count || 0}</span>
-                    </div>
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                <h4 class="font-semibold text-slate-800 mb-3"><i class="fas fa-chart-bar mr-2 text-blue-500"></i>Анализ контента</h4>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                    ${buildMetricCard('Изображений', content.total_images || 0, `без alt: ${content.images_without_alt || 0}`)}
+                    ${buildMetricCard('Ссылок', content.total_links || 0)}
+                    ${buildMetricCard('Title страниц', `${content.pages_with_title || 0}/${summary.pages_crawled || 0}`)}
+                    ${buildMetricCard('H1 страниц', `${content.pages_with_h1 || 0}/${summary.pages_crawled || 0}`)}
+                    ${buildMetricCard('Schema.org', `${content.pages_with_schema_org || 0}/${summary.pages_crawled || 0}`)}
+                    ${buildMetricCard('Ср. слов', Math.round(content.average_word_count || 0))}
                 </div>
             </div>
-            
+
             <!-- Technology Stack -->
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <h3 class="text-lg font-semibold mb-4"><i class="fas fa-microchip mr-2 text-purple-500"></i>Технологии</h3>
-                <div class="flex flex-wrap">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                <h4 class="font-semibold text-slate-800 mb-3"><i class="fas fa-microchip mr-2 text-purple-500"></i>Технологии</h4>
+                <div class="flex flex-wrap gap-2">
                     ${techHTML}
                 </div>
             </div>
-            
-            <!-- Issues -->
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <h3 class="text-lg font-semibold mb-4"><i class="fas fa-bug mr-2 text-red-500"></i>Проблемы</h3>
-                ${issuesHTML}
-            </div>
-            
-            <!-- Recommendations -->
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <h3 class="text-lg font-semibold mb-4"><i class="fas fa-lightbulb mr-2 text-yellow-500"></i>Рекомендации</h3>
-                ${recsHTML}
-            </div>
+
+            ${buildRecommendations(recs)}
         </div>
     `;
 }
@@ -6038,52 +5871,45 @@ function generateRenderAuditHTML(result) {
         }).join('')}</ul>`
         : '<div class="text-xs text-slate-500">В данных нет диагностики по вариантам.</div>';
 
+    const renderActionBtns = `
+        <button onclick="downloadRenderDocxReport()" class="px-3 py-2 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-800 text-sm transition"><i class="fas fa-file-word mr-1"></i>DOCX</button>
+        <button onclick="downloadRenderXlsxReport()" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition"><i class="fas fa-file-excel mr-1"></i>XLSX</button>
+        <button onclick="copyCurrentTaskJson()" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition"><i class="fas fa-copy mr-1"></i>JSON</button>`;
+
     return `
         <div class="space-y-6 renderpro-results">
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <div class="flex justify-between items-center mb-4">
-                    <div>
-                        <h3 class="text-lg font-semibold">Render-аудит</h3>
-                        <div class="mt-2 flex flex-wrap gap-2">
-                            <span class="renderpro-chip">Сравнение JS и no-JS</span>
-                            <span class="renderpro-chip">Матрица расхождений вариантов</span>
-                            <span class="renderpro-chip">Практические инсайты</span>
-                        </div>
-                    </div>
-                    <div class="flex gap-3">
-                        <button onclick="downloadRenderDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>Скачать DOCX</button>
-                        <button onclick="downloadRenderXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>Скачать XLSX</button>
-                        <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
-                    </div>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
-                    <div class="rounded-xl border bg-slate-50 p-3">
-                        <div class="text-xs text-slate-500">Варианты</div>
-                        <div class="text-xl font-semibold text-slate-900">${escapeHtml(summary.variants_total || variants.length || 0)}</div>
-                    </div>
-                    <div class="rounded-xl border bg-slate-50 p-3">
-                        <div class="text-xs text-slate-500">Оценка рендера</div>
-                        <div class="text-xl font-semibold ${score >= 80 ? 'text-emerald-700' : score >= 60 ? 'text-amber-700' : 'text-rose-700'}">${escapeHtml(summary.score ?? 'н/д')}</div>
-                        <div class="mt-1 h-1.5 bg-slate-200 rounded-full overflow-hidden"><div class="h-full ${score >= 80 ? 'bg-emerald-500' : score >= 60 ? 'bg-amber-500' : 'bg-rose-500'}" style="width:${scorePct}%"></div></div>
-                    </div>
-                    <div class="rounded-xl border bg-slate-50 p-3">
-                        <div class="text-xs text-slate-500">Потери контента</div>
-                        <div class="text-xl font-semibold text-slate-900">${escapeHtml(summary.missing_total || 0)}</div>
-                        <div class="mt-1 text-xs text-slate-600">${escapeHtml(summary.avg_missing_pct || 0)}% в среднем</div>
-                    </div>
-                    <div class="rounded-xl border bg-slate-50 p-3">
-                        <div class="text-xs text-slate-500">Средний JS-рендер</div>
-                        <div class="text-xl font-semibold text-slate-900">${escapeHtml(Math.round(Number(summary.avg_js_load_ms || 0)))} мс</div>
-                        <div class="mt-1 text-xs text-slate-600">Движок: ${escapeHtml(formatEngineLabel(r.engine || 'legacy'))}</div>
-                    </div>
-                </div>
-                <div class="grid grid-cols-3 gap-2 mt-3 text-sm">
-                    <div class="rounded-lg border border-rose-200 bg-rose-50 p-2 text-center"><span class="text-rose-700">Критично</span><div class="font-semibold text-rose-800">${escapeHtml(summary.critical_issues || 0)}</div></div>
-                    <div class="rounded-lg border border-amber-200 bg-amber-50 p-2 text-center"><span class="text-amber-700">Предупреждение</span><div class="font-semibold text-amber-800">${escapeHtml(summary.warning_issues || 0)}</div></div>
-                    <div class="rounded-lg border border-blue-200 bg-blue-50 p-2 text-center"><span class="text-blue-700">Инфо</span><div class="font-semibold text-blue-800">${escapeHtml(summary.info_issues || 0)}</div></div>
-                </div>
-                <div class="mt-3 text-xs text-slate-500 break-all">URL: ${escapeHtml(result.url || '')}</div>
+            ${buildToolHeader({
+                gradient: 'from-orange-700 via-amber-700 to-yellow-700',
+                label: 'Render Audit v2',
+                title: 'Render-аудит',
+                subtitle: result.url || '',
+                score: score || null,
+                scoreLabel: 'рендер',
+                badges: [
+                    { cls: 'bg-white/10 border border-white/20 text-white/90', text: `${summary.variants_total || variants.length} вариантов` },
+                    ...(summary.critical_issues > 0 ? [{ cls: 'bg-rose-500/20 border border-rose-400/40 text-rose-100', text: `${summary.critical_issues} критичных` }] : []),
+                    ...(summary.warning_issues > 0 ? [{ cls: 'bg-amber-400/20 border border-amber-300/40 text-amber-100', text: `${summary.warning_issues} предупреждений` }] : []),
+                ],
+                metaLines: [
+                    `Потери: ${summary.missing_total || 0} (${summary.avg_missing_pct || 0}%)`,
+                    `JS-рендер: ${Math.round(Number(summary.avg_js_load_ms || 0))} мс`,
+                    `Движок: ${formatEngineLabel(r.engine || 'legacy')}`,
+                ],
+                actionButtons: renderActionBtns,
+            })}
+
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                ${buildMetricCard('Варианты', summary.variants_total || variants.length || 0)}
+                ${buildMetricCard('Потери контента', summary.missing_total || 0, `${summary.avg_missing_pct || 0}% в среднем`)}
+                ${buildMetricCard('JS-рендер', `${Math.round(Number(summary.avg_js_load_ms || 0))} мс`)}
+                ${buildMetricCard('Критичных', summary.critical_issues || 0)}
             </div>
+
+            ${buildFindingsGrid(
+                issues.filter(i => String(i.severity||'').toLowerCase() === 'critical'),
+                issues.filter(i => String(i.severity||'').toLowerCase() === 'warning'),
+                issues.filter(i => String(i.severity||'').toLowerCase() === 'info')
+            )}
 
             <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
                 <h4 class="font-semibold mb-3">Матрица расхождений рендера (JS vs no-JS)</h4>
@@ -6267,45 +6093,53 @@ function generateMobileCheckHTML(result) {
 
     const recommendationsHtml = (r.recommendations || []).map(rec => `<li>${rec}</li>`).join('');
 
+    const critIssues = (issues || []).filter(i => i.severity === 'critical');
+    const warnIssues = (issues || []).filter(i => i.severity === 'warning');
+    const infoIssues = (issues || []).filter(i => i.severity !== 'critical' && i.severity !== 'warning');
+    const mobileBadgeCls = r.mobile_friendly
+        ? 'bg-emerald-500/20 border border-emerald-400/40 text-emerald-100'
+        : 'bg-rose-500/20 border border-rose-400/40 text-rose-100';
+    const mobileActionBtns = `
+        <button onclick="downloadMobileDocxReport()" class="px-3 py-2 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-800 text-sm transition"><i class="fas fa-file-word mr-1"></i>DOCX</button>
+        <button onclick="downloadMobileXlsxReport()" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition"><i class="fas fa-file-excel mr-1"></i>XLSX</button>
+        <button onclick="copyCurrentTaskJson()" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition"><i class="fas fa-copy mr-1"></i>JSON</button>`;
+
     return `
         <div class="space-y-6 auditpro-results">
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-lg font-semibold">Проверка мобильной версии</h3>
-                    <div class="flex gap-3">
-                        <button onclick="downloadMobileDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>Скачать DOCX</button>
-                        <button onclick="downloadMobileXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>Скачать XLSX (ошибки)</button>
-                        <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
-                    </div>
-                </div>
-                <p class="text-sm text-gray-600 mb-4">
-                    Отчет показывает качество мобильной адаптации, проблемы интерфейса на устройствах и риски для пользовательского опыта.
-                </p>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div><span class="text-gray-600">URL:</span> <span class="font-medium">${result.url}</span></div>
-                    <div><span class="text-gray-600">Движок:</span> <span class="font-medium">${formatEngineLabel(r.engine || 'legacy')}</span></div>
-                    <div><span class="text-gray-600">Устройств:</span> <span class="font-medium">${summary.total_devices || (r.devices_tested || []).length}</span></div>
-                    <div><span class="text-gray-600">Оценка:</span> <span class="font-medium">${r.score ?? 'н/д'}</span></div>
-                    <div><span class="text-gray-600">Мобильно-дружелюбно:</span> <span class="font-medium ${r.mobile_friendly ? 'text-green-600' : 'text-red-600'}">${r.mobile_friendly ? 'Да' : 'Нет'}</span></div>
-                    <div><span class="text-gray-600">Критичных:</span> <span class="font-medium text-red-700">${summary.critical_issues || 0}</span></div>
-                    <div><span class="text-gray-600">Предупреждений:</span> <span class="font-medium text-amber-700">${summary.warning_issues || 0}</span></div>
-                    <div><span class="text-gray-600">Ср. загрузка:</span> <span class="font-medium">${summary.avg_load_time_ms || 0} мс</span></div>
-                </div>
+            ${buildToolHeader({
+                gradient: 'from-emerald-700 via-teal-700 to-cyan-700',
+                label: 'Mobile Audit v2',
+                title: 'Проверка мобильной версии',
+                subtitle: result.url,
+                score: r.score ?? null,
+                scoreLabel: 'score',
+                badges: [
+                    { cls: mobileBadgeCls, text: r.mobile_friendly ? 'Mobile-Friendly' : 'Проблемы' },
+                    { cls: 'bg-white/10 border border-white/20 text-white/90', text: `${summary.total_devices || devices.length} устройств` },
+                    ...(summary.critical_issues > 0 ? [{ cls: 'bg-rose-500/20 border border-rose-400/40 text-rose-100', text: `${summary.critical_issues} критичных` }] : []),
+                ],
+                metaLines: [
+                    `Движок: ${formatEngineLabel(r.engine || 'legacy')}`,
+                    `Ср. загрузка: ${summary.avg_load_time_ms || 0} мс`,
+                    `Предупреждений: ${summary.warning_issues || 0}`,
+                ],
+                actionButtons: mobileActionBtns,
+            })}
+
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                ${buildMetricCard('Устройств', summary.total_devices || devices.length)}
+                ${buildMetricCard('Критичных', summary.critical_issues || 0)}
+                ${buildMetricCard('Предупреждений', summary.warning_issues || 0)}
+                ${buildMetricCard('Ср. загрузка', `${summary.avg_load_time_ms || 0} мс`)}
             </div>
+
+            ${buildFindingsGrid(critIssues, warnIssues, infoIssues)}
 
             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 ${deviceCards || '<div class="text-sm text-gray-500">Нет результатов по устройствам.</div>'}
             </div>
 
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-2">Найденные проблемы</h4>
-                ${topIssuesHtml || '<div class="text-sm text-gray-500">Проблем не обнаружено.</div>'}
-            </div>
-
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-2">Рекомендации</h4>
-                <ul class="list-disc pl-5 text-sm text-gray-700">${recommendationsHtml || '<li>Рекомендаций нет.</li>'}</ul>
-            </div>
+            ${buildRecommendations(r.recommendations || [])}
         </div>
     `;
 }
@@ -6464,31 +6298,42 @@ function generateOnPageAuditHTML(result) {
         </div>
     `).join('');
 
+    const onpageActionBtns = `
+        <button onclick="downloadOnpageDocxReport()" class="px-3 py-2 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-800 text-sm transition"><i class="fas fa-file-word mr-1"></i>DOCX</button>
+        <button onclick="downloadOnpageXlsxReport()" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition"><i class="fas fa-file-excel mr-1"></i>XLSX</button>
+        <button onclick="copyOnpageTopFixes()" class="px-3 py-2 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-800 text-sm transition"><i class="fas fa-bolt mr-1"></i>Топ исправлений</button>
+        <button onclick="copyCurrentTaskJson()" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition"><i class="fas fa-copy mr-1"></i>JSON</button>`;
+    const onpageScore = r.score ?? summary.score ?? 0;
+
     return `
         <div class="space-y-6 auditpro-results">
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <div class="flex justify-between items-center mb-4">
-                    <div>
-                        <h3 class="text-lg font-semibold">OnPage-аудит</h3>
-                        <p class="text-sm text-gray-500 break-all">${result.url || ''}</p>
-                    </div>
-                    <div class="flex flex-wrap items-center gap-3">
-                        <button onclick="downloadOnpageDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>Скачать DOCX</button>
-                        <button onclick="downloadOnpageXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>Скачать XLSX</button>
-                        <button onclick="copyOnpageTopFixes()" class="text-rose-700 hover:text-rose-900 text-sm"><i class="fas fa-bolt mr-1"></i>Копировать топ исправлений</button>
-                        <button onclick="copyOnpageRecommendations()" class="text-indigo-700 hover:text-indigo-900 text-sm"><i class="fas fa-list-check mr-1"></i>Копировать рекомендации</button>
-                        <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
-                    </div>
-                </div>
-                <div class="grid grid-cols-2 md:grid-cols-7 gap-3 text-sm">
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Оценка</div><div class="text-xl font-semibold">${r.score ?? summary.score ?? 0}</div></div>
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Слова</div><div class="text-xl font-semibold">${content.word_count ?? 0}</div></div>
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Spam-оценка</div><div class="text-xl font-semibold">${scores.spam_score ?? summary.spam_score ?? 0}</div></div>
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Покрытие КС</div><div class="text-xl font-semibold">${keywordCoverage.coverage_pct ?? summary.keyword_coverage_pct ?? 0}%</div></div>
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">AI-риск</div><div class="text-xl font-semibold">${ai.ai_risk_composite ?? summary.ai_risk_composite ?? 0}</div></div>
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Критично</div><div class="text-xl font-semibold text-red-700">${summary.critical_issues ?? 0}</div></div>
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Предупреждение</div><div class="text-xl font-semibold text-amber-700">${summary.warning_issues ?? 0}</div></div>
-                </div>
+            ${buildToolHeader({
+                gradient: 'from-rose-700 via-pink-700 to-purple-700',
+                label: 'OnPage Audit v1',
+                title: 'OnPage-аудит',
+                subtitle: result.url || '',
+                score: onpageScore,
+                scoreLabel: 'SEO',
+                badges: [
+                    ...(summary.critical_issues > 0 ? [{ cls: 'bg-rose-500/20 border border-rose-400/40 text-rose-100', text: `${summary.critical_issues} критичных` }] : []),
+                    ...(summary.warning_issues > 0 ? [{ cls: 'bg-amber-400/20 border border-amber-300/40 text-amber-100', text: `${summary.warning_issues} предупреждений` }] : []),
+                ],
+                metaLines: [
+                    `Слов: ${content.word_count ?? 0}`,
+                    `Покрытие КС: ${keywordCoverage.coverage_pct ?? 0}%`,
+                    `AI-риск: ${ai.ai_risk_composite ?? 0}`,
+                ],
+                actionButtons: onpageActionBtns,
+            })}
+
+            <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
+                ${buildMetricCard('Оценка', onpageScore)}
+                ${buildMetricCard('Слова', content.word_count ?? 0)}
+                ${buildMetricCard('Spam-оценка', scores.spam_score ?? 0)}
+                ${buildMetricCard('Покрытие КС', `${keywordCoverage.coverage_pct ?? 0}%`)}
+                ${buildMetricCard('AI-риск', ai.ai_risk_composite ?? 0)}
+                ${buildMetricCard('Критично', summary.critical_issues ?? 0)}
+                ${buildMetricCard('Предупреждений', summary.warning_issues ?? 0)}
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -6589,10 +6434,7 @@ function generateOnPageAuditHTML(result) {
                 </table>
             </div>
 
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <h4 class="font-semibold mb-3">Рекомендации</h4>
-                    <ul class="list-disc pl-5 text-sm text-gray-700">${recsHtml || '<li>Рекомендаций нет.</li>'}</ul>
-            </div>
+            ${buildRecommendations(recs)}
 
             <div class="bg-white rounded-xl shadow-md p-6">
                 <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
@@ -6676,31 +6518,40 @@ function generateClusterizerHTML(result) {
         .map(([intent, count]) => `<span class="px-2 py-1 rounded-md bg-cyan-50 text-cyan-800 text-xs border border-cyan-200">${escapeHtml(String(intent))}: ${Number(count || 0)}</span>`)
         .join('');
 
+    const clusterActionBtns = `
+        <button onclick="downloadClusterizerXlsxReport()" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition"><i class="fas fa-file-excel mr-1"></i>XLSX</button>
+        <button onclick="copyCurrentTaskJson()" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition"><i class="fas fa-copy mr-1"></i>JSON</button>`;
+
     return `
         <div class="space-y-6 sitepro-results">
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-                    <div>
-                        <h3 class="text-lg font-semibold">Кластеризатор ключей</h3>
-                        <p class="text-sm text-gray-500">Метод: ${escapeHtml(String(settings.method || 'jaccard'))}, режим: ${escapeHtml(String(settings.clustering_mode || 'balanced'))}, порог: ${Number(settings.similarity_threshold_pct || 0)}%</p>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <button onclick="downloadClusterizerXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>Скачать XLSX</button>
-                        <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
-                    </div>
-                </div>
-                <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3 text-sm">
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Входных ключей</div><div class="text-xl font-semibold">${Number(summary.keywords_input_total || 0)}</div></div>
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Уникальных</div><div class="text-xl font-semibold">${Number(summary.keywords_unique_total || 0)}</div></div>
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Суммарный спрос</div><div class="text-xl font-semibold">${Math.round(Number(summary.unique_demand_total || summary.input_demand_total || 0) * 100) / 100}</div></div>
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Кластеров</div><div class="text-xl font-semibold">${Number(summary.clusters_total || 0)}</div></div>
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Основных</div><div class="text-xl font-semibold">${Number(summary.primary_clusters_total || 0)}</div></div>
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Многоключевых</div><div class="text-xl font-semibold">${Number(summary.multi_keyword_clusters || 0)}</div></div>
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Одиночных</div><div class="text-xl font-semibold">${Number(summary.singleton_clusters || 0)}</div></div>
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Макс. размер</div><div class="text-xl font-semibold">${Number(summary.biggest_cluster_size || 0)}</div></div>
-                    <div class="rounded-xl border bg-slate-50 p-3"><div class="text-xs text-slate-500">Когезия кластеров</div><div class="text-xl font-semibold">${Math.round(Number(summary.avg_cluster_cohesion || 0) * 1000) / 10}%</div></div>
-                </div>
-                <div class="mt-3 flex flex-wrap gap-2">${intentChips || '<span class="text-xs text-slate-500">Intent-распределение недоступно.</span>'}</div>
+            ${buildToolHeader({
+                gradient: 'from-fuchsia-700 via-violet-700 to-indigo-700',
+                label: 'Keyword Clusterizer',
+                title: 'Кластеризатор ключей',
+                score: null,
+                badges: [
+                    { cls: 'bg-white/10 border border-white/20 text-white/90', text: `${Number(summary.clusters_total || 0)} кластеров` },
+                    { cls: 'bg-white/10 border border-white/20 text-white/90', text: `${Number(summary.keywords_unique_total || 0)} ключей` },
+                ],
+                metaLines: [
+                    `Метод: ${escapeHtml(String(settings.method || 'jaccard'))}`,
+                    `Режим: ${escapeHtml(String(settings.clustering_mode || 'balanced'))}`,
+                    `Порог: ${Number(settings.similarity_threshold_pct || 0)}%`,
+                ],
+                actionButtons: clusterActionBtns,
+            })}
+
+            <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-5 gap-3">
+                ${buildMetricCard('Входных ключей', Number(summary.keywords_input_total || 0))}
+                ${buildMetricCard('Уникальных', Number(summary.keywords_unique_total || 0))}
+                ${buildMetricCard('Кластеров', Number(summary.clusters_total || 0))}
+                ${buildMetricCard('Основных', Number(summary.primary_clusters_total || 0))}
+                ${buildMetricCard('Когезия', `${Math.round(Number(summary.avg_cluster_cohesion || 0) * 1000) / 10}%`)}
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+                <div class="text-xs text-slate-500 mb-2">Intent-распределение</div>
+                <div class="flex flex-wrap gap-2">${intentChips || '<span class="text-xs text-slate-500">Intent-распределение недоступно.</span>'}</div>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6 overflow-auto">
@@ -7312,53 +7163,39 @@ function generateSiteAuditProHTML(result) {
         ? rows.map((row) => `<li class="mb-2"><div class="font-medium">${escapeHtml(row.action)}</div><div class="text-xs text-slate-500">Охват: ${escapeHtml(row.affectedCount)} страниц</div></li>`).join('')
         : `<li class="text-slate-500">${escapeHtml(emptyText)}</li>`;
 
+    const siteProActionBtns = `
+        <button onclick="downloadSiteAuditProDocxReport()" class="px-3 py-2 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-800 text-sm transition"><i class="fas fa-file-word mr-1"></i>DOCX</button>
+        <button onclick="downloadSiteAuditProXlsxReport()" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition"><i class="fas fa-file-excel mr-1"></i>XLSX</button>
+        <button onclick="copyCurrentTaskJson()" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition"><i class="fas fa-copy mr-1"></i>JSON</button>`;
+
     return `
         <div class="space-y-6 sitepro-results">
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <div class="flex justify-between items-center mb-4">
-                    <div>
-                        <h3 class="text-lg font-semibold">Site Audit Pro</h3>
-                        <div class="mt-2 flex flex-wrap gap-2 text-xs">
-                            <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700">режим: ${escapeHtml(mode)}</span>
-                            <span class="inline-flex items-center px-2.5 py-1 rounded-full ${isBatchMode ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'}">
-                                ${isBatchMode ? 'batch-режим' : 'режим обхода'}
-                            </span>
-                            ${isBatchMode ? `<span class="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">URL: ${escapeHtml(batchUrlsCount)}</span>` : ''}
-                            <span class="sitepro-chip">AI + Content Lens</span>
-                            <span class="sitepro-chip">План действий</span>
-                        </div>
-                    </div>
-                    <div class="flex gap-3">
-                        <button onclick="downloadSiteAuditProDocxReport()" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-file-word mr-1"></i>Скачать DOCX</button>
-                        <button onclick="downloadSiteAuditProXlsxReport()" class="text-green-600 hover:text-green-800 text-sm"><i class="fas fa-file-excel mr-1"></i>Скачать XLSX</button>
-                        <button onclick="copyCurrentTaskJson()" class="text-gray-700 hover:text-gray-900 text-sm"><i class="fas fa-copy mr-1"></i>Копировать JSON</button>
-                    </div>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
-                    <div class="rounded-xl border bg-slate-50 p-3">
-                        <div class="text-xs text-slate-500">Страницы</div>
-                        <div class="text-xl font-semibold text-slate-900">${escapeHtml(pagesCount)}</div>
-                    </div>
-                    <div class="rounded-xl border bg-slate-50 p-3">
-                        <div class="text-xs text-slate-500">Оценка</div>
-                        <div class="text-xl font-semibold ${score >= 80 ? 'text-emerald-700' : score >= 60 ? 'text-amber-700' : 'text-rose-700'}">${escapeHtml(summary.score ?? 'н/д')}</div>
-                        <div class="mt-1 h-1.5 bg-slate-200 rounded-full overflow-hidden"><div class="h-full ${score >= 80 ? 'bg-emerald-500' : score >= 60 ? 'bg-amber-500' : 'bg-rose-500'}" style="width:${scorePct}%"></div></div>
-                    </div>
-                    <div class="rounded-xl border bg-slate-50 p-3">
-                        <div class="text-xs text-slate-500">Проблемы</div>
-                        <div class="text-xl font-semibold text-slate-900">${escapeHtml(totalIssues)}</div>
-                        <div class="mt-1 h-1.5 bg-slate-200 rounded-full overflow-hidden"><div class="h-full bg-indigo-500" style="width:${issueLoadPct}%"></div></div>
-                    </div>
-                    <div class="rounded-xl border bg-slate-50 p-3">
-                        <div class="text-xs text-slate-500">URL</div>
-                        <div class="font-medium break-all">${escapeHtml(result.url || '')}</div>
-                    </div>
-                </div>
-                <div class="grid grid-cols-3 gap-2 mt-3 text-sm">
-                    <div class="rounded-lg border border-red-200 bg-red-50 p-2 text-center"><span class="text-red-700">Критично</span><div class="font-semibold text-red-800">${escapeHtml(summary.critical_issues || 0)}</div></div>
-                    <div class="rounded-lg border border-amber-200 bg-amber-50 p-2 text-center"><span class="text-amber-700">Предупреждение</span><div class="font-semibold text-amber-800">${escapeHtml(summary.warning_issues || 0)}</div></div>
-                    <div class="rounded-lg border border-blue-200 bg-blue-50 p-2 text-center"><span class="text-blue-700">Инфо</span><div class="font-semibold text-blue-800">${escapeHtml(summary.info_issues || 0)}</div></div>
-                </div>
+            ${buildToolHeader({
+                gradient: 'from-indigo-700 via-violet-700 to-purple-700',
+                label: 'Site Audit Pro',
+                title: 'Site Audit Pro',
+                subtitle: result.url || '',
+                score: scorePct,
+                scoreLabel: 'SEO',
+                badges: [
+                    { cls: 'bg-white/10 border border-white/20 text-white/90', text: `${escapeHtml(String(pagesCount))} страниц` },
+                    { cls: 'bg-white/10 border border-white/20 text-white/90', text: `режим: ${escapeHtml(String(mode))}` },
+                    ...(summary.critical_issues > 0 ? [{ cls: 'bg-rose-500/20 border border-rose-400/40 text-rose-100', text: `${escapeHtml(String(summary.critical_issues))} критичных` }] : []),
+                    ...(summary.warning_issues > 0 ? [{ cls: 'bg-amber-400/20 border border-amber-300/40 text-amber-100', text: `${escapeHtml(String(summary.warning_issues))} предупреждений` }] : []),
+                ],
+                metaLines: [
+                    `Всего проблем: ${escapeHtml(String(totalIssues))}`,
+                    `Критично: ${escapeHtml(String(summary.critical_issues || 0))}`,
+                    `Инфо: ${escapeHtml(String(summary.info_issues || 0))}`,
+                ],
+                actionButtons: siteProActionBtns,
+            })}
+
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                ${buildMetricCard('Страницы', escapeHtml(String(pagesCount)))}
+                ${buildMetricCard('Проблем', escapeHtml(String(totalIssues)))}
+                ${buildMetricCard('Критично', escapeHtml(String(summary.critical_issues || 0)))}
+                ${buildMetricCard('Предупреждений', escapeHtml(String(summary.warning_issues || 0)))}
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
