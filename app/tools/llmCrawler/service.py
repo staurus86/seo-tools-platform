@@ -62,12 +62,16 @@ def _fetch_http(
     max_redirect_hops: int,
     max_html_bytes: int,
 ) -> Dict[str, Any]:
+    from .security import get_allowed_ips_for_url
+    
     session = requests.Session()
     current = normalize_http_url(url)
     if not current:
         raise ValueError("Invalid URL")
     assert_safe_url(current)
-
+    
+    allowed_ips = get_allowed_ips_for_url(current)
+    
     timeout_sec = max(3, int(timeout_ms) / 1000)
     chain: List[Dict[str, Any]] = []
     final_response: Optional[requests.Response] = None
@@ -92,7 +96,7 @@ def _fetch_http(
         location_raw = str(response.headers.get("Location") or "").strip()
         location_abs = ""
         if status_code in REDIRECT_STATUSES and location_raw:
-            location_abs = safe_redirect_target(current, location_raw)
+            location_abs = safe_redirect_target(current, location_raw, allowed_ips)
         chain.append(
             {
                 "url": current,
@@ -143,6 +147,8 @@ def _rendered_fetch(
     timeout_ms: int,
     max_html_bytes: int,
 ) -> Dict[str, Any]:
+    from .security import get_allowed_ips_for_url
+    
     try:
         from playwright.sync_api import sync_playwright
     except Exception as exc:  # pragma: no cover - depends on runtime
@@ -150,6 +156,12 @@ def _rendered_fetch(
 
     started_at = time.perf_counter()
     timeout = max(3000, int(timeout_ms))
+    
+    initial_url = normalize_http_url(url)
+    if not initial_url:
+        raise ValueError("Invalid URL")
+    assert_safe_url(initial_url)
+    allowed_ips = get_allowed_ips_for_url(initial_url)
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
@@ -168,6 +180,9 @@ def _rendered_fetch(
                 raw_bytes = raw_bytes[:max_html_bytes]
                 html = raw_bytes.decode("utf-8", errors="ignore")
             final_url = normalize_http_url(page.url) or normalize_http_url(url) or url
+            final_allowed_ips = get_allowed_ips_for_url(final_url)
+            if allowed_ips and final_allowed_ips and not allowed_ips.intersection(final_allowed_ips):
+                raise ValueError("Redirect leads to different IP range (DNS rebinding blocked)")
             assert_safe_url(final_url)
             headers = response.headers if response else {}
             status_code = response.status if response else None
