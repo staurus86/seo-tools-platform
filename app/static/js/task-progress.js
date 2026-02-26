@@ -3,6 +3,7 @@ let taskTerminalHandled = false;
 let statusRequestInFlight = false;
 let lastProgressStateKey = '';
 
+// _renderFieldName: translate field names to readable labels
 function _renderFieldName(name) {
     const n = String(name || '').toLowerCase();
     if (n === 'title') return 'title';
