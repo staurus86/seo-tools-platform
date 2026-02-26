@@ -4,13 +4,29 @@ SEO Tools Platform - FastAPI Application (Simplified for Railway)
 import os
 import sys
 import logging
+from logging.handlers import RotatingFileHandler
 
 # Setup logging first
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    stream=sys.stdout
+_log_fmt = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+_stream_handler = logging.StreamHandler(sys.stdout)
+_stream_handler.setFormatter(_log_fmt)
+
+logging.basicConfig(level=logging.INFO, handlers=[_stream_handler])
+
+# Add rotating file handler (errors only, max 5 MB × 3 files)
+_log_dir = os.path.join(os.path.dirname(__file__), "logs")
+os.makedirs(_log_dir, exist_ok=True)
+_file_handler = RotatingFileHandler(
+    os.path.join(_log_dir, "app.log"),
+    maxBytes=5 * 1024 * 1024,
+    backupCount=3,
+    encoding="utf-8",
 )
+_file_handler.setLevel(logging.ERROR)
+_file_handler.setFormatter(_log_fmt)
+logging.getLogger().addHandler(_file_handler)
+
 logger = logging.getLogger(__name__)
 
 logger.info("=" * 50)
@@ -33,6 +49,7 @@ try:
     from fastapi.templating import Jinja2Templates
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import HTMLResponse
+    from app.middleware import RateLimitMiddleware
     logger.info("[OK] FastAPI imported successfully")
 except Exception as e:
     logger.error(f"[ERROR] FastAPI import failed: {e}")
@@ -91,6 +108,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RateLimitMiddleware)
 
 # Static files - try multiple paths
 static_mounted = False

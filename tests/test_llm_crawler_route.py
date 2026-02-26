@@ -32,8 +32,11 @@ class LlmCrawlerRouteTests(unittest.IsolatedAsyncioTestCase):
     async def test_run_queues_job_when_enabled(self):
         payload = LlmCrawlerRunRequest(url="example.com")
         req = _FakeRequest(headers={"x-role": "admin"})
+        _rate_ok = {"allowed": True, "remaining": 5, "reset_in": 60}
         with patch("app.tools.llmCrawler.router.settings.FEATURE_LLM_CRAWLER", True), patch(
             "app.tools.llmCrawler.router.get_worker_heartbeat", return_value=self._healthy_heartbeat()
+        ), patch(
+            "app.tools.llmCrawler.router.check_rate_limit", return_value=_rate_ok
         ), patch(
             "app.tools.llmCrawler.router.enqueue_job", return_value="llmcrawler-test-1"
         ):
