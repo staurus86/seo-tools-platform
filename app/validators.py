@@ -2,8 +2,11 @@
 Input validation utilities for SEO Tools Platform.
 Centralised URL sanitisation applied to all tool request models.
 """
+import re
 from urllib.parse import urlparse
 from typing import Any
+
+from pydantic import BaseModel, field_validator
 
 _DANGEROUS_SCHEMES = {"javascript", "data", "vbscript", "file"}
 _MAX_URL_LENGTH = 2048
@@ -47,3 +50,27 @@ def validate_url(v: Any) -> str:
         raise ValueError("URL must contain a valid domain")
 
     return v
+
+
+def normalize_http_input(raw_value: str) -> str:
+    """Prepend https:// if no URL scheme present; validate http/https scheme."""
+    value = str(raw_value or "").strip()
+    if not value:
+        return ""
+    if not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", value):
+        value = f"https://{value}"
+    parsed = urlparse(value)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return ""
+    return value
+
+
+class URLModel(BaseModel):
+    """Base Pydantic model that validates the ``url`` field on all subclasses."""
+
+    @field_validator("url", mode="before", check_fields=False)
+    @classmethod
+    def _sanitise_url(cls, v: Any) -> Any:
+        if v is None or v == "":
+            return v
+        return validate_url(v)
