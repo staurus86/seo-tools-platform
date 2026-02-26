@@ -37,9 +37,9 @@ class Settings(BaseSettings):
     # Concurrent Tasks
     MAX_CONCURRENT_TASKS: int = 10
     
-    # Rate Limiting
-    RATE_LIMIT_PER_HOUR: int = 10
-    RATE_LIMIT_WINDOW: int = 3600  # 1 hour in seconds
+    # Rate Limiting (test-friendly defaults: effectively disabled)
+    RATE_LIMIT_PER_HOUR: int = int(os.getenv("RATE_LIMIT_PER_HOUR", "999"))
+    RATE_LIMIT_WINDOW: int = int(os.getenv("RATE_LIMIT_WINDOW", "10"))
     
     # Reports
     REPORTS_DIR: str = "reports_output"
@@ -73,8 +73,8 @@ class Settings(BaseSettings):
     MAX_HTML_BYTES: int = int(os.getenv("MAX_HTML_BYTES", "2000000"))
     LLM_CRAWLER_MAX_REDIRECT_HOPS: int = int(os.getenv("LLM_CRAWLER_MAX_REDIRECT_HOPS", "8"))
     LLM_CRAWLER_JOB_TTL_SEC: int = int(os.getenv("LLM_CRAWLER_JOB_TTL_SEC", str(72 * 3600)))
-    LLM_CRAWLER_RATE_LIMIT_PER_MINUTE: int = int(os.getenv("LLM_CRAWLER_RATE_LIMIT_PER_MINUTE", "5"))
-    LLM_CRAWLER_RENDER_RATE_LIMIT_PER_DAY: int = int(os.getenv("LLM_CRAWLER_RENDER_RATE_LIMIT_PER_DAY", "20"))
+    LLM_CRAWLER_RATE_LIMIT_PER_MINUTE: int = int(os.getenv("LLM_CRAWLER_RATE_LIMIT_PER_MINUTE", "999"))
+    LLM_CRAWLER_RENDER_RATE_LIMIT_PER_DAY: int = int(os.getenv("LLM_CRAWLER_RENDER_RATE_LIMIT_PER_DAY", "999"))
     LLM_CRAWLER_QUEUE_KEY: str = os.getenv("LLM_CRAWLER_QUEUE_KEY", "llmCrawler:queue")
     LLM_CRAWLER_WORKER_HEARTBEAT_KEY: str = os.getenv("LLM_CRAWLER_WORKER_HEARTBEAT_KEY", "llmCrawler:worker:heartbeat")
     LLM_CRAWLER_WORKER_HEARTBEAT_TTL_SEC: int = int(os.getenv("LLM_CRAWLER_WORKER_HEARTBEAT_TTL_SEC", "120"))

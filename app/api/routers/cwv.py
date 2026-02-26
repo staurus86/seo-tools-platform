@@ -637,7 +637,7 @@ async def create_core_web_vitals(data: CoreWebVitalsRequest, background_tasks: B
     if competitor_mode:
         scan_mode = "batch"
 
-    max_batch_urls = 10
+    max_batch_urls = 999
     raw_batch_urls = [str(item or "").strip() for item in (data.batch_urls or []) if str(item or "").strip()]
     if scan_mode == "batch" and not raw_batch_urls and str(data.url or "").strip():
         raw_batch_urls = [str(data.url).strip()]

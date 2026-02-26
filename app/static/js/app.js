@@ -146,11 +146,11 @@ async function startTask(event, endpoint) {
             .split(/\r?\n/)
             .map((x) => x.trim())
             .filter((x) => x.length > 0);
-        if (batchMode && parsedBatchUrls.length > 10) {
-            showToast('Batch Core Web Vitals limit: maximum 10 URLs', 'warning');
+        if (batchMode && parsedBatchUrls.length > 999) {
+            showToast('Batch Core Web Vitals limit: maximum 999 URLs', 'warning');
             return;
         }
-        const batchUrls = parsedBatchUrls.slice(0, 10);
+        const batchUrls = parsedBatchUrls.slice(0, 999);
         data.scan_mode = batchMode ? 'batch' : 'single';
         data.competitor_mode = competitorMode;
         if (batchMode) {
@@ -533,8 +533,8 @@ function initCoreWebVitalsBatchUI() {
 // Show rate limit modal
 function showRateLimitModal(detail) {
     const modal = document.getElementById('rate-limit-modal');
-    const limit = detail?.limit || 10;
-    const resetIn = detail?.reset_in || 3600;
+    const limit = detail?.limit || 999;
+    const resetIn = detail?.reset_in || 10;
     const minutes = Math.ceil(resetIn / 60);
     
     document.getElementById('modal-limit').textContent = limit;

@@ -87,7 +87,7 @@ async def run_llm_crawler(payload: LlmCrawlerRunRequest, request: Request) -> Di
     request_id = _request_id(request)
 
     subject = request_subject(request)
-    tool_limit = max(1, int(getattr(settings, "LLM_CRAWLER_RATE_LIMIT_PER_MINUTE", 5) or 5))
+    tool_limit = max(1, int(getattr(settings, "LLM_CRAWLER_RATE_LIMIT_PER_MINUTE", 999) or 999))
     tool_rate = check_rate_limit(subject, "tool-minute", tool_limit, 60)
     if not tool_rate.get("allowed", True):
         raise HTTPException(
@@ -101,7 +101,7 @@ async def run_llm_crawler(payload: LlmCrawlerRunRequest, request: Request) -> Di
 
     options = payload.options.model_dump()
     if bool(options.get("renderJs")):
-        render_limit = max(1, int(getattr(settings, "LLM_CRAWLER_RENDER_RATE_LIMIT_PER_DAY", 20) or 20))
+        render_limit = max(1, int(getattr(settings, "LLM_CRAWLER_RENDER_RATE_LIMIT_PER_DAY", 999) or 999))
         render_rate = check_rate_limit(subject, "render-day", render_limit, 86400)
         if not render_rate.get("allowed", True):
             raise HTTPException(
