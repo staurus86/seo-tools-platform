@@ -3,6 +3,16 @@ let taskTerminalHandled = false;
 let statusRequestInFlight = false;
 let lastProgressStateKey = '';
 
+function _renderFieldName(name) {
+    const n = String(name || '').toLowerCase();
+    if (n === 'title') return 'title';
+    if (n === 'description') return 'description';
+    if (n === 'h1') return 'h1';
+    if (n === 'images') return 'изображения';
+    if (n === 'links') return 'ссылки';
+    return name || '';
+}
+
 function addTaskToLocalHistory(item) {
     try {
         if (typeof window.addToHistory === 'function') {
@@ -5228,15 +5238,6 @@ function generateRenderAuditHTML(result) {
             if (row.h1Changed) changedFields.push('h1');
             if (row.imagesChanged) changedFields.push('images');
             if (row.linksChanged) changedFields.push('links');
-            const formatFieldName = (name) => {
-                const n = String(name || '').toLowerCase();
-                if (n === 'title') return 'title';
-                if (n === 'description') return 'description';
-                if (n === 'h1') return 'h1';
-                if (n === 'images') return 'изображения';
-                if (n === 'links') return 'ссылки';
-                return name || '';
-            };
             return `
                 <div class="rounded-lg border border-slate-200 bg-slate-50 p-2">
                     <div class="flex items-center justify-between gap-2">
@@ -5244,7 +5245,7 @@ function generateRenderAuditHTML(result) {
                         ${impactBadge(row.impactScore)}
                     </div>
                     <div class="text-xs text-slate-500 mt-1">${escapeHtml(row.profile)}</div>
-                    <div class="text-xs text-slate-700 mt-1">Изменения: ${escapeHtml(changedFields.map(formatFieldName).join(', ') || '-')}</div>
+                    <div class="text-xs text-slate-700 mt-1">Изменения: ${escapeHtml(changedFields.map(_renderFieldName).join(', ') || '-')}</div>
                 </div>
             `;
         }).join('');
