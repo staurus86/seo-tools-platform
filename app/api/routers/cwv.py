@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, BackgroundTasks
+from pydantic import field_validator
 
 from app.validators import URLModel
 from app.api.routers._task_store import create_task_pending, update_task_state
