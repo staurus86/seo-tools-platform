@@ -5216,7 +5216,7 @@ function generateRenderAuditHTML(result) {
         acc.highImpact += row.impactScore >= 4 ? 1 : 0;
         return acc;
     }, { titleChanged: 0, descChanged: 0, h1Changed: 0, imagesChanged: 0, linksChanged: 0, highImpact: 0 });
-const totalDiffRows = contentDiffRowsData.length || 1;
+    const totalDiffRows = contentDiffRowsData.length || 1;
     const summaryRatio = (value) => `${Math.round((value / totalDiffRows) * 100)}%`;
     const renderFieldName = (name) => {
         const n = String(name || '').toLowerCase();
