@@ -1,0 +1,2190 @@
+"""
+Robots.txt Checker, Sitemap Validator, and Bot Accessibility Checker router.
+"""
+import re
+import json
+import time
+import math
+import random
+import requests
+from datetime import datetime
+from typing import Optional, List, Dict, Any, Union, Tuple
+from urllib.parse import urljoin, urlparse
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException
+from pydantic import BaseModel, field_validator
+
+from app.validators import URLModel, normalize_http_input as _normalize_http_input
+from app.api.routers._task_store import create_task_result, create_task_pending, update_task_state
+
+router = APIRouter(tags=["SEO Tools"])
+
+
+# ============ ORIGINAl ROBOTS AUDIT LOGIC ============
+EXPECTED_BOTS = ["googlebot", "yandex", "bingbot"]
+
+SENSITIVE_PATHS = [
+    "/admin", "/wp-admin", "/administrator", "/cgi-bin", "/config",
+    "/database", "/backup", "/logs", "/phpmyadmin", "/.git", "/.env",
+    "/wp-config", "/include", "/tmp", "/temp", "/private", "/secret",
+    "/uploads",
+]
+
+RECOMMENDATIONS = [
+    "Группируйте правила по User-agent для лучшей читаемости",
+    "Блокируйте служебные папки: /admin, /tmp, /backup, /.git",
+    "Не блокируйте CSS и JS файлы - это мешает сканированию",
+    "Используйте Crawl-delay для больших сайтов",
+    "Всегда указывайте Sitemap с полным URL",
+    "Удаляйте дублирующиеся правила",
+    "Избегайте Disallow: / если не хотите полностью заблокировать сайт",
+    "Используйте Allow для создания исключений из Disallow",
+    "Проверяйте файл в Google Search Console",
+    "Учитывайте различия интерпретации директив разными поисковиками",
+]
+
+# Google ignores Crawl-delay; keep default recommendations aligned with current search guidance.
+RECOMMENDATIONS = [item for item in RECOMMENDATIONS if "Crawl-delay" not in item]
+
+UNSUPPORTED_ROBOTS_DIRECTIVES = {
+    "noindex",
+    "nofollow",
+    "index",
+    "noarchive",
+    "nosnippet",
+    "unavailable_after",
+}
+
+
+class Rule:
+    def __init__(self, user_agent: str, path: str, line: int):
+        self.user_agent = user_agent
+        self.path = path
+        self.line = line
+
+
+class Group:
+    def __init__(self):
+        self.user_agents = []
+        self.disallow = []
+        self.allow = []
+
+
+class ParseResult:
+    def __init__(self):
+        self.groups = []
+        self.sitemaps = []
+        self.crawl_delays = {}
+        self.clean_params = []
+        self.hosts = []
+        self.raw_lines = []
+        self.syntax_errors = []
+        self.warnings = []
+        self.unsupported_directives = []
+        # For compatibility
+        self.all_disallow = []
+        self.all_allow = []
+
+
+from dataclasses import dataclass, field
+from typing import Dict, List, Tuple, Any, Optional
+from collections import defaultdict
+import re
+
+
+def fetch_robots(url: str, timeout: int = 20) -> Tuple[Optional[str], Optional[int], Optional[str]]:
+    """Fetch robots.txt and return (content, status_code, error)"""
+    try:
+        robots_url = url.rstrip('/') + '/robots.txt'
+        resp = requests.get(robots_url, timeout=timeout, headers={"User-Agent": "Mozilla/5.0"})
+        return resp.text, resp.status_code, None
+    except requests.exceptions.Timeout:
+        return None, None, "Timeout"
+    except requests.exceptions.ConnectionError:
+        return None, None, "Connection Error"
+    except Exception as e:
+        return None, None, str(e)
+
+
+def parse_robots(text: str) -> ParseResult:
+    """Parse robots.txt content - FULL original implementation"""
+    lines = text.splitlines()
+    result = ParseResult()
+    result.raw_lines = lines
+    
+    current_group = None
+    
+    for idx, raw in enumerate(lines, start=1):
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if ":" not in stripped:
+            err = f"Строка {idx}: Неверный синтаксис - отсутствует ':'"
+            result.syntax_errors.append({"line": idx, "error": err, "content": raw})
+            result.warnings.append(err)
+            continue
+        
+        key, value = stripped.split(":", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        
+        if key == "user-agent":
+            if current_group is None or current_group.user_agents:
+                current_group = Group()
+                result.groups.append(current_group)
+            current_group.user_agents.append(value)
+            
+        elif key == "disallow":
+            if not current_group or not current_group.user_agents:
+                err = f"Строка {idx}: Disallow без предшествующего User-agent"
+                result.syntax_errors.append({"line": idx, "error": err, "content": raw})
+                result.warnings.append(err)
+                continue
+            if value and not value.startswith("/"):
+                result.warnings.append(f"Строка {idx}: Путь '{value}' должен начинаться с '/'")
+            for ua in current_group.user_agents:
+                rule = Rule(ua, value, idx)
+                current_group.disallow.append(rule)
+                result.all_disallow.append(rule)
+                
+        elif key == "allow":
+            if not current_group or not current_group.user_agents:
+                err = f"Строка {idx}: Allow без предшествующего User-agent"
+                result.syntax_errors.append({"line": idx, "error": err, "content": raw})
+                result.warnings.append(err)
+                continue
+            if value and not value.startswith("/"):
+                result.warnings.append(f"Строка {idx}: Путь '{value}' должен начинаться с '/'")
+            for ua in current_group.user_agents:
+                rule = Rule(ua, value, idx)
+                current_group.allow.append(rule)
+                result.all_allow.append(rule)
+                
+        elif key == "sitemap":
+            if value and not value.startswith("http://") and not value.startswith("https://"):
+                result.warnings.append(f"Строка {idx}: Sitemap должен содержать полный URL")
+            result.sitemaps.append(value)
+            
+        elif key == "crawl-delay":
+            if not current_group or not current_group.user_agents:
+                err = f"Строка {idx}: Crawl-delay без предшествующего User-agent"
+                result.syntax_errors.append({"line": idx, "error": err, "content": raw})
+                result.warnings.append(err)
+                continue
+            try:
+                delay = float(value)
+                if delay < 0:
+                    raise ValueError("negative")
+                for ua in current_group.user_agents:
+                    result.crawl_delays[ua] = delay
+            except Exception:
+                err = f"Строка {idx}: Некорректный Crawl-delay: '{value}'"
+                result.syntax_errors.append({"line": idx, "error": err, "content": raw})
+                result.warnings.append(err)
+                continue
+                
+        elif key == "clean-param":
+            result.clean_params.append(value)
+            
+        elif key == "host":
+            result.hosts.append(value)
+
+        elif key in UNSUPPORTED_ROBOTS_DIRECTIVES:
+            result.unsupported_directives.append({
+                "line": idx,
+                "directive": key,
+                "value": value,
+            })
+            result.warnings.append(
+                f"Line {idx}: '{key}' in robots.txt is not supported by Google; use meta robots or X-Robots-Tag."
+            )
+
+        else:
+            result.warnings.append(f"Строка {idx}: Неизвестная директива '{key}' - будет проигнорирована")
+    
+    return result
+
+
+def find_duplicates(all_rules: List[Rule], label: str) -> List[str]:
+    """Find duplicate rules"""
+    warnings = []
+    by_value: Dict[str, List[int]] = defaultdict(list)
+    for rule in all_rules:
+        key = f"{rule.user_agent.lower()}|{rule.path}"
+        by_value[key].append(rule.line)
+    for key, line_nos in by_value.items():
+        if len(line_nos) > 1:
+            ua, path = key.split("|", 1)
+            lines = ", ".join(str(n) for n in line_nos)
+            warnings.append(f"Дублирующееся правило {label} для {ua}: {path} (строки: {lines})")
+    return warnings
+
+
+def dedupe_keep_order(items: List[str]) -> List[str]:
+    """Remove duplicates preserving original order."""
+    seen = set()
+    out = []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
+def build_param_merge_recommendations(result: ParseResult) -> List[str]:
+    """Yandex Clean-param checks and recommendations."""
+    recs: List[str] = []
+    clean_params = [str(v or "").strip() for v in result.clean_params if str(v or "").strip()]
+    if not clean_params:
+        query_disallow = 0
+        for group in result.groups:
+            for rule in (group.disallow or []):
+                path = str(rule.path or "")
+                if "?" in path or "=" in path:
+                    query_disallow += 1
+        if query_disallow >= 3:
+            recs.append(
+                "Detected many parameterized Disallow rules. For Yandex crawling optimization, "
+                "consider using 'Clean-param' for non-content query params."
+            )
+        return recs
+
+    auto_ignored = {
+        "ysclid", "yrclid", "utm_source", "utm_medium", "utm_campaign",
+        "utm_term", "utm_content", "yclid", "gclid", "fbclid",
+    }
+
+    has_yandex_group = any(
+        "yandex" in str(ua or "").lower()
+        for group in result.groups
+        for ua in (group.user_agents or [])
+    )
+    if not has_yandex_group:
+        recs.append(
+            "Clean-param is Yandex-specific. Consider a dedicated 'User-agent: Yandex' section for these rules."
+        )
+
+    seen_rules: Dict[str, int] = defaultdict(int)
+    path_to_params: Dict[str, List[str]] = defaultdict(list)
+
+    for raw in clean_params:
+        seen_rules[raw] += 1
+        if len(raw) > 500:
+            recs.append(
+                f"Clean-param rule exceeds 500 chars and may be ignored by Yandex: '{raw[:80]}...'"
+            )
+
+        parts = raw.split(None, 1)
+        params_part = parts[0].strip() if parts else ""
+        path_part = parts[1].strip() if len(parts) > 1 else ""
+
+        params = [p.strip() for p in params_part.split("&") if p.strip()]
+        if not params:
+            recs.append(f"Invalid Clean-param syntax: '{raw}'. Expected 'param1&param2 [path]'.")
+            continue
+
+        invalid_params = [
+            p for p in params
+            if ("?" in p or "=" in p or "/" in p or " " in p or "&" in p)
+        ]
+        if invalid_params:
+            recs.append(
+                f"Invalid parameter token(s) in Clean-param '{raw}': {', '.join(invalid_params)}."
+            )
+
+        if path_part:
+            if not path_part.startswith("/"):
+                recs.append(
+                    f"Clean-param path should start with '/': '{raw}'."
+                )
+            if "?" in path_part or "&" in path_part:
+                recs.append(
+                    f"Clean-param path should be URL prefix only (no query): '{raw}'."
+                )
+
+        lower_set = {p.lower() for p in params}
+        if lower_set and lower_set.issubset(auto_ignored):
+            recs.append(
+                f"Rule '{raw}' targets mostly tracking params that Yandex can often ignore automatically. "
+                "Keep it only if duplicate URLs are still reported in Webmaster."
+            )
+
+        path_key = path_part or "*"
+        path_to_params[path_key].extend(params)
+
+    for raw, cnt in seen_rules.items():
+        if cnt > 1:
+            recs.append(f"Duplicate Clean-param rule repeated {cnt} times: '{raw}'.")
+
+    for path_key, params in path_to_params.items():
+        uniq = dedupe_keep_order([p for p in params if p])
+        if len(uniq) >= 3:
+            merged = "&".join(uniq[:8])
+            if path_key == "*":
+                recs.append(
+                    "Potential optimization (Yandex-only, requires validation): "
+                    f"if ALL these params never change page content, you may merge into one global rule: "
+                    f"'Clean-param: {merged}'. Otherwise keep path-specific rules."
+                )
+            else:
+                recs.append(
+                    "Potential optimization (Yandex-only, requires validation): "
+                    f"for path '{path_key}', if these params do not affect document content, "
+                    f"you may merge into: 'Clean-param: {merged} {path_key}'."
+                )
+
+    return dedupe_keep_order(recs)
+
+
+
+
+def _normalize_rule_path(path: str) -> str:
+    value = (path or "").strip()
+    if value.endswith("*") and len(value) > 1:
+        value = value[:-1]
+    return value
+
+
+def analyze_group_and_rule_conflicts(result: ParseResult) -> Dict[str, Any]:
+    warnings: List[str] = []
+    details: List[Dict[str, Any]] = []
+    groups_by_ua: Dict[str, int] = defaultdict(int)
+    rules_by_ua: Dict[str, Dict[str, set]] = defaultdict(lambda: {"allow": set(), "disallow": set()})
+
+    for group in result.groups:
+        for ua in (group.user_agents or []):
+            ua_l = (ua or "").strip().lower()
+            if not ua_l:
+                continue
+            groups_by_ua[ua_l] += 1
+            for rule in (group.allow or []):
+                rules_by_ua[ua_l]["allow"].add(_normalize_rule_path(rule.path))
+            for rule in (group.disallow or []):
+                rules_by_ua[ua_l]["disallow"].add(_normalize_rule_path(rule.path))
+
+    for ua, count in groups_by_ua.items():
+        if count > 1:
+            warnings.append(
+                f"User-agent '{ua}' appears in multiple groups ({count}). "
+                "Merge into one group to avoid ambiguous interpretation."
+            )
+            details.append({"type": "ua_fragmented_groups", "user_agent": ua, "groups": count})
+
+    for ua, packs in rules_by_ua.items():
+        conflicted = sorted((packs["allow"] & packs["disallow"]) - {""})
+        for path in conflicted:
+            warnings.append(
+                f"Conflicting directives for '{ua}': both Allow and Disallow for '{path}'. "
+                "This can lead to crawler-specific behavior differences."
+            )
+            details.append({"type": "allow_disallow_same_path", "user_agent": ua, "path": path})
+
+    return {"warnings": warnings, "details": details}
+
+
+def analyze_longest_match_behaviour(result: ParseResult) -> Dict[str, Any]:
+    notes: List[str] = []
+    details: List[Dict[str, Any]] = []
+    rules_by_ua: Dict[str, Dict[str, List[str]]] = defaultdict(lambda: {"allow": [], "disallow": []})
+
+    for group in result.groups:
+        for ua in (group.user_agents or []):
+            ua_l = (ua or "").strip().lower()
+            if not ua_l:
+                continue
+            for rule in (group.allow or []):
+                path = _normalize_rule_path(rule.path)
+                if path:
+                    rules_by_ua[ua_l]["allow"].append(path)
+            for rule in (group.disallow or []):
+                path = _normalize_rule_path(rule.path)
+                if path:
+                    rules_by_ua[ua_l]["disallow"].append(path)
+
+    for ua, packs in rules_by_ua.items():
+        for allow_path in packs["allow"]:
+            for disallow_path in packs["disallow"]:
+                if disallow_path.startswith(allow_path) and len(disallow_path) > len(allow_path):
+                    notes.append(
+                        f"Longest-match note for '{ua}': Allow '{allow_path}' is broader than "
+                        f"Disallow '{disallow_path}'. Deeper URLs may remain blocked."
+                    )
+                    details.append(
+                        {
+                            "user_agent": ua,
+                            "allow_path": allow_path,
+                            "disallow_path": disallow_path,
+                            "type": "allow_broader_than_disallow",
+                        }
+                    )
+        if len(notes) >= 30:
+            break
+
+    return {"notes": dedupe_keep_order(notes)[:30], "details": details[:100]}
+
+
+def validate_host_directives(hosts: List[str]) -> Dict[str, Any]:
+    warnings: List[str] = []
+    normalized_hosts = [str(h or "").strip() for h in hosts if str(h or "").strip()]
+    uniq = dedupe_keep_order(normalized_hosts)
+    host_re = re.compile(r"^[a-z0-9.-]+(?::\d+)?$", re.I)
+
+    if len(uniq) > 1:
+        warnings.append(
+            f"Multiple Host directives found ({len(uniq)}). "
+            "Yandex expects a single canonical host value."
+        )
+
+    for host in uniq:
+        if host.startswith(("http://", "https://")) or "/" in host:
+            warnings.append(
+                f"Host directive '{host}' looks invalid. Use host only (no scheme/path), e.g. 'example.com'."
+            )
+        elif not host_re.fullmatch(host):
+            warnings.append(
+                f"Host directive '{host}' has non-standard format for Yandex."
+            )
+
+    return {"warnings": warnings, "hosts": uniq}
+
+def validate_sitemaps(sitemaps: List[str], timeout: int = 4, max_checks: int = 5) -> List[Dict[str, Any]]:
+    """Validate sitemap URLs declared in robots.txt."""
+    checks: List[Dict[str, Any]] = []
+    unique_sitemaps = dedupe_keep_order([s for s in sitemaps if isinstance(s, str) and s.strip()])
+    for index, sm in enumerate(unique_sitemaps):
+        sm = sm.strip()
+        if index >= max_checks:
+            checks.append({
+                "url": sm,
+                "ok": None,
+                "status_code": None,
+                "content_type": None,
+                "error": "Skipped (limit reached)"
+            })
+            continue
+        try:
+            parsed = urlparse(sm)
+            if parsed.scheme not in ("http", "https"):
+                checks.append({
+                    "url": sm,
+                    "ok": False,
+                    "status_code": None,
+                    "content_type": None,
+                    "error": "Invalid sitemap URL scheme"
+                })
+                continue
+            resp = requests.get(sm, timeout=timeout, headers={"User-Agent": "Mozilla/5.0"}, allow_redirects=True)
+            content_type = (resp.headers.get("Content-Type") or "").lower()
+            looks_xml = any(token in content_type for token in ["xml", "text/plain"]) or resp.text.lstrip().startswith("<?xml")
+            ok = resp.status_code == 200 and looks_xml
+            checks.append({
+                "url": sm,
+                "ok": ok,
+                "status_code": resp.status_code,
+                "content_type": content_type,
+                "error": None if ok else "Sitemap not accessible or not XML"
+            })
+        except Exception as e:
+            checks.append({
+                "url": sm,
+                "ok": False,
+                "status_code": None,
+                "content_type": None,
+                "error": str(e)
+            })
+    return checks
+
+
+def build_quality_metrics(
+    issues: List[str],
+    warnings: List[str],
+    syntax_errors: List[Dict[str, Any]],
+    missing_bots: List[str],
+    sitemap_checks: List[Dict[str, Any]],
+    full_block: bool,
+    blocked_ext: List[str]
+) -> Dict[str, Any]:
+    """Build score, grade, production readiness and top fixes."""
+    score = 100
+    critical_count = len(issues)
+    warning_count = len(warnings)
+    syntax_count = len(syntax_errors)
+
+    if full_block:
+        score -= 70
+    if blocked_ext:
+        score -= 20
+    score -= min(20, syntax_count * 2)
+    score -= min(22, warning_count)
+    if missing_bots:
+        score -= min(8, len(missing_bots) * 2)
+
+    has_sitemap = any(check.get("ok") for check in sitemap_checks) if sitemap_checks else False
+    if sitemap_checks and not has_sitemap:
+        score -= 10
+    if not sitemap_checks:
+        score -= 8
+
+    score = max(0, min(100, score))
+    if score >= 90:
+        grade = "A"
+    elif score >= 80:
+        grade = "B"
+    elif score >= 70:
+        grade = "C"
+    elif score >= 60:
+        grade = "D"
+    else:
+        grade = "F"
+
+    top_fixes: List[Dict[str, str]] = []
+    if full_block:
+        top_fixes.append({
+            "priority": "critical",
+            "title": "Уберите глобальную блокировку сайта",
+            "why": "Disallow: / для * блокирует индексацию всего сайта.",
+            "action": "Оставьте только точечные запреты для служебных разделов."
+        })
+    if blocked_ext:
+        top_fixes.append({
+            "priority": "high",
+            "title": "Разблокируйте CSS/JS",
+            "why": "Блокировка CSS/JS ухудшает рендеринг для поисковых роботов.",
+            "action": "Удалите правила, блокирующие .css и .js."
+        })
+    if missing_bots:
+        top_fixes.append({
+            "priority": "medium",
+            "title": "Добавьте группы для ключевых ботов",
+            "why": "Явные правила для поисковых ботов делают поведение предсказуемым.",
+            "action": f"Добавьте User-agent группы для: {', '.join(missing_bots)}."
+        })
+    if sitemap_checks and not has_sitemap:
+        top_fixes.append({
+            "priority": "high",
+            "title": "Исправьте sitemap URL",
+            "why": "Sitemap недоступен или возвращает некорректный контент.",
+            "action": "Проверьте URL sitemap в robots.txt и доступность по HTTP 200."
+        })
+    if syntax_count:
+        top_fixes.append({
+            "priority": "high",
+            "title": "Исправьте синтаксис robots.txt",
+            "why": "Синтаксические ошибки могут приводить к игнорированию правил.",
+            "action": "Исправьте строки с ошибками в блоке syntax_errors."
+        })
+
+    production_ready = score >= 75 and not full_block and not blocked_ext
+    return {
+        "quality_score": score,
+        "quality_grade": grade,
+        "production_ready": production_ready,
+        "top_fixes": top_fixes[:5],
+        "severity_counts": {
+            "critical": critical_count,
+            "warning": warning_count,
+            "info": 0
+        }
+    }
+
+
+def build_issues_and_warnings(result: ParseResult) -> Dict[str, Any]:
+    """Build issues, warnings, and recommendations - FULL original implementation"""
+    issues: List[str] = []
+    warnings: List[str] = list(result.warnings)
+    
+    all_disallow: List[Rule] = []
+    all_allow: List[Rule] = []
+    for group in result.groups:
+        all_disallow.extend(group.disallow)
+        all_allow.extend(group.allow)
+    
+    warnings.extend(find_duplicates(all_disallow, "Disallow"))
+    warnings.extend(find_duplicates(all_allow, "Allow"))
+
+    conflict_scan = analyze_group_and_rule_conflicts(result)
+    warnings.extend(conflict_scan["warnings"])
+
+    longest_match_scan = analyze_longest_match_behaviour(result)
+    warnings.extend(longest_match_scan["notes"])
+
+    host_scan = validate_host_directives(result.hosts)
+    warnings.extend(host_scan["warnings"])
+    if result.crawl_delays:
+        warnings.append("Crawl-delay found: Google ignores this directive.")
+    
+    if not result.sitemaps:
+        warnings.append("Не указана директива Sitemap")
+    
+    # Check for full site block
+    full_block = any(
+        rule.user_agent.lower() == "*" and rule.path.strip() == "/"
+        for rule in all_disallow
+    )
+    if full_block:
+        issues.append("КРИТИЧНО: Весь сайт заблокирован для всех роботов (Disallow: /)")
+    
+    # Check blocked extensions
+    blocked_ext = []
+    for ext in [".css", ".js"]:
+        if any(ext in rule.path for rule in all_disallow):
+            blocked_ext.append(ext)
+    if blocked_ext:
+        issues.append(
+            "Заблокированы важные ресурсы: "
+            + ", ".join(blocked_ext)
+            + " - это мешает сканированию"
+        )
+    
+    # Check expected bots
+    present_agents = set()
+    for group in result.groups:
+        for ua in group.user_agents:
+            present_agents.add(ua.lower())
+    
+    missing_bots = [
+        bot for bot in EXPECTED_BOTS if not any(bot in ua for ua in present_agents)
+    ]
+    if missing_bots:
+        warnings.append("Рекомендуется добавить правила для: " + ", ".join(missing_bots))
+    
+    # Check sensitive paths
+    unblocked_sensitive = []
+    blocked_paths = set(rule.path for rule in all_disallow)
+    for path in SENSITIVE_PATHS:
+        if path not in blocked_paths:
+            unblocked_sensitive.append(path)
+    if unblocked_sensitive:
+        warnings.append(
+            "Рекомендуется заблокировать: "
+            + ", ".join(unblocked_sensitive[:8])
+        )
+    
+    # Generate recommendations and quality metrics
+    if result.unsupported_directives:
+        warnings.append(
+            "Unsupported directives found in robots.txt (e.g., noindex/nofollow). "
+            "Use meta robots or X-Robots-Tag for indexation control."
+        )
+    param_recs = build_param_merge_recommendations(result)
+    all_recommendations = dedupe_keep_order(RECOMMENDATIONS.copy() + param_recs)
+    warnings = dedupe_keep_order(warnings)
+    issues = dedupe_keep_order(issues)
+
+    sitemap_checks = validate_sitemaps(result.sitemaps)
+    metrics = build_quality_metrics(
+        issues=issues,
+        warnings=warnings,
+        syntax_errors=result.syntax_errors,
+        missing_bots=missing_bots,
+        sitemap_checks=sitemap_checks,
+        full_block=full_block,
+        blocked_ext=blocked_ext
+    )
+    info_issues = [
+        f"Обнаружено групп правил: {len(result.groups)}",
+        f"Проверено sitemap URL: {len(sitemap_checks)}"
+    ]
+    if metrics["production_ready"]:
+        info_issues.append("Robots.txt готов к продакшн-использованию.")
+    else:
+        info_issues.append("Требуются правки перед продакшн-использованием.")
+    
+    return {
+        "issues": issues,
+        "critical_issues": issues,
+        "warnings": warnings,
+        "warning_issues": warnings,
+        "info_issues": info_issues,
+        "recommendations": all_recommendations,
+        "param_recommendations": param_recs,
+        "present_agents": list(present_agents),
+        "missing_bots": missing_bots,
+        "sitemaps": result.sitemaps,
+        "sitemap_checks": sitemap_checks,
+        "crawl_delays": result.crawl_delays,
+        "hosts": result.hosts,
+        "host_validation": host_scan,
+        "directive_conflicts": conflict_scan,
+        "longest_match_analysis": longest_match_scan,
+        "unsupported_directives": result.unsupported_directives,
+        "syntax_errors": result.syntax_errors,
+        "quality_score": metrics["quality_score"],
+        "quality_grade": metrics["quality_grade"],
+        "production_ready": metrics["production_ready"],
+        "top_fixes": metrics["top_fixes"],
+        "severity_counts": {
+            "critical": metrics["severity_counts"]["critical"],
+            "warning": metrics["severity_counts"]["warning"],
+            "info": len(info_issues)
+        },
+        "quick_status": "pass" if metrics["production_ready"] else ("fail" if metrics["quality_score"] < 60 else "warn")
+    }
+
+
+def collect_stats(result: ParseResult) -> Dict[str, int]:
+    """Collect statistics from parsed result"""
+    stats = {
+        "user_agents": 0,
+        "disallow_rules": 0,
+        "allow_rules": 0,
+        "sitemaps": len(result.sitemaps),
+        "crawl_delays": len(result.crawl_delays),
+        "clean_params": len(result.clean_params),
+        "hosts": len(result.hosts),
+        "lines_count": len(result.raw_lines),
+    }
+    for group in result.groups:
+        stats["user_agents"] += len(group.user_agents)
+        stats["disallow_rules"] += len(group.disallow)
+        stats["allow_rules"] += len(group.allow)
+    return stats
+
+
+def check_robots_full(url: str) -> Dict[str, Any]:
+    """
+    FULL robots.txt audit - полная интеграция оригинального скрипта
+    Returns complete analysis matching original robots_audit.py
+    """
+    print(f"[ROBOTS] Starting full audit for: {url}")
+    
+    raw_text, status_code, error = fetch_robots(url)
+    
+    if error:
+        return {
+            "task_type": "robots_check",
+            "url": url,
+            "completed_at": datetime.utcnow().isoformat(),
+            "results": {
+                "robots_txt_found": False,
+                "status_code": None,
+                "content_length": 0,
+                "lines_count": 0,
+                "user_agents": 0,
+                "disallow_rules": 0,
+                "allow_rules": 0,
+                "sitemaps": [],
+                "issues": [f"Ошибка загрузки: {error}"],
+                "warnings": [],
+                "recommendations": RECOMMENDATIONS,
+                "syntax_errors": [],
+                "critical_issues": [f"Ошибка загрузки: {error}"],
+                "warning_issues": [],
+                "info_issues": [],
+                "hosts": [],
+                "sitemap_checks": [],
+                "quality_score": 0,
+                "quality_grade": "F",
+                "production_ready": False,
+                "top_fixes": [{
+                    "priority": "critical",
+                    "title": "Обеспечьте доступность robots.txt",
+                    "why": "Файл robots.txt недоступен, анализ и управление индексацией невозможны.",
+                    "action": "Проверьте DNS/SSL/доступность сайта и путь /robots.txt."
+                }],
+                "severity_counts": {"critical": 1, "warning": 0, "info": 0},
+                "error": error,
+                "can_continue": False,
+                "raw_content": "",
+            }
+        }
+    
+    if status_code != 200:
+        http_notes: List[str] = []
+        issues: List[str] = []
+        warnings: List[str] = []
+        top_fixes: List[Dict[str, str]] = []
+        severity_counts = {"critical": 0, "warning": 0, "info": 0}
+        quality_score = 35
+        quality_grade = "F"
+
+        if status_code in (404, 410):
+            warnings.append(
+                f"Robots.txt returns HTTP {status_code}. Google treats this as no robots restrictions (except 429 case)."
+            )
+            http_notes.append("Google: 4xx (except 429) is processed like missing robots.txt.")
+            http_notes.append("Yandex: robots rules are unavailable for reading until file is restored.")
+            top_fixes.append({
+                "priority": "medium",
+                "title": "Create /robots.txt",
+                "why": "Search bots cannot read explicit crawl/indexing rules from your domain.",
+                "action": "Publish /robots.txt and include at least User-agent and Sitemap directives."
+            })
+            severity_counts["warning"] = 1
+            quality_score = 55
+            quality_grade = "D"
+        elif status_code == 429:
+            issues.append("Robots.txt returns HTTP 429 (Too Many Requests). Bots may postpone crawling.")
+            warnings.append("429 for robots.txt can delay crawling and make rules temporarily unavailable.")
+            http_notes.append("Google: 429 is not treated as normal 4xx missing-file behavior.")
+            top_fixes.append({
+                "priority": "high",
+                "title": "Stabilize robots.txt availability",
+                "why": "Rate limiting blocks crawler access to robots directives.",
+                "action": "Allow reliable access to /robots.txt without aggressive rate limits."
+            })
+            severity_counts["critical"] = 1
+            severity_counts["warning"] = 1
+            quality_score = 25
+            quality_grade = "F"
+        elif status_code in (401, 403):
+            issues.append(f"Robots.txt returns HTTP {status_code}. Access to rules is restricted.")
+            warnings.append("Bots may apply fallback behavior when robots.txt cannot be read.")
+            http_notes.append("Google: 4xx (except 429) is generally treated as no robots file.")
+            http_notes.append("Yandex: inaccessible robots.txt can affect predictable crawl control.")
+            top_fixes.append({
+                "priority": "high",
+                "title": "Open access to /robots.txt",
+                "why": "Crawler cannot read crawl policy due to authorization/forbidden response.",
+                "action": "Return HTTP 200 for public /robots.txt and remove auth blocks."
+            })
+            severity_counts["critical"] = 1
+            severity_counts["warning"] = 1
+            quality_score = 30
+            quality_grade = "F"
+        elif 500 <= status_code < 600:
+            issues.append(f"Robots.txt returns server error HTTP {status_code}.")
+            warnings.append("Server errors on robots.txt can pause or destabilize crawler behavior.")
+            http_notes.append("Google: on 5xx, crawling may pause; cached robots may be reused for a limited period.")
+            http_notes.append("Yandex: unavailable robots.txt reduces crawl predictability until recovered.")
+            top_fixes.append({
+                "priority": "critical",
+                "title": "Fix server errors on /robots.txt",
+                "why": "Search bots cannot reliably fetch robots directives.",
+                "action": "Return stable HTTP 200 and monitor uptime for /robots.txt."
+            })
+            severity_counts["critical"] = 1
+            severity_counts["warning"] = 1
+            quality_score = 20
+            quality_grade = "F"
+        elif 300 <= status_code < 400:
+            warnings.append(f"Robots.txt returns redirect HTTP {status_code}.")
+            http_notes.append("Keep redirects short and stable; long redirect chains may break robots fetch.")
+            top_fixes.append({
+                "priority": "medium",
+                "title": "Serve robots.txt directly",
+                "why": "Redirect chains can prevent some crawlers from reaching final robots content.",
+                "action": "Return HTTP 200 on canonical /robots.txt URL."
+            })
+            severity_counts["warning"] = 1
+            quality_score = 45
+            quality_grade = "E"
+        else:
+            issues.append(f"Robots.txt is unavailable with HTTP {status_code}.")
+            top_fixes.append({
+                "priority": "high",
+                "title": "Restore robots.txt availability",
+                "why": "Search bots cannot consume expected crawl rules.",
+                "action": "Ensure /robots.txt returns HTTP 200 with valid directives."
+            })
+            severity_counts["critical"] = 1
+            quality_score = 30
+            quality_grade = "F"
+
+        return {
+            "task_type": "robots_check",
+            "url": url,
+            "completed_at": datetime.utcnow().isoformat(),
+            "results": {
+                "robots_txt_found": False,
+                "status_code": status_code,
+                "content_length": len(raw_text) if raw_text else 0,
+                "lines_count": len(raw_text.splitlines()) if raw_text else 0,
+                "user_agents": 0,
+                "disallow_rules": 0,
+                "allow_rules": 0,
+                "sitemaps": [],
+                "issues": issues,
+                "warnings": warnings,
+                "recommendations": RECOMMENDATIONS,
+                "syntax_errors": [],
+                "critical_issues": issues,
+                "warning_issues": warnings,
+                "info_issues": http_notes,
+                "hosts": [],
+                "sitemap_checks": [],
+                "quality_score": quality_score,
+                "quality_grade": quality_grade,
+                "production_ready": False,
+                "top_fixes": top_fixes,
+                "severity_counts": severity_counts,
+                "error": None,
+                "can_continue": True,
+                "raw_content": raw_text or "",
+                "http_status_analysis": {
+                    "status_code": status_code,
+                    "notes": http_notes
+                }
+            }
+        }
+
+    # Full parsing and analysis
+    result = parse_robots(raw_text)
+    stats = collect_stats(result)
+    analysis = build_issues_and_warnings(result)
+    if len(raw_text.encode("utf-8")) > 512000:
+        analysis["warnings"] = dedupe_keep_order(
+            analysis["warnings"] + ["robots.txt is larger than 500 KiB; Google ignores content after this limit."]
+        )
+        analysis["warning_issues"] = analysis["warnings"]
+    
+    # Build detailed response
+    response = {
+        "task_type": "robots_check",
+        "url": url,
+        "completed_at": datetime.utcnow().isoformat(),
+        "results": {
+            "robots_txt_found": True,
+            "status_code": status_code,
+            "content_length": len(raw_text),
+            "lines_count": stats["lines_count"],
+            "user_agents": stats["user_agents"],
+            "disallow_rules": stats["disallow_rules"],
+            "allow_rules": stats["allow_rules"],
+            "sitemaps": analysis["sitemaps"],
+            "issues": analysis["issues"],
+            "critical_issues": analysis.get("critical_issues", analysis["issues"]),
+            "warnings": analysis["warnings"],
+            "warning_issues": analysis.get("warning_issues", analysis["warnings"]),
+            "info_issues": analysis.get("info_issues", []),
+            "recommendations": analysis["recommendations"],
+            "syntax_errors": analysis["syntax_errors"],
+            "hosts": analysis["hosts"],
+            "crawl_delays": analysis["crawl_delays"],
+            "clean_params": result.clean_params,
+            "param_recommendations": analysis.get("param_recommendations", []),
+            "present_agents": analysis["present_agents"],
+            "missing_bots": analysis.get("missing_bots", []),
+            "sitemap_checks": analysis.get("sitemap_checks", []),
+            "quality_score": analysis.get("quality_score", 0),
+            "quality_grade": analysis.get("quality_grade", "F"),
+            "production_ready": analysis.get("production_ready", False),
+            "top_fixes": analysis.get("top_fixes", []),
+            "severity_counts": analysis.get("severity_counts", {"critical": len(analysis["issues"]), "warning": len(analysis["warnings"]), "info": 0}),
+            "quick_status": analysis.get("quick_status", "warn"),
+            "machine_summary": {
+                "user_agents_count": stats["user_agents"],
+                "disallow_count": stats["disallow_rules"],
+                "allow_count": stats["allow_rules"],
+                "sitemap_count": len(analysis.get("sitemaps", [])),
+                "critical_count": len(analysis.get("critical_issues", analysis["issues"])),
+                "warning_count": len(analysis.get("warning_issues", analysis["warnings"])),
+                "score": analysis.get("quality_score", 0),
+                "grade": analysis.get("quality_grade", "F"),
+                "production_ready": analysis.get("production_ready", False)
+            },
+            "error": None,
+            "can_continue": True,
+            "raw_content": raw_text,
+            # Detailed groups for UI
+            "groups_detail": [
+                {
+                    "user_agents": group.user_agents,
+                    "disallow": [{"path": r.path, "line": r.line} for r in group.disallow],
+                    "allow": [{"path": r.path, "line": r.line} for r in group.allow],
+                }
+                for group in result.groups
+            ],
+        }
+    }
+    
+    print(f"[ROBOTS] Audit completed: {stats['user_agents']} UAs, {stats['disallow_rules']} disallow rules")
+    
+    return response
+
+
+def check_robots_simple(url: str) -> Dict[str, Any]:
+    """Simplified robots.txt analysis (legacy fallback)."""
+    import requests
+    
+    robots_url = url.rstrip('/') + '/robots.txt'
+    
+    try:
+        response = requests.get(robots_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        raw_text = response.text
+        
+        result = parse_robots(raw_text)
+        analysis = build_issues_and_warnings(result)
+        
+        return {
+            "task_type": "robots_check",
+            "url": url,
+            "completed_at": datetime.utcnow().isoformat(),
+            "results": {
+                "robots_txt_found": response.status_code == 200,
+                "status_code": response.status_code,
+                "content_length": len(raw_text),
+                "lines_count": len(raw_text.splitlines()),
+                "user_agents": len(analysis["present_agents"]),
+                "disallow_rules": len(result.all_disallow),
+                "allow_rules": len(result.all_allow),
+                "sitemaps": analysis["sitemaps"],
+                "issues": analysis["issues"],
+                "critical_issues": analysis.get("critical_issues", analysis["issues"]),
+                "warnings": analysis["warnings"],
+                "warning_issues": analysis.get("warning_issues", analysis["warnings"]),
+                "info_issues": analysis.get("info_issues", []),
+                "recommendations": analysis["recommendations"],
+                "syntax_errors": analysis["syntax_errors"],
+                "hosts": analysis["hosts"],
+                "sitemap_checks": analysis.get("sitemap_checks", []),
+                "quality_score": analysis.get("quality_score", 0),
+                "quality_grade": analysis.get("quality_grade", "F"),
+                "production_ready": analysis.get("production_ready", False),
+                "top_fixes": analysis.get("top_fixes", []),
+                "severity_counts": analysis.get("severity_counts", {"critical": len(analysis["issues"]), "warning": len(analysis["warnings"]), "info": 0}),
+                "quick_status": analysis.get("quick_status", "warn"),
+                "raw_content": raw_text,
+            }
+        }
+    except Exception as e:
+        return {
+            "task_type": "robots_check",
+            "url": url,
+            "completed_at": datetime.utcnow().isoformat(),
+            "results": {
+                "error": str(e),
+                "robots_txt_found": False,
+                "quality_score": 0,
+                "quality_grade": "F",
+                "production_ready": False,
+                "critical_issues": [str(e)],
+                "warning_issues": [],
+                "info_issues": [],
+                "top_fixes": [],
+                "severity_counts": {"critical": 1, "warning": 0, "info": 0}
+            }
+        }
+
+
+def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
+    """Full sitemap validation with sitemap index traversal and URL export."""
+    import xml.etree.ElementTree as ET
+    from app.config import settings
+
+    def local_name(tag: str) -> str:
+        if not tag:
+            return ""
+        return tag.split("}", 1)[1] if "}" in tag else tag
+
+    def find_child_text(node: ET.Element, child_name: str) -> str:
+        for child in list(node):
+            if local_name(child.tag).lower() == child_name.lower():
+                return (child.text or "").strip()
+        return ""
+
+    def find_children(node: ET.Element, child_name: str) -> List[ET.Element]:
+        out: List[ET.Element] = []
+        for child in list(node):
+            if local_name(child.tag).lower() == child_name.lower():
+                out.append(child)
+        return out
+
+    def is_http_url(value: str) -> bool:
+        try:
+            v = str(value or "").strip()
+            # Guard against broken concatenated values like "...xmlhttps://...".
+            if not v or any(ch in v for ch in [" ", "\n", "\r", "\t"]):
+                return False
+            if (v.count("http://") + v.count("https://")) > 1:
+                return False
+            p = urlparse(v)
+            return p.scheme in ("http", "https") and bool(p.netloc)
+        except Exception:
+            return False
+
+    def is_valid_lastmod(value: str) -> bool:
+        if not value:
+            return True
+        date_only = re.fullmatch(r"\d{4}-\d{2}-\d{2}", value)
+        dt_utc = re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", value)
+        dt_tz = re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\+|-)\d{2}:\d{2}", value)
+        dt_frac_utc = re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z", value)
+        dt_frac_tz = re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+(?:\+|-)\d{2}:\d{2}", value)
+        return bool(date_only or dt_utc or dt_tz or dt_frac_utc or dt_frac_tz)
+
+    def parse_lastmod_dt(value: str) -> Optional[datetime]:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if dt.tzinfo is not None:
+                return dt.astimezone().replace(tzinfo=None)
+            return dt
+        except Exception:
+            try:
+                return datetime.strptime(raw, "%Y-%m-%d")
+            except Exception:
+                return None
+
+    def is_valid_hreflang_code(value: str) -> bool:
+        v = str(value or "").strip().lower()
+        if not v:
+            return False
+        if v == "x-default":
+            return True
+        return bool(re.fullmatch(r"[a-z]{2,3}(?:-[a-z0-9]{2,8})*", v))
+
+    def sample_spread(items: List[str], size: int) -> List[str]:
+        if size <= 0 or not items:
+            return []
+        if len(items) <= size:
+            return items
+        if size == 1:
+            return [items[0]]
+        step = (len(items) - 1) / float(size - 1)
+        picks = sorted({int(round(i * step)) for i in range(size)})
+        return [items[idx] for idx in picks if 0 <= idx < len(items)]
+
+    def build_issue(severity: str, code: str, title: str, details: str, action: str, owner: str = "SEO") -> Dict[str, Any]:
+        return {
+            "severity": severity,
+            "code": code,
+            "title": title,
+            "details": details,
+            "action": action,
+            "owner": owner,
+        }
+
+    max_sitemaps = max(10, min(2000, int(getattr(settings, "SITEMAP_MAX_FILES", 500) or 500)))
+    max_export_urls = max(1000, int(getattr(settings, "SITEMAP_MAX_EXPORT_URLS", 100000) or 100000))
+    export_chunk_size = 25000
+    max_urls_preview_per_sitemap = 2000
+    max_file_size = 52428800
+    max_urls_per_sitemap = 50000
+    stale_days = max(30, min(3650, int(getattr(settings, "SITEMAP_STALE_DAYS", 180) or 180)))
+    live_check_sample_size = max(10, min(20, int(getattr(settings, "SITEMAP_LIVE_CHECK_SAMPLE", 15) or 15)))
+    live_check_timeout = max(2, min(15, int(getattr(settings, "SITEMAP_LIVE_CHECK_TIMEOUT", 6) or 6)))
+    root_urls: List[str]
+    if isinstance(url, list):
+        root_urls = [str(u).strip() for u in url if str(u).strip()]
+    else:
+        root_urls = [str(url).strip()] if str(url).strip() else []
+    root_urls = list(dict.fromkeys(root_urls))
+    primary_root_url = root_urls[0] if root_urls else ""
+    queue: List[str] = list(root_urls)
+    visited: set = set()
+    sitemap_files: List[Dict[str, Any]] = []
+    all_urls: List[str] = []
+    seen_urls: set = set()
+    url_first_seen_in: Dict[str, str] = {}
+    duplicate_urls_count = 0
+    duplicate_details: List[Dict[str, str]] = []
+    duplicate_details_truncated = False
+    max_duplicate_details = 500
+    invalid_urls_count = 0
+    invalid_lastmod_count = 0
+    invalid_changefreq_count = 0
+    invalid_priority_count = 0
+    # Freshness metrics
+    lastmod_present_count = 0
+    lastmod_missing_count = 0
+    lastmod_future_count = 0
+    stale_lastmod_count = 0
+    uniform_lastmod_files = 0
+    # Hreflang metrics
+    hreflang_links_count = 0
+    hreflang_urls_count = 0
+    hreflang_invalid_code_count = 0
+    hreflang_invalid_href_count = 0
+    hreflang_duplicate_lang_count = 0
+    hreflang_has_x_default = False
+    # Media extensions metrics
+    image_tags_count = 0
+    image_missing_loc_count = 0
+    video_tags_count = 0
+    video_missing_required_count = 0
+    news_tags_count = 0
+    news_missing_required_count = 0
+    # Structure metrics
+    repeated_child_refs = 0
+    self_child_refs = 0
+    max_depth_seen = 0
+    warnings: List[str] = []
+    errors: List[str] = []
+    tool_notes: List[str] = []
+    allowed_changefreq = {"always", "hourly", "daily", "weekly", "monthly", "yearly", "never"}
+    root_status_code = None
+    now_utc = datetime.utcnow()
+
+    try:
+        session = requests.Session()
+        session.headers.update({"User-Agent": "Mozilla/5.0"})
+
+        while queue and len(visited) < max_sitemaps:
+            sitemap_url = queue.pop(0).strip()
+            if not sitemap_url or sitemap_url in visited:
+                continue
+            visited.add(sitemap_url)
+            parsed_depth = max(0, str(urlparse(sitemap_url).path or "").count("/") - 1)
+            max_depth_seen = max(max_depth_seen, parsed_depth)
+
+            file_report: Dict[str, Any] = {
+                "sitemap_url": sitemap_url,
+                "ok": False,
+                "status_code": None,
+                "type": "unknown",
+                "size_bytes": 0,
+                "urls_count": 0,
+                "duplicate_count": 0,
+                "duplicate_urls": [],
+                "urls_omitted": 0,
+                "errors": [],
+                "warnings": [],
+                "tool_notes": [],
+                "urls": [],
+            }
+
+            try:
+                response = session.get(sitemap_url, timeout=20, allow_redirects=True)
+                file_report["status_code"] = response.status_code
+                file_report["size_bytes"] = len(response.content or b"")
+                if root_status_code is None:
+                    root_status_code = response.status_code
+
+                if response.status_code != 200:
+                    file_report["errors"].append(f"HTTP {response.status_code}")
+                    sitemap_files.append(file_report)
+                    continue
+
+                if file_report["size_bytes"] > max_file_size:
+                    file_report["warnings"].append("Размер файла превышает 50 МиБ.")
+
+                try:
+                    root = ET.fromstring(response.content)
+                except ET.ParseError as parse_error:
+                    file_report["errors"].append(f"Ошибка парсинга XML: {parse_error}")
+                    sitemap_files.append(file_report)
+                    continue
+
+                root_tag = local_name(root.tag).lower()
+                file_report["type"] = root_tag
+
+                if root_tag == "sitemapindex":
+                    child_count = 0
+                    for sm_node in root.iter():
+                        if local_name(sm_node.tag).lower() != "sitemap":
+                            continue
+                        loc = find_child_text(sm_node, "loc")
+                        if not loc:
+                            file_report["warnings"].append("В sitemap-индексе найден элемент без <loc>.")
+                            continue
+                        if not is_http_url(loc):
+                            file_report["warnings"].append(f"Некорректный URL дочернего sitemap: {loc}")
+                            continue
+                        if loc == sitemap_url:
+                            self_child_refs += 1
+                            file_report["warnings"].append(f"Самоссылка в sitemap-индексе: {loc}")
+                            continue
+                        child_count += 1
+                        if loc in visited or loc in queue:
+                            repeated_child_refs += 1
+                            file_report["warnings"].append(f"Дочерний sitemap указан несколько раз: {loc}")
+                            continue
+                        if (len(visited) + len(queue) < max_sitemaps):
+                            queue.append(loc)
+                    if child_count == 0:
+                        file_report["warnings"].append("Sitemap-индекс не содержит дочерних sitemap.")
+                    file_report["ok"] = len(file_report["errors"]) == 0
+
+                elif root_tag == "urlset":
+                    file_urls: List[str] = []
+                    file_duplicate_urls: List[str] = []
+                    file_duplicate_occurrences = 0
+                    file_lastmods: List[str] = []
+                    file_invalid_lastmod_count = 0
+                    file_invalid_changefreq_count = 0
+                    file_invalid_priority_count = 0
+                    file_future_lastmod_count = 0
+                    file_stale_lastmod_count = 0
+                    file_invalid_lastmod_examples: List[str] = []
+                    file_future_lastmod_examples: List[str] = []
+                    file_stale_lastmod_examples: List[str] = []
+                    file_lastmod_url_samples: Dict[str, List[str]] = {}
+                    for url_node in root.iter():
+                        if local_name(url_node.tag).lower() != "url":
+                            continue
+                        loc = find_child_text(url_node, "loc")
+                        if not loc:
+                            file_report["warnings"].append("В urlset найден элемент без <loc>.")
+                            continue
+                        if not is_http_url(loc):
+                            invalid_urls_count += 1
+                            file_report["warnings"].append(f"Некорректный URL в <loc>: {loc}")
+                            continue
+
+                        lastmod = find_child_text(url_node, "lastmod")
+                        if lastmod:
+                            parsed_lastmod = parse_lastmod_dt(lastmod)
+                            if not is_valid_lastmod(lastmod) or parsed_lastmod is None:
+                                invalid_lastmod_count += 1
+                                file_invalid_lastmod_count += 1
+                                if len(file_invalid_lastmod_examples) < 5:
+                                    file_invalid_lastmod_examples.append(loc)
+                            else:
+                                lastmod_present_count += 1
+                                lastmod_iso_date = parsed_lastmod.date().isoformat()
+                                file_lastmods.append(lastmod_iso_date)
+                                bucket = file_lastmod_url_samples.setdefault(lastmod_iso_date, [])
+                                if len(bucket) < 3:
+                                    bucket.append(loc)
+                                if parsed_lastmod > now_utc:
+                                    lastmod_future_count += 1
+                                    file_future_lastmod_count += 1
+                                    if len(file_future_lastmod_examples) < 5:
+                                        file_future_lastmod_examples.append(loc)
+                                if (now_utc - parsed_lastmod).days > stale_days:
+                                    stale_lastmod_count += 1
+                                    file_stale_lastmod_count += 1
+                                    if len(file_stale_lastmod_examples) < 5:
+                                        file_stale_lastmod_examples.append(loc)
+                        else:
+                            lastmod_missing_count += 1
+
+                        changefreq = find_child_text(url_node, "changefreq").lower()
+                        if changefreq and changefreq not in allowed_changefreq:
+                            invalid_changefreq_count += 1
+                            file_invalid_changefreq_count += 1
+
+                        priority_raw = find_child_text(url_node, "priority")
+                        if priority_raw:
+                            try:
+                                priority_value = float(priority_raw)
+                                if priority_value < 0 or priority_value > 1:
+                                    invalid_priority_count += 1
+                                    file_invalid_priority_count += 1
+                            except Exception:
+                                invalid_priority_count += 1
+                                file_invalid_priority_count += 1
+
+                        # Minimal hreflang validation in sitemap (only when present)
+                        local_hreflang_seen = set()
+                        local_hreflang_count = 0
+                        for child in list(url_node):
+                            if local_name(child.tag).lower() != "link":
+                                continue
+                            rel = str(child.attrib.get("rel", "")).strip().lower()
+                            href = str(child.attrib.get("href", "")).strip()
+                            hreflang = str(child.attrib.get("hreflang", "")).strip().lower()
+                            if rel != "alternate" or not (href or hreflang):
+                                continue
+                            hreflang_links_count += 1
+                            local_hreflang_count += 1
+                            if hreflang == "x-default":
+                                hreflang_has_x_default = True
+                            if not is_valid_hreflang_code(hreflang):
+                                hreflang_invalid_code_count += 1
+                            if not href or not is_http_url(href):
+                                hreflang_invalid_href_count += 1
+                            if hreflang in local_hreflang_seen:
+                                hreflang_duplicate_lang_count += 1
+                            local_hreflang_seen.add(hreflang)
+                        if local_hreflang_count > 0:
+                            hreflang_urls_count += 1
+
+                        # Media extensions (minimal validation)
+                        image_nodes = find_children(url_node, "image")
+                        image_tags_count += len(image_nodes)
+                        for image_node in image_nodes:
+                            image_loc = find_child_text(image_node, "loc")
+                            if not image_loc or not is_http_url(image_loc):
+                                image_missing_loc_count += 1
+
+                        video_nodes = find_children(url_node, "video")
+                        video_tags_count += len(video_nodes)
+                        for video_node in video_nodes:
+                            has_thumb = bool(find_child_text(video_node, "thumbnail_loc"))
+                            has_title = bool(find_child_text(video_node, "title"))
+                            has_desc = bool(find_child_text(video_node, "description"))
+                            has_content = bool(find_child_text(video_node, "content_loc") or find_child_text(video_node, "player_loc"))
+                            if not (has_thumb and has_title and has_desc and has_content):
+                                video_missing_required_count += 1
+
+                        news_nodes = find_children(url_node, "news")
+                        news_tags_count += len(news_nodes)
+                        for news_node in news_nodes:
+                            if not find_child_text(news_node, "publication_date") or not find_child_text(news_node, "title"):
+                                news_missing_required_count += 1
+
+                        file_urls.append(loc)
+                        if loc in seen_urls:
+                            duplicate_urls_count += 1
+                            file_duplicate_occurrences += 1
+                            file_duplicate_urls.append(loc)
+                            first_sitemap = url_first_seen_in.get(loc, "")
+                            if len(duplicate_details) < max_duplicate_details:
+                                duplicate_details.append({
+                                    "url": loc,
+                                    "first_sitemap": first_sitemap,
+                                    "duplicate_sitemap": sitemap_url
+                                })
+                            else:
+                                duplicate_details_truncated = True
+                        else:
+                            seen_urls.add(loc)
+                            url_first_seen_in[loc] = sitemap_url
+                            if len(all_urls) < max_export_urls:
+                                all_urls.append(loc)
+
+                    file_report["urls_count"] = len(file_urls)
+                    file_report["urls"] = file_urls[:max_urls_preview_per_sitemap]
+                    file_report["urls_omitted"] = max(0, len(file_urls) - max_urls_preview_per_sitemap)
+                    file_report["duplicate_count"] = file_duplicate_occurrences
+                    file_report["duplicate_urls"] = dedupe_keep_order(file_duplicate_urls)[:200]
+                    if len(file_urls) > max_urls_per_sitemap:
+                        file_report["warnings"].append("В одном sitemap-файле более 50 000 URL.")
+                    if file_report["urls_omitted"] > 0:
+                        file_report["tool_notes"].append(
+                            f"Превью URL ограничено для UI/API: скрыто {file_report['urls_omitted']} URL; полный подсчет и валидация выполнены."
+                        )
+                    if file_invalid_lastmod_count > 0:
+                        file_report["warnings"].append(
+                            f"Некорректные значения <lastmod>: {file_invalid_lastmod_count}. Примеры: {' | '.join(file_invalid_lastmod_examples[:5])}"
+                        )
+                    if file_invalid_changefreq_count > 0:
+                        file_report["warnings"].append(f"Некорректные значения <changefreq>: {file_invalid_changefreq_count}.")
+                    if file_invalid_priority_count > 0:
+                        file_report["warnings"].append(f"Некорректные значения <priority>: {file_invalid_priority_count}.")
+                    if file_future_lastmod_count > 0:
+                        file_report["warnings"].append(
+                            f"Будущие значения <lastmod>: {file_future_lastmod_count}. Примеры: {' | '.join(file_future_lastmod_examples[:5])}"
+                        )
+                    if file_stale_lastmod_count > 0:
+                        file_report["warnings"].append(
+                            f"Устаревшие значения <lastmod> (> {stale_days} дней): {file_stale_lastmod_count}. Примеры: {' | '.join(file_stale_lastmod_examples[:5])}"
+                        )
+                    if len(file_lastmods) >= 20:
+                        histogram: Dict[str, int] = {}
+                        for d in file_lastmods:
+                            histogram[d] = histogram.get(d, 0) + 1
+                        dominant = max(histogram.values()) if histogram else 0
+                        if dominant / max(1, len(file_lastmods)) >= 0.9:
+                            uniform_lastmod_files += 1
+                            dominant_value = max(histogram, key=histogram.get) if histogram else ""
+                            dominant_ratio = round((dominant / max(1, len(file_lastmods))) * 100, 2)
+                            dominant_examples = file_lastmod_url_samples.get(dominant_value, [])[:3]
+                            file_report["lastmod_uniformity"] = {
+                                "dominant_date": dominant_value,
+                                "dominant_count": dominant,
+                                "total_with_lastmod": len(file_lastmods),
+                                "dominant_ratio_pct": dominant_ratio,
+                                "sample_urls": dominant_examples,
+                            }
+                            file_report["warnings"].append(
+                                f"Подозрительно однотипные lastmod: {dominant}/{len(file_lastmods)} ({dominant_ratio}%) = {dominant_value}. Примеры: {' | '.join(dominant_examples)}"
+                            )
+                    file_report["ok"] = len(file_report["errors"]) == 0
+
+                else:
+                    file_report["errors"].append(f"Неподдерживаемый корневой XML-тег: {root_tag}")
+
+                sitemap_files.append(file_report)
+
+            except Exception as fetch_error:
+                file_report["errors"].append(str(fetch_error))
+                sitemap_files.append(file_report)
+
+        if queue:
+            tool_notes.append(f"Достигнут лимит обхода sitemap: {max_sitemaps} файлов (осталось в очереди: {len(queue)}).")
+
+        errors.extend([f"{item['sitemap_url']}: {err}" for item in sitemap_files for err in item.get("errors", [])])
+        warnings.extend([f"{item['sitemap_url']}: {warn}" for item in sitemap_files for warn in item.get("warnings", [])])
+
+        if duplicate_details_truncated:
+            tool_notes.append(f"Список дублей сокращен до {max_duplicate_details} записей.")
+
+        valid_files = sum(1 for item in sitemap_files if item.get("ok"))
+        total_urls_discovered = sum(item.get("urls_count", 0) for item in sitemap_files if item.get("type") == "urlset")
+        urls_export_truncated = total_urls_discovered > len(all_urls)
+        export_parts_count = (len(all_urls) + export_chunk_size - 1) // export_chunk_size if all_urls else 0
+
+        # Lightweight live check (sampled 10..20 URLs only)
+        live_indexability_checks: List[Dict[str, Any]] = []
+        live_non_indexable_count = 0
+        live_check_errors_count = 0
+        sampled_urls = random.sample(list(seen_urls), min(live_check_sample_size, len(seen_urls))) if seen_urls else []
+        canonical_checked_count = 0
+        canonical_missing_count = 0
+        canonical_invalid_count = 0
+        canonical_non_self_count = 0
+        if sampled_urls:
+            live_session = requests.Session()
+            live_session.headers.update({"User-Agent": "Mozilla/5.0"})
+            for sample_url in sampled_urls:
+                item = {
+                    "url": sample_url,
+                    "status_code": None,
+                    "indexable": None,
+                    "reasons": [],
+                    "response_ms": None,
+                    "canonical_status": "n/a",
+                    "canonical_url": "",
+                }
+                started = time.time()
+                try:
+                    live_response = live_session.get(sample_url, timeout=live_check_timeout, allow_redirects=True)
+                    item["status_code"] = live_response.status_code
+                    item["response_ms"] = int((time.time() - started) * 1000)
+                    reasons: List[str] = []
+                    if live_response.status_code >= 400:
+                        reasons.append(f"HTTP {live_response.status_code}")
+                    x_robots = str(live_response.headers.get("X-Robots-Tag", "") or "")
+                    if x_robots and re.search(r"\b(noindex|none)\b", x_robots, flags=re.IGNORECASE):
+                        reasons.append(f"X-Robots-Tag: {x_robots}")
+                    content_type = str(live_response.headers.get("Content-Type", "") or "").lower()
+                    if "html" in content_type:
+                        try:
+                            body = live_response.text[:200000]
+                        except Exception:
+                            body = ""
+                        if body:
+                            m = re.search(r'<meta[^>]+name=["\']robots["\'][^>]*content=["\']([^"\']+)["\']', body, flags=re.IGNORECASE)
+                            if m and re.search(r"\b(noindex|none)\b", m.group(1), flags=re.IGNORECASE):
+                                reasons.append(f"meta robots: {m.group(1)}")
+                            canonical_checked_count += 1
+                            c = re.search(r'<link[^>]+rel=["\'][^"\']*\bcanonical\b[^"\']*["\'][^>]*href=["\']([^"\']+)["\']', body, flags=re.IGNORECASE)
+                            if not c:
+                                c = re.search(r'<link[^>]+href=["\']([^"\']+)["\'][^>]*rel=["\'][^"\']*\bcanonical\b[^"\']*["\']', body, flags=re.IGNORECASE)
+                            if not c:
+                                item["canonical_status"] = "missing"
+                                canonical_missing_count += 1
+                            else:
+                                canonical_raw = str(c.group(1) or "").strip()
+                                canonical_abs = urljoin(sample_url, canonical_raw)
+                                item["canonical_url"] = canonical_abs
+                                if not is_http_url(canonical_abs):
+                                    item["canonical_status"] = "invalid"
+                                    canonical_invalid_count += 1
+                                    reasons.append("canonical: некорректный URL")
+                                else:
+                                    norm_src = sample_url.rstrip("/")
+                                    norm_can = canonical_abs.rstrip("/")
+                                    if norm_src == norm_can:
+                                        item["canonical_status"] = "self"
+                                    else:
+                                        item["canonical_status"] = "other"
+                                        canonical_non_self_count += 1
+                                        reasons.append("canonical указывает на другой URL")
+                    item["reasons"] = reasons
+                    item["indexable"] = (200 <= int(live_response.status_code) < 300) and len(reasons) == 0
+                    if item["indexable"] is False:
+                        live_non_indexable_count += 1
+                except Exception as live_err:
+                    item["indexable"] = False
+                    item["reasons"] = [str(live_err)]
+                    item["response_ms"] = int((time.time() - started) * 1000)
+                    live_non_indexable_count += 1
+                    live_check_errors_count += 1
+                live_indexability_checks.append(item)
+
+        if canonical_checked_count > 0 and (canonical_missing_count + canonical_invalid_count + canonical_non_self_count) > 0:
+            warnings.append(
+                "Проверка canonical на случайной выборке: "
+                f"отсутствует={canonical_missing_count}, некорректный={canonical_invalid_count}, не self-canonical={canonical_non_self_count} "
+                f"(выборка={canonical_checked_count})."
+            )
+
+        recommendations: List[str] = []
+        highlights: List[str] = []
+        quality_score = 100
+
+        if len(sitemap_files) > 0 and len(errors) == 0 and len(warnings) == 0:
+            highlights.append("Структура sitemap валидна, парсинг выполнен без ошибок.")
+        if total_urls_discovered > 0:
+            highlights.append(f"Обнаружено URL: {total_urls_discovered}. Уникальных URL: {len(seen_urls)}.")
+        if duplicate_urls_count == 0 and total_urls_discovered > 0:
+            highlights.append("Дубли URL между просканированными sitemap-файлами не обнаружены.")
+        if hreflang_links_count > 0:
+            highlights.append(f"В sitemap обнаружены hreflang-ссылки: {hreflang_links_count}.")
+        if image_tags_count + video_tags_count + news_tags_count > 0:
+            highlights.append(f"Обнаружены media-расширения (изображения/видео/новости): {image_tags_count}/{video_tags_count}/{news_tags_count}.")
+        if live_indexability_checks:
+            highlights.append(f"Проверена live-выборка индексируемости: {len(live_indexability_checks)} URL, неиндексируемых: {live_non_indexable_count}.")
+
+        if invalid_urls_count > 0:
+            recommendations.append("Исправьте некорректные <loc> и оставьте только абсолютные HTTP/HTTPS URL.")
+            quality_score -= min(25, invalid_urls_count)
+        if invalid_lastmod_count > 0:
+            recommendations.append("Приведите <lastmod> к формату W3C (YYYY-MM-DD или полный ISO-8601).")
+            quality_score -= min(20, invalid_lastmod_count)
+        if stale_lastmod_count > 0:
+            recommendations.append(
+                f"Обновите устаревшие URL (старше {stale_days} дней по <lastmod>) и поддерживайте корректные сигналы обновления."
+            )
+            quality_score -= min(10, stale_lastmod_count)
+        if lastmod_future_count > 0:
+            recommendations.append("Исправьте будущие даты в <lastmod>; поисковые системы могут считать такой сигнал недостоверным.")
+            quality_score -= min(10, lastmod_future_count)
+        if invalid_changefreq_count > 0:
+            recommendations.append("Используйте только допустимые значения <changefreq> (always/hourly/daily/weekly/monthly/yearly/never).")
+            quality_score -= min(10, invalid_changefreq_count)
+        if invalid_priority_count > 0:
+            recommendations.append("Используйте значения <priority> только в диапазоне 0.0..1.0.")
+            quality_score -= min(10, invalid_priority_count)
+        if duplicate_urls_count > 0:
+            recommendations.append("Удалите дубли URL между sitemap-файлами.")
+            quality_score -= min(20, duplicate_urls_count)
+        if self_child_refs > 0 or repeated_child_refs > 0:
+            recommendations.append("Исправьте структуру sitemap-индекса (уберите самоссылки и повторяющиеся ссылки на дочерние sitemap).")
+            quality_score -= min(10, self_child_refs + repeated_child_refs)
+        if queue:
+            quality_score -= 10
+        if urls_export_truncated:
+            tool_notes.append(f"Превью экспорта ограничено до {max_export_urls} URL; для полного списка используйте экспорт частями.")
+        if total_urls_discovered > max_urls_per_sitemap:
+            recommendations.append("Как минимум один sitemap превышает 50 000 URL; разделите его на несколько файлов.")
+            quality_score -= 10
+        if any((item.get("size_bytes", 0) or 0) > max_file_size for item in sitemap_files):
+            recommendations.append("Как минимум один sitemap-файл превышает 50 МиБ; разделите или сожмите sitemap-файлы.")
+            quality_score -= 10
+        if hreflang_links_count > 0 and (hreflang_invalid_code_count + hreflang_invalid_href_count + hreflang_duplicate_lang_count) > 0:
+            recommendations.append("Исправьте hreflang в sitemap (валидный код, абсолютный href, без дублирования языков в рамках URL).")
+            quality_score -= min(10, hreflang_invalid_code_count + hreflang_invalid_href_count + hreflang_duplicate_lang_count)
+        if image_tags_count > 0 and image_missing_loc_count > 0:
+            recommendations.append("Убедитесь, что каждый <image:image> содержит валидный <image:loc> URL.")
+            quality_score -= min(8, image_missing_loc_count)
+        if video_tags_count > 0 and video_missing_required_count > 0:
+            recommendations.append("Заполните обязательные поля video sitemap (thumbnail_loc, title, description, content_loc/player_loc).")
+            quality_score -= min(8, video_missing_required_count)
+        if news_tags_count > 0 and news_missing_required_count > 0:
+            recommendations.append("Заполните обязательные поля news sitemap (publication_date и title).")
+            quality_score -= min(8, news_missing_required_count)
+        if live_non_indexable_count > 0:
+            recommendations.append("Проверьте неиндексируемые URL из live-выборки (HTTP-ошибки или noindex).")
+            quality_score -= min(15, live_non_indexable_count)
+        if canonical_checked_count > 0 and (canonical_missing_count + canonical_invalid_count + canonical_non_self_count) > 0:
+            recommendations.append("Проверьте canonical в выборке URL (отсутствует/некорректный/не self canonical).")
+            quality_score -= min(8, canonical_missing_count + canonical_invalid_count + canonical_non_self_count)
+
+        if not recommendations:
+            recommendations.append("Критических проблем sitemap не обнаружено. Поддерживайте текущую структуру и отслеживайте состояние в инструментах вебмастеров.")
+
+        issues: List[Dict[str, Any]] = []
+        if invalid_urls_count > 0:
+            issues.append(build_issue(
+                "critical",
+                "invalid_loc_urls",
+                "Некорректные URL в <loc>",
+                f"Найдено некорректных sitemap URL: {invalid_urls_count}.",
+                "Исправьте некорректные <loc> и оставьте только абсолютные HTTP/HTTPS URL.",
+                "SEO/Dev",
+            ))
+        if duplicate_urls_count > 0:
+            issues.append(build_issue(
+                "warning",
+                "duplicate_urls",
+                "Дубли URL между sitemap-файлами",
+                f"Найдено повторов URL: {duplicate_urls_count}.",
+                "Уберите дубли URL во всех sitemap-файлах.",
+                "SEO",
+            ))
+        if self_child_refs > 0 or repeated_child_refs > 0:
+            issues.append(build_issue(
+                "warning",
+                "sitemap_index_structure",
+                "Проблемы структуры sitemap-индекса",
+                f"Самоссылки: {self_child_refs}, повторные ссылки: {repeated_child_refs}.",
+                "Уберите самоссылки и повторные ссылки на дочерние sitemap.",
+                "Dev",
+            ))
+        if invalid_lastmod_count + stale_lastmod_count + lastmod_future_count > 0:
+            issues.append(build_issue(
+                "warning",
+                "lastmod_quality",
+                "Проблемы актуальности lastmod",
+                f"Некорректных: {invalid_lastmod_count}, устаревших: {stale_lastmod_count}, будущих: {lastmod_future_count}.",
+                "Нормализуйте формат lastmod и поддерживайте реалистичные и актуальные даты.",
+                "SEO/Content",
+            ))
+        if hreflang_links_count > 0 and (hreflang_invalid_code_count + hreflang_invalid_href_count + hreflang_duplicate_lang_count) > 0:
+            issues.append(build_issue(
+                "warning",
+                "hreflang_sitemap_issues",
+                "Проблемы hreflang в sitemap",
+                f"Некорректные коды: {hreflang_invalid_code_count}, некорректные href: {hreflang_invalid_href_count}, дубли языков: {hreflang_duplicate_lang_count}.",
+                "Исправьте hreflang и href в alternate-ссылках sitemap.",
+                "SEO",
+            ))
+        if (image_tags_count > 0 and image_missing_loc_count > 0) or (video_tags_count > 0 and video_missing_required_count > 0) or (news_tags_count > 0 and news_missing_required_count > 0):
+            issues.append(build_issue(
+                "warning",
+                "media_extension_issues",
+                "Проблемы расширений media/news sitemap",
+                f"image: без loc={image_missing_loc_count}, video: без обязательных полей={video_missing_required_count}, news: без обязательных полей={news_missing_required_count}.",
+                "Заполните обязательные поля в расширениях image/video/news sitemap.",
+                "SEO/Dev",
+            ))
+        if live_non_indexable_count > 0:
+            issues.append(build_issue(
+                "critical",
+                "live_non_indexable_sample",
+                "В live-выборке есть неиндексируемые URL",
+                f"{live_non_indexable_count} из {len(live_indexability_checks)} URL в выборке выглядят неиндексируемыми.",
+                "Исправьте noindex/HTTP-проблемы на страницах из выборки и запустите проверку повторно.",
+                "SEO/Dev",
+            ))
+        if canonical_checked_count > 0 and (canonical_missing_count + canonical_invalid_count + canonical_non_self_count) > 0:
+            issues.append(build_issue(
+                "warning",
+                "canonical_sample_issues",
+                "Проблемы canonical в случайной выборке",
+                f"Выборка={canonical_checked_count}, отсутствует={canonical_missing_count}, некорректный={canonical_invalid_count}, не self={canonical_non_self_count}.",
+                "Исправьте отсутствующие/некорректные canonical и проверьте цели canonical для URL из выборки.",
+                "SEO/Dev",
+            ))
+
+        severity_counts = {
+            "critical": sum(1 for it in issues if it.get("severity") == "critical"),
+            "warning": sum(1 for it in issues if it.get("severity") == "warning"),
+            "info": sum(1 for it in issues if it.get("severity") == "info"),
+        }
+        severity_weight = {"critical": 0, "warning": 1, "info": 2}
+        issues_sorted = sorted(issues, key=lambda x: severity_weight.get(str(x.get("severity")), 9))
+        top_fixes = dedupe_keep_order([it.get("action", "") for it in issues_sorted if it.get("action")])[:10]
+        action_plan: List[Dict[str, Any]] = []
+        for issue in issues_sorted[:12]:
+            sev = str(issue.get("severity", "warning"))
+            action_plan.append({
+                "priority": "P0" if sev == "critical" else ("P1" if sev == "warning" else "P2"),
+                "owner": issue.get("owner", "SEO"),
+                "issue": issue.get("title", ""),
+                "action": issue.get("action", ""),
+                "sla": "24h" if sev == "critical" else ("3d" if sev == "warning" else "7d"),
+            })
+        if not action_plan and recommendations:
+            action_plan.append({
+                "priority": "P2",
+                "owner": "SEO",
+                "issue": "Критические блокеры отсутствуют",
+                "action": recommendations[0],
+                "sla": "7d",
+            })
+
+        quality_score = max(0, min(100, quality_score))
+        if quality_score >= 90:
+            quality_grade = "A"
+        elif quality_score >= 80:
+            quality_grade = "B"
+        elif quality_score >= 70:
+            quality_grade = "C"
+        elif quality_score >= 60:
+            quality_grade = "D"
+        else:
+            quality_grade = "F"
+
+        return {
+            "task_type": "sitemap_validate",
+            "url": primary_root_url,
+            "completed_at": datetime.utcnow().isoformat(),
+            "results": {
+                "root_sitemaps": root_urls,
+                "valid": len(errors) == 0 and len(sitemap_files) > 0,
+                "status_code": root_status_code,
+                "urls_count": total_urls_discovered,
+                "unique_urls_count": len(seen_urls),
+                "duplicate_urls_count": duplicate_urls_count,
+                "duplicate_details": duplicate_details,
+                "duplicate_details_truncated": duplicate_details_truncated,
+                "sitemaps_scanned": len(sitemap_files),
+                "sitemaps_valid": valid_files,
+                "errors": dedupe_keep_order(errors),
+                "warnings": dedupe_keep_order(warnings),
+                "tool_notes": dedupe_keep_order(tool_notes),
+                "recommendations": recommendations,
+                "highlights": dedupe_keep_order(highlights),
+                "quality_score": quality_score,
+                "quality_grade": quality_grade,
+                "sitemap_files": sitemap_files,
+                "export_urls": all_urls,
+                "urls_export_truncated": urls_export_truncated,
+                "max_export_urls": max_export_urls,
+                "export_chunk_size": export_chunk_size,
+                "export_parts_count": export_parts_count,
+                "scan_limit_files": max_sitemaps,
+                "scan_limit_reached": bool(queue),
+                "scan_queue_remaining": len(queue),
+                "invalid_lastmod_count": invalid_lastmod_count,
+                "invalid_changefreq_count": invalid_changefreq_count,
+                "invalid_priority_count": invalid_priority_count,
+                "invalid_urls_count": invalid_urls_count,
+                "size": sum(item.get("size_bytes", 0) for item in sitemap_files),
+                "max_depth_seen": max_depth_seen,
+                "self_child_refs": self_child_refs,
+                "repeated_child_refs": repeated_child_refs,
+                "freshness": {
+                    "lastmod_present_count": lastmod_present_count,
+                    "lastmod_missing_count": lastmod_missing_count,
+                    "lastmod_future_count": lastmod_future_count,
+                    "stale_lastmod_count": stale_lastmod_count,
+                    "uniform_lastmod_files": uniform_lastmod_files,
+                    "stale_threshold_days": stale_days,
+                },
+                "hreflang": {
+                    "detected": hreflang_links_count > 0,
+                    "links_count": hreflang_links_count,
+                    "urls_count": hreflang_urls_count,
+                    "invalid_code_count": hreflang_invalid_code_count,
+                    "invalid_href_count": hreflang_invalid_href_count,
+                    "duplicate_lang_count": hreflang_duplicate_lang_count,
+                    "has_x_default": hreflang_has_x_default,
+                },
+                "media_extensions": {
+                    "image_tags_count": image_tags_count,
+                    "image_missing_loc_count": image_missing_loc_count,
+                    "video_tags_count": video_tags_count,
+                    "video_missing_required_count": video_missing_required_count,
+                    "news_tags_count": news_tags_count,
+                    "news_missing_required_count": news_missing_required_count,
+                },
+                "live_indexability_checks": live_indexability_checks,
+                "live_check_sample_size": len(live_indexability_checks),
+                "live_non_indexable_count": live_non_indexable_count,
+                "live_check_errors_count": live_check_errors_count,
+                "canonical_sample": {
+                    "sample_size": canonical_checked_count,
+                    "missing_count": canonical_missing_count,
+                    "invalid_count": canonical_invalid_count,
+                    "non_self_count": canonical_non_self_count,
+                },
+                "issues": issues_sorted,
+                "severity_counts": severity_counts,
+                "top_fixes": top_fixes,
+                "action_plan": action_plan,
+            }
+        }
+    except Exception as e:
+        return {
+            "task_type": "sitemap_validate",
+            "url": primary_root_url,
+            "completed_at": datetime.utcnow().isoformat(),
+            "results": {
+                "valid": False,
+                "error": str(e),
+                "urls_count": 0,
+                "export_urls": [],
+                "sitemap_files": [],
+            }
+        }
+
+
+def check_bots_full(
+    url: str,
+    selected_bots: Optional[List[str]] = None,
+    bot_groups: Optional[List[str]] = None,
+    retry_profile: str = "standard",
+    criticality_profile: str = "balanced",
+    sla_profile: str = "standard",
+    baseline_enabled: bool = True,
+    ai_block_expected: bool = False,
+    batch_mode: bool = False,
+    batch_urls: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Bot accessibility check with feature-flagged v2 engine."""
+    from app.config import settings
+
+    engine = (getattr(settings, "BOT_CHECK_ENGINE", "legacy") or "legacy").lower()
+    has_custom_selection = bool(selected_bots or bot_groups)
+    if has_custom_selection:
+        engine = "v2"
+    if engine == "v2":
+        try:
+            from app.tools.bots.service_v2 import BotAccessibilityServiceV2
+
+            checker = BotAccessibilityServiceV2(
+                timeout=getattr(settings, "BOT_CHECK_TIMEOUT", 15),
+                max_workers=getattr(settings, "BOT_CHECK_MAX_WORKERS", 10),
+                retry_profile=retry_profile,
+                criticality_profile=criticality_profile,
+                sla_profile=sla_profile,
+                baseline_enabled=baseline_enabled,
+                ai_block_expected=ai_block_expected,
+            )
+            if batch_mode:
+                return checker.run_batch(batch_urls or [], selected_bots=selected_bots, bot_groups=bot_groups)
+            return checker.run(url, selected_bots=selected_bots, bot_groups=bot_groups)
+        except Exception as e:
+            print(f"[API] bot v2 failed, fallback to legacy: {e}")
+            legacy = _check_bots_legacy(url)
+            legacy_results = legacy.get("results", {})
+            legacy_results["engine"] = "legacy-fallback"
+            legacy_results["engine_error"] = str(e)
+            legacy_results["selected_bots_ignored"] = selected_bots or []
+            legacy_results["selected_groups_ignored"] = bot_groups or []
+            return legacy
+
+    return _check_bots_legacy(url)
+
+
+def _check_bots_legacy(url: str) -> Dict[str, Any]:
+    import requests
+
+    bots = [
+        ("Googlebot", "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"),
+        ("YandexBot", "Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)"),
+        ("Bingbot", "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)"),
+        ("DuckDuckBot", "DuckDuckBot/1.0; (+https://duckduckgo.com/duckbot)"),
+        ("GPTBot", "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.0; +https://openai.com/gptbot)"),
+    ]
+    
+    results = {}
+    for bot_name, user_agent in bots:
+        try:
+            resp = requests.get(url, headers={"User-Agent": user_agent}, timeout=10)
+            results[bot_name] = {
+                "status": resp.status_code,
+                "accessible": resp.status_code == 200,
+                "response_time": resp.elapsed.total_seconds() if hasattr(resp, 'elapsed') else None
+            }
+        except Exception as e:
+            results[bot_name] = {"error": str(e), "accessible": False}
+    
+    return {
+        "task_type": "bot_check",
+        "url": url,
+        "completed_at": datetime.utcnow().isoformat(),
+        "results": {
+            "engine": "legacy",
+            "bots_checked": [b[0] for b in bots],
+            "bot_results": results,
+            "summary": {
+                "total": len(bots),
+                "accessible": sum(1 for r in results.values() if r.get("accessible")),
+            }
+        }
+    }
+
+
+# ============ REQUEST MODELS ============
+class RobotsCheckRequest(URLModel):
+    url: str
+
+class SitemapValidateRequest(URLModel):
+    url: str
+
+class BotCheckRequest(URLModel):
+    url: str
+    selected_bots: Optional[List[str]] = None
+    bot_groups: Optional[List[str]] = None
+    retry_profile: Optional[str] = "standard"
+    criticality_profile: Optional[str] = "balanced"
+    sla_profile: Optional[str] = "standard"
+    baseline_enabled: bool = True
+    ai_block_expected: bool = False
+    scan_mode: Optional[str] = "single"
+    batch_urls: Optional[List[str]] = None
+
+    @field_validator("selected_bots", "bot_groups", mode="before")
+    @classmethod
+    def _normalize_list_fields(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            v = value.strip()
+            return [v] if v else []
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return value
+
+
+
+def _is_likely_sitemap_url(value: str) -> bool:
+    parsed = urlparse(value)
+    path = (parsed.path or "").lower()
+    if not path:
+        return False
+    if path.endswith(".xml") or "sitemap" in path:
+        return True
+    return False
+
+
+def _looks_like_sitemap_xml(payload: str) -> bool:
+    text = str(payload or "").lstrip("\ufeff \n\r\t").lower()
+    return text.startswith("<?xml") or "<urlset" in text or "<sitemapindex" in text
+
+
+def _discover_sitemap_urls(site_url: str, timeout: int = 12) -> tuple[List[str], Optional[str]]:
+    """Discover sitemap URLs for a site. Returns (sitemap_urls, source)."""
+    candidate_root = _normalize_http_input(site_url)
+    if not candidate_root:
+        return [], None
+
+    parsed_root = urlparse(candidate_root)
+    root = f"{parsed_root.scheme}://{parsed_root.netloc}"
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; SEO-Tools/1.0)"}
+
+    def _candidate_score(sitemap_url: str) -> int:
+        path = (urlparse(sitemap_url).path or "").lower().strip("/")
+        filename = path.split("/")[-1] if path else ""
+        score = 0
+        # Prefer common "main" sitemap/index files.
+        if filename in ("sitemap.xml", "sitemap_index.xml", "sitemap-index.xml", "wp-sitemap.xml"):
+            score += 120
+        if "index" in filename:
+            score += 40
+        if filename.startswith("sitemap"):
+            score += 20
+        # De-prioritize vertical/topic sitemaps as default entry point.
+        if re.search(r"(news|image|video|blog|post|tag|category|product|forum|help|article|media)", filename):
+            score -= 60
+        # Slightly prefer shallower paths.
+        score -= path.count("/")
+        return score
+
+    with requests.Session() as session:
+        # 1) robots.txt sitemap declarations (priority)
+        try:
+            robots_resp = session.get(urljoin(root, "/robots.txt"), timeout=timeout, allow_redirects=True, headers=headers)
+            if robots_resp.status_code == 200:
+                robots_candidates: List[str] = []
+                for line in (robots_resp.text or "").splitlines():
+                    if not re.match(r"^\s*sitemap\s*:", line, flags=re.IGNORECASE):
+                        continue
+                    raw_loc = line.split(":", 1)[1].strip() if ":" in line else ""
+                    if not raw_loc:
+                        continue
+                    loc = urljoin(root + "/", raw_loc)
+                    normalized_loc = _normalize_http_input(loc)
+                    if not normalized_loc:
+                        continue
+                    try:
+                        sm_resp = session.get(normalized_loc, timeout=timeout, allow_redirects=True, headers=headers)
+                        if sm_resp.status_code == 200 and _looks_like_sitemap_xml(sm_resp.text[:10000]):
+                            robots_candidates.append(normalized_loc)
+                    except Exception:
+                        continue
+                if robots_candidates:
+                    unique_candidates = list(dict.fromkeys(robots_candidates))
+                    unique_candidates.sort(key=lambda u: (_candidate_score(u), -len(u)), reverse=True)
+                    return unique_candidates, "robots.txt"
+        except Exception:
+            pass
+
+        # 2) Common fallback sitemap paths
+        common_paths = (
+            "/sitemap.xml",
+            "/sitemap_index.xml",
+            "/sitemap-index.xml",
+            "/sitemaps.xml",
+            "/sitemaps/sitemap.xml",
+            "/wp-sitemap.xml",
+        )
+        for path in common_paths:
+            loc = urljoin(root, path)
+            try:
+                sm_resp = session.get(loc, timeout=timeout, allow_redirects=True, headers=headers)
+                if sm_resp.status_code == 200 and _looks_like_sitemap_xml(sm_resp.text[:10000]):
+                    return [loc], "common_path"
+            except Exception:
+                continue
+
+    return [], None
+
+    @field_validator("batch_urls", mode="before")
+    @classmethod
+    def _normalize_batch_urls(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            parts = [x.strip() for x in re.split(r"[\r\n,;]+", value) if x.strip()]
+            return parts
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return value
+
+
+# ============ API ENDPOINTS ============
+
+@router.post("/tasks/robots-check")
+async def create_robots_check(data: RobotsCheckRequest):
+    """Full robots.txt analysis"""
+    url = data.url
+    
+    print(f"[API] Full robots.txt analysis for: {url}")
+    
+    result = check_robots_full(url)
+    task_id = f"robots-{datetime.now().timestamp()}"
+    create_task_result(task_id, "robots_check", url, result)
+    
+    return {
+        "task_id": task_id,
+        "status": "SUCCESS",
+        "message": "Robots.txt analysis completed"
+    }
+
+
+
+@router.post("/tasks/sitemap-validate")
+async def create_sitemap_validate(data: SitemapValidateRequest):
+    """Full sitemap validation"""
+    raw_input = str(data.url or "").strip()
+    normalized_input = _normalize_http_input(raw_input)
+    if not normalized_input:
+        raise HTTPException(status_code=422, detail="Введите корректный домен или URL sitemap.")
+
+    if _is_likely_sitemap_url(normalized_input):
+        target_sitemap_urls = [normalized_input]
+        discovery_source = "direct_input"
+    else:
+        discovered_urls, source = _discover_sitemap_urls(normalized_input)
+        if not discovered_urls:
+            raise HTTPException(
+                status_code=422,
+                detail="Мы не нашли sitemap автоматически. Введите полный URL sitemap (например, https://example.com/sitemap.xml)."
+            )
+        target_sitemap_urls = discovered_urls
+        discovery_source = source or "auto_discovery"
+
+    print(
+        f"[API] Полная валидация sitemap для input={normalized_input}, "
+        f"sitemaps={len(target_sitemap_urls)}, source={discovery_source}"
+    )
+
+    result = check_sitemap_full(target_sitemap_urls)
+    if isinstance(result, dict):
+        result["input_url"] = normalized_input
+        result["resolved_sitemap_url"] = target_sitemap_urls[0] if target_sitemap_urls else ""
+        result["resolved_sitemap_urls"] = target_sitemap_urls
+        result["sitemap_discovery_source"] = discovery_source
+    task_id = f"sitemap-{datetime.now().timestamp()}"
+    create_task_result(
+        task_id,
+        "sitemap_validate",
+        target_sitemap_urls[0] if target_sitemap_urls else normalized_input,
+        result
+    )
+    
+    return {
+        "task_id": task_id,
+        "status": "SUCCESS",
+        "message": "Валидация sitemap завершена"
+    }
+
+
+@router.post("/tasks/bot-check")
+async def create_bot_check(data: BotCheckRequest):
+    """Full bot accessibility check"""
+    url = data.url
+    
+    print(f"[API] Full bot check for: {url}")
+    
+    result = check_bots_full(
+        url,
+        selected_bots=data.selected_bots,
+        bot_groups=data.bot_groups,
+        retry_profile=(data.retry_profile or "standard"),
+        criticality_profile=(data.criticality_profile or "balanced"),
+        sla_profile=(data.sla_profile or "standard"),
+        baseline_enabled=bool(data.baseline_enabled),
+        ai_block_expected=bool(data.ai_block_expected),
+        batch_mode=(str(data.scan_mode or "single").lower() == "batch"),
+        batch_urls=(data.batch_urls or []),
+    )
+    task_id = f"bots-{datetime.now().timestamp()}"
+    create_task_result(task_id, "bot_check", url, result)
+    
+    return {
+        "task_id": task_id,
+        "status": "SUCCESS",
+        "message": "Bot check completed"
+    }
