@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api", tags=["SEO Tools"])
 class URLModel(BaseModel):
     """Base Pydantic model that validates the ``url`` field on all subclasses."""
 
-    @field_validator("url", mode="before")
+    @field_validator("url", mode="before", check_fields=False)
     @classmethod
     def _sanitise_url(cls, v):
         # Skip validation for absent / empty optional URLs
