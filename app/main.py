@@ -188,7 +188,7 @@ async def results_page(request: Request, task_id: str):
     if templates:
         return templates.TemplateResponse(
             "task_progress.html", 
-            {"request": request, "task_id": task_id}
+            {"request": request, "task_id": task_id, "app_version": settings.APP_VERSION}
         )
     return HTMLResponse(f"<h1>Results</h1><p>Task: {task_id}</p>")
 
@@ -260,4 +260,3 @@ if __name__ == "__main__":
         port=settings.PORT,
         reload=settings.DEBUG
     )
-
