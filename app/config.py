@@ -105,6 +105,10 @@ class Settings(BaseSettings):
     SITE_AUDIT_PRO_INLINE_SEMANTIC_LIMIT: int = int(os.getenv("SITE_AUDIT_PRO_INLINE_SEMANTIC_LIMIT", "200"))
     SITE_AUDIT_PRO_INLINE_PAGES_LIMIT: int = int(os.getenv("SITE_AUDIT_PRO_INLINE_PAGES_LIMIT", "500"))
     
+    # CORS — comma-separated list of allowed origins.
+    # Empty string means allow all ("*"). Set to your domain(s) in production.
+    ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "")
+
     # History
     HISTORY_SIZE: int = 10
     

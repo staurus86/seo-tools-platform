@@ -13,7 +13,21 @@ import math
 import requests
 from urllib.parse import urljoin, urlparse
 
+from app.validators import validate_url as _validate_url
+
 router = APIRouter(prefix="/api", tags=["SEO Tools"])
+
+
+class URLModel(BaseModel):
+    """Base Pydantic model that validates the ``url`` field on all subclasses."""
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def _sanitise_url(cls, v):
+        # Skip validation for absent / empty optional URLs
+        if v is None or v == "":
+            return v
+        return _validate_url(v)
 
 # Redis-based storage for task results
 _redis_client = None
@@ -2093,13 +2107,13 @@ def _check_bots_legacy(url: str) -> Dict[str, Any]:
 
 
 # ============ REQUEST MODELS ============
-class RobotsCheckRequest(BaseModel):
+class RobotsCheckRequest(URLModel):
     url: str
 
-class SitemapValidateRequest(BaseModel):
+class SitemapValidateRequest(URLModel):
     url: str
 
-class BotCheckRequest(BaseModel):
+class BotCheckRequest(URLModel):
     url: str
     selected_bots: Optional[List[str]] = None
     bot_groups: Optional[List[str]] = None
@@ -4663,20 +4677,20 @@ def check_core_web_vitals(url: str, strategy: str = "desktop") -> Dict[str, Any]
     return run_core_web_vitals(url=url, strategy=strategy)
 
 
-class SiteAnalyzeRequest(BaseModel):
+class SiteAnalyzeRequest(URLModel):
     url: str
     max_pages: int = 20
 
-class RenderAuditRequest(BaseModel):
+class RenderAuditRequest(URLModel):
     url: str
 
-class MobileCheckRequest(BaseModel):
+class MobileCheckRequest(URLModel):
     url: str
     mode: Optional[str] = "quick"
     devices: Optional[List[str]] = None
 
 
-class SiteAuditProRequest(BaseModel):
+class SiteAuditProRequest(URLModel):
     url: Optional[str] = None
     mode: Optional[str] = "quick"
     max_pages: int = 5
@@ -4696,7 +4710,7 @@ class SiteAuditProRequest(BaseModel):
         return []
 
 
-class OnPageAuditRequest(BaseModel):
+class OnPageAuditRequest(URLModel):
     url: str
     keywords: Optional[List[str]] = None
     language: Optional[str] = "auto"
@@ -4760,7 +4774,7 @@ class ClusterizerRequest(BaseModel):
         return str(value).strip().lower()
 
 
-class RedirectCheckerRequest(BaseModel):
+class RedirectCheckerRequest(URLModel):
     url: str
     user_agent: Optional[str] = "googlebot_desktop"
     canonical_host_policy: Optional[str] = "auto"
@@ -4794,7 +4808,7 @@ class RedirectCheckerRequest(BaseModel):
         return []
 
 
-class CoreWebVitalsRequest(BaseModel):
+class CoreWebVitalsRequest(URLModel):
     url: Optional[str] = ""
     strategy: Optional[str] = "desktop"
     scan_mode: Optional[str] = "single"

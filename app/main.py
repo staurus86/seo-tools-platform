@@ -73,10 +73,21 @@ app = FastAPI(
 )
 
 # CORS middleware
+# In production set ALLOWED_ORIGINS env var (comma-separated domains).
+# Browsers block credentialed requests to wildcard origins, so credentials
+# are only enabled when specific origins are configured.
+_origins_raw = settings.ALLOWED_ORIGINS.strip()
+if _origins_raw:
+    _allowed_origins = [o.strip() for o in _origins_raw.split(",") if o.strip()]
+    _allow_credentials = True
+else:
+    _allowed_origins = ["*"]
+    _allow_credentials = False  # wildcard + credentials is rejected by browsers
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_allowed_origins,
+    allow_credentials=_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
