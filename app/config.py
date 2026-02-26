@@ -56,7 +56,8 @@ class Settings(BaseSettings):
     LINK_PROFILE_MAX_TOTAL_UPLOAD_BYTES: int = int(os.getenv("LINK_PROFILE_MAX_TOTAL_UPLOAD_BYTES", str(150 * 1024 * 1024)))
 
     # Clusterizer
-    CLUSTERIZER_MAX_KEYWORDS: int = int(os.getenv("CLUSTERIZER_MAX_KEYWORDS", "2000"))
+    CLUSTERIZER_MAX_KEYWORDS: int = int(os.getenv("CLUSTERIZER_MAX_KEYWORDS", "25000"))
+    CLUSTERIZER_MAX_FILE_SIZE_BYTES: int = int(os.getenv("CLUSTERIZER_MAX_FILE_SIZE_BYTES", str(50 * 1024 * 1024)))
 
     # Core Web Vitals (Google PageSpeed Insights API)
     PAGESPEED_API_KEY: str = os.getenv("PAGESPEED_API_KEY", "")

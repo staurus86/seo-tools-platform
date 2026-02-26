@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections import Counter
+import random as _random
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 import math
 import re
@@ -11,6 +12,11 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 SimilarityMethod = str
 ClusteringMode = str
 ProgressCallback = Optional[Callable[[int, str], None]]
+
+# ── Performance tuning constants ────────────────────────────────────────────
+_MAX_MERGE_ITERATIONS = 2        # max passes in merge phase
+_CACHE_MAX_ENTRIES = 300_000     # ~3.6 MB; evict 20% when exceeded
+_MAX_COHESION_PAIRS = 200        # sample size for large-cluster cohesion
 
 _STOP_WORDS: Set[str] = {
     "a", "an", "and", "as", "at", "be", "by", "for", "from", "how", "in", "is", "it", "of", "on", "or", "that", "the", "to", "with",
@@ -313,6 +319,21 @@ def run_keyword_clusterizer(
     similarity_checks = 0
     similarity_cache: Dict[Tuple[int, int], float] = {}
 
+    # Inverted stem → cluster index (set) for fast candidate lookup
+    stem_cluster_index: Dict[str, Set[int]] = defaultdict(set)
+
+    # Global stem frequencies — stems appearing in >5% of entries are too common to index
+    stem_global_freq: Counter[str] = Counter()
+    for _e in entries:
+        stem_global_freq.update(_e["stems"])
+    _max_stem_freq = max(5, int(len(entries) * 0.05))
+
+    def _index_cluster_rep(cluster_idx: int, rep_entry: Dict[str, Any]) -> None:
+        """Add rep_entry stems to stem_cluster_index for cluster_idx."""
+        for stem in rep_entry["stems"]:
+            if stem_global_freq[stem] <= _max_stem_freq:
+                stem_cluster_index[stem].add(cluster_idx)
+
     def _similarity_by_idx(left_idx: int, right_idx: int) -> float:
         nonlocal similarity_checks
         if left_idx == right_idx:
@@ -321,6 +342,11 @@ def run_keyword_clusterizer(
         if pair in similarity_cache:
             return similarity_cache[pair]
         score = _hybrid_similarity(entries[left_idx], entries[right_idx], method_normalized)
+        # Bounded cache: evict oldest 20% when full
+        if len(similarity_cache) >= _CACHE_MAX_ENTRIES:
+            to_delete = list(similarity_cache.keys())[: _CACHE_MAX_ENTRIES // 5]
+            for k in to_delete:
+                del similarity_cache[k]
         similarity_cache[pair] = score
         similarity_checks += 1
         return score
@@ -350,7 +376,19 @@ def run_keyword_clusterizer(
         best_score = 0.0
         best_common_stems = 0
         best_max_probe = 0.0
-        for cluster_idx, cluster in enumerate(clusters_state):
+
+        # Candidate clusters from inverted index (only share ≥1 non-frequent stem)
+        _candidate_idxes: Set[int] = set()
+        for stem in entry["stems"]:
+            _candidate_idxes.update(stem_cluster_index.get(stem, set()))
+        # Fallback: if no candidates yet, try the first 50 clusters
+        if not _candidate_idxes and clusters_state:
+            _candidate_idxes = set(range(min(50, len(clusters_state))))
+
+        for cluster_idx in _candidate_idxes:
+            if cluster_idx >= len(clusters_state):
+                continue
+            cluster = clusters_state[cluster_idx]
             rep_entry = entries[cluster["rep_idx"]]
             rep_sim = _similarity_by_idx(entry["idx"], rep_entry["idx"])
             common_stems = len(entry["stems"] & rep_entry["stems"])
@@ -401,7 +439,8 @@ def run_keyword_clusterizer(
             )
             max_candidate_freq = max(float(entries[idx]["frequency"]) for idx in rep_candidates)
             max_candidate_log = math.log1p(max_candidate_freq) if max_candidate_freq > 0 else 0.0
-            best_rep_idx = int(target_cluster["rep_idx"])
+            old_rep_idx = int(target_cluster["rep_idx"])
+            best_rep_idx = old_rep_idx
             best_rep_score = float("-inf")
             for candidate_idx in sorted(rep_candidates):
                 sims = [
@@ -424,8 +463,15 @@ def run_keyword_clusterizer(
                 if candidate_score > best_rep_score:
                     best_rep_score = candidate_score
                     best_rep_idx = candidate_idx
+            # Update stem index if representative changed
+            if best_rep_idx != old_rep_idx:
+                old_rep_entry = entries[old_rep_idx]
+                for stem in old_rep_entry["stems"]:
+                    stem_cluster_index[stem].discard(best_cluster_idx)
+                _index_cluster_rep(best_cluster_idx, entries[best_rep_idx])
             target_cluster["rep_idx"] = best_rep_idx
         else:
+            new_cluster_idx = len(clusters_state)
             clusters_state.append(
                 {
                     "members": [entry["idx"]],
@@ -434,6 +480,7 @@ def run_keyword_clusterizer(
                     "token_counter": Counter(entry["tokens"]),
                 }
             )
+            _index_cluster_rep(new_cluster_idx, entry)
 
         if progress_callback and (pos % 50 == 0 or pos == unique_keywords_count):
             progress = 10 + int((pos / float(max(1, unique_keywords_count))) * 60.0)
@@ -442,9 +489,12 @@ def run_keyword_clusterizer(
     if progress_callback:
         progress_callback(78, "Уточнение кластеров")
 
+    # Merge phase — limited to _MAX_MERGE_ITERATIONS passes
+    _merge_iterations = 0
     merged = True
-    while merged:
+    while merged and _merge_iterations < _MAX_MERGE_ITERATIONS:
         merged = False
+        _merge_iterations += 1
         for i in range(len(clusters_state)):
             if merged:
                 break
@@ -501,7 +551,6 @@ def run_keyword_clusterizer(
         cluster_demand = 0.0
 
         edge_count = 0
-        pair_count = 0
         sim_sum = 0.0
         keywords_detailed: List[Dict[str, Any]] = []
         for idx in member_indexes:
@@ -588,18 +637,29 @@ def run_keyword_clusterizer(
         else:
             representative_clean = rep_entry["display"]
 
-        for i in range(len(member_indexes)):
-            for j in range(i + 1, len(member_indexes)):
-                pair_count += 1
-                similarity_checks += 1
-                sim = _hybrid_similarity(entries[member_indexes[i]], entries[member_indexes[j]], method_normalized)
-                sim_sum += sim
-                if sim >= effective_threshold:
-                    edge_count += 1
-
+        # Cohesion: exact for small clusters, sample-based for large ones
         max_edges = (len(member_indexes) * (len(member_indexes) - 1)) // 2
+        if max_edges <= _MAX_COHESION_PAIRS:
+            pair_count = 0
+            for i in range(len(member_indexes)):
+                for j in range(i + 1, len(member_indexes)):
+                    pair_count += 1
+                    sim = _hybrid_similarity(entries[member_indexes[i]], entries[member_indexes[j]], method_normalized)
+                    sim_sum += sim
+                    if sim >= effective_threshold:
+                        edge_count += 1
+            avg_similarity = (sim_sum / float(pair_count)) if pair_count else 1.0
+        else:
+            _n = len(member_indexes)
+            _sims: List[float] = []
+            for _ in range(_MAX_COHESION_PAIRS):
+                _i = _random.randint(0, _n - 2)
+                _j = _random.randint(_i + 1, _n - 1)
+                _sims.append(_hybrid_similarity(entries[member_indexes[_i]], entries[member_indexes[_j]], method_normalized))
+            avg_similarity = sum(_sims) / _MAX_COHESION_PAIRS
+            edge_count = int(avg_similarity * max_edges)
+
         density = (edge_count / float(max_edges)) if max_edges else 0.0
-        avg_similarity = (sim_sum / float(pair_count)) if pair_count else 1.0
         cohesion_scores.append(avg_similarity)
         duplicates_in_cluster = sum(int(normalized_occurrence.get(entries[idx]["normalized"], 1)) for idx in member_indexes)
         keywords_in_cluster = [entries[idx]["display"] for idx in member_indexes]

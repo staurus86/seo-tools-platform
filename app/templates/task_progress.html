@@ -6455,6 +6455,19 @@ function generateOnPageAuditHTML(result) {
     `;
 }
 
+function filterClusterTable(query) {
+    const q = String(query || '').toLowerCase().trim();
+    const rows = document.querySelectorAll('#clusterTableBody tr[data-cluster-row]');
+    rows.forEach((row) => {
+        if (!q) {
+            row.style.display = '';
+            return;
+        }
+        const text = String(row.dataset.searchText || '').toLowerCase();
+        row.style.display = text.includes(q) ? '' : 'none';
+    });
+}
+
 function generateClusterizerHTML(result) {
     const r = result.results || {};
     const summary = r.summary || {};
@@ -6465,7 +6478,7 @@ function generateClusterizerHTML(result) {
         : clusters.filter((row) => Number(row.size || 0) >= Number(settings.min_cluster_size || 2));
     const intentDistribution = r.intent_distribution || {};
     const unclusteredKeywords = Array.isArray(r.unclustered_keywords) ? r.unclustered_keywords : [];
-    const shownClusters = clusters.slice(0, 120);
+    const shownClusters = clusters.slice(0, Math.min(clusters.length, 500));
 
     const clusterRowsHtml = shownClusters.map((cluster) => {
         const clusterId = Number(cluster.cluster_id || 0);
@@ -6477,10 +6490,11 @@ function generateClusterizerHTML(result) {
             : '-';
         const keywords = Array.isArray(cluster.keywords) ? cluster.keywords : [];
         const keywordsPreview = keywords
-            .slice(0, 8)
+            .slice(0, 5)
             .map((keyword) => escapeHtml(String(keyword)))
             .join(', ');
-        const hiddenKeywords = Math.max(0, keywords.length - 8);
+        const hiddenKeywords = Math.max(0, keywords.length - 5);
+        const keywordsDetailHtml = keywords.map((kw) => `<div class="py-0.5">${escapeHtml(String(kw))}</div>`).join('');
         const densityPct = Math.round(Number(cluster.density || 0) * 1000) / 10;
         const avgSimPct = Math.round(Number(cluster.avg_similarity || 0) * 1000) / 10;
         const demandTotal = Math.round(Number(cluster.demand_total || 0) * 100) / 100;
@@ -6488,9 +6502,10 @@ function generateClusterizerHTML(result) {
         const intent = escapeHtml(String(cluster.intent || 'mixed'));
         const cohesion = String(cluster.cohesion || 'low');
         const cohesionLabel = cohesion === 'high' ? 'Высокая' : (cohesion === 'medium' ? 'Средняя' : 'Низкая');
+        const searchText = `${clusterLabel} ${representative} ${keywords.join(' ')}`;
 
         return `
-            <tr class="border-b border-slate-100 text-sm">
+            <tr class="border-b border-slate-100 text-sm" data-cluster-row="1" data-search-text="${escapeHtml(searchText.toLowerCase())}">
                 <td class="py-2 pr-2 font-medium">${clusterId}</td>
                 <td class="py-2 pr-2">${size}</td>
                 <td class="py-2 pr-2 break-words">
@@ -6504,13 +6519,18 @@ function generateClusterizerHTML(result) {
                 <td class="py-2 pr-2">${demandShare}%</td>
                 <td class="py-2 pr-2">${intent}</td>
                 <td class="py-2 pr-2">${cohesionLabel}</td>
-                <td class="py-2 pr-2 break-words">${keywordsPreview}${hiddenKeywords > 0 ? `, +${hiddenKeywords}` : ''}</td>
+                <td class="py-2 pr-2 break-words max-w-xs">
+                    <details class="text-xs">
+                        <summary class="cursor-pointer text-slate-600 list-none hover:text-slate-900">${keywordsPreview}${hiddenKeywords > 0 ? ` <span class="text-violet-600 font-medium">+${hiddenKeywords}</span>` : ''}</summary>
+                        <div class="mt-1 text-slate-700 border-t border-slate-100 pt-1">${keywordsDetailHtml}</div>
+                    </details>
+                </td>
             </tr>
         `;
     }).join('');
 
     const unclusteredPreview = unclusteredKeywords
-        .slice(0, 40)
+        .slice(0, 200)
         .map((keyword) => `<span class="px-2 py-1 rounded-md bg-slate-100 text-slate-700 text-xs">${escapeHtml(String(keyword))}</span>`)
         .join('');
     const intentChips = Object.entries(intentDistribution)
@@ -6559,6 +6579,14 @@ function generateClusterizerHTML(result) {
                     <h4 class="font-semibold">Кластеры</h4>
                     <span class="text-xs text-slate-500">Показано ${shownClusters.length} из ${clusters.length}</span>
                 </div>
+                <div class="mb-3">
+                    <input
+                        type="text"
+                        placeholder="Поиск по кластерам..."
+                        oninput="filterClusterTable(this.value)"
+                        class="w-full max-w-sm px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-400"
+                    >
+                </div>
                 <table class="w-full min-w-[1240px]">
                     <thead class="sticky top-0 z-10 bg-white">
                         <tr class="text-left text-xs text-gray-500 border-b">
@@ -6572,10 +6600,10 @@ function generateClusterizerHTML(result) {
                             <th class="py-2 pr-2 bg-white">Доля спроса</th>
                             <th class="py-2 pr-2 bg-white">Intent</th>
                             <th class="py-2 pr-2 bg-white">Качество</th>
-                            <th class="py-2 pr-2 bg-white">Ключи (превью)</th>
+                            <th class="py-2 pr-2 bg-white">Ключи</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="clusterTableBody">
                         ${clusterRowsHtml || '<tr><td class="py-2 text-sm text-gray-500" colspan="11">Нет данных для отображения.</td></tr>'}
                     </tbody>
                 </table>
@@ -6604,7 +6632,7 @@ function generateClusterizerHTML(result) {
                     <div class="flex flex-wrap gap-2">
                         ${unclusteredPreview || '<span class="text-sm text-slate-500">Одиночных ключей нет.</span>'}
                     </div>
-                    ${unclusteredKeywords.length > 40 ? `<div class="mt-2 text-xs text-slate-500">И еще ${unclusteredKeywords.length - 40} ключей.</div>` : ''}
+                    ${unclusteredKeywords.length > 200 ? `<div class="mt-2 text-xs text-slate-500">И еще ${unclusteredKeywords.length - 200} ключей.</div>` : ''}
                 </div>
             </div>
         </div>

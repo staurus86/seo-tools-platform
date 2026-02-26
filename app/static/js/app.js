@@ -193,6 +193,54 @@ async function startTask(event, endpoint) {
         delete data.batch_urls_text;
     }
     if (endpoint === 'clusterizer') {
+        const fileInput = form.querySelector('[name="keywords_file"]');
+        const hasFile = fileInput && fileInput.files && fileInput.files.length > 0;
+
+        if (hasFile) {
+            // File upload path → FormData + /upload endpoint
+            const button = form.querySelector('button[type="submit"]');
+            const originalText = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Starting...';
+            try {
+                const uploadForm = new FormData();
+                uploadForm.append('keywords_file', fileInput.files[0]);
+                uploadForm.append('method', data.method || 'jaccard');
+                uploadForm.append('clustering_mode', data.clustering_mode || 'balanced');
+                uploadForm.append('similarity_threshold_pct', data.similarity_threshold_pct || 35);
+                uploadForm.append('min_cluster_size', data.min_cluster_size || 2);
+                const uploadResponse = await fetch(`${API_BASE}/tasks/clusterizer/upload`, {
+                    method: 'POST',
+                    body: uploadForm,
+                });
+                if (uploadResponse.status === 429) {
+                    const errorData = await uploadResponse.json();
+                    showRateLimitModal(errorData.detail);
+                    return;
+                }
+                if (!uploadResponse.ok) {
+                    let errorMessage = `HTTP ${uploadResponse.status}`;
+                    try {
+                        const errorPayload = await uploadResponse.json();
+                        errorMessage = errorPayload?.detail || errorPayload?.error || errorPayload?.message || errorMessage;
+                    } catch (_) {}
+                    throw new Error(errorMessage);
+                }
+                const uploadResult = await uploadResponse.json();
+                addToHistory({ taskId: uploadResult.task_id, tool: endpoint, url: fileInput.files[0].name, status: uploadResult.status, timestamp: new Date().toISOString() });
+                showToast('Task created successfully! Redirecting...', 'success');
+                setTimeout(() => { window.location.href = `/results/${uploadResult.task_id}`; }, 1000);
+            } catch (error) {
+                console.error('Error starting clusterizer file task:', error);
+                showToast(error?.message || 'Failed to create task. Try again later.', 'error');
+            } finally {
+                button.disabled = false;
+                button.innerHTML = originalText;
+            }
+            return;
+        }
+
+        // Text / textarea path
         const rawKeywords = (data.keywords_text || '').toString();
         const sourceLines = rawKeywords.replace(/\r/g, '\n').split('\n');
         const lines = [];
@@ -252,22 +300,22 @@ async function startTask(event, endpoint) {
             parsedKeywords.push(line);
         }
         if (parsedKeywords.length === 0) {
-            showToast('Добавьте хотя бы один ключ', 'warning');
+            showToast('Добавьте хотя бы один ключ или выберите файл', 'warning');
             return;
         }
-        if (parsedKeywords.length > 2000) {
-            showToast('Лимит кластеризатора: максимум 2000 ключей', 'warning');
+        if (parsedKeywords.length > 25000) {
+            showToast('Лимит кластеризатора: максимум 25 000 ключей', 'warning');
             return;
         }
         data.keywords_text = parsedKeywords.join('\n');
     }
-    
+
     // Show loading state
     const button = form.querySelector('button[type="submit"]');
     const originalText = button.innerHTML;
     button.disabled = true;
     button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Starting...';
-    
+
     try {
         const response = await fetch(`${API_BASE}/tasks/${endpoint}`, {
             method: 'POST',
