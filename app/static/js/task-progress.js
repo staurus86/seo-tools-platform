@@ -5218,15 +5218,6 @@ function generateRenderAuditHTML(result) {
     }, { titleChanged: 0, descChanged: 0, h1Changed: 0, imagesChanged: 0, linksChanged: 0, highImpact: 0 });
     const totalDiffRows = contentDiffRowsData.length || 1;
     const summaryRatio = (value) => `${Math.round((value / totalDiffRows) * 100)}%`;
-    const renderFieldName = (name) => {
-        const n = String(name || '').toLowerCase();
-        if (n === 'title') return 'title';
-        if (n === 'description') return 'description';
-        if (n === 'h1') return 'h1';
-        if (n === 'images') return 'изображения';
-        if (n === 'links') return 'ссылки';
-        return name || '';
-    };
     const topDivergencesHtml = contentDiffRowsData
         .filter((row) => row.impactScore > 0)
         .slice(0, 3)
@@ -5237,6 +5228,15 @@ function generateRenderAuditHTML(result) {
             if (row.h1Changed) changedFields.push('h1');
             if (row.imagesChanged) changedFields.push('images');
             if (row.linksChanged) changedFields.push('links');
+            const renderFieldName = (name) => {
+                const n = String(name || '').toLowerCase();
+                if (n === 'title') return 'title';
+                if (n === 'description') return 'description';
+                if (n === 'h1') return 'h1';
+                if (n === 'images') return 'изображения';
+                if (n === 'links') return 'ссылки';
+                return name || '';
+            };
             return `
                 <div class="rounded-lg border border-slate-200 bg-slate-50 p-2">
                     <div class="flex items-center justify-between gap-2">
