@@ -230,7 +230,7 @@ async def favicon():
 async def export_robots_redirect(request: Request):
     """Handle export requests and redirect to API"""
     from fastapi import Request
-    from app.api.routes import export_robots_word, ExportRequest
+    from app.api.routers.exports import export_robots_word, ExportRequest
     import json
     
     try:
