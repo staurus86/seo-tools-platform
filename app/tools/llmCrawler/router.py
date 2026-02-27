@@ -122,8 +122,8 @@ async def run_llm_crawler(payload: LlmCrawlerRunRequest, request: Request) -> Di
     subject = request_subject(request)
     options = payload.options.model_dump()
     if limits_enabled:
-    tool_limit = max(1, int(getattr(settings, "LLM_CRAWLER_RATE_LIMIT_PER_MINUTE", 999) or 999))
-    tool_rate = check_rate_limit(subject, "tool-minute", tool_limit, 60)
+        tool_limit = max(1, int(getattr(settings, "LLM_CRAWLER_RATE_LIMIT_PER_MINUTE", 999) or 999))
+        tool_rate = check_rate_limit(subject, "tool-minute", tool_limit, 60)
         if not tool_rate.get("allowed", True):
             raise HTTPException(
                 status_code=429,
@@ -147,7 +147,8 @@ async def run_llm_crawler(payload: LlmCrawlerRunRequest, request: Request) -> Di
                 )
 
     worker_ok = _worker_is_healthy()
-    inline_allowed = bool(getattr(settings, "LLM_CRAWLER_INLINE_FALLBACK", False))
+    # Inline Playwright fallback запрещаем для изоляции: если воркер недоступен — вернём 503
+    inline_allowed = False
 
     targets = _normalize_targets(payload)
     if not targets:
@@ -170,61 +171,13 @@ async def run_llm_crawler(payload: LlmCrawlerRunRequest, request: Request) -> Di
                 detail={"message": "Too many jobs per minute for this subject", "retry_after": per_minute_rate.get("reset_in")},
             )
 
-    for idx, target_url in enumerate(targets):
-        # Inline fallback only for first when worker dead and allowed.
-        if inline_allowed and (not worker_ok) and idx == 0:
-            try:
-                inline_job_id = new_job_id()
-                job = create_job_record(
-                    job_id=inline_job_id,
-                    request_id=request_id,
-                    requested_url=target_url,
-                    options=options,
-                    subject=subject,
-                )
-                job = update_job_record(
-                    inline_job_id,
-                    status="running",
-                    progress=10,
-                    status_message="Inline execution (worker unavailable)",
-                )
-                result = run_llm_crawler_simulation(
-                    requested_url=target_url,
-                    options=options,
-                    request_id=request_id,
-                    progress_callback=lambda p, m: update_job_record(
-                        inline_job_id, status="running", progress=p, status_message=m
-                    ),
-                )
-                job = update_job_record(
-                    inline_job_id,
-                    status="done",
-                    progress=100,
-                    result=result,
-                    error=None,
-                    status_message="Completed inline",
-                )
-                job_ids.append(inline_job_id)
-                continue
-            except Exception as exc:
-                update_job_record(
-                    locals().get("inline_job_id", new_job_id()),
-                    status="error",
-                    progress=100,
-                    error=str(exc),
-                    status_message="Inline execution failed",
-                )
-                raise HTTPException(
-                    status_code=502,
-                    detail={"message": "LLM crawler failed inline", "error": str(exc)},
-                ) from exc
+    if not worker_ok:
+        raise HTTPException(
+            status_code=503,
+            detail="LLM worker unavailable; please retry when worker is healthy",
+        )
 
-        if not worker_ok:
-            # Worker unavailable; fail fast (no inline Playwright fallback)
-            raise HTTPException(
-                status_code=503,
-                detail="LLM worker unavailable; please retry when worker is healthy",
-            )
+    for idx, target_url in enumerate(targets):
         _ensure_worker_available()
 
         job_id = new_job_id()
