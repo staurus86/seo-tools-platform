@@ -386,7 +386,7 @@ def run_llm_crawler_simulation(
     max_redirect_hops = max(1, _safe_int(getattr(settings, "LLM_CRAWLER_MAX_REDIRECT_HOPS", 8), 8))
     render_js = bool(options.get("renderJs", False))
     show_headers = bool(options.get("showHeaders", False))
-    profiles = list(options.get("profile") or ["generic-bot", "search-bot", "ai-bot"])
+    profiles = list(options.get("profile") or ["generic-bot", "search-bot", "ai-bot", "gptbot", "google-extended"])
 
     timings: Dict[str, Any] = {}
 

@@ -10,7 +10,13 @@ from urllib.parse import urlparse
 PROFILE_USER_AGENTS: Dict[str, List[str]] = {
     "generic-bot": ["generic-bot", "*"],
     "search-bot": ["googlebot", "bingbot", "yandexbot", "*"],
-    "ai-bot": ["gptbot", "chatgpt-user", "claudebot", "anthropic-ai", "perplexitybot", "*"],
+    "ai-bot": ["gptbot", "chatgpt-user", "claudebot", "anthropic-ai", "perplexitybot", "google-extended", "ccbot", "*"],
+    "gptbot": ["gptbot", "chatgpt-user", "gptbot-fetch"],
+    "chatgpt-user": ["chatgpt-user"],
+    "claudebot": ["claudebot", "anthropic-ai"],
+    "perplexitybot": ["perplexitybot", "spbot"],
+    "google-extended": ["google-extended"],
+    "ccbot": ["ccbot"],
 }
 
 
@@ -108,4 +114,3 @@ def evaluate_profile_access(
             for r in matched[:10]
         ],
     }
-

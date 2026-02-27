@@ -6,13 +6,32 @@ from typing import Any, Dict, List
 from pydantic import BaseModel, Field, field_validator
 
 
-ALLOWED_PROFILES = {"generic-bot", "search-bot", "ai-bot"}
+ALLOWED_PROFILES = {
+    "generic-bot",
+    "search-bot",
+    "ai-bot",
+    "gptbot",
+    "chatgpt-user",
+    "claudebot",
+    "perplexitybot",
+    "google-extended",
+    "ccbot",
+}
 
 
 class LlmCrawlerOptions(BaseModel):
     renderJs: bool = False
     timeoutMs: int = 20000
-    profile: List[str] = Field(default_factory=lambda: ["generic-bot", "search-bot", "ai-bot"])
+    profile: List[str] = Field(
+        default_factory=lambda: [
+            "generic-bot",
+            "search-bot",
+            "ai-bot",
+            "gptbot",
+            "google-extended",
+            "perplexitybot",
+        ]
+    )
     showHeaders: bool = False
 
     @field_validator("timeoutMs", mode="before")
@@ -66,4 +85,3 @@ class LlmCrawlerJobStatusResponse(BaseModel):
     error: str | None = None
     requestId: str | None = None
     jobId: str | None = None
-
