@@ -233,6 +233,7 @@ async def get_llm_crawler_job(job_id: str, request: Request) -> Dict[str, Any]:
         "progress": int(job.get("progress") or 0),
         "status_message": job.get("status_message"),
         "result": job.get("result"),
+        "render_status": ((job.get("result") or {}).get("render_status") if isinstance(job.get("result"), dict) else None),
         "error": job.get("error"),
     }
 

@@ -35,6 +35,36 @@ STOPWORDS = {
     "как", "что", "это", "для", "или", "если", "без", "при", "под", "над", "быть", "есть", "так", "как",
     "они", "она", "его", "ее", "это", "the", "page", "home", "menu", "navigation", "read", "more",
 }
+PAGE_TYPE_PATTERNS = {
+    "listing": [
+        r"\b(news|feed|updates|posts|stories|latest|archive|категор|лента|новости|обновления)\b",
+        r"/(news|feed|blog|category|archive|live)",
+    ],
+    "service": [
+        r"\b(service|services|consulting|agency|support|integration|аудит|услуг|поддержк)\b",
+        r"/(service|services|solutions|consulting)",
+    ],
+    "review": [
+        r"\b(review|rating|comparison|vs|best|тест|обзор|рейтинг|сравнение)\b",
+        r"/(review|reviews|rating|compare)",
+    ],
+    "product": [
+        r"\b(product|price|pricing|buy|shop|sku|catalog|цена|купить|товар)\b",
+        r"/(product|products|shop|catalog|store)",
+    ],
+    "article": [
+        r"\b(article|guide|how to|tutorial|insights|исследование|гайд|статья)\b",
+        r"/(article|articles|blog|guide|guides)",
+    ],
+}
+UTILITY_CHUNK_RE = re.compile(
+    r"(\b(contact|contacts|support|call|phone|email|subscribe|newsletter|login|signup|register|buy now|get started|book demo|cta|footer|privacy|terms)\b|"
+    r"(\+?\d[\d\-\s\(\)]{7,})|"
+    r"(@[\w\.-]+\.[A-Za-z]{2,})|"
+    r"(mailto:|tel:)|"
+    r"(контакты|подписк|вход|регистрац|позвонить|почта|заказать))",
+    flags=re.I,
+)
 
 
 def _utc_now() -> str:
@@ -308,7 +338,8 @@ def _build_diff(nojs: Dict[str, Any], rendered: Optional[Dict[str, Any]], render
             "textCoverage": None,
             "linksDiff": {"added": 0, "removed": 0, "added_top": [], "removed_top": []},
             "headingsDiff": {"h1": 0, "h2": 0, "h3": 0},
-            "note": render_error or "Rendered fetch disabled",
+            "h1Consistency": {"raw_h1": int((nojs.get("headings") or {}).get("h1") or 0), "rendered_h1": 0, "h1_appears_only_after_js": False},
+            "note": render_error or "Rendered snapshot not executed",
             "missing": [],
         }
 
@@ -323,12 +354,17 @@ def _build_diff(nojs: Dict[str, Any], rendered: Optional[Dict[str, Any]], render
 
     nojs_h = nojs.get("headings") or {}
     r_h = rendered.get("headings") or {}
+    raw_h1 = int(nojs_h.get("h1") or 0)
+    rendered_h1 = int(r_h.get("h1") or 0)
+    h1_after_js = raw_h1 == 0 and rendered_h1 > 0
     missing: List[str] = []
     if text_coverage is not None and text_coverage < 0.7:
         missing.append("Основной текст появляется только после JS (coverage < 0.7)")
     if len(added_links) > 0:
         missing.append("Часть ссылок доступна только с JS (добавленные в rendered)")
-    if int(r_h.get("h1") or 0) > int(nojs_h.get("h1") or 0):
+    if h1_after_js:
+        missing.append("H1 appears only after JS")
+    elif rendered_h1 > raw_h1:
         missing.append("Заголовки H1/H2/H3 появляются только в rendered версии")
     if bool((rendered.get("content") or {}).get("readability_text")) and not bool((nojs.get("content") or {}).get("main_text_length")):
         missing.append("Main content извлекается только reader-алгоритмом (raw пустой)")
@@ -341,10 +377,11 @@ def _build_diff(nojs: Dict[str, Any], rendered: Optional[Dict[str, Any]], render
             "removed_top": removed_links[:20],
         },
         "headingsDiff": {
-            "h1": int(r_h.get("h1") or 0) - int(nojs_h.get("h1") or 0),
+            "h1": rendered_h1 - raw_h1,
             "h2": int(r_h.get("h2") or 0) - int(nojs_h.get("h2") or 0),
             "h3": int(r_h.get("h3") or 0) - int(nojs_h.get("h3") or 0),
         },
+        "h1Consistency": {"raw_h1": raw_h1, "rendered_h1": rendered_h1, "h1_appears_only_after_js": h1_after_js},
         "missing": missing,
         "note": render_error or "",
     }
@@ -432,6 +469,44 @@ def _chunk_content_ratio(text: str) -> float:
     return min(1.0, alpha / max(1, len(raw)))
 
 
+def _chunk_label(text: str) -> str:
+    raw = str(text or "")
+    if not raw:
+        return "utility"
+    if UTILITY_CHUNK_RE.search(raw):
+        return "utility"
+    words = _tokens(raw)
+    if len(words) < 35:
+        return "utility"
+    return "core"
+
+
+def _main_segment_snippets(snapshot: Dict[str, Any], limit: int = 3) -> List[str]:
+    seg = snapshot.get("segmentation") or {}
+    segments = seg.get("content_segments") or []
+    snippets: List[str] = []
+    for item in segments:
+        if str((item or {}).get("type") or "") != "main":
+            continue
+        text = str((item or {}).get("text") or "").strip()
+        if len(text) < 40:
+            continue
+        sent = _sentences(text)
+        for s in sent[:3]:
+            clean = s.strip()
+            if len(clean) < 40:
+                continue
+            if clean in snippets:
+                continue
+            snippets.append(clean[:220])
+            if len(snippets) >= limit:
+                return snippets
+    if snippets:
+        return snippets[:limit]
+    fallback = str((snapshot.get("content") or {}).get("main_text_preview") or "")
+    return [x[:220] for x in _sentences(fallback)[:limit] if len(x.strip()) >= 40]
+
+
 def _rank_chunks_for_question(snapshot: Dict[str, Any], question: str, limit: int = 3) -> List[Dict[str, Any]]:
     chunks = ((snapshot.get("content") or {}).get("chunks") or [])
     if not chunks:
@@ -443,7 +518,9 @@ def _rank_chunks_for_question(snapshot: Dict[str, Any], question: str, limit: in
         rel = _tfidf_cosine(question, text, corpus)
         ent = _chunk_entity_density(text)
         ratio = _chunk_content_ratio(text)
-        score = (rel * 0.65) + (ent * 0.2) + (ratio * 0.15)
+        label = str(c.get("chunk_type") or _chunk_label(text))
+        utility_penalty = 0.55 if label == "utility" else 1.0
+        score = ((rel * 0.65) + (ent * 0.2) + (ratio * 0.15)) * utility_penalty
         ranked.append(
             {
                 "idx": int(c.get("idx") or 0),
@@ -451,6 +528,7 @@ def _rank_chunks_for_question(snapshot: Dict[str, Any], question: str, limit: in
                 "relevance": round(rel, 4),
                 "entity_density": round(ent, 4),
                 "content_ratio": round(ratio, 4),
+                "chunk_type": label,
                 "preview": text[:240],
                 "text": text,
             }
@@ -511,7 +589,7 @@ def _dedupe_chunks(chunks: List[Dict[str, Any]], similarity_threshold: float = 0
         if is_dup:
             continue
         hashes.add(sig)
-        unique.append({"idx": len(unique) + 1, "text": text})
+        unique.append({"idx": len(unique) + 1, "text": text, "chunk_type": _chunk_label(text)})
     unique_total = len(unique)
     removed = max(0, total - unique_total)
     ratio = round((removed / max(1, total)) * 100, 2)
@@ -665,40 +743,93 @@ def _detect_page_type(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     final_url = str(snapshot.get("final_url") or "")
     path = urlparse(final_url).path.lower() if final_url else "/"
     title = str(meta.get("title") or "").lower()
+    descr = str(meta.get("description") or "").lower()
+    text_hint = " ".join(
+        [
+            title,
+            descr,
+            str(content.get("main_text_preview") or "")[:2000].lower(),
+            path,
+        ]
+    )
     main_len = int(content.get("main_text_length") or 0)
     links_count = int(links.get("count") or 0)
+    main_pct = float(noise.get("main_pct") or 0.0)
+    ads_pct = float(noise.get("ads_pct") or 0.0)
     live_pct = float(noise.get("live_pct") or 0.0)
     nav_pct = float(noise.get("nav_pct") or 0.0)
     jsonld_types = {str(x) for x in (schema.get("jsonld_types") or [])}
 
     reasons: List[str] = []
-    page_type = "article"
-    confidence = 0.62
+    page_type = "unknown"
+    confidence = 0.35
 
-    if "Product" in jsonld_types or re.search(r"\b(price|pricing|buy|shop|cart|sku|цена|купить)\b", title, re.I):
+    def hit_count(key: str) -> int:
+        pats = PAGE_TYPE_PATTERNS.get(key) or []
+        return sum(1 for p in pats if re.search(p, text_hint, flags=re.I))
+
+    score_article = hit_count("article") + (2 if bool(signals.get("author_present") or signals.get("date_present")) else 0) + (1 if main_len >= 1000 else 0)
+    score_listing = hit_count("listing") + (2 if links_count >= 80 else 0) + (2 if nav_pct >= 45 else 0) + (2 if live_pct >= 18 else 0)
+    score_service = hit_count("service") + (1 if "Organization" in jsonld_types else 0)
+    score_product = hit_count("product") + (2 if "Product" in jsonld_types else 0)
+    score_review = hit_count("review") + (2 if ("Review" in jsonld_types or "AggregateRating" in jsonld_types) else 0)
+    score_mixed = (2 if ads_pct >= 20 else 0) + (2 if live_pct >= 15 else 0) + (1 if main_pct < 30 else 0)
+
+    scores = {
+        "article": score_article,
+        "listing": score_listing,
+        "service": score_service,
+        "product": score_product,
+        "review": score_review,
+        "mixed": score_mixed,
+    }
+    # Prefer explicit intent pages when URL/title patterns are strong.
+    if score_product >= 2:
         page_type = "product"
-        confidence = 0.84
-        reasons.append("Product schema/commerce terms detected")
-    elif path in {"", "/"} and links_count >= 40:
-        page_type = "homepage"
-        confidence = 0.77
-        reasons.append("Root page with high link density")
-    elif live_pct >= 18 or links_count >= 80 or nav_pct >= 45:
-        page_type = "listing_feed"
-        confidence = 0.82 if live_pct >= 18 else 0.74
-        reasons.append("Feed/listing pattern (live/nav/links density)")
-    elif links_count >= 35 and main_len < 1800:
-        page_type = "category"
-        confidence = 0.68
-        reasons.append("Category/list pattern by links-to-text ratio")
-    elif bool(signals.get("author_present") or signals.get("date_present")) and main_len >= 600:
-        page_type = "article"
-        confidence = 0.86
-        reasons.append("Article-like body with author/date signals")
-    else:
-        reasons.append("Default article profile")
+        confidence = min(0.93, 0.62 + (score_product * 0.08))
+        reasons.append(f"Explicit product signals ({score_product} hits)")
+        return {"page_type": page_type, "confidence": round(confidence, 3), "reasons": reasons[:4], "scores": scores}
+    if score_service >= 2:
+        page_type = "service"
+        confidence = min(0.9, 0.6 + (score_service * 0.07))
+        reasons.append(f"Explicit service signals ({score_service} hits)")
+        return {"page_type": page_type, "confidence": round(confidence, 3), "reasons": reasons[:4], "scores": scores}
+    if score_review >= 2:
+        page_type = "review"
+        confidence = min(0.9, 0.6 + (score_review * 0.07))
+        reasons.append(f"Explicit review signals ({score_review} hits)")
+        return {"page_type": page_type, "confidence": round(confidence, 3), "reasons": reasons[:4], "scores": scores}
 
-    return {"page_type": page_type, "confidence": round(confidence, 3), "reasons": reasons[:4]}
+    best_type = max(scores.keys(), key=lambda k: scores[k])
+    best_score = int(scores.get(best_type) or 0)
+    second_score = sorted(scores.values(), reverse=True)[1] if len(scores) > 1 else 0
+
+    if path in {"", "/"} and links_count >= 40 and main_len < 2200:
+        page_type = "listing"
+        confidence = 0.72
+        reasons.append("Homepage-like route with high link density")
+    elif best_score <= 0:
+        page_type = "unknown"
+        confidence = 0.35
+        reasons.append("No stable page-type signals detected")
+    else:
+        page_type = best_type
+        margin = max(0, best_score - second_score)
+        confidence = min(0.94, 0.5 + (best_score * 0.08) + (margin * 0.05))
+        reasons.append(f"Dominant pattern: {best_type} ({best_score} hits)")
+
+    if page_type == "mixed" and main_pct < 20:
+        reasons.append("Low main content percent with high noise profile")
+    if page_type == "listing" and live_pct >= 18:
+        reasons.append("Live-score feed markers detected")
+    if page_type == "article" and bool(signals.get("author_present") or signals.get("date_present")):
+        reasons.append("Author/date signals support article classification")
+    if page_type == "product" and "Product" in jsonld_types:
+        reasons.append("Product schema detected")
+    if page_type == "review" and ("Review" in jsonld_types or "AggregateRating" in jsonld_types):
+        reasons.append("Review/rating schema detected")
+
+    return {"page_type": page_type, "confidence": round(confidence, 3), "reasons": reasons[:4], "scores": scores}
 
 
 def _apply_score_profile(score: Dict[str, Any], snapshot: Dict[str, Any], page_type_info: Dict[str, Any]) -> Dict[str, Any]:
@@ -708,10 +839,12 @@ def _apply_score_profile(score: Dict[str, Any], snapshot: Dict[str, Any], page_t
     page_type = str(page_type_info.get("page_type") or "article")
     weights_map = {
         "article": {"access": 25, "content": 30, "structure": 20, "signals": 25},
-        "listing_feed": {"access": 30, "content": 35, "structure": 10, "signals": 25},
+        "listing": {"access": 30, "content": 35, "structure": 10, "signals": 25},
+        "mixed": {"access": 32, "content": 38, "structure": 8, "signals": 22},
+        "service": {"access": 26, "content": 29, "structure": 15, "signals": 30},
         "product": {"access": 25, "content": 25, "structure": 15, "signals": 35},
-        "category": {"access": 30, "content": 30, "structure": 15, "signals": 25},
-        "homepage": {"access": 35, "content": 25, "structure": 10, "signals": 30},
+        "review": {"access": 24, "content": 28, "structure": 14, "signals": 34},
+        "unknown": {"access": 28, "content": 32, "structure": 12, "signals": 28},
     }
     weights = weights_map.get(page_type, weights_map["article"])
     maxima = {"access": 35.0, "content": 30.0, "structure": 20.0, "signals": 30.0}
@@ -757,7 +890,14 @@ def _critical_blocks_checklist(snapshot: Dict[str, Any], snippets: Dict[str, str
     signals = snapshot.get("signals") or {}
     schema = snapshot.get("schema") or {}
     entity = snapshot.get("entity_graph") or {}
-    schema_types = {str(x) for x in (schema.get("jsonld_types") or [])}
+    schema_types = {
+        str(x)
+        for x in (
+            (schema.get("jsonld_types") or [])
+            + (schema.get("microdata_types") or [])
+            + (schema.get("rdfa_types") or [])
+        )
+    }
     detected_ids = {str(x.get("id") or "") for x in (ai_blocks.get("detected") or []) if isinstance(x, dict)}
 
     checks: List[Dict[str, Any]] = []
@@ -1155,6 +1295,7 @@ def run_llm_crawler_simulation(
 
     rendered_snapshot: Optional[Dict[str, Any]] = None
     render_error: Optional[str] = None
+    render_status: Dict[str, Any] = {"status": "not_executed", "reason": "render_disabled_in_options"}
     gpt_snapshot: Optional[Dict[str, Any]] = None
     gbot_snapshot: Optional[Dict[str, Any]] = None
     if render_js:
@@ -1186,10 +1327,12 @@ def run_llm_crawler_simulation(
             if bool(options.get("include_rendered_html")):
                 rendered_snapshot["rendered_html"] = str(rendered_http.get("body_text") or "")[:200000]
             _apply_chunk_dedupe(rendered_snapshot)
+            render_status = {"status": "executed", "reason": "ok"}
         except Exception as exc:
             render_error = f"Rendered fetch failed: {exc}"
             notify(70, render_error)
             rendered_snapshot = None
+            render_status = {"status": "not_executed", "reason": str(exc)}
         timings["rendered_ms"] = int((time.perf_counter() - t2) * 1000)
     else:
         timings["rendered_ms"] = 0
@@ -1239,11 +1382,15 @@ def run_llm_crawler_simulation(
         policies=policies,
     )
     score = _apply_score_profile(score, nojs_snapshot, page_type_info)
+    if bool((diff.get("h1Consistency") or {}).get("h1_appears_only_after_js")):
+        issues = list(score.get("top_issues") or [])
+        issues.append("H1 appears only after JS")
+        score["top_issues"] = list(dict.fromkeys(issues))[:10]
     recommendations = _build_recommendations(nojs_snapshot, rendered_snapshot, policies, score)
     llm_sim = None
     if bool(getattr(settings, "LLM_SIMULATION_ENABLED", False)):
         llm_sim = _run_llm_simulation(nojs_snapshot)
-    js_dep = _js_dependency_score(rendered_snapshot, diff)
+    js_dep = _js_dependency_score(rendered_snapshot, diff, render_status=render_status)
     score["js_dependency_score"] = js_dep.get("score")
     citation_prob = _compute_citation_probability(nojs_snapshot, score)
     entity_graph = _build_entity_graph(nojs_snapshot) if bool(getattr(settings, "LLM_CRAWLER_ENTITY_GRAPH_ENABLED", False)) else None
@@ -1305,6 +1452,7 @@ def run_llm_crawler_simulation(
         "timings": timings,
         "nojs": nojs_snapshot,
         "rendered": rendered_snapshot,
+        "render_status": render_status,
         "diff": diff,
         "policies": policies,
         "score": score,
@@ -1510,6 +1658,18 @@ def _build_recommendations(nojs: Dict[str, Any], rendered: Optional[Dict[str, An
             [f"main_text_length={content.get('main_text_length', 0)}"],
             ["body"],
         )
+    raw_h1 = int((nojs.get("headings") or {}).get("h1") or 0)
+    rendered_h1 = int(((rendered or {}).get("headings") or {}).get("h1") or 0)
+    if rendered and raw_h1 == 0 and rendered_h1 > 0:
+        add_rec(
+            "P1",
+            "structure",
+            "H1 appears only after JS — expose primary heading in raw HTML for bot consistency",
+            "+4..8",
+            [f"raw_h1={raw_h1}", f"rendered_h1={rendered_h1}"],
+            ["raw_dom", "rendered_dom"],
+            citation_effect="+4..7",
+        )
     if str(main_conf.get("level") or "").lower() == "low":
         add_rec(
             "P1",
@@ -1520,13 +1680,18 @@ def _build_recommendations(nojs: Dict[str, Any], rendered: Optional[Dict[str, An
             ["body", "dom_segments"],
             citation_effect="+6..11",
         )
-    if float(score.get("js_dependency_score", 0)) > 70:
+    js_dep_score = score.get("js_dependency_score")
+    try:
+        js_dep_numeric = float(js_dep_score) if js_dep_score is not None else None
+    except Exception:
+        js_dep_numeric = None
+    if js_dep_numeric is not None and js_dep_numeric > 70:
         add_rec(
             "P1",
             "js_dependency",
             "Высокая зависимость от JS — обеспечьте SSR или пререндер",
             "+5..9",
-            [f"js_dependency_score={score.get('js_dependency_score', 0)}"],
+            [f"js_dependency_score={js_dep_numeric}"],
             ["network", "render"],
         )
     if any("Author block" in x for x in missing_blocks):
@@ -1836,12 +2001,14 @@ def _citation_breakdown(snapshot: Dict[str, Any], page_type_info: Dict[str, Any]
     }
     weights_map = {
         "article": {"schema": 0.30, "author": 0.25, "content_clarity": 0.20, "bot_accessibility": 0.15, "structure": 0.10},
-        "listing_feed": {"schema": 0.22, "author": 0.08, "content_clarity": 0.34, "bot_accessibility": 0.24, "structure": 0.12},
+        "listing": {"schema": 0.22, "author": 0.08, "content_clarity": 0.34, "bot_accessibility": 0.24, "structure": 0.12},
+        "mixed": {"schema": 0.18, "author": 0.06, "content_clarity": 0.40, "bot_accessibility": 0.26, "structure": 0.10},
+        "service": {"schema": 0.32, "author": 0.12, "content_clarity": 0.20, "bot_accessibility": 0.18, "structure": 0.18},
         "product": {"schema": 0.34, "author": 0.08, "content_clarity": 0.18, "bot_accessibility": 0.16, "structure": 0.24},
-        "category": {"schema": 0.24, "author": 0.10, "content_clarity": 0.28, "bot_accessibility": 0.22, "structure": 0.16},
-        "homepage": {"schema": 0.20, "author": 0.08, "content_clarity": 0.27, "bot_accessibility": 0.30, "structure": 0.15},
+        "review": {"schema": 0.28, "author": 0.14, "content_clarity": 0.22, "bot_accessibility": 0.16, "structure": 0.20},
+        "unknown": {"schema": 0.22, "author": 0.10, "content_clarity": 0.30, "bot_accessibility": 0.20, "structure": 0.18},
     }
-    if page_type in {"listing_feed", "homepage"}:
+    if page_type in {"listing", "mixed"}:
         # Do not over-penalize structure on feed-like pages.
         base["structure"] = max(20.0, float(base["structure"]))
     weights = weights_map.get(page_type, weights_map["article"])
@@ -1895,22 +2062,40 @@ def _ai_answer_preview(
     bullets = _build_extractive_preview(ranked, bullets=3)
     mode = "llm" if bool((llm_sim or {}).get("enabled")) else "extractive"
     answer = ""
-    if ranked:
+    seg = snapshot.get("segmentation") or {}
+    seg_conf_payload = seg.get("main_content_confidence") or {}
+    seg_conf = str(seg_conf_payload.get("level") or "").lower()
+    main_pct = float((seg.get("noise_breakdown") or {}).get("main_pct") or 0.0)
+    page_type = str((page_type_info or {}).get("page_type") or "")
+    low_reliability = seg_conf == "low" or main_pct < 20.0
+
+    if not low_reliability and ranked:
         # Use only top-ranked chunks for grounded preview.
         ranked_text = " ".join([str(x.get("text") or "") for x in ranked[:2]])
         answer = " ".join(_sentences(ranked_text)[:2]).strip()
-    if not answer:
+    if not low_reliability and not answer:
         answer = (snapshot.get("content") or {}).get("main_text_preview", "")[:280]
-    if not bullets and answer:
+    if not low_reliability and not bullets and answer:
         bullets = [s.strip() for s in _sentences(answer)[:3] if len(s.strip()) >= 35]
+
+    fix_steps: List[str] = []
+    if low_reliability:
+        answer = "Page not reliably summarizable"
+        bullets = _main_segment_snippets(snapshot, limit=3)
+        if not bullets:
+            bullets = [x for x in _build_extractive_preview(ranked, bullets=3) if x][:3]
+        fix_steps = [
+            "Reduce ads/live/navigation noise in the rendered DOM.",
+            "Add a stable semantic <main>/<article> block with primary content.",
+        ]
+
     confidence = (llm_sim or {}).get("scores", {}).get("answer_quality_score", None)
-    if confidence is None and ranked:
+    if low_reliability:
+        confidence = 15
+    elif confidence is None and ranked:
         confidence = round(min(100, (sum(float(x.get("score") or 0) for x in ranked) / max(1, len(ranked))) * 100), 2)
-    seg = snapshot.get("segmentation") or {}
-    seg_conf = str(((seg.get("main_content_confidence") or {}).get("level") or "")).lower()
-    page_type = str((page_type_info or {}).get("page_type") or "")
     warning = None
-    if seg_conf == "low" or page_type in {"listing_feed"}:
+    if low_reliability or page_type in {"listing", "mixed"}:
         warning = "Page looks like a feed/mixed content; AI citations may be unstable."
     return {
         "question": question,
@@ -1920,6 +2105,9 @@ def _ai_answer_preview(
         "bullets": bullets,
         "warning": warning,
         "page_type": page_type,
+        "main_content_confidence": seg_conf_payload,
+        "is_reliably_summarizable": not low_reliability,
+        "fix_steps": fix_steps,
         "chunk_ranking_debug": [
             {"idx": int(x.get("idx") or 0), "score": x.get("score"), "relevance": x.get("relevance")}
             for x in ranked
@@ -1927,9 +2115,17 @@ def _ai_answer_preview(
     }
 
 
-def _js_dependency_score(rendered_snapshot: Dict[str, Any] | None, diff: Dict[str, Any]) -> Dict[str, Any]:
+def _js_dependency_score(rendered_snapshot: Dict[str, Any] | None, diff: Dict[str, Any], render_status: Dict[str, Any] | None = None) -> Dict[str, Any]:
     if not rendered_snapshot:
-        return {"score": 0, "failures": 0, "blocked": 0, "content_loaded_by_js_ratio": None}
+        reason = str((render_status or {}).get("reason") or "render_not_executed")
+        return {
+            "status": "not_executed",
+            "reason": reason,
+            "score": None,
+            "failures": None,
+            "blocked": None,
+            "content_loaded_by_js_ratio": None,
+        }
     render_debug = rendered_snapshot.get("render_debug") or {}
     failed = len(render_debug.get("failed_requests") or [])
     blocked = len([x for x in (render_debug.get("failed_requests") or []) if str(x.get("resource_type") or "") in {"script", "stylesheet"}])
@@ -1943,6 +2139,8 @@ def _js_dependency_score(rendered_snapshot: Dict[str, Any] | None, diff: Dict[st
         score += min(70, ratio * 100)
     score += min(30, (failed + blocked) * 2)
     return {
+        "status": "executed",
+        "reason": "ok",
         "score": round(min(100, score), 2),
         "failures": failed,
         "blocked": blocked,

@@ -27,6 +27,21 @@ def _safe_text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _normalize_schema_type(value: Any) -> str:
+    raw = _safe_text(value)
+    if not raw:
+        return ""
+    # Normalize URL-like schema types: https://schema.org/Organization -> Organization
+    cleaned = re.split(r"[#?/]", raw)[-1] if ("://" in raw or "/" in raw or "#" in raw) else raw
+    cleaned = cleaned.strip()
+    if not cleaned:
+        return ""
+    if ":" in cleaned and cleaned.lower().startswith("schema:"):
+        cleaned = cleaned.split(":", 1)[1]
+    # Keep stable formatting for known CamelCase schema names.
+    return cleaned
+
+
 def _flesch_reading_ease(text: str) -> float:
     raw = _safe_text(text)
     if not raw:
@@ -56,11 +71,15 @@ def _extract_jsonld_types(soup: BeautifulSoup) -> List[str]:
         if isinstance(payload, dict):
             raw_type = payload.get("@type")
             if isinstance(raw_type, str) and raw_type.strip():
-                found.add(raw_type.strip())
+                norm = _normalize_schema_type(raw_type)
+                if norm:
+                    found.add(norm)
             elif isinstance(raw_type, list):
                 for item in raw_type:
                     if isinstance(item, str) and item.strip():
-                        found.add(item.strip())
+                        norm = _normalize_schema_type(item)
+                        if norm:
+                            found.add(norm)
             for value in payload.values():
                 collect_types(value)
 
@@ -72,14 +91,52 @@ def _extract_jsonld_types(soup: BeautifulSoup) -> List[str]:
             parsed = json.loads(payload)
             collect_types(parsed)
         except Exception:
+            # Fallback for slightly invalid JSON-LD payloads.
+            for match in re.finditer(r'"@type"\s*:\s*"(.*?)"', payload, flags=re.I):
+                norm = _normalize_schema_type(match.group(1))
+                if norm:
+                    found.add(norm)
+            for match in re.finditer(r'"@type"\s*:\s*\[(.*?)\]', payload, flags=re.I | re.S):
+                part = match.group(1)
+                for val in re.findall(r'"(.*?)"', part):
+                    norm = _normalize_schema_type(val)
+                    if norm:
+                        found.add(norm)
+    return sorted(found)
+
+
+def _extract_microdata_types_fallback(soup: BeautifulSoup) -> List[str]:
+    found: Set[str] = set()
+    for tag in soup.find_all(attrs={"itemtype": True}):
+        itemtype = _safe_text(tag.get("itemtype"))
+        if not itemtype:
             continue
+        for part in re.split(r"\s+", itemtype):
+            norm = _normalize_schema_type(part)
+            if norm:
+                found.add(norm)
+    return sorted(found)
+
+
+def _extract_rdfa_types_fallback(soup: BeautifulSoup) -> List[str]:
+    found: Set[str] = set()
+    for tag in soup.find_all(attrs={"typeof": True}):
+        raw = _safe_text(tag.get("typeof"))
+        if not raw:
+            continue
+        for part in re.split(r"\s+", raw):
+            norm = _normalize_schema_type(part)
+            if norm:
+                found.add(norm)
     return sorted(found)
 
 
 def _extract_main_text(soup: BeautifulSoup) -> str:
-    for tag in soup(["script", "style", "noscript", "template"]):
+    # Work on a copy: callers rely on original soup for schema/DOM parsing.
+    clone = BeautifulSoup(str(soup), "html.parser")
+    for tag in clone(["script", "style", "noscript", "template"]):
         tag.extract()
-    node = soup.find("main") or soup.find("article") or soup.body or soup
+    node = clone.find("main") or clone.find("article") or clone.body or clone
     return _safe_text(" ".join(node.stripped_strings))
 
 
@@ -320,6 +377,8 @@ def build_snapshot(
     schema_types = _extract_jsonld_types(soup)
     microdata_types: List[str] = []
     rdfa_types: List[str] = []
+    microdata_types.extend(_extract_microdata_types_fallback(soup))
+    rdfa_types.extend(_extract_rdfa_types_fallback(soup))
     if extruct:
         try:
             data = extruct.extract(html, base_url=final_url, syntaxes=["microdata", "rdfa"], errors="log")
@@ -328,30 +387,40 @@ def build_snapshot(
             for item in microdata_items:
                 t = item.get("type") or item.get("@type")
                 if isinstance(t, list):
-                    microdata_types.extend([_safe_text(x) for x in t if _safe_text(x)])
+                    microdata_types.extend([_normalize_schema_type(x) for x in t if _normalize_schema_type(x)])
                 elif isinstance(t, str):
-                    microdata_types.append(_safe_text(t))
+                    norm = _normalize_schema_type(t)
+                    if norm:
+                        microdata_types.append(norm)
             for item in rdfa_items:
                 t = item.get("type") or item.get("@type")
                 if isinstance(t, list):
-                    rdfa_types.extend([_safe_text(x) for x in t if _safe_text(x)])
+                    rdfa_types.extend([_normalize_schema_type(x) for x in t if _normalize_schema_type(x)])
                 elif isinstance(t, str):
-                    rdfa_types.append(_safe_text(t))
+                    norm = _normalize_schema_type(t)
+                    if norm:
+                        rdfa_types.append(norm)
         except Exception:
             pass
+    # Unique and clean.
+    schema_types = sorted({x for x in schema_types if _safe_text(x)})
+    microdata_types = sorted({x for x in microdata_types if _safe_text(x)})
+    rdfa_types = sorted({x for x in rdfa_types if _safe_text(x)})
+    total_types = set(schema_types) | set(microdata_types) | set(rdfa_types)
     required_schema = {"Organization", "Person", "Article", "Product"}
-    coverage_found = len((set(schema_types) | set(microdata_types) | set(rdfa_types)) & required_schema)
+    coverage_found = len(total_types & required_schema)
     coverage_score = round((coverage_found / max(1, len(required_schema))) * 100, 2)
     x_robots_tag = _safe_text((headers or {}).get("X-Robots-Tag") or (headers or {}).get("x-robots-tag"))
     signals = _extract_author_date_signals(soup)
     social = _extract_social_meta(soup)
     challenge = detect_challenge(status_code, headers, html)
     resources = detect_resource_barriers(final_url, headers, html, soup)
+    ai_schema_types = sorted(total_types)
     ai_blocks = detect_ai_blocks(
         soup=soup,
         main_text=main_text,
         full_text=full_text,
-        schema_types=schema_types,
+        schema_types=ai_schema_types,
     )
 
     snapshot: Dict[str, Any] = {
@@ -401,7 +470,10 @@ def build_snapshot(
             "microdata_types": microdata_types[:50],
             "rdfa_types": rdfa_types[:50],
             "coverage_score": coverage_score,
-            "count": len(schema_types),
+            "count": len(total_types),
+            "jsonld_count": len(schema_types),
+            "microdata_count": len(microdata_types),
+            "rdfa_count": len(rdfa_types),
         },
         "social": social,
         "structure": {

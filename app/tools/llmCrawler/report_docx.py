@@ -179,9 +179,11 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
     discoverability = result.get("discoverability") or {}
     preview = result.get("ai_answer_preview") or {}
     llm = result.get("llm") or {}
+    diff = result.get("diff") or {}
     nojs = result.get("nojs") or {}
     nojs_content = nojs.get("content") or {}
     rendered = result.get("rendered") or {}
+    render_status = result.get("render_status") or {}
     rendered_content = (rendered.get("content") or {}) if isinstance(rendered, dict) else {}
     segmentation = (result.get("segmentation") or nojs.get("segmentation") or {})
     noise_breakdown = (result.get("noise_breakdown") or segmentation.get("noise_breakdown") or nojs_content.get("noise_breakdown") or {})
@@ -411,10 +413,15 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
     if preview.get("warning"):
         add_kv("Warning", preview.get("warning"))
     bullets = preview.get("bullets") or []
+    fix_steps = preview.get("fix_steps") or []
     if bullets:
         add_heading("Key bullets", 2, color="0E7490")
         for b in bullets[:5]:
             doc.add_paragraph(str(b), style="List Bullet")
+    if fix_steps:
+        add_heading("How to fix preview reliability", 2, color="9A3412")
+        for step in fix_steps[:3]:
+            doc.add_paragraph(str(step), style="List Bullet")
     doc.add_page_break()
 
     # PAGE 9: STRUCTURED DATA
@@ -430,10 +437,19 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
 
     # PAGE 10: TECHNICAL DIAGNOSTICS
     add_heading("🛠 Technical Diagnostics", 1, color="0B3B63")
-    add_kv("JS dependency score", _pct(js_dependency.get("score"), "-"))
-    add_kv("Failed resources", js_dependency.get("failures", 0))
-    add_kv("Blocked scripts/styles", js_dependency.get("blocked", 0))
+    add_kv("Render snapshot status", render_status.get("status", "not_executed"))
+    add_kv("Render snapshot reason", render_status.get("reason", "render_not_executed"))
+    if str(js_dependency.get("status") or "") == "executed":
+        add_kv("JS dependency score", _pct(js_dependency.get("score"), "-"))
+        add_kv("Failed resources", js_dependency.get("failures", 0))
+        add_kv("Blocked scripts/styles", js_dependency.get("blocked", 0))
+    else:
+        add_kv("JS dependency score", "Not executed")
+        add_kv("JS dependency reason", js_dependency.get("reason", "render_not_executed"))
     add_kv("Cloaking status", cloaking.get("status", "not_executed"))
+    h1_cons = diff.get("h1Consistency") or {}
+    if bool(h1_cons.get("h1_appears_only_after_js")):
+        add_kv("H1 consistency", "H1 appears only after JS")
     if cloaking.get("status") == "executed":
         add_kv("Cloaking risk", cloaking.get("risk", "unknown"))
         add_kv("Similarity browser vs gptbot", _pct(_safe(cloaking, ["similarity_scores", "browser_vs_gptbot"], "-")))

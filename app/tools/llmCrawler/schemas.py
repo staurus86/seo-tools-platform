@@ -92,6 +92,7 @@ class LlmCrawlerJobStatusResponse(BaseModel):
     requestId: str | None = None
     jobId: str | None = None
     status_message: str | None = None
+    render_status: Dict[str, Any] | None = None
     cloaking: Dict[str, Any] | None = None
     eeat_score: Dict[str, Any] | None = None
     entity_graph: Dict[str, Any] | None = None

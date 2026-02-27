@@ -80,12 +80,14 @@ function _copyText(txt) {
 
 function _pageTypeLabel(v) {
   const val = String(v || '').toLowerCase();
-  if (val === 'listing_feed') return 'Listing / Feed';
-  if (val === 'homepage') return 'Homepage';
-  if (val === 'category') return 'Category';
-  if (val === 'product') return 'Product';
-  if (val === 'article') return 'Article';
-  return val || 'Unknown';
+  if (val === 'listing') return 'listing';
+  if (val === 'mixed') return 'mixed';
+  if (val === 'service') return 'service';
+  if (val === 'review') return 'review';
+  if (val === 'product') return 'product';
+  if (val === 'article') return 'article';
+  if (val === 'unknown') return 'unknown';
+  return val || 'unknown';
 }
 
 function _renderHero(result) {
@@ -96,7 +98,9 @@ function _renderHero(result) {
   const ingestModule = result?.llm_ingestion || {};
   const eeat = _isNotEvaluated(eeatModule) ? '—' : _pct(result?.eeat_score?.score, 0);
   const ingest = _isNotEvaluated(ingestModule) ? '—' : _pct(result?.llm_ingestion?.avg_chunk_quality, 0);
-  const js = _pct(result?.js_dependency?.score, 0);
+  const jsModule = result?.js_dependency || {};
+  const jsExecuted = String(jsModule.status || '') === 'executed';
+  const js = _pct(jsModule.score, '-');
   const pillClass = _riskClass(score);
   const pillText = score >= 80 ? 'Excellent' : score >= 50 ? 'Needs work' : 'Critical';
   const ringColor = _scoreColor(score);
@@ -123,7 +127,11 @@ function _renderHero(result) {
         <div class="card p-3 bg-slate-50 border-slate-200"><div class="subtle text-xs">Citation probability</div><div class="font-bold text-lg">${citation}%</div>${_meter(citation)}</div>
         <div class="card p-3 bg-slate-50 border-slate-200"><div class="subtle text-xs">EEAT score</div><div class="font-bold text-lg">${eeat}${eeat === '—' ? '' : '%'}</div>${eeat === '—' ? `<div class="text-xs subtle mt-1">Not evaluated: ${_esc(eeatModule.reason || 'unknown')}</div>` : _meter(eeat)}</div>
         <div class="card p-3 bg-slate-50 border-slate-200"><div class="subtle text-xs">Ingestion quality</div><div class="font-bold text-lg">${ingest}${ingest === '—' ? '' : '%'}</div>${ingest === '—' ? `<div class="text-xs subtle mt-1">Not evaluated: ${_esc(ingestModule.reason || 'unknown')}</div>` : _meter(ingest)}</div>
-        <div class="card p-3 bg-slate-50 border-slate-200"><div class="subtle text-xs">JS dependency risk</div><div class="font-bold text-lg">${js}%</div>${_meter(100 - js)}</div>
+        <div class="card p-3 bg-slate-50 border-slate-200">
+          <div class="subtle text-xs">JS dependency risk</div>
+          <div class="font-bold text-lg">${jsExecuted ? `${js}%` : 'Not executed'}</div>
+          ${jsExecuted ? _meter(100 - _num(jsModule.score, 0)) : `<div class="text-xs subtle mt-1">Reason: ${_esc(jsModule.reason || 'render_not_executed')}</div>`}
+        </div>
       </div>
     </div>
   `);
@@ -153,7 +161,8 @@ function _renderWhatAI(result) {
         ${_meter(confidence)}
       </div>
       <div class="card p-4 bg-slate-50 border-slate-200 text-sm space-y-1">
-        <div>Page type: <span class="font-semibold">${_esc(pageType)}</span> <span class="subtle text-xs">(${_pct(result?.page_type_confidence, 0)}%)</span></div>
+        <div>Page type: <span class="font-semibold">${_esc(pageType)}</span></div>
+        <div>Page type confidence: <span class="font-semibold">${_pct(result?.page_type_confidence, 0)}%</span></div>
         <div>Organization: ${hasOrg ? '✅' : '❌'}</div>
         <div>Product/entity detected: ${entities.length ? '✅' : '❌'}</div>
         <div>Author: ${signals.author_present ? '✅' : '❌'}</div>
@@ -342,16 +351,20 @@ function _renderFix(result) {
 function _renderPreview(result) {
   const preview = result?.ai_answer_preview || {};
   const bullets = Array.isArray(preview.bullets) ? preview.bullets.slice(0, 3) : [];
+  const fixSteps = Array.isArray(preview.fix_steps) ? preview.fix_steps.slice(0, 2) : [];
   const warning = preview.warning || '';
+  const reliable = preview.is_reliably_summarizable !== false;
+  const answerText = reliable ? (preview.answer || 'Not enough content for stable answer') : 'Page not reliably summarizable';
   _setHTML('v2-preview', `
     <div class="section-title flex items-center gap-2"><i data-lucide="message-square-text" class="w-4 h-4"></i>AI Search Preview</div>
     <div class="card p-3 bg-slate-50 border-slate-200">
       <div class="subtle text-xs">When user asks</div>
       <div class="font-semibold mt-1">${_esc(preview.question || 'What is this page about?')}</div>
-      <div class="text-sm mt-2">${_esc(preview.answer || 'Not enough content for stable answer')}</div>
+      <div class="text-sm mt-2">${_esc(answerText)}</div>
       <div class="subtle text-xs mt-2">Mode: ${_esc(preview.preview_mode || result.preview_mode || 'extractive')} | Confidence: ${_pct(preview.confidence, '-')}</div>
       ${warning ? `<div class="mt-2 text-xs text-amber-700">${_esc(warning)}</div>` : ''}
       ${bullets.length ? `<ul class="list-disc pl-5 text-xs subtle mt-2">${bullets.map((b) => `<li>${_esc(b)}</li>`).join('')}</ul>` : ''}
+      ${(!reliable && fixSteps.length) ? `<div class="mt-3"><div class="text-xs font-semibold">How to fix</div><ol class="list-decimal pl-5 text-xs subtle mt-1">${fixSteps.map((s) => `<li>${_esc(s)}</li>`).join('')}</ol></div>` : ''}
     </div>
   `);
 }
@@ -372,6 +385,8 @@ function _renderDomDiff(result) {
   const browserText = String(result?.rendered?.content?.main_text_preview || '').slice(0, 1400);
   const aiText = String(result?.nojs?.content?.main_text_preview || '').slice(0, 1400);
   const missing = Array.isArray(result?.diff?.missing) ? result.diff.missing : [];
+  const h1c = result?.diff?.h1Consistency || {};
+  const h1JsOnly = !!h1c.h1_appears_only_after_js;
   _setHTML('v2-dom-diff', `
     <div class="section-title flex items-center gap-2"><i data-lucide="git-compare-arrows" class="w-4 h-4"></i>Visual DOM vs AI Text Diff</div>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -385,6 +400,7 @@ function _renderDomDiff(result) {
       </div>
     </div>
     <div class="mt-3 text-xs subtle">Likely removed sections: ${_esc(missing.join(' | ') || 'navigation / footer / utility blocks')}</div>
+    ${h1JsOnly ? `<div class="mt-2 text-xs text-amber-700">H1 appears only after JS</div>` : ''}
   `);
 }
 
@@ -502,12 +518,19 @@ function _renderLLMSim(result) {
 function _renderCloakingJs(result) {
   const cloak = result?.cloaking || {};
   const js = result?.js_dependency || {};
+  const renderStatus = result?.render_status || {};
   const status = String(cloak.status || '');
   const executed = status === 'executed';
   const evidence = Array.isArray(cloak.evidence) ? cloak.evidence.slice(0, 3) : [];
+  const jsExecuted = String(js.status || '') === 'executed';
   _setHTML('v2-cloaking', `
     <div class="section-title flex items-center gap-2"><i data-lucide="shield-alert" class="w-4 h-4"></i>Cloaking & JS Dependency</div>
     <div class="grid grid-cols-1 gap-2 text-sm">
+      <div class="card p-3 bg-slate-50 border-slate-200">
+        <div class="subtle text-xs">Render snapshot</div>
+        <div class="font-semibold">${String(renderStatus.status || 'not_executed') === 'executed' ? 'Executed' : 'Not executed'}</div>
+        <div class="subtle text-xs mt-1">Reason: ${_esc(renderStatus.reason || 'render_not_executed')}</div>
+      </div>
       <div class="card p-3 bg-slate-50 border-slate-200">
         <div class="subtle text-xs">Cloaking risk</div>
         <div class="font-semibold">${executed ? _esc(cloak.risk || 'unknown') : 'Not executed'}</div>
@@ -522,9 +545,13 @@ function _renderCloakingJs(result) {
       </div>
       <div class="card p-3 bg-slate-50 border-slate-200">
         <div class="subtle text-xs">JS dependency score</div>
-        <div class="font-semibold">${_pct(js.score, '-')}</div>
-        <div class="subtle text-xs">Failed resources: ${_num(js.failures, 0)}</div>
-        <div class="subtle text-xs">Blocked scripts/css: ${_num(js.blocked, 0)}</div>
+        <div class="font-semibold">${jsExecuted ? `${_pct(js.score, '-')}%` : 'Not executed'}</div>
+        ${jsExecuted ? `
+          <div class="subtle text-xs">Failed resources: ${_num(js.failures, 0)}</div>
+          <div class="subtle text-xs">Blocked scripts/css: ${_num(js.blocked, 0)}</div>
+        ` : `
+          <div class="subtle text-xs">Reason: ${_esc(js.reason || 'render_not_executed')}</div>
+        `}
       </div>
     </div>
   `);
@@ -591,11 +618,13 @@ function _renderAccess(result) {
 
 function _renderTech(result) {
   const dbg = result?.rendered?.render_debug || {};
+  const renderStatus = result?.render_status || {};
   const errors = Array.isArray(dbg.console_errors) ? dbg.console_errors : [];
   const failed = Array.isArray(dbg.failed_requests) ? dbg.failed_requests : [];
   _setHTML('v2-tech', `
     <div class="section-title flex items-center gap-2"><i data-lucide="terminal-square" class="w-4 h-4"></i>Technical Diagnostics</div>
     <div class="grid grid-cols-2 gap-2 text-sm mb-3">
+      <div class="card p-3 bg-slate-50 border-slate-200">Render snapshot: <span class="font-semibold">${String(renderStatus.status || 'not_executed') === 'executed' ? 'Executed' : 'Not executed'}</span><div class="subtle text-xs mt-1">${_esc(renderStatus.reason || '')}</div></div>
       <div class="card p-3 bg-slate-50 border-slate-200">Console errors: <span class="font-semibold">${errors.length}</span></div>
       <div class="card p-3 bg-slate-50 border-slate-200">Failed requests: <span class="font-semibold">${failed.length}</span></div>
     </div>
@@ -679,11 +708,13 @@ function _renderChunks(result) {
   const cards = chunks.slice(0, 12).map((c, idx) => {
     const text = String(c.text || '');
     const tokens = Math.max(1, Math.round(text.length / 4));
-    const hasEntity = /[A-ZА-Я][a-zа-я]+/.test(text);
+    const ctype = String(c.chunk_type || '').toLowerCase() === 'core' ? 'Core' : 'Utility';
+    const isCore = ctype === 'Core';
     return `<div class="card p-3 bg-slate-50 border-slate-200">
       <div class="flex items-center justify-between text-xs subtle"><span>Chunk ${idx + 1}</span><span>~${tokens} tokens</span></div>
+      <div class="text-xs mt-1"><span class="badge ${isCore ? 'badge-p2' : 'badge-p1'}">${ctype}</span></div>
       <div class="text-sm mt-1">${_esc(text.slice(0, 180))}${text.length > 180 ? '...' : ''}</div>
-      <div class="text-xs mt-2">${hasEntity ? 'Contains key info ✅' : 'Low-signal chunk ⚠'}</div>
+      <div class="text-xs mt-2">${isCore ? 'Contains key info ✅' : 'Utility/support content'}</div>
     </div>`;
   }).join('');
   _setHTML('v2-chunks', `
