@@ -558,6 +558,12 @@ def run_llm_crawler_simulation(
     vector_score = _vector_quality_score(nojs_snapshot, entity_graph) if bool(getattr(settings, "LLM_CRAWLER_VECTOR_SCORE_ENABLED", False)) else None
     ingestion = _llm_ingestion(nojs_snapshot, diff) if bool(getattr(settings, "LLM_SIMULATION_ENABLED", False)) else None
     discoverability = _crawler_path_sim(nojs_snapshot)
+    ai_understanding = _ai_understanding(nojs_snapshot, llm_sim)
+    trust_signal_score = _trust_score(nojs_snapshot)
+    content_loss_percent = _content_loss(diff, nojs_snapshot)
+    citation_breakdown = _citation_breakdown(nojs_snapshot)
+    projected_score = _projected_score(score, citation_breakdown)
+    answer_preview = _ai_answer_preview(nojs_snapshot, llm_sim)
     timings["analysis_ms"] = int((time.perf_counter() - t3) * 1000)
     timings["total_ms"] = int((time.perf_counter() - started_at) * 1000)
 
@@ -588,6 +594,13 @@ def run_llm_crawler_simulation(
         "vector_quality_score": vector_score,
         "llm_ingestion": ingestion,
         "discoverability": discoverability,
+        "ai_understanding_score": ai_understanding.get("score"),
+        "ai_understanding": ai_understanding,
+        "trust_signal_score": trust_signal_score,
+        "content_loss_percent": content_loss_percent,
+        "citation_breakdown": citation_breakdown,
+        "projected_score_after_fixes": projected_score,
+        "ai_answer_preview": answer_preview,
         "engine": "llm_crawler_mvp_v1",
     }
 
@@ -791,6 +804,82 @@ def _crawler_path_sim(snapshot: Dict[str, Any]) -> Dict[str, Any]:
         "click_depth_estimate": click_depth_estimate,
         "crawl_priority": crawl_priority,
     }
+
+
+def _ai_understanding(snapshot: Dict[str, Any], llm_sim: Dict[str, Any] | None) -> Dict[str, Any]:
+    content = snapshot.get("content") or {}
+    signals = snapshot.get("signals") or {}
+    topic = (llm_sim or {}).get("summary") or ""
+    entities = (llm_sim or {}).get("entities") or []
+    score = 50
+    if topic:
+        score += 20
+    if signals.get("author_present"):
+        score += 5
+    if len(entities) > 3:
+        score += 10
+    clarity = float(content.get("readability_score") or 0)
+    score += min(15, clarity / 3)
+    return {
+        "score": max(0, min(100, round(score, 2))),
+        "topic": topic[:200],
+        "entities": entities[:10],
+        "content_clarity": round(clarity, 2),
+        "intent": "informational",
+    }
+
+
+def _trust_score(snapshot: Dict[str, Any]) -> float:
+    signals = snapshot.get("signals") or {}
+    schema = snapshot.get("schema") or {}
+    trust = 0
+    if signals.get("author_present"):
+        trust += 25
+    if signals.get("date_present"):
+        trust += 15
+    if schema.get("coverage_score", 0) >= 50:
+        trust += 30
+    return float(max(0, min(100, trust)))
+
+
+def _content_loss(diff: Dict[str, Any], snapshot: Dict[str, Any]) -> float:
+    text_coverage = diff.get("textCoverage")
+    if text_coverage is None:
+        return 0.0
+    try:
+        loss = max(0.0, 1 - float(text_coverage))
+    except Exception:
+        loss = 0.0
+    return round(loss * 100, 2)
+
+
+def _citation_breakdown(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    schema = snapshot.get("schema") or {}
+    signals = snapshot.get("signals") or {}
+    content = snapshot.get("content") or {}
+    return {
+        "schema": 100 if schema.get("coverage_score", 0) >= 75 else 50 if schema.get("coverage_score", 0) > 0 else 0,
+        "author": 100 if signals.get("author_present") else 0,
+        "content_clarity": min(100, float(content.get("readability_score") or 0)),
+        "bot_accessibility": 100,
+        "structure": min(100, (snapshot.get("headings") or {}).get("h2", 0) * 10),
+    }
+
+
+def _projected_score(score: Dict[str, Any], citation_breakdown: Dict[str, Any]) -> float:
+    base = float(score.get("total", 0))
+    gain = 0
+    if citation_breakdown.get("schema", 0) < 50:
+        gain += 12
+    if citation_breakdown.get("author", 0) == 0:
+        gain += 8
+    return float(max(base, min(100, base + gain)))
+
+
+def _ai_answer_preview(snapshot: Dict[str, Any], llm_sim: Dict[str, Any] | None) -> Dict[str, Any]:
+    question = "What is this page about?"
+    answer = (llm_sim or {}).get("summary") or (snapshot.get("content") or {}).get("main_text_preview", "")[:240]
+    return {"question": question, "answer": answer or "Not enough content", "confidence": (llm_sim or {}).get("scores", {}).get("answer_quality_score", None)}
 
 
 def _js_dependency_score(rendered_snapshot: Dict[str, Any] | None, diff: Dict[str, Any]) -> Dict[str, Any]:

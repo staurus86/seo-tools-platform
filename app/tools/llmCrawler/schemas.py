@@ -98,3 +98,10 @@ class LlmCrawlerJobStatusResponse(BaseModel):
     js_dependency_score: float | None = None
     llm_ingestion: Dict[str, Any] | None = None
     vector_quality_score: float | None = None
+    ai_understanding_score: float | None = None
+    trust_signal_score: float | None = None
+    content_loss_percent: float | None = None
+    projected_score_after_fixes: float | None = None
+    citation_breakdown: Dict[str, Any] | None = None
+    discoverability_score: float | None = None
+    ai_answer_preview: Dict[str, Any] | None = None
