@@ -4,12 +4,46 @@
 .dark .hero-score {
   background: radial-gradient(circle at 30% 30%, #0f172a, #0b1224 55%, #0a0f1f);
 }
+.hero-score * {
+  color: #0f172a;
+}
+.dark .hero-score * {
+  color: #e5e7eb;
+}
 .card {
   transition: transform 0.15s ease, box-shadow 0.15s ease;
-  }
+}
 .card:hover {
   transform: translateY(-2px);
   box-shadow: 0 12px 30px rgba(0,0,0,0.08);
+}
+.llm-v2 {
+  color: #0f172a;
+}
+.dark .llm-v2 {
+  color: #e2e8f0;
+}
+.llm-v2 h1, .llm-v2 h2, .llm-v2 h3, .llm-v2 h4 {
+  color: #0f172a;
+}
+.dark .llm-v2 h1, .dark .llm-v2 h2, .dark .llm-v2 h3, .dark .llm-v2 h4 {
+  color: #f8fafc;
+}
+.llm-v2 .card {
+  background: #ffffff;
+  color: #0f172a;
+  border: 1px solid #e2e8f0;
+}
+.dark .llm-v2 .card {
+  background: #0f172a;
+  color: #e2e8f0;
+  border: 1px solid #1f2937;
+}
+.llm-v2 .muted {
+  color: #475569;
+}
+.dark .llm-v2 .muted {
+  color: #cbd5f5;
 }
 .pill {
   display: inline-flex;
