@@ -123,6 +123,8 @@ class LlmCrawlerJobStatusResponse(BaseModel):
     ai_directives: Dict[str, Any] | None = None
     improvement_library: Dict[str, Any] | None = None
     detection_issues: List[str] | None = None
+    detectors: Dict[str, Any] | None = None
+    quality_gates: Dict[str, Any] | None = None
     segmentation: Dict[str, Any] | None = None
     content_extraction: Dict[str, Any] | None = None
     navigation_detection: Dict[str, Any] | None = None

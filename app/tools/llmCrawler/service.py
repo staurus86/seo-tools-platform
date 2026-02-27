@@ -701,6 +701,259 @@ def _clean_entity_name(value: str) -> str:
     return raw[:120]
 
 
+def _normalize_confidence(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        raw = float(value)
+    except Exception:
+        return None
+    if raw > 1.0:
+        raw = raw / 100.0
+    return round(max(0.0, min(1.0, raw)), 4)
+
+
+def _detector_entry(
+    *,
+    status: str,
+    confidence: Any,
+    version: str,
+    evidence: List[str] | None = None,
+) -> Dict[str, Any]:
+    return {
+        "status": status,
+        "confidence": _normalize_confidence(confidence),
+        "version": str(version or "unknown"),
+        "evidence": list(dict.fromkeys([str(x) for x in (evidence or []) if str(x).strip()]))[:6],
+    }
+
+
+def _build_detector_layer(
+    *,
+    content_extraction: Dict[str, Any],
+    segmentation: Dict[str, Any],
+    structured_data: Dict[str, Any],
+    entities: Dict[str, Any],
+    page_classification: Dict[str, Any],
+    js_dependency: Dict[str, Any],
+    llm_ingestion: Dict[str, Any],
+    retrieval: Dict[str, Any],
+    citation_model: Dict[str, Any],
+    validation: Dict[str, Any],
+) -> Dict[str, Any]:
+    seg_conf = _normalize_confidence(segmentation.get("segmentation_confidence") or segmentation.get("confidence"))
+    seg_status = "evaluated" if (seg_conf is not None and int(len(segmentation.get("content_segments") or [])) > 0) else "not_evaluated"
+
+    schema_raw_count = int((structured_data.get("raw") or {}).get("count") or 0)
+    schema_rendered_count = int((structured_data.get("rendered") or {}).get("count") or 0)
+    schema_source = str(structured_data.get("source") or "none")
+    schema_status = "evaluated" if (schema_raw_count + schema_rendered_count) > 0 else "not_evaluated"
+    if schema_status == "evaluated" and bool(structured_data.get("rendered_only")):
+        schema_status = "partial"
+
+    entity_total = 0
+    entity_conf_values: List[float] = []
+    for bucket in ("organizations", "persons", "products", "software", "locations"):
+        for item in (entities.get(bucket) or []):
+            entity_total += 1
+            if isinstance(item, dict) and item.get("confidence") is not None:
+                conf = _normalize_confidence(item.get("confidence"))
+                if conf is not None:
+                    entity_conf_values.append(conf)
+    entity_status = "evaluated" if entity_total > 0 else "not_evaluated"
+    entity_conf = (sum(entity_conf_values) / len(entity_conf_values)) if entity_conf_values else _normalize_confidence(entities.get("entity_density"))
+
+    page_type = str(page_classification.get("type") or "unknown")
+    page_conf = _normalize_confidence(page_classification.get("confidence"))
+    page_status = "evaluated" if page_type not in {"", "unknown"} else "not_evaluated"
+
+    js_status = str(js_dependency.get("status") or "not_evaluated")
+    js_conf = _normalize_confidence(js_dependency.get("coverage_ratio"))
+    if js_status == "executed":
+        js_status_norm = "evaluated"
+    elif js_status == "not_executed":
+        js_status_norm = "not_evaluated"
+    else:
+        js_status_norm = js_status
+
+    ingestion_status = str(llm_ingestion.get("status") or "not_evaluated")
+    retrieval_status = str(retrieval.get("status") or "not_evaluated")
+
+    detectors = {
+        "content_extraction": _detector_entry(
+            status="evaluated" if bool(content_extraction.get("primary_extractor")) else "not_evaluated",
+            confidence=content_extraction.get("extraction_confidence"),
+            version="content-fusion-v3",
+            evidence=[
+                f"primary_extractor={content_extraction.get('primary_extractor', 'unknown')}",
+                f"extractor_scores={len(content_extraction.get('extractor_scores') or {})}",
+            ],
+        ),
+        "segmentation": _detector_entry(
+            status=seg_status,
+            confidence=seg_conf,
+            version=str(segmentation.get("segment_version") or "seg-fusion-v3"),
+            evidence=[
+                f"main_ratio={segmentation.get('main_ratio')}",
+                f"boilerplate_ratio={segmentation.get('boilerplate_ratio')}",
+                f"segments={len(segmentation.get('content_segments') or [])}",
+            ],
+        ),
+        "structured_data": _detector_entry(
+            status=schema_status,
+            confidence=structured_data.get("coverage_score"),
+            version="schema-split-v3",
+            evidence=[
+                f"raw_count={schema_raw_count}",
+                f"rendered_count={schema_rendered_count}",
+                f"source={schema_source}",
+            ],
+        ),
+        "entities": _detector_entry(
+            status=entity_status,
+            confidence=entity_conf,
+            version="entity-universal-v3",
+            evidence=[
+                f"entity_total={entity_total}",
+                f"entity_density={entities.get('entity_density')}",
+            ],
+        ),
+        "page_classification": _detector_entry(
+            status=page_status,
+            confidence=page_conf,
+            version="page-classifier-v3",
+            evidence=[
+                f"type={page_type}",
+                f"signals={len(page_classification.get('signals') or [])}",
+            ],
+        ),
+        "js_dependency": _detector_entry(
+            status=js_status_norm,
+            confidence=js_conf,
+            version="js-dependency-v2",
+            evidence=[
+                f"risk={js_dependency.get('risk')}",
+                f"coverage_ratio={js_dependency.get('coverage_ratio')}",
+            ],
+        ),
+        "llm_ingestion": _detector_entry(
+            status=ingestion_status,
+            confidence=llm_ingestion.get("ingestion_score"),
+            version="ingestion-sim-v3",
+            evidence=[
+                f"chunks_total={llm_ingestion.get('chunks_total')}",
+                f"chunks_survive_1024={llm_ingestion.get('chunks_survive_1024')}",
+            ],
+        ),
+        "retrieval": _detector_entry(
+            status=retrieval_status,
+            confidence=retrieval.get("retrieval_confidence"),
+            version="retrieval-sim-v3",
+            evidence=[
+                f"avg_score={retrieval.get('avg_score')}",
+                f"best_score={retrieval.get('best_score')}",
+                f"queries={len(retrieval.get('queries') or [])}",
+            ],
+        ),
+        "citation_model": _detector_entry(
+            status="evaluated" if citation_model.get("citation_probability") is not None else "not_evaluated",
+            confidence=citation_model.get("confidence"),
+            version=str(citation_model.get("version") or "v3"),
+            evidence=[
+                f"citation_probability={citation_model.get('citation_probability')}",
+                f"components={len(citation_model.get('components') or {})}",
+            ],
+        ),
+        "validation": _detector_entry(
+            status="evaluated",
+            confidence=1.0 if bool(validation.get("content_sufficient")) else 0.4,
+            version="validation-v1",
+            evidence=[
+                f"content_sufficient={validation.get('content_sufficient')}",
+                f"warnings={len(validation.get('warnings') or [])}",
+            ],
+        ),
+    }
+    evaluated = sum(1 for item in detectors.values() if str(item.get("status") or "") == "evaluated")
+    partial = sum(1 for item in detectors.values() if str(item.get("status") or "") == "partial")
+    total = max(1, len(detectors))
+    confidence_values = [float(item.get("confidence")) for item in detectors.values() if item.get("confidence") is not None]
+    detectors["summary"] = {
+        "evaluated": evaluated,
+        "partial": partial,
+        "not_evaluated": total - evaluated - partial,
+        "coverage_ratio": round((evaluated + (partial * 0.5)) / total, 4),
+        "avg_confidence": round(sum(confidence_values) / len(confidence_values), 4) if confidence_values else None,
+        "grade": "A" if ((evaluated + (partial * 0.5)) / total) >= 0.85 else "B" if ((evaluated + (partial * 0.5)) / total) >= 0.65 else "C",
+        "version": "detector-layer-v1",
+    }
+    return detectors
+
+
+def _quality_gates(
+    *,
+    detectors: Dict[str, Any],
+    segmentation: Dict[str, Any],
+    retrieval: Dict[str, Any],
+    citation_model: Dict[str, Any],
+    validation: Dict[str, Any],
+) -> Dict[str, Any]:
+    summary = detectors.get("summary") or {}
+    coverage_ratio = _safe_float(summary.get("coverage_ratio"), 0.0)
+    seg_conf = _safe_float(segmentation.get("segmentation_confidence") or segmentation.get("confidence"), 0.0)
+    retrieval_avg = _safe_float(retrieval.get("avg_score"), 0.0)
+    citation_conf = _safe_float(citation_model.get("confidence"), 0.0)
+    content_ok = bool(validation.get("content_sufficient"))
+
+    checks = [
+        {
+            "id": "detector_coverage",
+            "metric": "detectors.summary.coverage_ratio",
+            "value": round(coverage_ratio, 4),
+            "threshold": 0.7,
+            "pass": coverage_ratio >= 0.7,
+        },
+        {
+            "id": "segmentation_confidence",
+            "metric": "segmentation.segmentation_confidence",
+            "value": round(seg_conf, 4),
+            "threshold": 0.5,
+            "pass": seg_conf >= 0.5,
+        },
+        {
+            "id": "retrieval_quality",
+            "metric": "retrieval.avg_score",
+            "value": round(retrieval_avg, 4),
+            "threshold": 0.35,
+            "pass": retrieval_avg >= 0.35,
+        },
+        {
+            "id": "citation_confidence",
+            "metric": "citation_model.confidence",
+            "value": round(citation_conf, 4),
+            "threshold": 0.5,
+            "pass": citation_conf >= 0.5,
+        },
+        {
+            "id": "content_sufficient",
+            "metric": "validation.content_sufficient",
+            "value": 1.0 if content_ok else 0.0,
+            "threshold": 1.0,
+            "pass": content_ok,
+        },
+    ]
+    passed = sum(1 for x in checks if bool(x.get("pass")))
+    failed = [x for x in checks if not bool(x.get("pass"))]
+    return {
+        "status": "pass" if passed == len(checks) else "warn" if passed >= 3 else "fail",
+        "passed": passed,
+        "total": len(checks),
+        "checks": checks,
+        "failed": failed,
+        "version": "quality-gates-v1",
+    }
+
+
 def _content_clarity(snapshot: Dict[str, Any], entity_graph: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     content = snapshot.get("content") or {}
     headings = snapshot.get("headings") or {}
@@ -866,17 +1119,42 @@ def _retrieval_simulation(snapshot: Dict[str, Any], entities: Dict[str, Any] | N
     meta = snapshot.get("meta") or {}
     headings = snapshot.get("headings") or {}
     ent = entities or {}
+    title = str(meta.get("title") or "").strip()
+    site_name = str(meta.get("site_name") or "").strip()
     query_candidates: List[str] = []
-    if str(meta.get("title") or "").strip():
-        query_candidates.append(str(meta.get("title")))
+    informational_queries: List[str] = []
+    commercial_queries: List[str] = []
+    navigational_queries: List[str] = []
+    if title:
+        query_candidates.append(title)
+        informational_queries.append(f"What is {title[:80]}?")
     h1_texts = headings.get("h1_texts") or []
     if h1_texts:
-        query_candidates.append(str(h1_texts[0]))
+        h1 = str(h1_texts[0])
+        query_candidates.append(h1)
+        informational_queries.append(f"Explain {h1[:80]}")
     for bucket in ("organizations", "products", "software"):
         for item in (ent.get(bucket) or [])[:2]:
             name = str((item or {}).get("name") if isinstance(item, dict) else item or "").strip()
             if name:
                 query_candidates.append(name)
+                if bucket in {"products", "software"}:
+                    commercial_queries.append(f"{name[:70]} pricing")
+                    commercial_queries.append(f"Buy {name[:70]}")
+                if bucket == "organizations":
+                    navigational_queries.append(f"{name[:70]} official website")
+                    navigational_queries.append(f"{name[:70]} contact")
+    if site_name:
+        navigational_queries.append(f"{site_name[:70]} homepage")
+    if title:
+        commercial_queries.append(f"{title[:70]} price")
+    if not commercial_queries and title:
+        commercial_queries.append(f"{title[:70]} services")
+    if not navigational_queries and title:
+        navigational_queries.append(f"{title[:70]} official page")
+    query_candidates.extend(informational_queries[:2])
+    query_candidates.extend(commercial_queries[:2])
+    query_candidates.extend(navigational_queries[:2])
     query_candidates = [q.strip() for q in query_candidates if q and q.strip()]
     query_candidates = list(dict.fromkeys(query_candidates))[:6]
     if not query_candidates:
@@ -885,6 +1163,16 @@ def _retrieval_simulation(snapshot: Dict[str, Any], entities: Dict[str, Any] | N
     corpus = [str(c.get("text") or "") for c in chunks]
     scores: List[float] = []
     debug: List[Dict[str, Any]] = []
+    per_intent: Dict[str, List[float]] = {"informational": [], "commercial": [], "navigational": []}
+
+    def classify_intent(query: str) -> str:
+        q = query.lower()
+        if any(tok in q for tok in ("price", "pricing", "buy", "cost", "quote", "services")):
+            return "commercial"
+        if any(tok in q for tok in ("official", "homepage", "contact", "website")):
+            return "navigational"
+        return "informational"
+
     for query in query_candidates:
         best = 0.0
         for chunk in chunks:
@@ -894,15 +1182,27 @@ def _retrieval_simulation(snapshot: Dict[str, Any], entities: Dict[str, Any] | N
                 best = sc
         best = max(0.0, min(1.0, float(best)))
         scores.append(best)
+        per_intent[classify_intent(query)].append(best)
         debug.append({"query": query[:180], "best_overlap": round(best, 4)})
     avg_score = (sum(scores) / max(1, len(scores))) if scores else 0.0
     best_score = max(scores) if scores else 0.0
+    score_stddev = statistics.pstdev(scores) if len(scores) > 1 else 0.0
+    ci_half = min(0.25, 1.96 * (score_stddev / max(1.0, math.sqrt(max(1, len(scores))))))
+    ci_low = max(0.0, avg_score - ci_half)
+    ci_high = min(1.0, avg_score + ci_half)
     confidence = min(1.0, max(0.0, (avg_score * 0.7) + (best_score * 0.3)))
+    intent_scores = {
+        k: round(sum(v) / max(1, len(v)), 4) if v else 0.0
+        for k, v in per_intent.items()
+    }
     return {
         "status": "evaluated",
         "reason": "ok",
         "avg_score": round(avg_score, 4),
         "best_score": round(best_score, 4),
+        "score_stddev": round(float(score_stddev), 4),
+        "confidence_interval": {"low": round(ci_low, 4), "high": round(ci_high, 4)},
+        "intent_scores": intent_scores,
         "retrieval_confidence": round(confidence, 4),
         "queries": query_candidates,
         "debug": debug[:10],
@@ -1341,7 +1641,7 @@ def _citation_model_v2(
     else:
         retrieval_score = 0.2
 
-    probability = (
+    raw_probability = (
         (0.25 * ingestion_score)
         + (0.25 * retrieval_score)
         + (0.20 * segmentation_score)
@@ -1349,17 +1649,24 @@ def _citation_model_v2(
         + (0.15 * schema_score)
     )
     available = sum(1 for x in [schema_score, segmentation_score, entity_score, ingestion_score, retrieval_score] if x > 0.0)
-    confidence = min(1.0, 0.45 + (available * 0.09))
+    support = available / 5.0
+    calibrated_probability = (raw_probability * (0.8 + (support * 0.2))) + ((1.0 - support) * 0.03)
+    calibrated_probability = max(0.0, min(1.0, calibrated_probability))
+    calibration_error_estimate = abs(calibrated_probability - raw_probability) * (1.0 - support)
+    confidence = min(1.0, 0.42 + (available * 0.1))
     return {
-        "citation_probability": round(float(max(0.0, min(1.0, probability))), 4),
+        "citation_probability": round(float(calibrated_probability), 4),
         "confidence": round(float(max(0.0, min(1.0, confidence))), 4),
         "version": "v3",
+        "support_signals": round(float(support), 4),
+        "calibration_error_estimate": round(float(calibration_error_estimate), 4),
         "components": {
             "schema_score": round(schema_score, 4),
             "segmentation_score": round(segmentation_score, 4),
             "entity_score": round(entity_score, 4),
             "ingestion_score": round(ingestion_score, 4),
             "retrieval_score": round(retrieval_score, 4),
+            "raw_probability": round(float(raw_probability), 4),
         },
     }
 
@@ -2187,6 +2494,25 @@ def run_llm_crawler_simulation(
         detection_issues,
         snippet_library,
     )
+    detectors = _build_detector_layer(
+        content_extraction=content_extraction,
+        segmentation=segmentation_payload,
+        structured_data=structured_data,
+        entities=entities,
+        page_classification=page_classification,
+        js_dependency=js_dep,
+        llm_ingestion=ingestion,
+        retrieval=retrieval,
+        citation_model=citation_model,
+        validation=validation,
+    )
+    quality_gates = _quality_gates(
+        detectors=detectors,
+        segmentation=segmentation_payload,
+        retrieval=retrieval,
+        citation_model=citation_model,
+        validation=validation,
+    )
     timings["analysis_ms"] = int((time.perf_counter() - t3) * 1000)
     timings["total_ms"] = int((time.perf_counter() - started_at) * 1000)
     noise_breakdown = ((nojs_snapshot.get("segmentation") or {}).get("noise_breakdown") or {})
@@ -2248,6 +2574,8 @@ def run_llm_crawler_simulation(
         "ai_directives": ai_directives,
         "improvement_library": improvement_library,
         "detection_issues": detection_issues,
+        "detectors": detectors,
+        "quality_gates": quality_gates,
         "page_type": page_type_info.get("page_type"),
         "page_type_confidence": page_type_info.get("confidence"),
         "page_type_reasons": page_type_info.get("reasons") or [],

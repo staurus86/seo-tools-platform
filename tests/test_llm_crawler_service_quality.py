@@ -8,6 +8,8 @@ from app.tools.llmCrawler.service import (
     _apply_chunk_dedupe,
     _build_structured_data_split,
     _build_improvement_library,
+    _build_detector_layer,
+    _quality_gates,
     _content_quality_metrics,
     _citation_model_v2,
     _compute_eeat,
@@ -239,6 +241,41 @@ class LlmCrawlerServiceQualityTests(unittest.TestCase):
         self.assertIn("retrieval_score", citation["components"])
         self.assertIn("entity_score", citation["components"])
         self.assertIn(citation.get("version"), {"v2", "v3"})
+        self.assertIn("calibration_error_estimate", citation)
+        self.assertIn("support_signals", citation)
+
+    def test_detector_layer_contract(self):
+        detectors = _build_detector_layer(
+            content_extraction={"primary_extractor": "trafilatura", "extraction_confidence": 0.84, "extractor_scores": {"trafilatura": 0.84}},
+            segmentation={"segmentation_confidence": 0.78, "main_ratio": 0.42, "boilerplate_ratio": 0.58, "content_segments": [{"id": 1}], "segment_version": "seg-fusion-v3"},
+            structured_data={"raw": {"count": 1}, "rendered": {"count": 2}, "source": "raw+rendered", "coverage_score": 0.66, "rendered_only": False},
+            entities={"organizations": [{"name": "Acme", "confidence": 0.91}], "persons": [], "products": [], "software": [], "locations": [], "entity_density": 0.003},
+            page_classification={"type": "article", "confidence": 0.81, "signals": ["author signal"]},
+            js_dependency={"status": "executed", "risk": "medium", "coverage_ratio": 0.54},
+            llm_ingestion={"status": "evaluated", "ingestion_score": 0.52, "chunks_total": 12, "chunks_survive_1024": 6},
+            retrieval={"status": "evaluated", "avg_score": 0.62, "best_score": 0.78, "retrieval_confidence": 0.71, "queries": ["query"]},
+            citation_model={"citation_probability": 0.68, "confidence": 0.81, "version": "v3", "components": {"a": 1}},
+            validation={"content_sufficient": True, "warnings": []},
+        )
+        self.assertIn("summary", detectors)
+        self.assertIn("content_extraction", detectors)
+        self.assertEqual(detectors["content_extraction"]["status"], "evaluated")
+        self.assertEqual(detectors["page_classification"]["status"], "evaluated")
+
+    def test_quality_gates_contract(self):
+        detectors = {
+            "summary": {"coverage_ratio": 0.82},
+        }
+        gates = _quality_gates(
+            detectors=detectors,
+            segmentation={"segmentation_confidence": 0.75},
+            retrieval={"avg_score": 0.6},
+            citation_model={"confidence": 0.8},
+            validation={"content_sufficient": True},
+        )
+        self.assertIn(gates.get("status"), {"pass", "warn", "fail"})
+        self.assertEqual(gates.get("total"), 5)
+        self.assertTrue(isinstance(gates.get("checks"), list))
 
     def test_eeat_heuristic_fallback_has_score(self):
         snapshot = self._snapshot()
