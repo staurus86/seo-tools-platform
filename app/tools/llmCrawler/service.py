@@ -2735,6 +2735,14 @@ def run_llm_crawler_simulation(
         entities=entities,
     )
     citation_prob = round(float(citation_model.get("citation_probability") or 0.0) * 100.0, 2)
+    ai_visibility = _ai_visibility_score_model(
+        score=score,
+        citation_model=citation_model,
+        ingestion=ingestion,
+        discoverability=discoverability,
+        js_dependency=js_dep,
+        entities=entities,
+    )
     trust_signal_score = _trust_score(nojs_snapshot)
     content_loss_percent = _content_loss(diff, nojs_snapshot)
     citation_breakdown = _citation_breakdown(nojs_snapshot, page_type_info, ai_understanding=ai_understanding)
@@ -2832,7 +2840,9 @@ def run_llm_crawler_simulation(
         "diff": diff,
         "policies": policies,
         "score": score,
-        "ai_visibility_score": score.get("total"),
+        "ai_visibility_score": ai_visibility.get("score"),
+        "ai_visibility": ai_visibility,
+        "ai_visibility_confidence": ai_visibility.get("confidence_score"),
         "bot_matrix": bot_matrix,
         "bot_visibility_score": bot_visibility.get("bot_visibility_score"),
         "bot_visibility_scores": bot_visibility.get("bot_visibility_scores"),
@@ -3792,6 +3802,60 @@ def _projected_score_waterfall(score: Dict[str, Any], citation_breakdown: Dict[s
     return {"baseline": round(base, 2), "target": round(target, 2), "steps": steps}
 
 
+def _ai_visibility_score_model(
+    *,
+    score: Dict[str, Any],
+    citation_model: Dict[str, Any],
+    ingestion: Dict[str, Any],
+    discoverability: Dict[str, Any],
+    js_dependency: Dict[str, Any],
+    entities: Dict[str, Any],
+) -> Dict[str, Any]:
+    score_total = _safe_float(score.get("total"), 0.0)
+    citation_prob = _safe_float(citation_model.get("citation_probability"), 0.0) * 100.0
+    ingestion_quality = _safe_float(ingestion.get("ingestion_quality_score"), _safe_float(ingestion.get("score"), score_total))
+    discoverability_score = _safe_float(discoverability.get("discoverability_score"), score_total)
+    entity_density = _safe_float((entities or {}).get("entity_density"), 0.0)
+    entity_graph_score = min(100.0, max(0.0, entity_density * 14000.0))
+    js_score = None
+    if str((js_dependency or {}).get("status") or "") == "executed":
+        js_score = max(0.0, 100.0 - _safe_float(js_dependency.get("score"), 0.0))
+    else:
+        js_score = 62.0
+    breakdown = {
+        "ingestion_quality": round(ingestion_quality, 2),
+        "schema_citation": round(citation_prob, 2),
+        "base_accessibility": round(score_total, 2),
+        "entity_graph": round(entity_graph_score, 2),
+        "discoverability": round(discoverability_score, 2),
+        "js_readability": round(js_score, 2),
+    }
+    ai_score = (
+        (breakdown["ingestion_quality"] * 0.24)
+        + (breakdown["schema_citation"] * 0.2)
+        + (breakdown["base_accessibility"] * 0.2)
+        + (breakdown["entity_graph"] * 0.12)
+        + (breakdown["discoverability"] * 0.14)
+        + (breakdown["js_readability"] * 0.1)
+    )
+    confidence = min(
+        1.0,
+        max(
+            0.2,
+            0.34
+            + (_safe_float(citation_model.get("confidence"), 0.0) * 0.32)
+            + (_safe_float(ingestion.get("ingestion_confidence"), 0.0) * 0.2)
+            + (0.14 if str((js_dependency or {}).get("status") or "") == "executed" else 0.06),
+        ),
+    )
+    return {
+        "score": round(max(0.0, min(100.0, ai_score)), 2),
+        "confidence_score": round(confidence, 4),
+        "score_breakdown": breakdown,
+        "version": "ai-visibility-v1",
+    }
+
+
 def _ai_answer_preview(
     snapshot: Dict[str, Any],
     llm_sim: Dict[str, Any] | None,
@@ -3858,6 +3922,10 @@ def _ai_answer_preview(
 def _js_dependency_score(rendered_snapshot: Dict[str, Any] | None, diff: Dict[str, Any], render_status: Dict[str, Any] | None = None) -> Dict[str, Any]:
     raw_text_length = int(diff.get("raw_text_length") or 0)
     rendered_text_length = int(diff.get("rendered_text_length") or 0)
+    links_diff = diff.get("linksDiff") or {}
+    links_added = int(links_diff.get("added") or 0)
+    links_removed = int(links_diff.get("removed") or 0)
+    link_delta_ratio = round((links_added + links_removed) / max(1, links_added + links_removed + 40), 4)
     if not rendered_snapshot:
         reason = str((render_status or {}).get("reason") or "render_not_executed")
         return {
@@ -3871,6 +3939,10 @@ def _js_dependency_score(rendered_snapshot: Dict[str, Any] | None, diff: Dict[st
             "failures": None,
             "blocked": None,
             "content_loaded_by_js_ratio": None,
+            "content_delta_ratio": None,
+            "link_delta_ratio": None,
+            "text_delta_ratio": None,
+            "critical_content_js_only": None,
         }
     render_debug = rendered_snapshot.get("render_debug") or {}
     failed = len(render_debug.get("failed_requests") or [])
@@ -3892,8 +3964,15 @@ def _js_dependency_score(rendered_snapshot: Dict[str, Any] | None, diff: Dict[st
             "failures": failed,
             "blocked": blocked,
             "content_loaded_by_js_ratio": None,
+            "content_delta_ratio": None,
+            "link_delta_ratio": round(link_delta_ratio, 4),
+            "text_delta_ratio": round(abs(rendered_text_length - raw_text_length) / max(1, rendered_text_length), 4) if rendered_text_length else None,
+            "critical_content_js_only": None,
         }
     coverage_ratio = max(0.0, min(1.0, coverage_ratio))
+    content_delta_ratio = round(max(0.0, 1.0 - coverage_ratio), 4)
+    text_delta_ratio = round(abs(rendered_text_length - raw_text_length) / max(1, rendered_text_length), 4) if rendered_text_length else 0.0
+    critical_content_js_only = bool(coverage_ratio < 0.3 and rendered_text_length >= 500)
     dependency_score = (1.0 - coverage_ratio) * 100.0
     dependency_score += min(5.0, (failed * 0.25) + (blocked * 0.5))
     dependency_score = max(0.0, min(100.0, dependency_score))
@@ -3914,6 +3993,10 @@ def _js_dependency_score(rendered_snapshot: Dict[str, Any] | None, diff: Dict[st
         "failures": failed,
         "blocked": blocked,
         "content_loaded_by_js_ratio": round(max(0.0, min(1.0, 1.0 - coverage_ratio)), 4),
+        "content_delta_ratio": content_delta_ratio,
+        "link_delta_ratio": round(link_delta_ratio, 4),
+        "text_delta_ratio": text_delta_ratio,
+        "critical_content_js_only": critical_content_js_only,
     }
 
 

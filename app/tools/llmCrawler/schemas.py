@@ -98,6 +98,8 @@ class LlmCrawlerJobStatusResponse(BaseModel):
     entity_graph: Dict[str, Any] | None = None
     citation_probability: float | None = None
     ai_visibility_score: float | None = None
+    ai_visibility: Dict[str, Any] | None = None
+    ai_visibility_confidence: float | None = None
     js_dependency_score: float | None = None
     llm_ingestion: Dict[str, Any] | None = None
     ingestion_quality_score: float | None = None

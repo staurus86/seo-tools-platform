@@ -122,20 +122,22 @@ class LlmCrawlerServiceQualityTests(unittest.TestCase):
         js = _js_dependency_score(None, {"textCoverage": None}, render_status={"status": "not_executed", "reason": "render_disabled_in_options"})
         self.assertEqual(js.get("status"), "not_executed")
         self.assertIsNone(js.get("score"))
+        self.assertIsNone(js.get("critical_content_js_only"))
 
     def test_js_dependency_risk_levels(self):
         rendered = {"render_debug": {"failed_requests": []}}
-        low = _js_dependency_score(rendered, {"textCoverage": 0.8}, render_status={"status": "executed"})
+        low = _js_dependency_score(rendered, {"textCoverage": 0.8, "raw_text_length": 800, "rendered_text_length": 1000}, render_status={"status": "executed"})
         self.assertEqual(low.get("risk"), "low")
         self.assertLess(float(low.get("score") or 100), 40)
 
-        medium = _js_dependency_score(rendered, {"textCoverage": 0.54}, render_status={"status": "executed"})
+        medium = _js_dependency_score(rendered, {"textCoverage": 0.54, "raw_text_length": 540, "rendered_text_length": 1000}, render_status={"status": "executed"})
         self.assertEqual(medium.get("risk"), "medium")
         self.assertGreater(float(medium.get("score") or 0), 30)
 
-        high = _js_dependency_score(rendered, {"textCoverage": 0.2}, render_status={"status": "executed"})
+        high = _js_dependency_score(rendered, {"textCoverage": 0.2, "raw_text_length": 200, "rendered_text_length": 1200}, render_status={"status": "executed"})
         self.assertEqual(high.get("risk"), "high")
         self.assertGreater(float(high.get("score") or 0), 70)
+        self.assertTrue(bool(high.get("critical_content_js_only")))
 
     def test_page_type_detection_service_and_review(self):
         service_snapshot = self._snapshot()
