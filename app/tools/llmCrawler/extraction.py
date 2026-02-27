@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Set
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
+import trafilatura
+from readability import Document
 
 
 def _safe_text(value: Any) -> str:
@@ -188,6 +190,17 @@ def build_snapshot(
 
     main_text = _extract_main_text(soup)
     words = re.findall(r"[A-Za-zА-Яа-я0-9]+", main_text)
+    # Reader-mode variants
+    readability_text = ""
+    trafilatura_text = ""
+    try:
+        readability_text = _safe_text(Document(html).summary())[:5000]
+    except Exception:
+        readability_text = ""
+    try:
+        trafilatura_text = _safe_text(trafilatura.extract(html, url=final_url) or "")[:5000]
+    except Exception:
+        trafilatura_text = ""
     links = _extract_links(soup, final_url, limit=20)
     schema_types = _extract_jsonld_types(soup)
     x_robots_tag = _safe_text((headers or {}).get("X-Robots-Tag") or (headers or {}).get("x-robots-tag"))
@@ -216,6 +229,8 @@ def build_snapshot(
             "word_count": len(words),
             "readability_score": _flesch_reading_ease(main_text),
             "main_text_preview": main_text[:2000],
+            "readability_text": readability_text,
+            "trafilatura_text": trafilatura_text,
         },
         "headings": headings,
         "links": {
