@@ -72,12 +72,14 @@ def create_job_record(
     request_id: str,
     requested_url: str,
     options: Dict[str, Any],
+    status_message: str = "Queued",
 ) -> Dict[str, Any]:
     return {
         "jobId": job_id,
         "requestId": request_id,
         "status": "queued",
         "progress": 0,
+        "status_message": status_message,
         "requested_url": requested_url,
         "options": options,
         "result": None,

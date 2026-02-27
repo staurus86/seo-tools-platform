@@ -234,13 +234,13 @@ def _rendered_fetch(
                 pass
 
 
-def _build_diff(nojs: Dict[str, Any], rendered: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def _build_diff(nojs: Dict[str, Any], rendered: Optional[Dict[str, Any]], render_error: Optional[str] = None) -> Dict[str, Any]:
     if not rendered:
         return {
             "textCoverage": None,
             "linksDiff": {"added": 0, "removed": 0, "added_top": [], "removed_top": []},
             "headingsDiff": {"h1": 0, "h2": 0, "h3": 0},
-            "note": "Rendered fetch disabled",
+            "note": render_error or "Rendered fetch disabled",
             "missing": [],
         }
 
@@ -278,6 +278,7 @@ def _build_diff(nojs: Dict[str, Any], rendered: Optional[Dict[str, Any]]) -> Dic
             "h3": int(r_h.get("h3") or 0) - int(nojs_h.get("h3") or 0),
         },
         "missing": missing,
+        "note": render_error or "",
     }
 
 
@@ -450,33 +451,39 @@ def run_llm_crawler_simulation(
     timings["policies_ms"] = int((time.perf_counter() - t1) * 1000)
 
     rendered_snapshot: Optional[Dict[str, Any]] = None
+    render_error: Optional[str] = None
     if render_js:
         notify(62, "Rendered fetch (Playwright)")
         t2 = time.perf_counter()
-        rendered_http = _rendered_fetch(
-            url=str(nojs_snapshot.get("final_url") or normalized_url),
-            timeout_ms=timeout_ms,
-            max_html_bytes=max_html_bytes,
-        )
-        rendered_snapshot = build_snapshot(
-            html=str(rendered_http.get("body_text") or ""),
-            final_url=str(rendered_http.get("final_url") or normalized_url),
-            status_code=rendered_http.get("status_code"),
-            headers=rendered_http.get("headers") or {},
-            timing_ms=int(rendered_http.get("timing_ms") or 0),
-            redirect_chain=list(rendered_http.get("redirect_chain") or []),
-            show_headers=show_headers,
-            content_type=str(rendered_http.get("content_type") or ""),
-            size_bytes=int(rendered_http.get("size_bytes") or 0),
-            truncated=bool(rendered_http.get("truncated")),
-        )
+        try:
+            rendered_http = _rendered_fetch(
+                url=str(nojs_snapshot.get("final_url") or normalized_url),
+                timeout_ms=min(timeout_ms, 15000),
+                max_html_bytes=max_html_bytes,
+            )
+            rendered_snapshot = build_snapshot(
+                html=str(rendered_http.get("body_text") or ""),
+                final_url=str(rendered_http.get("final_url") or normalized_url),
+                status_code=rendered_http.get("status_code"),
+                headers=rendered_http.get("headers") or {},
+                timing_ms=int(rendered_http.get("timing_ms") or 0),
+                redirect_chain=list(rendered_http.get("redirect_chain") or []),
+                show_headers=show_headers,
+                content_type=str(rendered_http.get("content_type") or ""),
+                size_bytes=int(rendered_http.get("size_bytes") or 0),
+                truncated=bool(rendered_http.get("truncated")),
+            )
+        except Exception as exc:
+            render_error = f"Rendered fetch failed: {exc}"
+            notify(70, render_error)
+            rendered_snapshot = None
         timings["rendered_ms"] = int((time.perf_counter() - t2) * 1000)
     else:
         timings["rendered_ms"] = 0
 
     notify(84, "Diff and scoring")
     t3 = time.perf_counter()
-    diff = _build_diff(nojs_snapshot, rendered_snapshot)
+    diff = _build_diff(nojs_snapshot, rendered_snapshot, render_error=render_error)
     score = compute_score(
         nojs=nojs_snapshot,
         rendered=rendered_snapshot,
