@@ -82,105 +82,150 @@ def _job_age_sec(job: Dict[str, Any]) -> int | None:
         return None
 
 
+def _normalize_targets(payload: LlmCrawlerRunRequest) -> list[str]:
+    mode = str(payload.mode or "single_url").lower()
+    urls: list[str] = []
+    if mode == "url_list":
+        urls = [str(u).strip() for u in (payload.urls or []) if str(u).strip()]
+    elif mode == "sitemap":
+        if payload.sitemap_url:
+            try:
+                import requests
+                resp = requests.get(payload.sitemap_url, timeout=8)
+                if resp.ok:
+                    import re
+                    urls = re.findall(r"<loc>([^<]+)</loc>", resp.text, flags=re.I)
+            except Exception:
+                urls = []
+    else:
+        if payload.url:
+            urls = [str(payload.url).strip()]
+    # Failsafe: unique, preserve order
+    seen = set()
+    normalized = []
+    for u in urls:
+        if not u or u in seen:
+            continue
+        seen.add(u)
+        normalized.append(u)
+    return normalized
+
+
 @router.post("/run")
-async def run_llm_crawler(payload: LlmCrawlerRunRequest, request: Request) -> Dict[str, str]:
+async def run_llm_crawler(payload: LlmCrawlerRunRequest, request: Request) -> Dict[str, Any]:
     _ensure_feature_enabled(request)
     request_id = _request_id(request)
 
+    limits_enabled = bool(getattr(settings, "LLM_CRAWLER_LIMITS_ENABLED", False))
     subject = request_subject(request)
-    tool_limit = max(1, int(getattr(settings, "LLM_CRAWLER_RATE_LIMIT_PER_MINUTE", 999) or 999))
-    tool_rate = check_rate_limit(subject, "tool-minute", tool_limit, 60)
-    if not tool_rate.get("allowed", True):
-        raise HTTPException(
-            status_code=429,
-            detail={
-                "message": "LLM crawler rate limit exceeded (tool).",
-                "reset_in": tool_rate.get("reset_in", 60),
-                "remaining": tool_rate.get("remaining", 0),
-            },
-        )
-
     options = payload.options.model_dump()
-    if bool(options.get("renderJs")):
-        render_limit = max(1, int(getattr(settings, "LLM_CRAWLER_RENDER_RATE_LIMIT_PER_DAY", 999) or 999))
-        render_rate = check_rate_limit(subject, "render-day", render_limit, 86400)
-        if not render_rate.get("allowed", True):
+    if limits_enabled:
+        tool_limit = max(1, int(getattr(settings, "LLM_CRAWLER_RATE_LIMIT_PER_MINUTE", 999) or 999))
+        tool_rate = check_rate_limit(subject, "tool-minute", tool_limit, 60)
+        if not tool_rate.get("allowed", True):
             raise HTTPException(
                 status_code=429,
                 detail={
-                    "message": "Rendered fetch daily limit exceeded.",
-                    "reset_in": render_rate.get("reset_in", 86400),
-                    "remaining": render_rate.get("remaining", 0),
+                    "message": "LLM crawler rate limit exceeded (tool).",
+                    "reset_in": tool_rate.get("reset_in", 60),
+                    "remaining": tool_rate.get("remaining", 0),
                 },
             )
+        if bool(options.get("renderJs")):
+            render_limit = max(1, int(getattr(settings, "LLM_CRAWLER_RENDER_RATE_LIMIT_PER_DAY", 999) or 999))
+            render_rate = check_rate_limit(subject, "render-day", render_limit, 86400)
+            if not render_rate.get("allowed", True):
+                raise HTTPException(
+                    status_code=429,
+                    detail={
+                        "message": "Rendered fetch daily limit exceeded.",
+                        "reset_in": render_rate.get("reset_in", 86400),
+                        "remaining": render_rate.get("remaining", 0),
+                    },
+                )
 
     worker_ok = _worker_is_healthy()
     inline_allowed = bool(getattr(settings, "LLM_CRAWLER_INLINE_FALLBACK", False))
 
-    # Fallback to inline execution only when explicitly allowed and worker is unavailable.
-    if inline_allowed and (not worker_ok):
+    targets = _normalize_targets(payload)
+    if not targets:
+        raise HTTPException(status_code=400, detail="Provide url / urls or sitemap_url")
+
+    # For now limits on batch size are disabled unless flag on; still cap extreme to 200 to protect service.
+    hard_cap = 200
+    if len(targets) > hard_cap:
+        targets = targets[:hard_cap]
+
+    job_ids: list[str] = []
+
+    for idx, target_url in enumerate(targets):
+        # Inline fallback only for first when worker dead and allowed.
+        if inline_allowed and (not worker_ok) and idx == 0:
+            try:
+                inline_job_id = new_job_id()
+                job = create_job_record(
+                    job_id=inline_job_id,
+                    request_id=request_id,
+                    requested_url=target_url,
+                    options=options,
+                )
+                job = update_job_record(
+                    inline_job_id,
+                    status="running",
+                    progress=10,
+                    status_message="Inline execution (worker unavailable)",
+                )
+                result = run_llm_crawler_simulation(
+                    requested_url=target_url,
+                    options=options,
+                    request_id=request_id,
+                    progress_callback=lambda p, m: update_job_record(
+                        inline_job_id, status="running", progress=p, status_message=m
+                    ),
+                )
+                job = update_job_record(
+                    inline_job_id,
+                    status="done",
+                    progress=100,
+                    result=result,
+                    error=None,
+                    status_message="Completed inline",
+                )
+                job_ids.append(inline_job_id)
+                continue
+            except Exception as exc:
+                update_job_record(
+                    locals().get("inline_job_id", new_job_id()),
+                    status="error",
+                    progress=100,
+                    error=str(exc),
+                    status_message="Inline execution failed",
+                )
+                raise HTTPException(
+                    status_code=502,
+                    detail={"message": "LLM crawler failed inline", "error": str(exc)},
+                ) from exc
+
+        _ensure_worker_available()
+
+        job_id = new_job_id()
         try:
-            inline_job_id = new_job_id()
             job = create_job_record(
-                job_id=inline_job_id,
+                job_id=job_id,
                 request_id=request_id,
-                requested_url=payload.url,
+                requested_url=target_url,
                 options=options,
+                status_message="Queued",
             )
-            job = update_job_record(
-                inline_job_id,
-                status="running",
-                progress=10,
-                status_message="Inline execution (worker unavailable)",
-            )
-            result = run_llm_crawler_simulation(
-                requested_url=payload.url,
-                options=options,
-                request_id=request_id,
-                progress_callback=lambda p, m: update_job_record(
-                    inline_job_id, status="running", progress=p, status_message=m
-                ),
-            )
-            job = update_job_record(
-                inline_job_id,
-                status="done",
-                progress=100,
-                result=result,
-                error=None,
-                status_message="Completed inline",
-            )
-            return {"jobId": inline_job_id, "status": job.get("status"), "inline": True}
+            enqueue_job(job)
+            job_ids.append(job_id)
         except Exception as exc:
-            update_job_record(
-                locals().get("inline_job_id", new_job_id()),
-                status="error",
-                progress=100,
-                error=str(exc),
-                status_message="Inline execution failed",
-            )
             raise HTTPException(
-                status_code=502,
-                detail={"message": "LLM crawler failed inline", "error": str(exc)},
+                status_code=503,
+                detail=f"LLM crawler temporarily unavailable: {exc}",
             ) from exc
 
-    _ensure_worker_available()
-
-    job_id = new_job_id()
-    try:
-        job = create_job_record(
-            job_id=job_id,
-            request_id=request_id,
-            requested_url=payload.url,
-            options=options,
-        )
-        enqueue_job(job)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=f"LLM crawler temporarily unavailable: {exc}",
-        ) from exc
-
-    return {"jobId": job_id, "status": "queued"}
+    return {"jobId": job_ids[0], "jobIds": job_ids, "total": len(job_ids), "status": "queued"}
 
 
 @router.get("/jobs/{job_id}", response_model=LlmCrawlerJobStatusResponse)
@@ -205,6 +250,7 @@ async def get_llm_crawler_job(job_id: str, request: Request) -> Dict[str, Any]:
         "requestId": str(job.get("requestId") or ""),
         "status": str(job.get("status") or "queued"),
         "progress": int(job.get("progress") or 0),
+        "status_message": job.get("status_message"),
         "result": job.get("result"),
         "error": job.get("error"),
     }

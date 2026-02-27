@@ -65,7 +65,10 @@ class LlmCrawlerOptions(BaseModel):
 
 
 class LlmCrawlerRunRequest(BaseModel):
-    url: str
+    url: str | None = None
+    urls: List[str] | None = None
+    sitemap_url: str | None = None
+    mode: str = Field(default="single_url")
     options: LlmCrawlerOptions = Field(default_factory=LlmCrawlerOptions)
 
     @field_validator("url", mode="before")
@@ -85,3 +88,4 @@ class LlmCrawlerJobStatusResponse(BaseModel):
     error: str | None = None
     requestId: str | None = None
     jobId: str | None = None
+    status_message: str | None = None
