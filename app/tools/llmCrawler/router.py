@@ -16,11 +16,13 @@ from .queue import (
     enqueue_job,
     get_job_record,
     get_worker_heartbeat,
+    get_redis_client,
     new_job_id,
     queue_depth,
     update_job_record,
 )
 from .schemas import LlmCrawlerJobStatusResponse, LlmCrawlerRunRequest
+from .service import run_llm_crawler_simulation
 
 
 router = APIRouter(prefix="/api/tools/llm-crawler", tags=["LLM Crawler Simulation"])
@@ -83,7 +85,6 @@ def _job_age_sec(job: Dict[str, Any]) -> int | None:
 @router.post("/run")
 async def run_llm_crawler(payload: LlmCrawlerRunRequest, request: Request) -> Dict[str, str]:
     _ensure_feature_enabled(request)
-    _ensure_worker_available()
     request_id = _request_id(request)
 
     subject = request_subject(request)
@@ -113,6 +114,57 @@ async def run_llm_crawler(payload: LlmCrawlerRunRequest, request: Request) -> Di
                 },
             )
 
+    worker_ok = _worker_is_healthy()
+    redis_ok = get_redis_client() is not None
+
+    # Fallback to inline execution when worker/Redis unavailable.
+    if (not worker_ok) or (not redis_ok):
+        try:
+            inline_job_id = new_job_id()
+            job = create_job_record(
+                job_id=inline_job_id,
+                request_id=request_id,
+                requested_url=payload.url,
+                options=options,
+            )
+            job = update_job_record(
+                inline_job_id,
+                status="running",
+                progress=10,
+                status_message="Inline execution (worker unavailable)",
+            )
+            result = run_llm_crawler_simulation(
+                requested_url=payload.url,
+                options=options,
+                request_id=request_id,
+                progress_callback=lambda p, m: update_job_record(
+                    inline_job_id, status="running", progress=p, status_message=m
+                ),
+            )
+            job = update_job_record(
+                inline_job_id,
+                status="done",
+                progress=100,
+                result=result,
+                error=None,
+                status_message="Completed inline",
+            )
+            return {"jobId": inline_job_id, "status": job.get("status"), "inline": True}
+        except Exception as exc:
+            update_job_record(
+                locals().get("inline_job_id", new_job_id()),
+                status="error",
+                progress=100,
+                error=str(exc),
+                status_message="Inline execution failed",
+            )
+            raise HTTPException(
+                status_code=502,
+                detail={"message": "LLM crawler failed inline", "error": str(exc)},
+            ) from exc
+
+    _ensure_worker_available()
+
     job_id = new_job_id()
     try:
         job = create_job_record(
@@ -128,7 +180,7 @@ async def run_llm_crawler(payload: LlmCrawlerRunRequest, request: Request) -> Di
             detail=f"LLM crawler temporarily unavailable: {exc}",
         ) from exc
 
-    return {"jobId": job_id}
+    return {"jobId": job_id, "status": "queued"}
 
 
 @router.get("/jobs/{job_id}", response_model=LlmCrawlerJobStatusResponse)

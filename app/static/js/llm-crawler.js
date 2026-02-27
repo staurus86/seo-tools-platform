@@ -80,7 +80,7 @@ async function startLlmCrawlerTask(event) {
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-            const message = data?.detail?.message || data?.detail || data?.error || `HTTP ${response.status}`;
+            const message = data?.detail?.message || data?.detail || data?.error || data?.status_message || `HTTP ${response.status}`;
             throw new Error(message);
         }
         const jobId = String(data?.jobId || '');

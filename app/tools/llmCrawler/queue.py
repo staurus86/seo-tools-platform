@@ -17,6 +17,8 @@ from app.config import settings
 
 _redis_client: Optional[Any] = None
 _redis_retry_after_ts: float = 0.0
+_mem_jobs: Dict[str, Dict[str, Any]] = {}
+_mem_queue: list[Dict[str, Any]] = []
 
 
 def _utc_now() -> str:
@@ -87,24 +89,25 @@ def create_job_record(
 
 def save_job_record(job: Dict[str, Any]) -> None:
     client = get_redis_client()
-    if not client:
-        raise RuntimeError("Redis unavailable")
     payload = dict(job)
     payload["updatedAt"] = _utc_now()
+    if not client:
+        _mem_jobs[str(job.get("jobId") or "")] = payload
+        return
     client.setex(job_key(str(job.get("jobId") or "")), _job_ttl(), json.dumps(payload))
 
 
 def get_job_record(job_id: str) -> Optional[Dict[str, Any]]:
     client = get_redis_client()
     if not client:
-        return None
+        return _mem_jobs.get(job_id)
     try:
         raw = client.get(job_key(job_id))
         if not raw:
-            return None
+            return _mem_jobs.get(job_id)
         return json.loads(raw)
     except Exception:
-        return None
+        return _mem_jobs.get(job_id)
 
 
 def update_job_record(job_id: str, **fields: Any) -> Dict[str, Any]:
@@ -127,9 +130,10 @@ def update_job_record(job_id: str, **fields: Any) -> Dict[str, Any]:
 
 def enqueue_job(job: Dict[str, Any]) -> str:
     client = get_redis_client()
-    if not client:
-        raise RuntimeError("Redis unavailable")
     save_job_record(job)
+    if not client:
+        _mem_queue.append({"jobId": job["jobId"], "requestId": job.get("requestId", "")})
+        return str(job["jobId"])
     client.lpush(queue_key(), json.dumps({"jobId": job["jobId"], "requestId": job.get("requestId", "")}))
     return str(job["jobId"])
 
@@ -137,7 +141,7 @@ def enqueue_job(job: Dict[str, Any]) -> str:
 def pop_job(timeout_sec: int = 5) -> Optional[Dict[str, Any]]:
     client = get_redis_client()
     if not client:
-        return None
+        return _mem_queue.pop(0) if _mem_queue else None
     try:
         item = client.brpop(queue_key(), timeout=max(1, int(timeout_sec)))
         if not item:
@@ -150,11 +154,11 @@ def pop_job(timeout_sec: int = 5) -> Optional[Dict[str, Any]]:
 def queue_depth() -> int:
     client = get_redis_client()
     if not client:
-        return 0
+        return len(_mem_queue)
     try:
         return int(client.llen(queue_key()) or 0)
     except Exception:
-        return 0
+        return len(_mem_queue)
 
 
 def check_rate_limit(subject: str, bucket: str, limit: int, window_sec: int) -> Dict[str, Any]:
