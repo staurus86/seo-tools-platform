@@ -25,6 +25,9 @@ from .queue import (
 from .schemas import LlmCrawlerJobStatusResponse, LlmCrawlerRunRequest
 from .service import run_llm_crawler_simulation
 from fastapi.responses import HTMLResponse
+from fastapi.responses import Response
+from io import BytesIO
+import datetime
 
 
 router = APIRouter(prefix="/api/tools/llm-crawler", tags=["LLM Crawler Simulation"])
@@ -280,3 +283,61 @@ async def llm_crawler_report(job_id: str, request: Request) -> HTMLResponse:
     </body></html>
     """
     return HTMLResponse(content=body)
+
+
+@router.get("/jobs/{job_id}/report.docx")
+async def llm_crawler_report_docx(job_id: str, request: Request) -> Response:
+    _ensure_feature_enabled(request)
+    if not bool(getattr(settings, "LLM_REPORT_HTML_ENABLED", False)):
+        raise HTTPException(status_code=404, detail="DOCX report disabled")
+    job = get_job_record(job_id)
+    if not job or not job.get("result"):
+        raise HTTPException(status_code=404, detail="Job not found")
+    try:
+        from docx import Document  # type: ignore
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"DOCX export unavailable: {exc}")
+
+    result = job.get("result") or {}
+    doc = Document()
+    doc.styles["Normal"].font.name = "Arial"
+    doc.add_heading("LLM Crawler Report", level=1)
+    doc.add_paragraph(f"Generated: {datetime.datetime.utcnow().isoformat()}Z")
+    doc.add_paragraph(f"URL: {result.get('final_url') or result.get('requested_url') or '-'}")
+
+    score = (result.get("score") or {}).get("total", "-")
+    doc.add_heading(f"AI-ready score: {score}", level=2)
+
+    if result.get("llm"):
+        doc.add_heading("LLM Summary", level=3)
+        doc.add_paragraph(result["llm"].get("summary") or "")
+        facts = result["llm"].get("key_facts") or []
+        if facts:
+            doc.add_paragraph("Key facts:", style="List Bullet")
+            for f in facts:
+                doc.add_paragraph(f, style="List Bullet")
+
+    cloaking = result.get("cloaking") or {}
+    doc.add_heading("Cloaking risk", level=3)
+    doc.add_paragraph(str(cloaking.get("risk") or "n/a"))
+
+    recs = result.get("recommendations") or []
+    if recs:
+        doc.add_heading("Recommendations", level=2)
+        for r in recs:
+            doc.add_paragraph(f"{r.get('priority','')} {r.get('area','')}: {r.get('title','')}", style="List Bullet")
+
+    missing = (result.get("diff") or {}).get("missing") or []
+    if missing:
+        doc.add_heading("What bots miss", level=3)
+        for m in missing:
+            doc.add_paragraph(m, style="List Bullet")
+
+    bio = BytesIO()
+    doc.save(bio)
+    bio.seek(0)
+    return Response(
+        content=bio.read(),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="llm_crawler_{job_id}.docx"'},
+    )

@@ -162,6 +162,7 @@ function initLlmCrawlerResult(jobId) {
     const errorBox = document.getElementById('llm-error-box');
     const resultBox = document.getElementById('llm-result-box');
     const downloadBtn = document.getElementById('llm-download-json');
+    const downloadDocxBtn = document.getElementById('llm-download-docx');
 
     let pollHandle = null;
     let latestResult = null;
@@ -540,6 +541,23 @@ function initLlmCrawlerResult(jobId) {
             a.download = `llm_crawler_${jobId}.json`;
             a.click();
             URL.revokeObjectURL(href);
+        });
+    }
+    if (downloadDocxBtn) {
+        downloadDocxBtn.addEventListener('click', async () => {
+            try {
+                const resp = await fetch(`${LLM_API_BASE}/jobs/${encodeURIComponent(jobId)}/report.docx`);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const blob = await resp.blob();
+                const href = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = href;
+                a.download = `llm_crawler_${jobId}.docx`;
+                a.click();
+                URL.revokeObjectURL(href);
+            } catch (e) {
+                showToast(_humanizeNetworkError(e) || 'DOCX export failed', 'error');
+            }
         });
     }
 
