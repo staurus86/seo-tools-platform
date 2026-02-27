@@ -1,6 +1,13 @@
 import unittest
 
-from app.tools.llmCrawler.service import _ai_answer_preview, _ai_understanding, _llm_ingestion
+from app.tools.llmCrawler.service import (
+    _ai_answer_preview,
+    _ai_directive_audit,
+    _ai_understanding,
+    _build_improvement_library,
+    _llm_ingestion,
+    _snippet_library,
+)
 
 
 class LlmCrawlerServiceQualityTests(unittest.TestCase):
@@ -48,7 +55,27 @@ class LlmCrawlerServiceQualityTests(unittest.TestCase):
         self.assertEqual(ingestion.get("status"), "not_evaluated")
         self.assertEqual(ingestion.get("reason"), "no_chunks_available")
 
+    def test_directive_audit_and_library(self):
+        snapshot = self._snapshot()
+        snapshot["meta"] = {"meta_robots": "noindex, noai", "x_robots_tag": ""}
+        snapshot["schema"] = {"jsonld_types": []}
+        snapshot["signals"] = {"author_present": False, "date_present": False}
+        snapshot["ai_blocks"] = {"missing_critical": ["Author block", "Contact info"]}
+        policies = {
+            "robots": {
+                "profiles": {
+                    "gptbot": {"allowed": False, "reason": "Disallow: /"},
+                    "google-extended": {"allowed": True, "reason": "Allowed"},
+                }
+            }
+        }
+        audit = _ai_directive_audit(snapshot, policies)
+        self.assertIn("profiles", audit)
+        self.assertIn("gptbot", audit["profiles"])
+        issues = ["LLM simulation not executed"]
+        lib = _build_improvement_library(snapshot, snapshot["ai_blocks"], audit, issues, _snippet_library())
+        self.assertTrue(lib.get("missing"))
+
 
 if __name__ == "__main__":
     unittest.main()
-

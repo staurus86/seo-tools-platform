@@ -110,3 +110,7 @@ class LlmCrawlerJobStatusResponse(BaseModel):
     preview_mode: str | None = None
     chunk_ranking_debug: List[Dict[str, Any]] | None = None
     metrics_bytes: Dict[str, Any] | None = None
+    ai_blocks: Dict[str, Any] | None = None
+    ai_directives: Dict[str, Any] | None = None
+    improvement_library: Dict[str, Any] | None = None
+    detection_issues: List[str] | None = None

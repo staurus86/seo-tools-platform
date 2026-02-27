@@ -555,6 +555,57 @@ function _renderTech(result) {
   `);
 }
 
+function _renderDetectors(result) {
+  const blocks = result?.ai_blocks || {};
+  const directives = result?.ai_directives || {};
+  const issues = Array.isArray(result?.detection_issues) ? result.detection_issues : [];
+  const improvement = result?.improvement_library || {};
+  const detected = Array.isArray(blocks.detected) ? blocks.detected.slice(0, 14) : [];
+  const missing = Array.isArray(blocks.missing_critical) ? blocks.missing_critical.slice(0, 8) : [];
+  const profiles = directives?.profiles || {};
+  const profileRows = Object.keys(profiles).map((k) => {
+    const p = profiles[k] || {};
+    const status = String(p.status || 'unknown');
+    const badge = status === 'allowed' ? 'risk-low' : status === 'restricted' ? 'risk-mid' : 'risk-high';
+    return `<tr><td>${_esc(k)}</td><td><span class="risk-pill ${badge}">${_esc(status)}</span></td><td>${_esc(p.reason || '-')}</td></tr>`;
+  }).join('');
+  const missingLib = Array.isArray(improvement?.missing) ? improvement.missing.slice(0, 8) : [];
+  _setHTML('v2-detectors', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="radar" class="w-4 h-4"></i>AI Detection Coverage & Library</div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div class="card p-3 bg-slate-50 border-slate-200">
+        <div class="text-sm">Coverage: <span class="font-semibold">${_pct(blocks.coverage_percent, 0)}%</span></div>
+        <div class="text-xs subtle mt-2">Detected blocks</div>
+        <div class="flex flex-wrap gap-1 mt-1">
+          ${detected.length ? detected.map((b) => `<span class="badge badge-p2">${_esc(b.label || b.id)} (${_pct(_num(b.confidence, 0) * 100, 0)}%)</span>`).join('') : '<span class="subtle text-xs">No block detections</span>'}
+        </div>
+        <div class="text-xs subtle mt-3">Missing critical</div>
+        <div class="flex flex-wrap gap-1 mt-1">
+          ${missing.length ? missing.map((m) => `<span class="badge badge-p0">${_esc(m)}</span>`).join('') : '<span class="subtle text-xs">No critical misses</span>'}
+        </div>
+      </div>
+      <div class="card p-3 bg-slate-50 border-slate-200">
+        <div class="text-xs subtle mb-2">AI directives audit (robots + meta)</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Bot</th><th>Status</th><th>Reason</th></tr></thead>
+            <tbody>${profileRows || '<tr><td colspan="3">No directives data</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    ${issues.length ? `<div class="card p-3 bg-amber-50 border-amber-200 mt-3"><div class="text-xs font-semibold mb-1">Detection issues</div><ul class="list-disc pl-5 text-xs">${issues.map((i) => `<li>${_esc(i)}</li>`).join('')}</ul></div>` : ''}
+    ${missingLib.length ? `<details class="mt-3"><summary class="cursor-pointer text-sm font-medium">Improvement library suggestions</summary><div class="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">${missingLib.map((m) => `<div class="card p-2 bg-slate-50 border-slate-200"><div class="text-sm font-semibold">${_esc(m.title || m.id)}</div><div class="text-xs subtle">${_esc(m.why || '')}</div><div class="text-xs subtle mt-1">Reason: ${_esc(m.reason || '-')}</div>${m.snippet ? `<button type="button" class="v2-btn v2-btn-neutral text-xs mt-2" data-snippet="${_esc(m.snippet)}">Copy snippet</button>` : ''}</div>`).join('')}</div></details>` : ''}
+  `);
+  document.querySelectorAll('#v2-detectors [data-snippet]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      _copyText(btn.getAttribute('data-snippet') || '');
+      btn.textContent = 'Copied';
+      setTimeout(() => { btn.textContent = 'Copy snippet'; }, 1200);
+    });
+  });
+}
+
 function _renderChunks(result) {
   const chunks = Array.isArray(result?.nojs?.content?.chunks) ? result.nojs.content.chunks : [];
   const cards = chunks.slice(0, 12).map((c, idx) => {
@@ -720,6 +771,7 @@ async function initV2(jobId) {
     _renderLinks(result);
     _renderAccess(result);
     _renderTech(result);
+    _renderDetectors(result);
     _renderChunks(result);
     _renderRecs(result);
     _wireExports(jobId, result);

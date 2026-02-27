@@ -265,6 +265,10 @@ async def llm_crawler_report(job_id: str, request: Request) -> HTMLResponse:
     preview = result.get("ai_answer_preview") or {}
     metrics = result.get("metrics_bytes") or {}
     wf = result.get("projected_score_waterfall") or {}
+    ai_blocks = result.get("ai_blocks") or {}
+    ai_directives = result.get("ai_directives") or {}
+    detection_issues = result.get("detection_issues") or []
+    improvement_library = result.get("improvement_library") or {}
     body = f"""
     <html><head><meta charset="utf-8"><title>{title}</title>
     <style>
@@ -290,6 +294,17 @@ async def llm_crawler_report(job_id: str, request: Request) -> HTMLResponse:
     </div>
     <div class="card"><h3>Recommendations with Evidence</h3><ul>
     {''.join([f"<li><b>{r.get('priority','')}</b> {r.get('title','')}<br><small>Evidence: {', '.join((r.get('evidence') or [])[:3])}</small></li>" for r in recs]) or '<li>None</li>'}
+    </ul></div>
+    <div class="card"><h3>Detection Coverage</h3>
+      <p>Coverage: {ai_blocks.get("coverage_percent","-")}%</p>
+      <p>Missing critical: {', '.join(ai_blocks.get("missing_critical") or []) or 'none'}</p>
+      <p>Directive restricted tokens: {', '.join(ai_directives.get("meta_restrictive_tokens") or []) or 'none'}</p>
+    </div>
+    <div class="card"><h3>Detection Issues</h3><ul>
+    {''.join([f"<li>{x}</li>" for x in detection_issues]) or '<li>None</li>'}
+    </ul></div>
+    <div class="card"><h3>Improvement Library</h3><ul>
+    {''.join([f"<li>{i.get('title','-')}: {i.get('reason','-')}</li>" for i in (improvement_library.get('missing') or [])]) or '<li>None</li>'}
     </ul></div>
     </body></html>
     """

@@ -15,6 +15,7 @@ from app.config import settings
 from app.tools.http_text import decode_response_text
 
 from .extraction import build_snapshot
+from .patterns import DIRECTIVE_RESTRICTIVE_TOKENS
 from .policies import evaluate_profile_access, parse_robots_rules
 from .scoring import compute_score
 from .security import assert_safe_url, normalize_http_url, safe_redirect_target
@@ -610,6 +611,145 @@ def _snippet_library() -> Dict[str, str]:
     }
 
 
+def _ai_directive_audit(snapshot: Dict[str, Any], policies: Dict[str, Any]) -> Dict[str, Any]:
+    meta = snapshot.get("meta") or {}
+    robots_profiles = ((policies.get("robots") or {}).get("profiles") or {})
+    meta_blob = f"{meta.get('meta_robots', '')} {meta.get('x_robots_tag', '')}".lower()
+    restricted = [tok for tok in DIRECTIVE_RESTRICTIVE_TOKENS if tok in meta_blob]
+    mapping = {
+        "gptbot": "gptbot",
+        "google_extended": "google-extended",
+        "ccbot": "ccbot",
+        "claudebot": "claudebot",
+        "perplexitybot": "perplexitybot",
+    }
+    profiles: Dict[str, Any] = {}
+    blocked = 0
+    restricted_count = 0
+    allowed = 0
+    for out_name, profile_key in mapping.items():
+        p = robots_profiles.get(profile_key) or {}
+        robots_allowed = bool(p.get("allowed", True))
+        if not robots_allowed:
+            status = "blocked"
+            blocked += 1
+        elif restricted:
+            status = "restricted"
+            restricted_count += 1
+        else:
+            status = "allowed"
+            allowed += 1
+        profiles[out_name] = {
+            "robots_allowed": robots_allowed,
+            "status": status,
+            "reason": p.get("reason") or ("meta/x-robots restrictive tokens" if restricted else "ok"),
+        }
+    return {
+        "profiles": profiles,
+        "meta_restrictive_tokens": restricted,
+        "summary": {"allowed": allowed, "restricted": restricted_count, "blocked": blocked},
+    }
+
+
+def _detection_issues(
+    snapshot: Dict[str, Any],
+    ai_blocks: Dict[str, Any],
+    llm_sim: Dict[str, Any] | None,
+    ingestion: Dict[str, Any] | None,
+    eeat: Dict[str, Any] | None,
+) -> List[str]:
+    issues: List[str] = []
+    content = snapshot.get("content") or {}
+    if int(content.get("main_text_length") or 0) < 250:
+        issues.append("Insufficient extracted text (<250 chars)")
+    if float(content.get("main_content_ratio") or 0) < 0.2:
+        issues.append("Very low main content ratio (<20%)")
+    if float(ai_blocks.get("coverage_percent") or 0) < 35:
+        issues.append("Low AI block detection coverage (<35%)")
+    if not (llm_sim or {}).get("enabled"):
+        issues.append("LLM simulation not executed")
+    if ingestion and str(ingestion.get("status")) == "not_evaluated":
+        issues.append(f"Ingestion not evaluated: {ingestion.get('reason')}")
+    if eeat and str(eeat.get("status")) == "not_evaluated":
+        issues.append(f"EEAT not evaluated: {eeat.get('reason')}")
+    return list(dict.fromkeys(issues))[:10]
+
+
+def _build_improvement_library(
+    snapshot: Dict[str, Any],
+    ai_blocks: Dict[str, Any],
+    directives: Dict[str, Any],
+    detection_issues: List[str],
+    snippets: Dict[str, str],
+) -> Dict[str, Any]:
+    catalog = [
+        {
+            "id": "add_org_schema",
+            "title": "Add Organization schema",
+            "why": "Improves entity grounding and citation confidence",
+            "snippet_key": "jsonld_organization",
+        },
+        {
+            "id": "add_article_schema",
+            "title": "Add Article schema with author/date",
+            "why": "Improves trust and factual extraction",
+            "snippet_key": "jsonld_article",
+        },
+        {
+            "id": "author_block",
+            "title": "Add visible author/date block",
+            "why": "Improves EEAT and attribution",
+            "snippet_key": "author_block_html",
+        },
+        {
+            "id": "robots_ai_allow",
+            "title": "Allow AI crawlers in robots",
+            "why": "Prevents bot access gaps",
+            "snippet_key": "robots_ai_allow",
+        },
+        {
+            "id": "faq_schema",
+            "title": "Add FAQ section with FAQPage schema",
+            "why": "Improves answerability for AI assistants",
+            "snippet_key": "jsonld_article",
+        },
+    ]
+    missing_critical = [str(x) for x in (ai_blocks.get("missing_critical") or [])]
+    schema = snapshot.get("schema") or {}
+    signals = snapshot.get("signals") or {}
+    needs: List[Dict[str, Any]] = []
+
+    def add_need(item_id: str, reason: str) -> None:
+        item = next((x for x in catalog if x["id"] == item_id), None)
+        if not item:
+            return
+        need = dict(item)
+        need["reason"] = reason
+        key = need.get("snippet_key")
+        if key and snippets.get(key):
+            need["snippet"] = snippets[key]
+        needs.append(need)
+
+    if not schema.get("jsonld_types"):
+        add_need("add_org_schema", "No JSON-LD types detected")
+    if not signals.get("author_present") or not signals.get("date_present"):
+        add_need("author_block", "Author/date signals missing")
+    if any("Author block" in m for m in missing_critical):
+        add_need("add_article_schema", "Critical author block not detected")
+    if any("FAQ block" in m for m in missing_critical):
+        add_need("faq_schema", "FAQ content block not detected")
+    blocked = int(((directives.get("summary") or {}).get("blocked") or 0))
+    if blocked > 0:
+        add_need("robots_ai_allow", f"{blocked} AI bot profiles are blocked by robots")
+
+    return {
+        "catalog": catalog,
+        "missing": needs[:12],
+        "detection_issues": detection_issues[:10],
+        "library_version": "std-1.0",
+    }
+
+
 def _policies_from_robots(
     *,
     final_url: str,
@@ -902,7 +1042,17 @@ def run_llm_crawler_simulation(
         metrics_bytes["rendered_html_bytes"] = rendered_metrics.get("html_bytes")
         metrics_bytes["rendered_text_bytes"] = rendered_metrics.get("text_bytes")
         metrics_bytes["rendered_text_html_ratio"] = rendered_metrics.get("text_html_ratio")
+    ai_blocks = nojs_snapshot.get("ai_blocks") or {}
+    ai_directives = _ai_directive_audit(nojs_snapshot, policies)
     snippet_library = _snippet_library()
+    detection_issues = _detection_issues(nojs_snapshot, ai_blocks, llm_sim, ingestion, eeat)
+    improvement_library = _build_improvement_library(
+        nojs_snapshot,
+        ai_blocks,
+        ai_directives,
+        detection_issues,
+        snippet_library,
+    )
     timings["analysis_ms"] = int((time.perf_counter() - t3) * 1000)
     timings["total_ms"] = int((time.perf_counter() - started_at) * 1000)
 
@@ -946,6 +1096,10 @@ def run_llm_crawler_simulation(
         "chunk_ranking_debug": answer_preview.get("chunk_ranking_debug") or ((llm_sim or {}).get("chunk_ranking_debug") if isinstance(llm_sim, dict) else []),
         "metrics_bytes": metrics_bytes,
         "snippet_library": snippet_library,
+        "ai_blocks": ai_blocks,
+        "ai_directives": ai_directives,
+        "improvement_library": improvement_library,
+        "detection_issues": detection_issues,
         "ui_wow_enabled": quality_mode,
         "engine": "llm_crawler_mvp_v1",
     }
@@ -962,6 +1116,8 @@ def _build_recommendations(nojs: Dict[str, Any], rendered: Optional[Dict[str, An
     links = (nojs.get("links") or {})
     content = (nojs.get("content") or {})
     challenge = (nojs.get("challenge") or {})
+    ai_blocks = (nojs.get("ai_blocks") or {})
+    missing_blocks = [str(x) for x in (ai_blocks.get("missing_critical") or [])]
 
     def add_rec(priority: str, area: str, title: str, expected_lift: str, evidence: List[str], source: List[str], snippet_key: str | None = None) -> None:
         rec: Dict[str, Any] = {
@@ -1106,6 +1262,25 @@ def _build_recommendations(nojs: Dict[str, Any], rendered: Optional[Dict[str, An
             "+5..9",
             [f"js_dependency_score={score.get('js_dependency_score', 0)}"],
             ["network", "render"],
+        )
+    if any("Author block" in x for x in missing_blocks):
+        add_rec(
+            "P1",
+            "trust",
+            "Критичный блок автора не найден в DOM/тексте",
+            "+5..8",
+            [f"Missing critical blocks: {', '.join(missing_blocks[:4])}"],
+            ["body", "schema"],
+            "author_block_html",
+        )
+    if any("Contact info" in x for x in missing_blocks):
+        add_rec(
+            "P2",
+            "trust",
+            "Добавьте явный блок контактов (email/tel/address)",
+            "+3..5",
+            [f"Missing critical blocks: {', '.join(missing_blocks[:4])}"],
+            ["body"],
         )
     return recs[:10]
 

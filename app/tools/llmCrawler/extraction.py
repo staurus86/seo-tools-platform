@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Set
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
+from .patterns import detect_ai_blocks
 try:  # optional dependency
     import trafilatura  # type: ignore
 except Exception:  # pragma: no cover - optional at runtime
@@ -337,6 +338,12 @@ def build_snapshot(
     social = _extract_social_meta(soup)
     challenge = detect_challenge(status_code, headers, html)
     resources = detect_resource_barriers(final_url, headers, html, soup)
+    ai_blocks = detect_ai_blocks(
+        soup=soup,
+        main_text=main_text,
+        full_text=full_text,
+        schema_types=schema_types,
+    )
 
     snapshot: Dict[str, Any] = {
         "final_url": final_url,
@@ -391,6 +398,7 @@ def build_snapshot(
         "resources": resources,
         "signals": signals,
         "challenge": challenge,
+        "ai_blocks": ai_blocks,
     }
 
     if show_headers:

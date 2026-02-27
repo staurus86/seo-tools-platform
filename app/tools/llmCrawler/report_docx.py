@@ -122,6 +122,10 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
     snippet_library = result.get("snippet_library") or {}
     projected_wf = result.get("projected_score_waterfall") or {}
     cloaking = result.get("cloaking") or {}
+    ai_blocks = result.get("ai_blocks") or {}
+    ai_directives = result.get("ai_directives") or {}
+    improvement_library = result.get("improvement_library") or {}
+    detection_issues = result.get("detection_issues") or []
     content_loss = _num(result.get("content_loss_percent"), 0)
     main_text_len = int(_num(nojs_content.get("main_text_length"), 0))
     rendered_text_len = int(_num(rendered_content.get("main_text_length"), main_text_len))
@@ -335,6 +339,34 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
                     doc.add_paragraph(f"Evidence: {ev}", style="List Bullet")
     else:
         doc.add_paragraph("No recommendations.")
+
+    add_heading("AI Detection Coverage", 2, color="0E7490")
+    add_kv("Coverage percent", _pct(ai_blocks.get("coverage_percent"), "-"))
+    detected_blocks = ai_blocks.get("detected") or []
+    if detected_blocks:
+        for b in detected_blocks[:10]:
+            doc.add_paragraph(f"{b.get('label', b.get('id', '-'))}: {b.get('confidence', '-')}", style="List Bullet")
+    missing_critical = ai_blocks.get("missing_critical") or []
+    if missing_critical:
+        add_heading("Missing critical blocks", 3, color="9A3412")
+        for m in missing_critical[:8]:
+            doc.add_paragraph(str(m), style="List Bullet")
+
+    directives_profiles = (ai_directives.get("profiles") or {})
+    if directives_profiles:
+        add_heading("AI directives audit", 2, color="0E7490")
+        rows = [[k, v.get("status", "-"), v.get("reason", "-")] for k, v in directives_profiles.items()]
+        add_table(["Bot", "Status", "Reason"], rows)
+    if detection_issues:
+        add_heading("Detection issues", 2, color="9A3412")
+        for issue in detection_issues[:10]:
+            doc.add_paragraph(str(issue), style="List Bullet")
+
+    missing_improvements = improvement_library.get("missing") or []
+    if missing_improvements:
+        add_heading("Improvement Library", 2, color="0E7490")
+        for item in missing_improvements[:10]:
+            doc.add_paragraph(f"{item.get('title', item.get('id', '-'))}: {item.get('reason', '-')}", style="List Bullet")
 
     if wow_enabled and snippet_library:
         doc.add_page_break()
