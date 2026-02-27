@@ -426,6 +426,16 @@ def run_llm_crawler_simulation(
         "meta_robots": ((nojs_snapshot.get("meta") or {}).get("meta_robots") or ""),
         "x_robots_tag": ((nojs_snapshot.get("meta") or {}).get("x_robots_tag") or ""),
     }
+    bot_matrix = []
+    robots_profiles = (policies.get("robots") or {}).get("profiles") or {}
+    for profile in profiles:
+        bot_matrix.append(
+            {
+                "profile": profile,
+                "allowed": bool((robots_profiles.get(profile) or {}).get("allowed", True)),
+                "reason": (robots_profiles.get(profile) or {}).get("reason"),
+            }
+        )
     timings["policies_ms"] = int((time.perf_counter() - t1) * 1000)
 
     rendered_snapshot: Optional[Dict[str, Any]] = None
@@ -462,6 +472,7 @@ def run_llm_crawler_simulation(
         diff=diff,
         policies=policies,
     )
+    recommendations = _build_recommendations(nojs_snapshot, rendered_snapshot, policies, score)
     timings["analysis_ms"] = int((time.perf_counter() - t3) * 1000)
     timings["total_ms"] = int((time.perf_counter() - started_at) * 1000)
 
@@ -481,5 +492,30 @@ def run_llm_crawler_simulation(
         "diff": diff,
         "policies": policies,
         "score": score,
+        "bot_matrix": bot_matrix,
+        "recommendations": recommendations,
         "engine": "llm_crawler_mvp_v1",
     }
+
+
+def _build_recommendations(nojs: Dict[str, Any], rendered: Optional[Dict[str, Any]], policies: Dict[str, Any], score: Dict[str, Any]) -> List[Dict[str, str]]:
+    recs: List[Dict[str, str]] = []
+    meta = (nojs.get("meta") or {})
+    if "noindex" in str(meta.get("meta_robots") or "").lower():
+        recs.append({"priority": "P0", "area": "crawlability", "title": "Уберите noindex для страниц, которые должны индексироваться ботами/LLM"})
+    challenge = (nojs.get("challenge") or {})
+    if challenge.get("is_challenge"):
+        recs.append({"priority": "P0", "area": "access", "title": "WAF/челлендж блокирует ботов — ослабьте правила для известных AI-ботов"})
+    schema = (nojs.get("schema") or {})
+    if not schema.get("jsonld_types"):
+        recs.append({"priority": "P1", "area": "schema", "title": "Добавьте JSON-LD (Organization/Article/Product) для доверия и извлечения"})
+    signals = (nojs.get("signals") or {})
+    if not signals.get("author_present") or not signals.get("date_present"):
+        recs.append({"priority": "P1", "area": "trust", "title": "Укажите автора/дату публикации — повышает понятность и доверие"})
+    links = (nojs.get("links") or {})
+    if int(links.get("js_only_count") or 0) > 0:
+        recs.append({"priority": "P1", "area": "links", "title": "Избегайте JS-only ссылок — используйте href для навигации ботов"})
+    content = (nojs.get("content") or {})
+    if int(content.get("main_text_length") or 0) < 500:
+        recs.append({"priority": "P2", "area": "content", "title": "Увеличьте основной текст/контент — сейчас он слишком короткий для извлечения"})
+    return recs[:10]

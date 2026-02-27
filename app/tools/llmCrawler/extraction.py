@@ -75,9 +75,13 @@ def _extract_links(soup: BeautifulSoup, base_url: str, limit: int = 20) -> Dict[
     top_links: List[Dict[str, str]] = []
     all_urls: List[str] = []
     seen = set()
+    js_only = 0
     for link in soup.find_all("a", href=True):
         href = _safe_text(link.get("href"))
         if not href:
+            continue
+        if href.lower().startswith("javascript:"):
+            js_only += 1
             continue
         abs_href = _safe_text(urljoin(base_url, href))
         if not abs_href:
@@ -90,11 +94,16 @@ def _extract_links(soup: BeautifulSoup, base_url: str, limit: int = 20) -> Dict[
         top_links.append({"anchor": anchor[:200], "url": abs_href[:1000]})
         if len(top_links) >= limit:
             break
+    # anchors without href but onclick
+    for link in soup.find_all("a", href=False):
+        if link.get("onclick"):
+            js_only += 1
     return {
         "count": len(all_urls),
         "unique_count": len(set(all_urls)),
         "top": top_links,
         "all_urls": list(dict.fromkeys(all_urls)),
+        "js_only_count": js_only,
     }
 
 
