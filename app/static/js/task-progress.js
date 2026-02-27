@@ -2,6 +2,7 @@ let pollInterval;
 let taskTerminalHandled = false;
 let statusRequestInFlight = false;
 let lastProgressStateKey = '';
+const PROGRESS_STAGE_ORDER = ['queue', 'fetch', 'render', 'analyze', 'done'];
 
 function addTaskToLocalHistory(item) {
     try {
@@ -234,6 +235,47 @@ document.addEventListener('DOMContentLoaded', () => {
     pollInterval = setInterval(checkTaskStatus, 1500);
 });
 
+function _deriveStage(data) {
+    const msg = String(data.status_message || '').toLowerCase();
+    const p = Number(data.progress || 0);
+    if (data.status === 'SUCCESS') return 'done';
+    if (data.status === 'FAILURE') return 'analyze';
+    if (msg.includes('queue')) return 'queue';
+    if (msg.includes('fetch') || msg.includes('http') || msg.includes('no-js')) return 'fetch';
+    if (msg.includes('render') || msg.includes('playwright') || msg.includes('screenshot')) return 'render';
+    if (msg.includes('diff') || msg.includes('score') || msg.includes('analysis')) return 'analyze';
+    if (p >= 95) return 'done';
+    if (p >= 75) return 'analyze';
+    if (p >= 50) return 'render';
+    if (p >= 20) return 'fetch';
+    return 'queue';
+}
+
+function updateStageRail(stage) {
+    const elements = document.querySelectorAll('#progress-stages [data-stage]');
+    if (!elements.length) return;
+    const active = stage && PROGRESS_STAGE_ORDER.includes(stage) ? stage : 'queue';
+    const activeIndex = PROGRESS_STAGE_ORDER.indexOf(active);
+    elements.forEach((el) => {
+        const token = el.getAttribute('data-stage');
+        const idx = PROGRESS_STAGE_ORDER.indexOf(token);
+        const dot = el.querySelector('span.w-2\\.5');
+        el.classList.remove('bg-slate-50', 'text-slate-600', 'border-slate-200');
+        el.classList.remove('bg-blue-50', 'text-blue-700', 'border-blue-200');
+        el.classList.remove('bg-green-50', 'text-green-700', 'border-green-200');
+        if (idx < activeIndex) {
+            el.classList.add('bg-green-50', 'text-green-700', 'border-green-200');
+            if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-green-500';
+        } else if (idx === activeIndex) {
+            el.classList.add('bg-blue-50', 'text-blue-700', 'border-blue-200');
+            if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-blue-500';
+        } else {
+            el.classList.add('bg-slate-50', 'text-slate-600', 'border-slate-200');
+            if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-slate-300';
+        }
+    });
+}
+
 async function checkTaskStatus() {
     if (taskTerminalHandled || statusRequestInFlight) {
         return;
@@ -297,6 +339,7 @@ function updateProgress(data) {
         progressBar.classList.add('bg-green-500');
         statusIcon.innerHTML = '<i class="fas fa-check-circle text-green-500"></i>';
         progressMetaWrap.classList.add('hidden');
+        updateStageRail('done');
         return;
     }
 
@@ -308,6 +351,7 @@ function updateProgress(data) {
         progressBar.classList.add('bg-red-500');
         statusIcon.innerHTML = '<i class="fas fa-times-circle text-red-500"></i>';
         progressMetaWrap.classList.add('hidden');
+        updateStageRail('analyze');
         return;
     }
 
@@ -333,6 +377,7 @@ function updateProgress(data) {
     } else {
         progressMetaWrap.classList.add('hidden');
     }
+    updateStageRail(_deriveStage(data));
 }
 
 function showResults(data) {

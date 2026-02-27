@@ -47,6 +47,28 @@
                 <div id="progress-current-url" class="font-semibold text-slate-800 truncate">-</div>
             </div>
         </div>
+        <div id="progress-stages" class="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 text-xs">
+            <div data-stage="queue" class="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-600">
+                <span class="w-2.5 h-2.5 rounded-full bg-slate-300"></span>
+                <span>Очередь</span>
+            </div>
+            <div data-stage="fetch" class="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-600">
+                <span class="w-2.5 h-2.5 rounded-full bg-slate-300"></span>
+                <span>HTTP/Robots</span>
+            </div>
+            <div data-stage="render" class="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-600">
+                <span class="w-2.5 h-2.5 rounded-full bg-slate-300"></span>
+                <span>Render/JS</span>
+            </div>
+            <div data-stage="analyze" class="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-600">
+                <span class="w-2.5 h-2.5 rounded-full bg-slate-300"></span>
+                <span>Diff/Scoring</span>
+            </div>
+            <div data-stage="done" class="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-600">
+                <span class="w-2.5 h-2.5 rounded-full bg-slate-300"></span>
+                <span>Готово</span>
+            </div>
+        </div>
     </div>
 
     <!-- Results Section (hidden initially) -->

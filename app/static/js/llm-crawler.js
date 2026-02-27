@@ -36,6 +36,49 @@ function _statusChip(status) {
     return '<span class="px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">ERROR</span>';
 }
 
+const LLM_STAGE_ORDER = ['queue', 'fetch', 'policy', 'render', 'analyze', 'done'];
+
+function _llmStageFromStatus(status, progress, message) {
+    const msg = String(message || '').toLowerCase();
+    const p = Number(progress || 0);
+    if (String(status || '').toLowerCase() === 'done') return 'done';
+    if (msg.includes('queue')) return 'queue';
+    if (msg.includes('no-js') || msg.includes('fetch')) return 'fetch';
+    if (msg.includes('policy') || msg.includes('robots')) return 'policy';
+    if (msg.includes('render')) return 'render';
+    if (msg.includes('diff') || msg.includes('score')) return 'analyze';
+    if (p >= 95) return 'analyze';
+    if (p >= 70) return 'render';
+    if (p >= 50) return 'policy';
+    if (p >= 20) return 'fetch';
+    return 'queue';
+}
+
+function _updateLlmStageRail(stageToken) {
+    const nodes = document.querySelectorAll('#llm-stage-rail [data-llm-stage]');
+    if (!nodes.length) return;
+    const active = LLM_STAGE_ORDER.includes(stageToken) ? stageToken : 'queue';
+    const activeIdx = LLM_STAGE_ORDER.indexOf(active);
+    nodes.forEach((el) => {
+        const token = el.getAttribute('data-llm-stage');
+        const idx = LLM_STAGE_ORDER.indexOf(token);
+        const dot = el.querySelector('span.w-2\\.5');
+        el.classList.remove('bg-slate-50', 'text-slate-600', 'border-slate-200');
+        el.classList.remove('bg-blue-50', 'text-blue-700', 'border-blue-200');
+        el.classList.remove('bg-green-50', 'text-green-700', 'border-green-200');
+        if (idx < activeIdx) {
+            el.classList.add('bg-green-50', 'text-green-700', 'border-green-200');
+            if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-green-500';
+        } else if (idx === activeIdx) {
+            el.classList.add('bg-blue-50', 'text-blue-700', 'border-blue-200');
+            if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-blue-500';
+        } else {
+            el.classList.add('bg-slate-50', 'text-slate-600', 'border-slate-200');
+            if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-slate-300';
+        }
+    });
+}
+
 async function startLlmCrawlerTask(event) {
     event.preventDefault();
     const form = event.target;
@@ -129,6 +172,7 @@ function initLlmCrawlerResult(jobId) {
         if (progressValue) progressValue.textContent = `${p}%`;
         if (statusText) statusText.textContent = String(message || status || 'queued');
         if (statusBadge) statusBadge.innerHTML = _statusChip(status);
+        _updateLlmStageRail(_llmStageFromStatus(status, p, message));
     }
 
     function renderSummary(result) {
@@ -366,7 +410,7 @@ function initLlmCrawlerResult(jobId) {
                 const message = data?.detail || data?.error || `HTTP ${response.status}`;
                 throw new Error(message);
             }
-            setProgress(data.status, data.progress, data.status);
+            setProgress(data.status, data.progress, data.status_message || data.status);
             if (data.status === 'done') {
                 latestResult = data.result || null;
                 renderTabs(latestResult || {});
