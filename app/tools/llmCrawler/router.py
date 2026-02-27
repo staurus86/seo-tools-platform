@@ -34,7 +34,7 @@ router = APIRouter(prefix="/api/tools/llm-crawler", tags=["LLM Crawler Simulatio
 def _ensure_feature_enabled(request: Request) -> None:
     if not is_llm_crawler_enabled_for_request(request):
         raise HTTPException(
-            status_code=404,
+            status_code=403,
             detail="LLM Crawler Simulation is disabled by feature flag",
         )
 

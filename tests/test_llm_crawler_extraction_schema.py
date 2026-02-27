@@ -98,6 +98,44 @@ class LlmCrawlerExtractionSchemaTests(unittest.TestCase):
         self.assertIn("FAQPage", jsonld_types)
         self.assertIn("Question", jsonld_types)
 
+    def test_extracts_schema_entities_names(self):
+        html = """
+        <html><head>
+          <script type="application/ld+json">
+          {
+            "@context":"https://schema.org",
+            "@graph":[
+              {"@type":"Organization","name":"ACME Industrial"},
+              {"@type":"Person","name":"John Smith"},
+              {"@type":"Product","name":"Vacuum X1000"},
+              {"@type":"Place","name":"Berlin"}
+            ]
+          }
+          </script>
+        </head>
+        <body>
+          <div itemscope itemtype="https://schema.org/Organization"><span itemprop="name">ACME Industrial LLC</span></div>
+          <main><h1>Vacuum product page</h1><p>Industrial vacuum meter content.</p></main>
+        </body></html>
+        """
+        snap = build_snapshot(
+            html=html,
+            final_url="https://example.com/product",
+            status_code=200,
+            headers={},
+            timing_ms=9,
+            redirect_chain=[],
+            show_headers=False,
+            content_type="text/html",
+            size_bytes=len(html),
+            truncated=False,
+        )
+        entities = ((snap.get("schema") or {}).get("entities") or {})
+        self.assertTrue(entities.get("organizations"))
+        self.assertTrue(entities.get("persons"))
+        self.assertTrue(entities.get("products"))
+        self.assertTrue(entities.get("locations"))
+
 
 if __name__ == "__main__":
     unittest.main()

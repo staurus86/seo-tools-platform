@@ -19,7 +19,7 @@ class LlmCrawlerRouteTests(unittest.IsolatedAsyncioTestCase):
     def _healthy_heartbeat(self):
         return {"updatedAt": datetime.now(timezone.utc).isoformat()}
 
-    async def test_feature_flag_off_returns_404(self):
+    async def test_feature_flag_off_returns_403(self):
         payload = LlmCrawlerRunRequest(url="example.com")
         req = _FakeRequest()
         with patch("app.tools.llmCrawler.router.settings.FEATURE_LLM_CRAWLER", False), patch(
@@ -27,7 +27,7 @@ class LlmCrawlerRouteTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.assertRaises(HTTPException) as ctx:
                 await run_llm_crawler(payload, req)
-        self.assertEqual(ctx.exception.status_code, 404)
+        self.assertEqual(ctx.exception.status_code, 403)
 
     async def test_run_queues_job_when_enabled(self):
         payload = LlmCrawlerRunRequest(url="example.com")

@@ -58,6 +58,10 @@ PAGE_TYPE_PATTERNS = {
         r"\b(product|price|pricing|buy|shop|sku|catalog|цена|купить|товар|model|spec)\b",
         r"/(product|products|shop|catalog|store|item|sku)",
     ],
+    "marketplace": [
+        r"\b(marketplace|vendor|seller|compare prices|cart|checkout|in stock|availability|купить|корзина|продавец|наличие)\b",
+        r"/(marketplace|vendors|seller|sellers|shop|store|catalog|products)",
+    ],
     "article": [
         r"\b(article|guide|how to|tutorial|insights|исследование|гайд|статья|analysis|report)\b",
         r"/(article|articles|blog|guide|guides|insights)",
@@ -93,6 +97,7 @@ PAGE_TYPE_SCHEMA_HINTS = {
     "listing": {"itemlist", "collectionpage"},
     "service": {"service", "professionalservice"},
     "product": {"product", "offer", "aggregateoffer", "individualproduct"},
+    "marketplace": {"product", "offer", "aggregateoffer", "itemlist", "collectionpage"},
     "review": {"review", "aggregaterating", "rating"},
     "homepage": {"website", "webpage", "organization"},
     "category": {"itemlist", "collectionpage", "website"},
@@ -1267,6 +1272,13 @@ def _schema_snapshot_view(snapshot: Dict[str, Any] | None) -> Dict[str, Any]:
     microdata = [str(x) for x in (schema.get("microdata_types") or []) if str(x).strip()]
     rdfa = [str(x) for x in (schema.get("rdfa_types") or []) if str(x).strip()]
     all_types = sorted(set(jsonld + microdata + rdfa))
+    entities = schema.get("entities") or {}
+    entity_payload = {
+        "organizations": [str(x) for x in (entities.get("organizations") or []) if str(x).strip()][:30],
+        "persons": [str(x) for x in (entities.get("persons") or []) if str(x).strip()][:30],
+        "products": [str(x) for x in (entities.get("products") or []) if str(x).strip()][:30],
+        "locations": [str(x) for x in (entities.get("locations") or []) if str(x).strip()][:30],
+    }
     return {
         "jsonld_types": jsonld[:50],
         "microdata_types": microdata[:50],
@@ -1274,12 +1286,21 @@ def _schema_snapshot_view(snapshot: Dict[str, Any] | None) -> Dict[str, Any]:
         "types": all_types[:80],
         "count": len(all_types),
         "coverage_score": float(schema.get("coverage_score") or 0.0),
+        "entities": entity_payload,
     }
 
 
 def _build_structured_data_split(nojs_snapshot: Dict[str, Any], rendered_snapshot: Dict[str, Any] | None) -> Dict[str, Any]:
     raw = _schema_snapshot_view(nojs_snapshot)
-    rendered = _schema_snapshot_view(rendered_snapshot) if rendered_snapshot else {"jsonld_types": [], "microdata_types": [], "rdfa_types": [], "types": [], "count": 0, "coverage_score": 0.0}
+    rendered = _schema_snapshot_view(rendered_snapshot) if rendered_snapshot else {
+        "jsonld_types": [],
+        "microdata_types": [],
+        "rdfa_types": [],
+        "types": [],
+        "count": 0,
+        "coverage_score": 0.0,
+        "entities": {"organizations": [], "persons": [], "products": [], "locations": []},
+    }
     source = "none"
     if int(raw.get("count") or 0) > 0:
         source = "raw"
@@ -1289,6 +1310,8 @@ def _build_structured_data_split(nojs_snapshot: Dict[str, Any], rendered_snapsho
         source = "raw+rendered"
     raw_types = list(raw.get("types") or [])
     rendered_types = list(rendered.get("types") or [])
+    raw_entities = raw.get("entities") or {}
+    rendered_entities = rendered.get("entities") or {}
     coverage_raw = _safe_float(raw.get("coverage_score"), 0.0) / 100.0
     coverage_rendered = _safe_float(rendered.get("coverage_score"), 0.0) / 100.0
     if int(raw.get("count") or 0) > 0 and int(rendered.get("count") or 0) > 0:
@@ -1305,6 +1328,8 @@ def _build_structured_data_split(nojs_snapshot: Dict[str, Any], rendered_snapsho
         "rendered": rendered,
         "raw_types": raw_types,
         "rendered_types": rendered_types,
+        "raw_entities": raw_entities,
+        "rendered_entities": rendered_entities,
         "coverage_score": round(max(0.0, min(1.0, coverage_score)), 4),
         "source": source,
         "rendered_only": bool(int(raw.get("count") or 0) == 0 and int(rendered.get("count") or 0) > 0),
@@ -1351,12 +1376,13 @@ def _page_classification_v2(nojs_snapshot: Dict[str, Any], rendered_snapshot: Di
         "homepage": [],
         "article": [],
         "product": [],
+        "marketplace": [],
         "category": [],
         "listing": [],
         "docs": [],
         "mixed": [],
     }
-    scores = {"homepage": 0, "article": 0, "product": 0, "category": 0, "listing": 0, "docs": 0, "mixed": 0}
+    scores = {"homepage": 0, "article": 0, "product": 0, "marketplace": 0, "category": 0, "listing": 0, "docs": 0, "mixed": 0}
 
     if has_org_schema:
         scores["homepage"] += 2
@@ -1398,6 +1424,19 @@ def _page_classification_v2(nojs_snapshot: Dict[str, Any], rendered_snapshot: Di
         scores["product"] += 1
     if has_review:
         scores["product"] += 1
+
+    if has_product and has_itemlist:
+        scores["marketplace"] += 3
+        signals_map["marketplace"].append("product + itemlist schema")
+    if links_count >= 90 and cta_signals >= 2:
+        scores["marketplace"] += 2
+        signals_map["marketplace"].append("high product navigation + CTA")
+    if re.search(r"(cart|checkout|in stock|availability|seller|vendor|продавец|корзина|наличие)", text_blob, flags=re.I):
+        scores["marketplace"] += 2
+        signals_map["marketplace"].append("commerce workflow signals")
+    if "/shop" in path.lower() or "/store" in path.lower() or "/marketplace" in path.lower():
+        scores["marketplace"] += 2
+        signals_map["marketplace"].append("marketplace route")
 
     if has_itemlist:
         scores["category"] += 2
@@ -1504,6 +1543,25 @@ def _extract_entities_v2(nojs_snapshot: Dict[str, Any], rendered_snapshot: Dict[
             return
         prev["confidence"] = round(max(float(prev.get("confidence") or 0.0), float(confidence)), 3)
         prev["source_set"].add(source)
+
+    # Schema value extraction from raw/rendered snapshots (names, titles, legal names).
+    schema_value_sources: List[tuple[str, Dict[str, Any], float]] = [
+        ("schema_values_raw", (structured_data.get("raw_entities") or {}), 0.96),
+        ("schema_values_rendered", (structured_data.get("rendered_entities") or {}), 0.9),
+        ("schema_values_raw_snapshot", ((nojs_snapshot.get("schema") or {}).get("entities") or {}), 0.95),
+        ("schema_values_rendered_snapshot", (((rendered_snapshot or {}).get("schema") or {}).get("entities") or {}), 0.88),
+    ]
+    for source_name, payload, conf in schema_value_sources:
+        if not isinstance(payload, dict):
+            continue
+        for key, bucket in (
+            ("organizations", "organizations"),
+            ("persons", "persons"),
+            ("products", "products"),
+            ("locations", "locations"),
+        ):
+            for value in (payload.get(key) or []):
+                add_entity(bucket, str(value), source_name, conf)
 
     site_name = str(meta.get("site_name") or "").strip()
     if site_name:
@@ -1775,6 +1833,13 @@ def _detect_page_type(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     )
     score_service = hit_count("service") + schema_hit("service") + (1 if bool(signals.get("organization_present")) else 0)
     score_product = hit_count("product") + schema_hit("product")
+    score_marketplace = (
+        hit_count("marketplace")
+        + (2 if bool({"product", "offer", "aggregateoffer"} & schema_types) else 0)
+        + (2 if bool({"itemlist", "collectionpage"} & schema_types) else 0)
+        + (2 if links_count >= 80 else 0)
+        + (1 if re.search(r"(cart|checkout|seller|vendor|in stock|availability|корзина|продавец|наличие)", text_hint, flags=re.I) else 0)
+    )
     score_review = hit_count("review") + schema_hit("review")
     score_homepage = hit_count("homepage") + schema_hit("homepage") + (2 if path in {"", "/"} else 0)
     score_category = hit_count("category") + schema_hit("category")
@@ -1789,6 +1854,7 @@ def _detect_page_type(snapshot: Dict[str, Any]) -> Dict[str, Any]:
         "listing": score_listing,
         "service": score_service,
         "product": score_product,
+        "marketplace": score_marketplace,
         "review": score_review,
         "homepage": score_homepage,
         "category": score_category,
@@ -1803,6 +1869,11 @@ def _detect_page_type(snapshot: Dict[str, Any]) -> Dict[str, Any]:
         page_type = "product"
         confidence = min(0.93, 0.62 + (score_product * 0.08))
         reasons.append(f"Explicit product signals ({score_product} hits)")
+        return {"page_type": page_type, "confidence": round(confidence, 3), "reasons": reasons[:4], "scores": scores}
+    if score_marketplace >= 4:
+        page_type = "marketplace"
+        confidence = min(0.93, 0.6 + (score_marketplace * 0.06))
+        reasons.append(f"Marketplace/commercial listing signals ({score_marketplace} hits)")
         return {"page_type": page_type, "confidence": round(confidence, 3), "reasons": reasons[:4], "scores": scores}
     if score_service >= 2:
         page_type = "service"
@@ -1889,6 +1960,7 @@ def _apply_score_profile(score: Dict[str, Any], snapshot: Dict[str, Any], page_t
         "mixed": {"access": 32, "content": 38, "structure": 8, "signals": 22},
         "service": {"access": 26, "content": 29, "structure": 15, "signals": 30},
         "product": {"access": 25, "content": 25, "structure": 15, "signals": 35},
+        "marketplace": {"access": 30, "content": 28, "structure": 10, "signals": 32},
         "review": {"access": 24, "content": 28, "structure": 14, "signals": 34},
         "homepage": {"access": 29, "content": 31, "structure": 10, "signals": 30},
         "category": {"access": 30, "content": 33, "structure": 9, "signals": 28},
@@ -2457,7 +2529,8 @@ def run_llm_crawler_simulation(
         entities=None,
     )
     citation_prob = round(float(citation_model.get("citation_probability") or 0.0) * 100.0, 2)
-    entity_graph = _build_entity_graph(nojs_snapshot) if bool(getattr(settings, "LLM_CRAWLER_ENTITY_GRAPH_ENABLED", False)) else None
+    entities = _extract_entities_v2(nojs_snapshot, rendered_snapshot, structured_data)
+    entity_graph = _build_entity_graph(nojs_snapshot, entities) if bool(getattr(settings, "LLM_CRAWLER_ENTITY_GRAPH_ENABLED", False)) else None
     if entity_graph:
         nojs_snapshot["entity_graph"] = entity_graph
     eeat = _compute_eeat(
@@ -2474,7 +2547,6 @@ def run_llm_crawler_simulation(
     content_quality = _content_quality_metrics(nojs_snapshot)
     discoverability = _crawler_path_sim(nojs_snapshot)
     ai_understanding = _ai_understanding(nojs_snapshot, llm_sim)
-    entities = _extract_entities_v2(nojs_snapshot, rendered_snapshot, structured_data)
     retrieval = _retrieval_simulation(nojs_snapshot, entities)
     validation = _validation_checks(nojs_snapshot)
     citation_model = _citation_model_v2(
@@ -2992,7 +3064,7 @@ def _has_schema_type(schema: Dict[str, Any], wanted: set[str]) -> bool:
     return bool(all_types & wanted_l)
 
 
-def _build_entity_graph(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+def _build_entity_graph(snapshot: Dict[str, Any], extracted_entities: Dict[str, Any] | None = None) -> Dict[str, Any]:
     schema = snapshot.get("schema") or {}
     text = ((snapshot.get("content") or {}).get("main_text_preview") or "") + " " + ((snapshot.get("meta") or {}).get("title") or "")
     orgs = set()
@@ -3010,6 +3082,23 @@ def _build_entity_graph(snapshot: Dict[str, Any]) -> Dict[str, Any]:
             persons.add("schema:Person")
         if "Product" in t:
             products.add("schema:Product")
+    if isinstance(extracted_entities, dict):
+        for row in (extracted_entities.get("organizations") or []):
+            name = _safe_text((row or {}).get("name") if isinstance(row, dict) else row)
+            if name:
+                orgs.add(name[:100])
+        for row in (extracted_entities.get("persons") or []):
+            name = _safe_text((row or {}).get("name") if isinstance(row, dict) else row)
+            if name:
+                persons.add(name[:100])
+        for row in (extracted_entities.get("products") or []):
+            name = _safe_text((row or {}).get("name") if isinstance(row, dict) else row)
+            if name:
+                products.add(name[:100])
+        for row in (extracted_entities.get("locations") or []):
+            name = _safe_text((row or {}).get("name") if isinstance(row, dict) else row)
+            if name:
+                locations.add(name[:100])
     for token in re.findall(r"\b[A-Z][A-Za-z]{2,}(?:\s+[A-Z][A-Za-z]{2,})+\b", text):
         if "inc" in token.lower() or "llc" in token.lower() or "ltd" in token.lower():
             orgs.add(token[:100])
@@ -3293,6 +3382,7 @@ def _citation_breakdown(snapshot: Dict[str, Any], page_type_info: Dict[str, Any]
         "mixed": {"schema": 0.18, "author": 0.06, "content_clarity": 0.40, "bot_accessibility": 0.26, "structure": 0.10},
         "service": {"schema": 0.32, "author": 0.12, "content_clarity": 0.20, "bot_accessibility": 0.18, "structure": 0.18},
         "product": {"schema": 0.34, "author": 0.08, "content_clarity": 0.18, "bot_accessibility": 0.16, "structure": 0.24},
+        "marketplace": {"schema": 0.34, "author": 0.05, "content_clarity": 0.22, "bot_accessibility": 0.20, "structure": 0.19},
         "review": {"schema": 0.28, "author": 0.14, "content_clarity": 0.22, "bot_accessibility": 0.16, "structure": 0.20},
         "homepage": {"schema": 0.26, "author": 0.05, "content_clarity": 0.27, "bot_accessibility": 0.24, "structure": 0.18},
         "category": {"schema": 0.28, "author": 0.04, "content_clarity": 0.30, "bot_accessibility": 0.24, "structure": 0.14},

@@ -42,6 +42,144 @@ def _normalize_schema_type(value: Any) -> str:
     return cleaned
 
 
+SCHEMA_ENTITY_GROUPS: Dict[str, Set[str]] = {
+    "organizations": {
+        "organization",
+        "localbusiness",
+        "corporation",
+        "ngo",
+        "brand",
+        "educationalorganization",
+        "governmentorganization",
+        "medicalorganization",
+        "newsmediaorganization",
+    },
+    "persons": {"person", "author"},
+    "products": {
+        "product",
+        "service",
+        "softwareapplication",
+        "offer",
+        "aggregateoffer",
+        "individualproduct",
+    },
+    "locations": {"place", "city", "country", "state", "postaladdress"},
+}
+
+
+def _schema_types_from_value(value: Any) -> List[str]:
+    raw: List[str] = []
+    if isinstance(value, str):
+        raw = [value]
+    elif isinstance(value, list):
+        raw = [str(x) for x in value if _safe_text(x)]
+    elif value is not None:
+        raw = [str(value)]
+    out: List[str] = []
+    for item in raw:
+        norm = _normalize_schema_type(item)
+        if norm:
+            out.append(norm)
+    return out
+
+
+def _entity_names_from_node(node: Dict[str, Any]) -> List[str]:
+    keys = ("name", "legalName", "alternateName", "headline", "title")
+    found: List[str] = []
+    for key in keys:
+        val = node.get(key)
+        if isinstance(val, str):
+            txt = _safe_text(val)
+            if txt:
+                found.append(txt)
+        elif isinstance(val, list):
+            for item in val:
+                if isinstance(item, str):
+                    txt = _safe_text(item)
+                    if txt:
+                        found.append(txt)
+        elif isinstance(val, dict):
+            txt = _safe_text(val.get("name"))
+            if txt:
+                found.append(txt)
+    given = _safe_text(node.get("givenName"))
+    family = _safe_text(node.get("familyName"))
+    if given and family:
+        found.append(f"{given} {family}")
+    elif given:
+        found.append(given)
+    unique: List[str] = []
+    seen: Set[str] = set()
+    for item in found:
+        cleaned = re.sub(r"\s+", " ", item).strip()
+        if len(cleaned) < 2 or len(cleaned) > 140:
+            continue
+        key = cleaned.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(cleaned)
+    return unique[:10]
+
+
+def _schema_entity_buckets(types: List[str]) -> Set[str]:
+    buckets: Set[str] = set()
+    lowered = {str(x).strip().lower() for x in (types or []) if str(x).strip()}
+    for bucket, allowed in SCHEMA_ENTITY_GROUPS.items():
+        if lowered & allowed:
+            buckets.add(bucket)
+    return buckets
+
+
+def _add_schema_entity(entities: Dict[str, Set[str]], bucket: str, value: str) -> None:
+    txt = re.sub(r"\s+", " ", _safe_text(value)).strip()
+    if len(txt) < 2 or len(txt) > 140:
+        return
+    entities.setdefault(bucket, set()).add(txt)
+
+
+def _collect_schema_data_from_node(
+    payload: Any,
+    *,
+    types_found: Set[str],
+    entities: Dict[str, Set[str]],
+) -> None:
+    if isinstance(payload, list):
+        for item in payload:
+            _collect_schema_data_from_node(item, types_found=types_found, entities=entities)
+        return
+    if isinstance(payload, dict):
+        raw_types = (
+            _schema_types_from_value(payload.get("@type"))
+            + _schema_types_from_value(payload.get("type"))
+            + _schema_types_from_value(payload.get("itemtype"))
+        )
+        for item in raw_types:
+            types_found.add(item)
+        buckets = _schema_entity_buckets(raw_types)
+        names = _entity_names_from_node(payload)
+        if buckets and names:
+            for bucket in buckets:
+                for name in names:
+                    _add_schema_entity(entities, bucket, name)
+        # microdata/extruct often wraps values under properties.
+        props = payload.get("properties")
+        if isinstance(props, dict):
+            _collect_schema_data_from_node(props, types_found=types_found, entities=entities)
+        for value in payload.values():
+            _collect_schema_data_from_node(value, types_found=types_found, entities=entities)
+
+
+def _empty_schema_entities() -> Dict[str, Set[str]]:
+    return {"organizations": set(), "persons": set(), "products": set(), "locations": set()}
+
+
+def _merge_schema_entities(target: Dict[str, Set[str]], source: Dict[str, Any]) -> None:
+    for bucket in ("organizations", "persons", "products", "locations"):
+        for value in (source.get(bucket) or []):
+            _add_schema_entity(target, bucket, str(value))
+
+
 def _flesch_reading_ease(text: str) -> float:
     raw = _safe_text(text)
     if not raw:
@@ -60,28 +198,9 @@ def _flesch_reading_ease(text: str) -> float:
     return round(max(0.0, min(100.0, score)), 2)
 
 
-def _extract_jsonld_types(soup: BeautifulSoup) -> List[str]:
+def _extract_jsonld_schema_data(soup: BeautifulSoup) -> Dict[str, Any]:
     found: Set[str] = set()
-
-    def collect_types(payload: Any) -> None:
-        if isinstance(payload, list):
-            for item in payload:
-                collect_types(item)
-            return
-        if isinstance(payload, dict):
-            raw_type = payload.get("@type")
-            if isinstance(raw_type, str) and raw_type.strip():
-                norm = _normalize_schema_type(raw_type)
-                if norm:
-                    found.add(norm)
-            elif isinstance(raw_type, list):
-                for item in raw_type:
-                    if isinstance(item, str) and item.strip():
-                        norm = _normalize_schema_type(item)
-                        if norm:
-                            found.add(norm)
-            for value in payload.values():
-                collect_types(value)
+    entities = _empty_schema_entities()
 
     for script in soup.find_all("script"):
         script_type = _safe_text(script.get("type")).lower()
@@ -93,7 +212,7 @@ def _extract_jsonld_types(soup: BeautifulSoup) -> List[str]:
             continue
         try:
             parsed = json.loads(payload)
-            collect_types(parsed)
+            _collect_schema_data_from_node(parsed, types_found=found, entities=entities)
         except Exception:
             # Fallback for slightly invalid JSON-LD payloads.
             for match in re.finditer(r'"@type"\s*:\s*"(.*?)"', payload, flags=re.I):
@@ -110,7 +229,18 @@ def _extract_jsonld_types(soup: BeautifulSoup) -> List[str]:
                     norm = _normalize_schema_type(val)
                     if norm:
                         found.add(norm)
-    return sorted(found)
+            for match in re.finditer(r'"name"\s*:\s*"(.*?)"', payload, flags=re.I):
+                name = _safe_text(match.group(1))
+                if name and len(name) <= 140:
+                    _add_schema_entity(entities, "organizations", name)
+    return {
+        "types": sorted(found),
+        "entities": {k: sorted(v)[:30] for k, v in entities.items()},
+    }
+
+
+def _extract_jsonld_types(soup: BeautifulSoup) -> List[str]:
+    return list((_extract_jsonld_schema_data(soup) or {}).get("types") or [])
 
 
 def _extract_microdata_types_fallback(soup: BeautifulSoup) -> List[str]:
@@ -137,6 +267,69 @@ def _extract_rdfa_types_fallback(soup: BeautifulSoup) -> List[str]:
             if norm:
                 found.add(norm)
     return sorted(found)
+
+
+def _extract_dom_schema_entities(soup: BeautifulSoup) -> Dict[str, List[str]]:
+    entities = _empty_schema_entities()
+    # Microdata itemscope blocks.
+    for tag in soup.find_all(attrs={"itemtype": True}):
+        itemtype = _safe_text(tag.get("itemtype"))
+        if not itemtype:
+            continue
+        types = []
+        for part in re.split(r"\s+", itemtype):
+            norm = _normalize_schema_type(part)
+            if norm:
+                types.append(norm)
+        buckets = _schema_entity_buckets(types)
+        if not buckets:
+            continue
+        names: List[str] = []
+        for node in tag.find_all(attrs={"itemprop": True}):
+            prop = _safe_text(node.get("itemprop")).lower()
+            if prop not in {"name", "legalname", "alternatename", "headline", "title"}:
+                continue
+            candidate = _safe_text(node.get("content") or " ".join(node.stripped_strings))
+            if candidate:
+                names.append(candidate)
+        if not names:
+            fallback = _safe_text(tag.get("content") or " ".join(tag.stripped_strings))
+            if fallback:
+                names.append(fallback)
+        for bucket in buckets:
+            for name in names[:4]:
+                _add_schema_entity(entities, bucket, name)
+
+    # RDFa typeof blocks.
+    for tag in soup.find_all(attrs={"typeof": True}):
+        raw = _safe_text(tag.get("typeof"))
+        if not raw:
+            continue
+        types = []
+        for part in re.split(r"\s+", raw):
+            norm = _normalize_schema_type(part)
+            if norm:
+                types.append(norm)
+        buckets = _schema_entity_buckets(types)
+        if not buckets:
+            continue
+        names: List[str] = []
+        for node in tag.find_all(attrs={"property": True}):
+            prop = _safe_text(node.get("property")).lower()
+            if prop not in {"name", "schema:name", "headline", "title"}:
+                continue
+            candidate = _safe_text(node.get("content") or " ".join(node.stripped_strings))
+            if candidate:
+                names.append(candidate)
+        if not names:
+            fallback = _safe_text(tag.get("content") or " ".join(tag.stripped_strings))
+            if fallback:
+                names.append(fallback)
+        for bucket in buckets:
+            for name in names[:4]:
+                _add_schema_entity(entities, bucket, name)
+
+    return {k: sorted(v)[:30] for k, v in entities.items()}
 
 
 def _extract_main_text(soup: BeautifulSoup) -> str:
@@ -524,32 +717,33 @@ def build_snapshot(
             start = end - overlap
 
     words = re.findall(r"[A-Za-zА-Яа-я0-9]+", main_text)
-    schema_types = _extract_jsonld_types(soup)
+    jsonld_data = _extract_jsonld_schema_data(soup)
+    schema_types = list(jsonld_data.get("types") or [])
+    schema_entities: Dict[str, Set[str]] = _empty_schema_entities()
+    _merge_schema_entities(schema_entities, jsonld_data.get("entities") or {})
+
     microdata_types: List[str] = []
     rdfa_types: List[str] = []
     microdata_types.extend(_extract_microdata_types_fallback(soup))
     rdfa_types.extend(_extract_rdfa_types_fallback(soup))
+    _merge_schema_entities(schema_entities, _extract_dom_schema_entities(soup))
     if extruct:
         try:
             data = extruct.extract(html, base_url=final_url, syntaxes=["microdata", "rdfa"], errors="log")
             microdata_items = data.get("microdata") or []
             rdfa_items = data.get("rdfa") or []
             for item in microdata_items:
-                t = item.get("type") or item.get("@type")
-                if isinstance(t, list):
-                    microdata_types.extend([_normalize_schema_type(x) for x in t if _normalize_schema_type(x)])
-                elif isinstance(t, str):
-                    norm = _normalize_schema_type(t)
-                    if norm:
-                        microdata_types.append(norm)
+                local_types: Set[str] = set()
+                local_entities = _empty_schema_entities()
+                _collect_schema_data_from_node(item, types_found=local_types, entities=local_entities)
+                microdata_types.extend(sorted(local_types))
+                _merge_schema_entities(schema_entities, local_entities)
             for item in rdfa_items:
-                t = item.get("type") or item.get("@type")
-                if isinstance(t, list):
-                    rdfa_types.extend([_normalize_schema_type(x) for x in t if _normalize_schema_type(x)])
-                elif isinstance(t, str):
-                    norm = _normalize_schema_type(t)
-                    if norm:
-                        rdfa_types.append(norm)
+                local_types = set()
+                local_entities = _empty_schema_entities()
+                _collect_schema_data_from_node(item, types_found=local_types, entities=local_entities)
+                rdfa_types.extend(sorted(local_types))
+                _merge_schema_entities(schema_entities, local_entities)
         except Exception:
             pass
     # Unique and clean.
@@ -557,6 +751,7 @@ def build_snapshot(
     microdata_types = sorted({x for x in microdata_types if _safe_text(x)})
     rdfa_types = sorted({x for x in rdfa_types if _safe_text(x)})
     total_types = set(schema_types) | set(microdata_types) | set(rdfa_types)
+    schema_entity_payload = {k: sorted(v)[:30] for k, v in schema_entities.items()}
     lower_total = {str(x).strip().lower() for x in total_types}
     required_schema_l = {"organization"}
     if lower_total & {"article", "newsarticle", "blogposting", "techarticle", "analysisnewsarticle", "liveblogposting"}:
@@ -643,6 +838,7 @@ def build_snapshot(
             "jsonld_types": schema_types,
             "microdata_types": microdata_types[:50],
             "rdfa_types": rdfa_types[:50],
+            "entities": schema_entity_payload,
             "coverage_score": coverage_score,
             "coverage_required_types": sorted(required_schema_l),
             "count": len(total_types),

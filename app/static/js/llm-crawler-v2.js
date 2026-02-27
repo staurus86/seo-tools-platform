@@ -91,6 +91,7 @@ function _pageTypeLabel(v) {
   if (val === 'listing') return 'listing';
   if (val === 'mixed') return 'mixed';
   if (val === 'service') return 'service';
+  if (val === 'marketplace') return 'marketplace';
   if (val === 'review') return 'review';
   if (val === 'product') return 'product';
   if (val === 'article') return 'article';

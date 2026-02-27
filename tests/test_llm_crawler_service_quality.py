@@ -132,6 +132,16 @@ class LlmCrawlerServiceQualityTests(unittest.TestCase):
         rv = _detect_page_type(review_snapshot)
         self.assertEqual(rv.get("page_type"), "review")
 
+    def test_page_type_detection_marketplace(self):
+        market = self._snapshot()
+        market["meta"] = {"title": "Marketplace: compare prices and add to cart"}
+        market["final_url"] = "https://example.com/marketplace/vacuum-meters"
+        market["links"] = {"count": 160}
+        market["schema"] = {"jsonld_types": ["Product", "Offer", "ItemList"], "microdata_types": [], "rdfa_types": []}
+        market["segmentation"] = {"noise_breakdown": {"main_pct": 36, "ads_pct": 4, "live_pct": 0, "nav_pct": 34}}
+        cls = _detect_page_type(market)
+        self.assertIn(cls.get("page_type"), {"marketplace", "product", "listing"})
+
     def test_page_type_detection_homepage_and_docs(self):
         homepage = self._snapshot()
         homepage["final_url"] = "https://example.com/"
@@ -189,6 +199,25 @@ class LlmCrawlerServiceQualityTests(unittest.TestCase):
         structured = _build_structured_data_split(article, None)
         cls = _page_classification_v2(article, None, structured)
         self.assertEqual(cls.get("type"), "article")
+
+    def test_page_classification_v2_marketplace(self):
+        market = self._snapshot()
+        market["final_url"] = "https://example.com/shop/vacuum"
+        market["meta"] = {"title": "Seller marketplace for vacuum meters", "description": "Cart, checkout, product availability"}
+        market["links"] = {
+            "count": 180,
+            "top": [
+                {"anchor": "Product catalog", "url": "/catalog"},
+                {"anchor": "Seller store", "url": "/seller"},
+                {"anchor": "Cart", "url": "/cart"},
+                {"anchor": "Checkout", "url": "/checkout"},
+            ],
+        }
+        market["segmentation"] = {"noise_breakdown": {"nav_pct": 40, "live_pct": 0}, "utility_detection": {"utility_blocks": 5}, "main_ratio": 0.34}
+        market["schema"] = {"jsonld_types": ["Product", "Offer", "ItemList"], "microdata_types": [], "rdfa_types": [], "coverage_score": 70}
+        structured = _build_structured_data_split(market, None)
+        cls = _page_classification_v2(market, None, structured)
+        self.assertIn(cls.get("type"), {"marketplace", "category", "listing", "product"})
 
     def test_structured_data_raw_vs_rendered_split(self):
         raw = self._snapshot()
@@ -339,6 +368,29 @@ class LlmCrawlerServiceQualityTests(unittest.TestCase):
         self.assertGreaterEqual(float(org.get("confidence") or 0), 0.8)
         self.assertIn("source_count", org)
         self.assertGreaterEqual(float(entities.get("entity_density") or 0), 0.0)
+
+    def test_entity_extraction_uses_schema_entity_values(self):
+        snapshot = self._snapshot()
+        snapshot["schema"] = {
+            "jsonld_types": ["Organization", "Product", "Person"],
+            "microdata_types": [],
+            "rdfa_types": [],
+            "coverage_score": 82,
+            "entities": {
+                "organizations": ["SIDERUS"],
+                "persons": ["Alex Roe"],
+                "products": ["Vacuum Pro 2000"],
+                "locations": ["Berlin"],
+            },
+        }
+        structured = _build_structured_data_split(snapshot, None)
+        entities = _extract_entities_v2(snapshot, None, structured)
+        org_names = [str(x.get("name")) for x in (entities.get("organizations") or [])]
+        product_names = [str(x.get("name")) for x in (entities.get("products") or [])]
+        person_names = [str(x.get("name")) for x in (entities.get("persons") or [])]
+        self.assertIn("SIDERUS", org_names)
+        self.assertIn("Vacuum Pro 2000", product_names)
+        self.assertIn("Alex Roe", person_names)
 
     def test_recommendation_diagnostics_contract(self):
         nojs = self._snapshot()

@@ -22,6 +22,7 @@ PAGE_TYPE_CALIBRATION_PROFILES: Dict[str, Dict[str, Any]] = {
     "product": {"id": "product-v1", "multiplier": 1.0, "default_floor": 0.52},
     "service": {"id": "service-v1", "multiplier": 1.0, "default_floor": 0.50},
     "review": {"id": "review-v1", "multiplier": 1.0, "default_floor": 0.48},
+    "marketplace": {"id": "marketplace-v1", "multiplier": 0.94, "default_floor": 0.40},
     "homepage": {"id": "homepage-v1", "multiplier": 0.95, "default_floor": 0.42},
     "listing": {"id": "listing-v1", "multiplier": 0.92, "default_floor": 0.38},
     "category": {"id": "category-v1", "multiplier": 0.92, "default_floor": 0.40},
