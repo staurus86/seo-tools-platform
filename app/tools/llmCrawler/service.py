@@ -701,6 +701,36 @@ def _clean_entity_name(value: str) -> str:
     return raw[:120]
 
 
+def _entity_canonical_key(value: str) -> str:
+    raw = str(value or "").lower()
+    raw = re.sub(r"[\"'`]", "", raw)
+    raw = re.sub(r"[^\w\s\-&]", " ", raw)
+    raw = re.sub(r"\s+", " ", raw).strip()
+    if not raw:
+        return ""
+    tokens = [t for t in raw.split(" ") if t]
+    suffixes = {
+        "inc",
+        "llc",
+        "ltd",
+        "corp",
+        "co",
+        "company",
+        "group",
+        "gmbh",
+        "srl",
+        "s.a.",
+        "ооо",
+        "зао",
+        "оао",
+        "ао",
+        "ип",
+    }
+    while tokens and tokens[-1] in suffixes:
+        tokens.pop()
+    return " ".join(tokens).strip()
+
+
 def _normalize_confidence(value: Any) -> Optional[float]:
     if value is None:
         return None
@@ -1455,7 +1485,7 @@ def _extract_entities_v2(nojs_snapshot: Dict[str, Any], rendered_snapshot: Dict[
         key_name = _clean_entity_name(name)
         if len(key_name) < 2:
             return
-        key = key_name.lower()
+        key = _entity_canonical_key(key_name) or key_name.lower()
         prev = entities[bucket].get(key)
         if not prev:
             entities[bucket][key] = {
@@ -1557,11 +1587,14 @@ def _extract_entities_v2(nojs_snapshot: Dict[str, Any], rendered_snapshot: Dict[
         rows: List[Dict[str, Any]] = []
         for item in entities[bucket].values():
             sources = sorted(item.pop("source_set", set()))
+            source_count = max(1, len(sources))
+            boosted_conf = min(0.99, float(item.get("confidence") or 0.0) + ((source_count - 1) * 0.04))
             rows.append(
                 {
                     "name": item.get("name"),
-                    "confidence": round(float(item.get("confidence") or 0.0), 3),
+                    "confidence": round(boosted_conf, 3),
                     "source": "+".join(sources) if sources else "text",
+                    "source_count": source_count,
                 }
             )
         rows.sort(key=lambda x: float(x.get("confidence") or 0.0), reverse=True)
@@ -2513,6 +2546,12 @@ def run_llm_crawler_simulation(
         citation_model=citation_model,
         validation=validation,
     )
+    recommendation_diagnostics = _recommendation_diagnostics(
+        recommendations=recommendations,
+        nojs=nojs_snapshot,
+        rendered=rendered_snapshot,
+        js_dependency=js_dep,
+    )
     timings["analysis_ms"] = int((time.perf_counter() - t3) * 1000)
     timings["total_ms"] = int((time.perf_counter() - started_at) * 1000)
     noise_breakdown = ((nojs_snapshot.get("segmentation") or {}).get("noise_breakdown") or {})
@@ -2576,6 +2615,7 @@ def run_llm_crawler_simulation(
         "detection_issues": detection_issues,
         "detectors": detectors,
         "quality_gates": quality_gates,
+        "recommendation_diagnostics": recommendation_diagnostics,
         "page_type": page_type_info.get("page_type"),
         "page_type_confidence": page_type_info.get("confidence"),
         "page_type_reasons": page_type_info.get("reasons") or [],
@@ -2845,6 +2885,44 @@ def _build_recommendations(nojs: Dict[str, Any], rendered: Optional[Dict[str, An
             ["body"],
         )
     return recs[:10]
+
+
+def _recommendation_diagnostics(
+    recommendations: List[Dict[str, Any]],
+    nojs: Dict[str, Any],
+    rendered: Dict[str, Any] | None,
+    js_dependency: Dict[str, Any],
+) -> Dict[str, Any]:
+    issues: List[str] = []
+    schema = nojs.get("schema") or {}
+    signals = nojs.get("signals") or {}
+    links = nojs.get("links") or {}
+    rec_titles = [str(x.get("title") or "").lower() for x in (recommendations or [])]
+
+    schema_count = len(
+        set(
+            [str(x) for x in (schema.get("jsonld_types") or [])]
+            + [str(x) for x in (schema.get("microdata_types") or [])]
+            + [str(x) for x in (schema.get("rdfa_types") or [])]
+        )
+    )
+    if schema_count > 0 and any("добавьте json-ld" in t for t in rec_titles):
+        issues.append("Schema recommendation present while schema types already exist (check coverage thresholds).")
+    if bool(signals.get("author_present")) and bool(signals.get("date_present")) and any("автора/дату" in t for t in rec_titles):
+        issues.append("Author/date recommendation present while both signals detected.")
+    if int(links.get("js_only_count") or 0) == 0 and any("js-only ссылок" in t for t in rec_titles):
+        issues.append("JS-only links recommendation present while js_only_count=0.")
+    if str((js_dependency or {}).get("status") or "") != "executed" and any("зависимость от js" in t for t in rec_titles):
+        issues.append("JS dependency recommendation present while render/js dependency not executed.")
+    if rendered is None and any("rendered" in t for t in rec_titles):
+        issues.append("Rendered-only recommendation while rendered snapshot is absent.")
+
+    return {
+        "status": "ok" if not issues else "warning",
+        "issues": issues[:8],
+        "checked_rules": 5,
+        "version": "recommendation-diagnostics-v1",
+    }
 
 
 def _run_llm_simulation(snapshot: Dict[str, Any]) -> Dict[str, Any]:

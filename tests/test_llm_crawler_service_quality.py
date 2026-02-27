@@ -10,6 +10,7 @@ from app.tools.llmCrawler.service import (
     _build_improvement_library,
     _build_detector_layer,
     _quality_gates,
+    _recommendation_diagnostics,
     _content_quality_metrics,
     _citation_model_v2,
     _compute_eeat,
@@ -325,6 +326,34 @@ class LlmCrawlerServiceQualityTests(unittest.TestCase):
         structured = _build_structured_data_split(docs, None)
         cls = _page_classification_v2(docs, None, structured)
         self.assertIn(cls.get("type"), {"docs", "article"})
+
+    def test_entity_extraction_source_boost_and_density(self):
+        snapshot = self._snapshot()
+        snapshot["meta"]["site_name"] = "Acme LLC"
+        snapshot["meta"]["title"] = "Acme LLC - Vacuum Meters"
+        snapshot["schema"] = {"jsonld_types": ["Organization", "Product"], "microdata_types": [], "rdfa_types": [], "coverage_score": 75}
+        structured = _build_structured_data_split(snapshot, None)
+        entities = _extract_entities_v2(snapshot, None, structured)
+        self.assertTrue(entities.get("organizations"))
+        org = entities["organizations"][0]
+        self.assertGreaterEqual(float(org.get("confidence") or 0), 0.8)
+        self.assertIn("source_count", org)
+        self.assertGreaterEqual(float(entities.get("entity_density") or 0), 0.0)
+
+    def test_recommendation_diagnostics_contract(self):
+        nojs = self._snapshot()
+        nojs["schema"] = {"jsonld_types": ["Organization"], "microdata_types": [], "rdfa_types": []}
+        nojs["signals"] = {"author_present": True, "date_present": True}
+        nojs["links"] = {"js_only_count": 0}
+        recs = [
+            {"title": "Добавьте JSON-LD (Organization/Article/Product) для доверия и извлечения"},
+            {"title": "Укажите автора/дату публикации — повышает понятность и доверие"},
+            {"title": "Избегайте JS-only ссылок — используйте href для навигации ботов"},
+        ]
+        diag = _recommendation_diagnostics(recs, nojs, None, {"status": "not_executed"})
+        self.assertIn(diag.get("status"), {"ok", "warning"})
+        self.assertTrue(isinstance(diag.get("issues"), list))
+        self.assertEqual(diag.get("checked_rules"), 5)
 
 
 if __name__ == "__main__":
