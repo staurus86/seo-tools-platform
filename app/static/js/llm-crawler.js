@@ -264,6 +264,7 @@ function initLlmCrawlerResult(jobId) {
         const schema = snapshot.schema || {};
         const social = snapshot.social || {};
         const renderDebug = snapshot.render_debug || {};
+        const resources = snapshot.resources || {};
         return `
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                 <div class="bg-white border rounded-lg p-3"><span class="text-slate-500">Final URL:</span><div class="font-medium break-all">${_escapeHtml(snapshot.final_url || '-')}</div></div>
@@ -287,6 +288,19 @@ function initLlmCrawlerResult(jobId) {
                 <h4 class="font-semibold text-slate-800 mb-2">Top links (20)</h4>
                 ${(links.top || []).length ? `<div class="overflow-auto border rounded-lg"><table class="min-w-full text-sm"><thead class="bg-slate-50"><tr><th class="text-left p-2">Anchor</th><th class="text-left p-2">URL</th></tr></thead><tbody>${(links.top || []).map((row) => `<tr class="border-t"><td class="p-2">${_escapeHtml(row.anchor || '-')}</td><td class="p-2 break-all">${_escapeHtml(row.url || '-')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="text-sm text-slate-500">No links found.</p>'}
             </div>
+            ${(resources && (resources.cookie_wall || resources.paywall || resources.login_wall || resources.csp_strict || resources.mixed_content_count > 0)) ? `
+            <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <div class="font-semibold text-amber-800 mb-1">Access barriers</div>
+                    <ul class="list-disc pl-4 text-amber-900 space-y-1">
+                        ${resources.cookie_wall ? '<li>Cookie/consent wall</li>' : ''}
+                        ${resources.paywall ? '<li>Paywall detected</li>' : ''}
+                        ${resources.login_wall ? '<li>Login wall detected</li>' : ''}
+                        ${resources.csp_strict ? '<li>Very strict CSP (script-src \'none\'/default-src \'none\')</li>' : ''}
+                        ${resources.mixed_content_count > 0 ? `<li>Mixed content: ${_safeNum(resources.mixed_content_count, 0)} resources</li>` : ''}
+                    </ul>
+                </div>
+            </div>` : ''}
             ${renderDebug.console_errors && renderDebug.console_errors.length ? `
             <div class="mt-4">
                 <h4 class="font-semibold text-slate-800 mb-2">Console errors/warnings</h4>

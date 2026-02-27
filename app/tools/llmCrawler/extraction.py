@@ -185,6 +185,36 @@ def detect_challenge(status_code: int | None, headers: Dict[str, Any], html: str
     return {"is_challenge": bool(reasons), "reasons": reasons}
 
 
+def detect_resource_barriers(final_url: str, headers: Dict[str, Any], html: str, soup: BeautifulSoup) -> Dict[str, Any]:
+    h = {str(k).lower(): _safe_text(v).lower() for k, v in (headers or {}).items()}
+    url_scheme = "https" if str(final_url).lower().startswith("https") else "http"
+    body = _safe_text(html).lower()
+
+    cookie_wall = any(token in body for token in ["cookie consent", "accept cookies", "gdpr", "we value your privacy"])
+    paywall = any(token in body for token in ["paywall", "subscribe to continue", "subscription required", "digital subscription"])
+    login_wall = any(token in body for token in ["please sign in", "log in to continue", "login to read"])
+
+    csp_header = h.get("content-security-policy", "")
+    csp_strict = "script-src 'none'" in csp_header or "default-src 'none'" in csp_header
+
+    mixed_content = 0
+    if url_scheme == "https":
+        for tag in soup.find_all(src=True):
+            if str(tag.get("src") or "").lower().startswith("http://"):
+                mixed_content += 1
+        for tag in soup.find_all("link", href=True):
+            if str(tag.get("href") or "").lower().startswith("http://"):
+                mixed_content += 1
+
+    return {
+        "cookie_wall": cookie_wall,
+        "paywall": paywall,
+        "login_wall": login_wall,
+        "csp_strict": csp_strict,
+        "mixed_content_count": mixed_content,
+    }
+
+
 def build_snapshot(
     *,
     html: str,
@@ -249,6 +279,7 @@ def build_snapshot(
     signals = _extract_author_date_signals(soup)
     social = _extract_social_meta(soup)
     challenge = detect_challenge(status_code, headers, html)
+    resources = detect_resource_barriers(final_url, headers, html, soup)
 
     snapshot: Dict[str, Any] = {
         "final_url": final_url,
@@ -293,6 +324,7 @@ def build_snapshot(
             "lists_count": len(soup.find_all(["ul", "ol"])),
             "tables_count": len(soup.find_all("table")),
         },
+        "resources": resources,
         "signals": signals,
         "challenge": challenge,
     }

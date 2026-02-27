@@ -546,11 +546,20 @@ def _build_recommendations(nojs: Dict[str, Any], rendered: Optional[Dict[str, An
     recs: List[Dict[str, str]] = []
     meta = (nojs.get("meta") or {})
     social = (nojs.get("social") or {})
+    resources = (nojs.get("resources") or {})
     if "noindex" in str(meta.get("meta_robots") or "").lower():
         recs.append({"priority": "P0", "area": "crawlability", "title": "Уберите noindex для страниц, которые должны индексироваться ботами/LLM"})
     challenge = (nojs.get("challenge") or {})
     if challenge.get("is_challenge"):
         recs.append({"priority": "P0", "area": "access", "title": "WAF/челлендж блокирует ботов — ослабьте правила для известных AI-ботов"})
+    if resources.get("cookie_wall"):
+        recs.append({"priority": "P0", "area": "access", "title": "Cookie/consent wall перекрывает контент — добавьте бот-байпас или серверный рендер"})
+    if resources.get("paywall") or resources.get("login_wall"):
+        recs.append({"priority": "P0", "area": "access", "title": "Paywall/Login wall скрывает текст — предусмотрите публичный пререндер или открытый виджет"})
+    if resources.get("csp_strict"):
+        recs.append({"priority": "P1", "area": "access", "title": "Слишком строгий CSP (script-src 'none') может ломать JS — ослабьте для нужных скриптов"})
+    if int(resources.get("mixed_content_count") or 0) > 0:
+        recs.append({"priority": "P1", "area": "resources", "title": "Исправьте mixed content (http ресурсы на https странице)"})
     schema = (nojs.get("schema") or {})
     if not schema.get("jsonld_types"):
         recs.append({"priority": "P1", "area": "schema", "title": "Добавьте JSON-LD (Organization/Article/Product) для доверия и извлечения"})
