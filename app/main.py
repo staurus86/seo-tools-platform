@@ -205,6 +205,19 @@ async def llm_crawler_results_page(request: Request, job_id: str):
     return HTMLResponse(f"<h1>LLM Crawler Result</h1><p>Job: {job_id}</p>")
 
 
+@app.get("/llm-crawler/results/v2/{job_id}", response_class=HTMLResponse)
+async def llm_crawler_results_page_v2(request: Request, job_id: str):
+    """LLM crawler next-gen results page (behind flag)."""
+    if not getattr(settings, "LLM_REPORT_V2_ENABLED", False):
+        raise HTTPException(status_code=404, detail="LLM crawler v2 is disabled")
+    if templates:
+        return templates.TemplateResponse(
+            "llm_crawler_result_v2.html",
+            {"request": request, "job_id": job_id, "app_version": settings.APP_VERSION},
+        )
+    return HTMLResponse(f"<h1>LLM Crawler Result v2</h1><p>Job: {job_id}</p>")
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
