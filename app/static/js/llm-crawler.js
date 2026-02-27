@@ -193,6 +193,7 @@ function initLlmCrawlerResult(jobId) {
         const headings = snapshot.headings || {};
         const links = snapshot.links || {};
         const schema = snapshot.schema || {};
+        const social = snapshot.social || {};
         return `
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                 <div class="bg-white border rounded-lg p-3"><span class="text-slate-500">Final URL:</span><div class="font-medium break-all">${_escapeHtml(snapshot.final_url || '-')}</div></div>
@@ -205,8 +206,12 @@ function initLlmCrawlerResult(jobId) {
                 <div class="bg-white border rounded-lg p-3"><span class="text-slate-500">X-Robots-Tag:</span><div class="font-medium">${_escapeHtml(meta.x_robots_tag || '-')}</div></div>
                 <div class="bg-white border rounded-lg p-3"><span class="text-slate-500">Text len / words:</span><div class="font-medium">${_safeNum(content.main_text_length, 0)} / ${_safeNum(content.word_count, 0)}</div></div>
                 <div class="bg-white border rounded-lg p-3"><span class="text-slate-500">Readability:</span><div class="font-medium">${_safeNum(content.readability_score, 0)}</div></div>
+                <div class="bg-white border rounded-lg p-3"><span class="text-slate-500">Reader (readability):</span><div class="font-medium text-slate-700 text-xs break-words">${_escapeHtml((content.readability_text || '').slice(0,240) || '-')}</div></div>
+                <div class="bg-white border rounded-lg p-3"><span class="text-slate-500">Reader (trafilatura):</span><div class="font-medium text-slate-700 text-xs break-words">${_escapeHtml((content.trafilatura_text || '').slice(0,240) || '-')}</div></div>
                 <div class="bg-white border rounded-lg p-3"><span class="text-slate-500">H1/H2/H3:</span><div class="font-medium">${_safeNum(headings.h1, 0)} / ${_safeNum(headings.h2, 0)} / ${_safeNum(headings.h3, 0)}</div></div>
-                <div class="bg-white border rounded-lg p-3"><span class="text-slate-500">Links / schema:</span><div class="font-medium">${_safeNum(links.count, 0)} / ${_safeNum(schema.count, 0)}</div></div>
+                <div class="bg-white border rounded-lg p-3"><span class="text-slate-500">Links / js-only / schema:</span><div class="font-medium">${_safeNum(links.count, 0)} / ${_safeNum(links.js_only_count, 0)} / ${_safeNum(schema.count, 0)}</div></div>
+                <div class="bg-white border rounded-lg p-3"><span class="text-slate-500">Anchor quality:</span><div class="font-medium">${_safeNum(links.anchor_quality_score, 0)}%</div></div>
+                <div class="bg-white border rounded-lg p-3"><span class="text-slate-500">OG / Twitter:</span><div class="font-medium">${social.og_present ? 'yes' : 'no'} / ${social.twitter_present ? 'yes' : 'no'}</div></div>
             </div>
             <div class="mt-4">
                 <h4 class="font-semibold text-slate-800 mb-2">Top links (20)</h4>
