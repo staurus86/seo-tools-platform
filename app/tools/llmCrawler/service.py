@@ -15,7 +15,6 @@ from .extraction import build_snapshot
 from .policies import evaluate_profile_access, parse_robots_rules
 from .scoring import compute_score
 from .security import assert_safe_url, normalize_http_url, safe_redirect_target
-from app.tools.core_web_vitals.service_v1 import run_core_web_vitals
 
 
 REDIRECT_STATUSES = {301, 302, 303, 307, 308}
@@ -423,13 +422,6 @@ def run_llm_crawler_simulation(
         max_html_bytes=max_html_bytes,
         max_redirect_hops=max_redirect_hops,
     )
-    # Optional: fetch CWV via PSI for signals (best-effort; only if API key present).
-    if str(getattr(settings, "PAGESPEED_API_KEY", "") or "").strip():
-        try:
-            cwv_result = run_core_web_vitals(normalized_url, strategy="mobile", timeout=30)
-            policies["cwv"] = (cwv_result or {}).get("results") or {}
-        except Exception:
-            policies["cwv"] = {}
     policies["meta"] = {
         "meta_robots": ((nojs_snapshot.get("meta") or {}).get("meta_robots") or ""),
         "x_robots_tag": ((nojs_snapshot.get("meta") or {}).get("x_robots_tag") or ""),

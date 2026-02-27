@@ -121,35 +121,22 @@ def compute_score(
         signals_score += 3
     if not bool(signals.get("author_present")) and not bool(signals.get("date_present")):
         top_issues.append("No author/date trust signals detected")
-    # Core Web Vitals signals (from policies["cwv"] if present)
-    cwv = (policies.get("cwv") or {}).get("summary") or {}
-    lcp = cwv.get("lcp_ms")
-    cls = cwv.get("cls")
-    inp = cwv.get("inp_ms")
-    if lcp is not None:
-        lcp_val = float(lcp)
-        if lcp_val <= 2500:
+    # Text-to-HTML ratio and readability
+    http = (source.get("http") or {})
+    size_bytes = float(http.get("size_bytes") or 0)
+    text_len = float((source.get("content") or {}).get("main_text_length") or 0)
+    if size_bytes > 0:
+        ratio = text_len / size_bytes
+        if ratio >= 0.15:
             signals_score += 5
-        elif lcp_val <= 4000:
-            signals_score += 2
-        else:
-            top_issues.append(f"High LCP ({int(lcp_val)} ms)")
-    if cls is not None:
-        cls_val = float(cls)
-        if cls_val <= 0.1:
-            signals_score += 3
-        elif cls_val <= 0.25:
-            signals_score += 1
-        else:
-            top_issues.append(f"High CLS ({cls_val:.2f})")
-    if inp is not None:
-        inp_val = float(inp)
-        if inp_val <= 200:
-            signals_score += 2
-        elif inp_val <= 500:
-            signals_score += 1
-        else:
-            top_issues.append(f"High INP ({int(inp_val)} ms)")
+        elif ratio < 0.05:
+            top_issues.append("Low text-to-HTML ratio (<5%) may hinder LLM extraction")
+    readability = float((source.get("content") or {}).get("readability_score") or 0)
+    if readability >= 55:
+        signals_score += 4
+    elif readability < 30:
+        top_issues.append("Low readability (Flesch score <30)")
+
     signals_score = _clamp(signals_score, 0.0, 30.0)
 
     total = int(round(_clamp(access + content + structure + signals_score, 0.0, 100.0)))
