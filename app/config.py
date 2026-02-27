@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     
     # Redis
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    REDIS_RETRY_COOLDOWN_SEC: int = int(os.getenv("REDIS_RETRY_COOLDOWN_SEC", "30"))
     
     # Celery - use REDIS_URL from environment
     CELERY_BROKER_URL: str = os.getenv("CELERY_BROKER_URL") or os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -115,6 +116,17 @@ class Settings(BaseSettings):
     
     # Playwright
     PLAYWRIGHT_BROWSERS_PATH: str = os.getenv("PLAYWRIGHT_BROWSERS_PATH", "0")
+
+    # Memory guard / in-memory fallback controls
+    MEMORY_SWEEP_INTERVAL_SEC: int = int(os.getenv("MEMORY_SWEEP_INTERVAL_SEC", "60"))
+    MEMORY_IDLE_CLEANUP_SEC: int = int(os.getenv("MEMORY_IDLE_CLEANUP_SEC", "300"))
+    MEMORY_GC_COOLDOWN_SEC: int = int(os.getenv("MEMORY_GC_COOLDOWN_SEC", "120"))
+    TASK_STORE_MEMORY_TTL_SEC: int = int(os.getenv("TASK_STORE_MEMORY_TTL_SEC", "7200"))
+    TASK_STORE_MEMORY_MAX_ITEMS: int = int(os.getenv("TASK_STORE_MEMORY_MAX_ITEMS", "200"))
+    TASK_STORE_IDLE_KEEP_SEC: int = int(os.getenv("TASK_STORE_IDLE_KEEP_SEC", "900"))
+    PROGRESS_MEMORY_TTL_SEC: int = int(os.getenv("PROGRESS_MEMORY_TTL_SEC", "7200"))
+    PROGRESS_MEMORY_MAX_ITEMS: int = int(os.getenv("PROGRESS_MEMORY_MAX_ITEMS", "2000"))
+    PROGRESS_IDLE_KEEP_SEC: int = int(os.getenv("PROGRESS_IDLE_KEEP_SEC", "900"))
     
     class Config:
         env_file = ".env"

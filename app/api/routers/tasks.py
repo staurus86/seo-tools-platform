@@ -9,7 +9,12 @@ from typing import Optional
 
 from fastapi import APIRouter
 
-from app.api.routers._task_store import delete_task_result, get_task_result
+from app.api.routers._task_store import (
+    delete_task_result,
+    get_task_result,
+    get_task_store_memory_stats,
+    cleanup_task_results_memory,
+)
 
 router = APIRouter(tags=["Tasks"])
 
@@ -212,3 +217,37 @@ async def celery_status():
         }
     except Exception as e:
         return {"status": "offline", "error": str(e)}
+
+
+@router.get("/memory/status")
+async def task_memory_status():
+    """Inspect in-process memory usage and fallback stores."""
+    from app.core.memory_guard import get_process_memory_snapshot, get_memory_guard_status
+    from app.core.progress import progress_tracker
+
+    return {
+        "status": "SUCCESS",
+        "process_memory": get_process_memory_snapshot(),
+        "memory_guard": get_memory_guard_status(),
+        "task_store": get_task_store_memory_stats(),
+        "progress_store": progress_tracker.get_memory_stats(),
+    }
+
+
+@router.post("/memory/cleanup")
+async def cleanup_memory(aggressive: bool = True):
+    """Force cleanup of in-memory fallback stores."""
+    from app.core.progress import progress_tracker
+    from app.core.memory_guard import run_memory_cleanup_now
+
+    idle_seconds = 999999 if aggressive else 0
+    task_cleanup = cleanup_task_results_memory(idle_seconds=idle_seconds, aggressive=aggressive)
+    progress_cleanup = progress_tracker.cleanup_memory(idle_seconds=idle_seconds, aggressive=aggressive)
+    guard_cleanup = run_memory_cleanup_now(force_gc=aggressive)
+    return {
+        "status": "SUCCESS",
+        "aggressive": aggressive,
+        "task_store": task_cleanup,
+        "progress_store": progress_cleanup,
+        "guard_cleanup": guard_cleanup,
+    }

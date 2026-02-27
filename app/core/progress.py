@@ -2,10 +2,12 @@
 Progress tracking for long-running tasks
 """
 import json
-import redis
 import logging
+import threading
+import time
 from typing import Optional, Dict, Any
 from app.config import settings
+from app.core.memory_guard import mark_activity, register_cleanup_callback
 
 logger = logging.getLogger(__name__)
 
@@ -15,26 +17,98 @@ class ProgressTracker:
     
     def __init__(self):
         self._redis_client = None
-        self._redis_available = True
+        self._redis_next_retry_ts = 0.0
         self._memory_store = {}  # Fallback storage
+        self._memory_updated_at = {}
+        self._memory_last_access_at = {}
+        self._memory_lock = threading.RLock()
         self.ttl = 3600 * 2  # 2 hours
     
     @property
     def redis_client(self):
         """Lazy initialization of Redis client"""
-        if self._redis_client is None and self._redis_available:
+        if self._redis_client is not None:
+            return self._redis_client
+        if time.time() < self._redis_next_retry_ts:
+            return None
+        cooldown = max(5, int(getattr(settings, "REDIS_RETRY_COOLDOWN_SEC", 30) or 30))
+        if self._redis_client is None:
             try:
+                import redis
+
                 self._redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
                 self._redis_client.ping()
                 logger.info("Progress tracker: Redis connection established")
             except Exception as e:
-                logger.warning(f"Progress tracker: Redis unavailable, using memory fallback: {e}")
-                self._redis_available = False
+                logger.warning("Progress tracker: Redis unavailable, fallback mode (%s), retry in %ss", e, cooldown)
                 self._redis_client = None
+                self._redis_next_retry_ts = time.time() + cooldown
         return self._redis_client
     
     def _get_key(self, task_id: str) -> str:
         return f"task_progress:{task_id}"
+
+    def _mark_redis_unavailable(self, exc: Exception, where: str) -> None:
+        cooldown = max(5, int(getattr(settings, "REDIS_RETRY_COOLDOWN_SEC", 30) or 30))
+        self._redis_client = None
+        self._redis_next_retry_ts = time.time() + cooldown
+        logger.warning("Progress tracker Redis error (%s): %s. Retry in %ss", where, exc, cooldown)
+
+    def cleanup_memory(self, idle_seconds: float = 0.0, aggressive: bool = False) -> Dict[str, Any]:
+        ttl_sec = max(60, int(getattr(settings, "PROGRESS_MEMORY_TTL_SEC", self.ttl) or self.ttl))
+        max_items = max(10, int(getattr(settings, "PROGRESS_MEMORY_MAX_ITEMS", 2000) or 2000))
+        idle_keep_sec = max(60, int(getattr(settings, "PROGRESS_IDLE_KEEP_SEC", 900) or 900))
+        now = time.time()
+        removed_expired = 0
+        removed_idle = 0
+        removed_overflow = 0
+
+        with self._memory_lock:
+            for task_id, updated_at in list(self._memory_updated_at.items()):
+                if now - updated_at > ttl_sec:
+                    self._memory_store.pop(task_id, None)
+                    self._memory_updated_at.pop(task_id, None)
+                    self._memory_last_access_at.pop(task_id, None)
+                    removed_expired += 1
+
+            if aggressive and idle_seconds >= idle_keep_sec:
+                for task_id in list(self._memory_store.keys()):
+                    last_access = self._memory_last_access_at.get(task_id, self._memory_updated_at.get(task_id, now))
+                    if now - last_access >= idle_keep_sec:
+                        self._memory_store.pop(task_id, None)
+                        self._memory_updated_at.pop(task_id, None)
+                        self._memory_last_access_at.pop(task_id, None)
+                        removed_idle += 1
+
+            if len(self._memory_store) > max_items:
+                overflow = len(self._memory_store) - max_items
+                eviction_order = sorted(
+                    list(self._memory_store.keys()),
+                    key=lambda tid: self._memory_last_access_at.get(tid, self._memory_updated_at.get(tid, now)),
+                )
+                for task_id in eviction_order:
+                    if overflow <= 0:
+                        break
+                    self._memory_store.pop(task_id, None)
+                    self._memory_updated_at.pop(task_id, None)
+                    self._memory_last_access_at.pop(task_id, None)
+                    removed_overflow += 1
+                    overflow -= 1
+
+            items_total = len(self._memory_store)
+
+        return {
+            "removed_expired": removed_expired,
+            "removed_idle": removed_idle,
+            "removed_overflow": removed_overflow,
+            "removed_total": removed_expired + removed_idle + removed_overflow,
+            "items_total": items_total,
+            "ttl_sec": ttl_sec,
+            "max_items": max_items,
+        }
+
+    def get_memory_stats(self) -> Dict[str, Any]:
+        return self.cleanup_memory(idle_seconds=0.0, aggressive=False)
     
     def update_progress(
         self,
@@ -52,6 +126,7 @@ class ProgressTracker:
             "message": message,
             "extra": extra or {}
         }
+        mark_activity("progress:update")
         
         if self.redis_client:
             try:
@@ -59,13 +134,19 @@ class ProgressTracker:
                 self.redis_client.setex(key, self.ttl, json.dumps(data))
                 return
             except Exception as e:
-                logger.error(f"Error updating progress in Redis: {e}")
+                self._mark_redis_unavailable(e, "update")
         
         # Fallback to memory
-        self._memory_store[task_id] = data
+        now = time.time()
+        with self._memory_lock:
+            self._memory_store[task_id] = data
+            self._memory_updated_at[task_id] = now
+            self._memory_last_access_at[task_id] = now
+        self.cleanup_memory(idle_seconds=0.0, aggressive=False)
     
     def get_progress(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Получает текущий прогресс задачи"""
+        mark_activity("progress:get")
         if self.redis_client:
             try:
                 key = self._get_key(task_id)
@@ -73,24 +154,33 @@ class ProgressTracker:
                 if data:
                     return json.loads(data)
             except Exception as e:
-                logger.error(f"Error getting progress from Redis: {e}")
+                self._mark_redis_unavailable(e, "get")
         
         # Fallback to memory
-        return self._memory_store.get(task_id)
+        with self._memory_lock:
+            item = self._memory_store.get(task_id)
+            if item is not None:
+                self._memory_last_access_at[task_id] = time.time()
+            return item
     
     def clear_progress(self, task_id: str):
         """Очищает прогресс задачи"""
+        mark_activity("progress:clear")
         if self.redis_client:
             try:
                 key = self._get_key(task_id)
                 self.redis_client.delete(key)
             except Exception as e:
-                logger.error(f"Error clearing progress from Redis: {e}")
+                self._mark_redis_unavailable(e, "clear")
         
         # Clear from memory fallback
-        if task_id in self._memory_store:
-            del self._memory_store[task_id]
+        with self._memory_lock:
+            if task_id in self._memory_store:
+                del self._memory_store[task_id]
+            self._memory_updated_at.pop(task_id, None)
+            self._memory_last_access_at.pop(task_id, None)
 
 
 # Singleton
 progress_tracker = ProgressTracker()
+register_cleanup_callback("progress_memory", progress_tracker.cleanup_memory)

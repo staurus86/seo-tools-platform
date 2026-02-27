@@ -50,6 +50,7 @@ try:
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import HTMLResponse
     from app.middleware import RateLimitMiddleware
+    from app.core.memory_guard import start_memory_guard, stop_memory_guard, get_process_memory_snapshot
     logger.info("[OK] FastAPI imported successfully")
 except Exception as e:
     logger.error(f"[ERROR] FastAPI import failed: {e}")
@@ -207,7 +208,21 @@ async def llm_crawler_results_page(request: Request, job_id: str):
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "healthy", "version": settings.APP_VERSION}
+    return {
+        "status": "healthy",
+        "version": settings.APP_VERSION,
+        "memory": get_process_memory_snapshot(),
+    }
+
+
+@app.on_event("startup")
+async def on_startup():
+    start_memory_guard()
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    stop_memory_guard()
 
 
 @app.get("/robots.txt")
