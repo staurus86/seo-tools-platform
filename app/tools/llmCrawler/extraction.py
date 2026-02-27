@@ -82,6 +82,7 @@ def _extract_links(soup: BeautifulSoup, base_url: str, limit: int = 20) -> Dict[
     all_urls: List[str] = []
     seen = set()
     js_only = 0
+    meaningful = 0
     for link in soup.find_all("a", href=True):
         href = _safe_text(link.get("href"))
         if not href:
@@ -97,6 +98,8 @@ def _extract_links(soup: BeautifulSoup, base_url: str, limit: int = 20) -> Dict[
             continue
         seen.add(abs_href)
         anchor = _safe_text(" ".join(link.stripped_strings))
+        if len(anchor) >= 4 and anchor.lower() not in {"here", "link", "click", "читать", "подробнее"}:
+            meaningful += 1
         top_links.append({"anchor": anchor[:200], "url": abs_href[:1000]})
         if len(top_links) >= limit:
             break
@@ -104,12 +107,16 @@ def _extract_links(soup: BeautifulSoup, base_url: str, limit: int = 20) -> Dict[
     for link in soup.find_all("a", href=False):
         if link.get("onclick"):
             js_only += 1
+            if len(_safe_text(" ".join(link.stripped_strings))) >= 4:
+                meaningful += 1
+    anchor_quality = round((meaningful / max(1, len(top_links))) * 100, 2) if top_links else 0.0
     return {
         "count": len(all_urls),
         "unique_count": len(set(all_urls)),
         "top": top_links,
         "all_urls": list(dict.fromkeys(all_urls)),
         "js_only_count": js_only,
+        "anchor_quality_score": anchor_quality,
     }
 
 
@@ -137,6 +144,24 @@ def _extract_author_date_signals(soup: BeautifulSoup) -> Dict[str, Any]:
         "author_samples": [x for x in author_candidates if x][:5],
         "date_present": bool([x for x in date_candidates if x]),
         "date_samples": [x for x in date_candidates if x][:5],
+    }
+
+
+def _extract_social_meta(soup: BeautifulSoup) -> Dict[str, Any]:
+    og_tags = []
+    tw_tags = []
+    for tag in soup.find_all("meta"):
+        prop = _safe_text(tag.get("property")).lower()
+        name = _safe_text(tag.get("name")).lower()
+        if prop.startswith("og:"):
+            og_tags.append(prop)
+        if name.startswith("twitter:") or prop.startswith("twitter:"):
+            tw_tags.append(name or prop)
+    return {
+        "og_present": bool(og_tags),
+        "og_count": len(og_tags),
+        "twitter_present": bool(tw_tags),
+        "twitter_count": len(tw_tags),
     }
 
 
@@ -222,6 +247,7 @@ def build_snapshot(
     schema_types = _extract_jsonld_types(soup)
     x_robots_tag = _safe_text((headers or {}).get("X-Robots-Tag") or (headers or {}).get("x-robots-tag"))
     signals = _extract_author_date_signals(soup)
+    social = _extract_social_meta(soup)
     challenge = detect_challenge(status_code, headers, html)
 
     snapshot: Dict[str, Any] = {
@@ -255,11 +281,14 @@ def build_snapshot(
             "unique_count": links["unique_count"],
             "top": links["top"],
             "all_urls": links["all_urls"][:1000],
+            "js_only_count": links.get("js_only_count", 0),
+            "anchor_quality_score": links.get("anchor_quality_score", 0.0),
         },
         "schema": {
             "jsonld_types": schema_types,
             "count": len(schema_types),
         },
+        "social": social,
         "structure": {
             "lists_count": len(soup.find_all(["ul", "ol"])),
             "tables_count": len(soup.find_all("table")),

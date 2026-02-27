@@ -219,12 +219,17 @@ function initLlmCrawlerResult(jobId) {
         const diff = result?.diff || {};
         const links = diff.linksDiff || {};
         const h = diff.headingsDiff || {};
+        const missing = Array.isArray(diff.missing) ? diff.missing : [];
         return `
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                 <div class="bg-white border rounded-lg p-3"><span class="text-slate-500">textCoverage:</span> <span class="font-semibold">${_safeNum(diff.textCoverage, '-')}</span></div>
                 <div class="bg-white border rounded-lg p-3"><span class="text-slate-500">Links diff:</span> <span class="font-semibold">+${_safeNum(links.added, 0)} / -${_safeNum(links.removed, 0)}</span></div>
                 <div class="bg-white border rounded-lg p-3"><span class="text-slate-500">Headings diff:</span> <span class="font-semibold">H1 ${_safeNum(h.h1, 0)}, H2 ${_safeNum(h.h2, 0)}, H3 ${_safeNum(h.h3, 0)}</span></div>
                 <div class="bg-white border rounded-lg p-3"><span class="text-slate-500">Note:</span> <span class="font-semibold">${_escapeHtml(diff.note || '-')}</span></div>
+            </div>
+            <div class="mt-4">
+                <h4 class="font-semibold text-slate-800 mb-2">What bots miss</h4>
+                ${missing.length ? `<ul class="list-disc pl-5 text-sm text-slate-700">${missing.map((x) => `<li>${_escapeHtml(x)}</li>`).join('')}</ul>` : '<p class="text-sm text-slate-500">No major gaps detected.</p>'}
             </div>
             <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>

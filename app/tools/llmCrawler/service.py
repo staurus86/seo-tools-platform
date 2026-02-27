@@ -241,6 +241,7 @@ def _build_diff(nojs: Dict[str, Any], rendered: Optional[Dict[str, Any]]) -> Dic
             "linksDiff": {"added": 0, "removed": 0, "added_top": [], "removed_top": []},
             "headingsDiff": {"h1": 0, "h2": 0, "h3": 0},
             "note": "Rendered fetch disabled",
+            "missing": [],
         }
 
     nojs_text = int(((nojs.get("content") or {}).get("main_text_length") or 0))
@@ -254,6 +255,15 @@ def _build_diff(nojs: Dict[str, Any], rendered: Optional[Dict[str, Any]]) -> Dic
 
     nojs_h = nojs.get("headings") or {}
     r_h = rendered.get("headings") or {}
+    missing: List[str] = []
+    if text_coverage is not None and text_coverage < 0.7:
+        missing.append("Основной текст появляется только после JS (coverage < 0.7)")
+    if linksDiff["added"] > 0:
+        missing.append("Часть ссылок доступна только с JS (добавленные в rendered)")
+    if int(r_h.get("h1") or 0) > int(nojs_h.get("h1") or 0):
+        missing.append("Заголовки H1/H2/H3 появляются только в rendered версии")
+    if bool((rendered.get("content") or {}).get("readability_text")) and not bool((nojs.get("content") or {}).get("main_text_length")):
+        missing.append("Main content извлекается только reader-алгоритмом (raw пустой)")
     return {
         "textCoverage": text_coverage,
         "linksDiff": {
@@ -267,6 +277,7 @@ def _build_diff(nojs: Dict[str, Any], rendered: Optional[Dict[str, Any]]) -> Dic
             "h2": int(r_h.get("h2") or 0) - int(nojs_h.get("h2") or 0),
             "h3": int(r_h.get("h3") or 0) - int(nojs_h.get("h3") or 0),
         },
+        "missing": missing,
     }
 
 
