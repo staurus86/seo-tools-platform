@@ -438,6 +438,10 @@ def build_snapshot(
     desc_tag = soup.find("meta", attrs={"name": re.compile(r"description", re.I)})
     if desc_tag:
         meta_description = _safe_text(desc_tag.get("content"))
+    site_name = ""
+    site_name_tag = soup.find("meta", attrs={"property": re.compile(r"og:site_name", re.I)})
+    if site_name_tag:
+        site_name = _safe_text(site_name_tag.get("content"))
     meta_robots = ""
     meta_tag = soup.find("meta", attrs={"name": re.compile(r"robots", re.I)})
     if meta_tag:
@@ -473,16 +477,6 @@ def build_snapshot(
     raw_main_text = _extract_main_text(soup)
     full_text = _safe_text(" ".join(soup.stripped_strings))
     links = _extract_links(soup, final_url, limit=20)
-    segmentation = segment_content(
-        soup=soup,
-        rendered_text=full_text,
-        extracted_text=raw_main_text,
-        links=links,
-        headings=headings,
-    )
-    main_text = _safe_text(segmentation.get("main_text") or raw_main_text)
-    main_content_ratio = len(main_text) / max(1, len(full_text))
-    boilerplate_ratio = max(0.0, 1.0 - main_content_ratio)
 
     # Reader-mode variants
     readability_text = ""
@@ -497,6 +491,21 @@ def build_snapshot(
             trafilatura_text = _safe_text(trafilatura.extract(html, url=final_url) or "")[:5000]
         except Exception:
             trafilatura_text = ""
+
+    segmentation = segment_content(
+        soup=soup,
+        rendered_text=full_text,
+        extracted_text=raw_main_text,
+        links=links,
+        headings=headings,
+        readability_text=readability_text,
+        trafilatura_text=trafilatura_text,
+    )
+    main_text = _safe_text(segmentation.get("main_text") or raw_main_text)
+    main_content_ratio = float(segmentation.get("main_ratio") or 0.0)
+    if main_content_ratio <= 0:
+        main_content_ratio = len(main_text) / max(1, len(full_text))
+    boilerplate_ratio = float(segmentation.get("boilerplate_ratio") or max(0.0, 1.0 - main_content_ratio))
 
     # Chunking (simple fixed-size by characters)
     chunks: List[Dict[str, Any]] = []
@@ -588,6 +597,7 @@ def build_snapshot(
         "meta": {
             "title": title,
             "description": meta_description,
+            "site_name": site_name,
             "meta_robots": meta_robots,
             "canonical": canonical,
             "hreflang": hreflang,
@@ -611,6 +621,10 @@ def build_snapshot(
             "boilerplate_ratio": round(boilerplate_ratio, 4),
             "noise_breakdown": segmentation.get("noise_breakdown") or {},
             "main_content_confidence": segmentation.get("main_content_confidence") or {},
+            "main_content_analysis": segmentation.get("main_content_analysis") or {},
+            "navigation_detection": segmentation.get("navigation_detection") or {},
+            "ads_detection": segmentation.get("ads_detection") or {},
+            "utility_detection": segmentation.get("utility_detection") or {},
             "main_source": "segmented_main" if main_text != raw_main_text else "raw_main",
             "chunks": chunks,
         },
@@ -647,7 +661,16 @@ def build_snapshot(
             "content_segments": (segmentation.get("content_segments") or [])[:60],
             "noise_breakdown": segmentation.get("noise_breakdown") or {},
             "main_content_confidence": segmentation.get("main_content_confidence") or {},
-            "segment_version": segmentation.get("segment_version") or "seg-v1",
+            "main_ratio": segmentation.get("main_ratio"),
+            "boilerplate_ratio": segmentation.get("boilerplate_ratio"),
+            "confidence": segmentation.get("confidence"),
+            "extractor_agreement": segmentation.get("extractor_agreement"),
+            "main_selectors": segmentation.get("main_selectors") or [],
+            "navigation_detection": segmentation.get("navigation_detection") or {},
+            "ads_detection": segmentation.get("ads_detection") or {},
+            "utility_detection": segmentation.get("utility_detection") or {},
+            "main_content_analysis": segmentation.get("main_content_analysis") or {},
+            "segment_version": segmentation.get("segment_version") or "seg-fusion-v2",
         },
     }
 

@@ -6,9 +6,11 @@ from app.tools.llmCrawler.service import (
     _ai_directive_audit,
     _ai_understanding,
     _apply_chunk_dedupe,
+    _build_structured_data_split,
     _build_improvement_library,
     _compute_eeat,
     _detect_page_type,
+    _page_classification_v2,
     _js_dependency_score,
     _llm_ingestion,
     _snippet_library,
@@ -93,6 +95,20 @@ class LlmCrawlerServiceQualityTests(unittest.TestCase):
         self.assertEqual(js.get("status"), "not_executed")
         self.assertIsNone(js.get("score"))
 
+    def test_js_dependency_risk_levels(self):
+        rendered = {"render_debug": {"failed_requests": []}}
+        low = _js_dependency_score(rendered, {"textCoverage": 0.8}, render_status={"status": "executed"})
+        self.assertEqual(low.get("risk"), "low")
+        self.assertLess(float(low.get("score") or 100), 40)
+
+        medium = _js_dependency_score(rendered, {"textCoverage": 0.54}, render_status={"status": "executed"})
+        self.assertEqual(medium.get("risk"), "medium")
+        self.assertGreater(float(medium.get("score") or 0), 30)
+
+        high = _js_dependency_score(rendered, {"textCoverage": 0.2}, render_status={"status": "executed"})
+        self.assertEqual(high.get("risk"), "high")
+        self.assertGreater(float(high.get("score") or 0), 70)
+
     def test_page_type_detection_service_and_review(self):
         service_snapshot = self._snapshot()
         service_snapshot["meta"] = {"title": "SEO consulting services for enterprise websites"}
@@ -125,6 +141,56 @@ class LlmCrawlerServiceQualityTests(unittest.TestCase):
         docs["schema"] = {"jsonld_types": ["TechArticle"], "microdata_types": [], "rdfa_types": []}
         d = _detect_page_type(docs)
         self.assertIn(d.get("page_type"), {"docs", "article"})
+
+    def test_page_classification_v2_bitrix_homepage_and_catalog(self):
+        nojs = self._snapshot()
+        nojs["final_url"] = "https://example.com/"
+        nojs["meta"] = {"title": "SIDERUS | Industrial Equipment", "description": "Catalog and services"}
+        nojs["links"] = {
+            "count": 180,
+            "top": [
+                {"anchor": "Catalog", "url": "/catalog"},
+                {"anchor": "Products", "url": "/products"},
+                {"anchor": "Services", "url": "/services"},
+                {"anchor": "Collection", "url": "/collection"},
+            ],
+        }
+        nojs["signals"] = {"author_present": False, "date_present": False, "organization_present": True}
+        nojs["segmentation"] = {"noise_breakdown": {"nav_pct": 48, "live_pct": 0}, "utility_detection": {"utility_blocks": 4}, "main_ratio": 0.24}
+        nojs["schema"] = {"jsonld_types": ["WebSite", "Organization"], "microdata_types": [], "rdfa_types": [], "coverage_score": 66}
+        structured = _build_structured_data_split(nojs, None)
+        cls = _page_classification_v2(nojs, None, structured)
+        self.assertEqual(cls.get("type"), "homepage")
+        self.assertGreaterEqual(float(cls.get("confidence") or 0), 0.55)
+
+        catalog = self._snapshot()
+        catalog["final_url"] = "https://example.com/catalog/pumps"
+        catalog["links"] = {"count": 140, "top": [{"anchor": "Category pumps", "url": "/category/pumps"}]}
+        catalog["segmentation"] = {"noise_breakdown": {"nav_pct": 42, "live_pct": 0}, "utility_detection": {"utility_blocks": 1}, "main_ratio": 0.31}
+        catalog["schema"] = {"jsonld_types": ["ItemList"], "microdata_types": [], "rdfa_types": [], "coverage_score": 40}
+        structured_c = _build_structured_data_split(catalog, None)
+        cls_c = _page_classification_v2(catalog, None, structured_c)
+        self.assertIn(cls_c.get("type"), {"category", "listing"})
+
+    def test_page_classification_v2_article(self):
+        article = self._snapshot()
+        article["final_url"] = "https://example.com/blog/vacuum-guide"
+        article["signals"] = {"author_present": True, "date_present": True}
+        article["content"]["main_text_length"] = 3200
+        article["segmentation"] = {"noise_breakdown": {"nav_pct": 12, "live_pct": 0}, "utility_detection": {"utility_blocks": 0}, "main_ratio": 0.62}
+        article["schema"] = {"jsonld_types": ["Article", "Organization"], "microdata_types": [], "rdfa_types": [], "coverage_score": 80}
+        structured = _build_structured_data_split(article, None)
+        cls = _page_classification_v2(article, None, structured)
+        self.assertEqual(cls.get("type"), "article")
+
+    def test_structured_data_raw_vs_rendered_split(self):
+        raw = self._snapshot()
+        raw["schema"] = {"jsonld_types": ["Organization"], "microdata_types": [], "rdfa_types": [], "coverage_score": 35}
+        rendered = {"schema": {"jsonld_types": ["Organization", "FAQPage"], "microdata_types": [], "rdfa_types": [], "coverage_score": 66}}
+        split = _build_structured_data_split(raw, rendered)
+        self.assertIn("raw", split)
+        self.assertIn("rendered", split)
+        self.assertIn(split.get("source"), {"raw", "rendered", "raw+rendered"})
 
     def test_ingestion_not_evaluated_without_chunks(self):
         snapshot = self._snapshot()

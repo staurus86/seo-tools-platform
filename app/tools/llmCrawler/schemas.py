@@ -123,3 +123,13 @@ class LlmCrawlerJobStatusResponse(BaseModel):
     ai_directives: Dict[str, Any] | None = None
     improvement_library: Dict[str, Any] | None = None
     detection_issues: List[str] | None = None
+    segmentation: Dict[str, Any] | None = None
+    navigation_detection: Dict[str, Any] | None = None
+    ads_detection: Dict[str, Any] | None = None
+    structured_data: Dict[str, Any] | None = None
+    page_classification: Dict[str, Any] | None = None
+    js_dependency: Dict[str, Any] | None = None
+    utility_detection: Dict[str, Any] | None = None
+    main_content_analysis: Dict[str, Any] | None = None
+    entities: Dict[str, Any] | None = None
+    citation_model: Dict[str, Any] | None = None

@@ -770,6 +770,287 @@ def _metrics_bytes(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _schema_snapshot_view(snapshot: Dict[str, Any] | None) -> Dict[str, Any]:
+    schema = (snapshot or {}).get("schema") or {}
+    jsonld = [str(x) for x in (schema.get("jsonld_types") or []) if str(x).strip()]
+    microdata = [str(x) for x in (schema.get("microdata_types") or []) if str(x).strip()]
+    rdfa = [str(x) for x in (schema.get("rdfa_types") or []) if str(x).strip()]
+    all_types = sorted(set(jsonld + microdata + rdfa))
+    return {
+        "jsonld_types": jsonld[:50],
+        "microdata_types": microdata[:50],
+        "rdfa_types": rdfa[:50],
+        "types": all_types[:80],
+        "count": len(all_types),
+        "coverage_score": float(schema.get("coverage_score") or 0.0),
+    }
+
+
+def _build_structured_data_split(nojs_snapshot: Dict[str, Any], rendered_snapshot: Dict[str, Any] | None) -> Dict[str, Any]:
+    raw = _schema_snapshot_view(nojs_snapshot)
+    rendered = _schema_snapshot_view(rendered_snapshot) if rendered_snapshot else {"jsonld_types": [], "microdata_types": [], "rdfa_types": [], "types": [], "count": 0, "coverage_score": 0.0}
+    source = "none"
+    if int(raw.get("count") or 0) > 0:
+        source = "raw"
+    if int(rendered.get("count") or 0) > int(raw.get("count") or 0):
+        source = "rendered"
+    if int(raw.get("count") or 0) > 0 and int(rendered.get("count") or 0) > 0 and source != "rendered":
+        source = "raw+rendered"
+    return {
+        "raw": raw,
+        "rendered": rendered,
+        "source": source,
+        "rendered_only": bool(int(raw.get("count") or 0) == 0 and int(rendered.get("count") or 0) > 0),
+    }
+
+
+def _page_classification_v2(nojs_snapshot: Dict[str, Any], rendered_snapshot: Dict[str, Any] | None, structured_data: Dict[str, Any]) -> Dict[str, Any]:
+    links = nojs_snapshot.get("links") or {}
+    signals = nojs_snapshot.get("signals") or {}
+    content = nojs_snapshot.get("content") or {}
+    segmentation = nojs_snapshot.get("segmentation") or {}
+    noise = segmentation.get("noise_breakdown") or {}
+    utility_detection = segmentation.get("utility_detection") or {}
+    all_schema = set(str(x).strip().lower() for x in ((structured_data.get("raw") or {}).get("types") or []) + ((structured_data.get("rendered") or {}).get("types") or []))
+    main_len = int(content.get("main_text_length") or 0)
+    main_ratio = float(segmentation.get("main_ratio") or content.get("main_content_ratio") or 0.0)
+    links_count = int(links.get("count") or 0)
+    nav_pct = float(noise.get("nav_pct") or 0.0)
+    live_pct = float(noise.get("live_pct") or 0.0)
+    utility_blocks = int(utility_detection.get("utility_blocks") or 0)
+    has_author = bool(signals.get("author_present"))
+    has_date = bool(signals.get("date_present"))
+    has_org_schema = bool({"organization", "localbusiness", "website", "webpage"} & all_schema)
+    has_product = bool({"product", "offer", "aggregateoffer", "individualproduct"} & all_schema)
+    has_itemlist = bool({"itemlist", "collectionpage"} & all_schema)
+    has_review = bool({"review", "aggregaterating"} & all_schema)
+    path = urlparse(str(nojs_snapshot.get("final_url") or "")).path or "/"
+    anchors = [str(x.get("anchor") or "").lower() for x in (links.get("top") or [])]
+    category_link_signals = sum(
+        1
+        for a in anchors
+        if any(tok in a for tok in ("catalog", "category", "shop", "products", "services", "collection", "store", "каталог", "раздел"))
+    )
+    text_blob = " ".join(
+        [
+            str((nojs_snapshot.get("meta") or {}).get("title") or "").lower(),
+            str((nojs_snapshot.get("meta") or {}).get("description") or "").lower(),
+            str(content.get("main_text_preview") or "").lower(),
+        ]
+    )
+    cta_signals = utility_blocks + len(re.findall(r"(buy now|get started|book demo|request quote|contact us|try free)", text_blob))
+
+    signals_map: Dict[str, List[str]] = {
+        "homepage": [],
+        "article": [],
+        "product": [],
+        "category": [],
+        "listing": [],
+        "mixed": [],
+    }
+    scores = {"homepage": 0, "article": 0, "product": 0, "category": 0, "listing": 0, "mixed": 0}
+
+    if has_org_schema:
+        scores["homepage"] += 2
+        signals_map["homepage"].append("organization schema")
+    if category_link_signals >= 4:
+        scores["homepage"] += 2
+        scores["category"] += 2
+        signals_map["homepage"].append("many category links")
+        signals_map["category"].append("many category links")
+    if not has_author:
+        scores["homepage"] += 1
+        signals_map["homepage"].append("no author signal")
+    if cta_signals >= 2:
+        scores["homepage"] += 1
+        signals_map["homepage"].append("multiple CTA blocks")
+    if path in {"", "/"}:
+        scores["homepage"] += 1
+        signals_map["homepage"].append("root route")
+
+    if has_author:
+        scores["article"] += 2
+        signals_map["article"].append("author signal")
+    if has_date:
+        scores["article"] += 2
+        signals_map["article"].append("date signal")
+    if main_len >= 1400 and main_ratio >= 0.32:
+        scores["article"] += 2
+        signals_map["article"].append("long continuous text")
+    if links_count <= 120:
+        scores["article"] += 1
+    if "article" in all_schema or "newsarticle" in all_schema or "blogposting" in all_schema:
+        scores["article"] += 2
+        signals_map["article"].append("article schema")
+
+    if has_product:
+        scores["product"] += 3
+        signals_map["product"].append("product/offer schema")
+    if re.search(r"(\$|usd|eur|price|pricing|buy|цена|купить)", text_blob):
+        scores["product"] += 1
+    if has_review:
+        scores["product"] += 1
+
+    if has_itemlist:
+        scores["category"] += 2
+        signals_map["category"].append("itemlist schema")
+    if links_count >= 70:
+        scores["category"] += 1
+    if nav_pct >= 35:
+        scores["category"] += 1
+    if "/category" in path.lower() or "/catalog" in path.lower() or "/collection" in path.lower():
+        scores["category"] += 2
+        signals_map["category"].append("catalog/category route")
+
+    if links_count >= 90:
+        scores["listing"] += 2
+        signals_map["listing"].append("high link count")
+    if nav_pct >= 38:
+        scores["listing"] += 2
+        signals_map["listing"].append("high navigation density")
+    if live_pct >= 12:
+        scores["listing"] += 1
+        signals_map["listing"].append("live/feed markers")
+    if has_itemlist:
+        scores["listing"] += 1
+
+    if scores["article"] >= 3 and (scores["listing"] >= 3 or scores["category"] >= 3):
+        scores["mixed"] = max(scores["article"], scores["listing"], scores["category"])
+        signals_map["mixed"] = ["article and listing signals overlap"]
+    elif main_ratio < 0.22 and nav_pct >= 40:
+        scores["mixed"] = 3
+        signals_map["mixed"] = ["low main ratio with high navigation density"]
+
+    best_type = max(scores.keys(), key=lambda k: scores[k])
+    best_score = int(scores.get(best_type) or 0)
+    sorted_scores = sorted(scores.values(), reverse=True)
+    second_score = sorted_scores[1] if len(sorted_scores) > 1 else 0
+    confidence = min(0.96, 0.42 + (best_score * 0.08) + (max(0, best_score - second_score) * 0.05))
+    if confidence < 0.55 or best_score <= 1:
+        return {"type": "unknown", "confidence": round(float(confidence), 3), "signals": ["insufficient stable signals"], "scores": scores}
+    return {
+        "type": best_type,
+        "confidence": round(float(confidence), 3),
+        "signals": (signals_map.get(best_type) or [f"dominant score: {best_type}={best_score}"])[:6],
+        "scores": scores,
+    }
+
+
+def _extract_entities_v2(nojs_snapshot: Dict[str, Any], rendered_snapshot: Dict[str, Any] | None, structured_data: Dict[str, Any]) -> Dict[str, Any]:
+    meta = nojs_snapshot.get("meta") or {}
+    content = nojs_snapshot.get("content") or {}
+    schema_raw = set(str(x).strip().lower() for x in ((structured_data.get("raw") or {}).get("types") or []))
+    schema_rendered = set(str(x).strip().lower() for x in ((structured_data.get("rendered") or {}).get("types") or []))
+    schema_all = schema_raw | schema_rendered
+    text_blob = " ".join(
+        [
+            str(meta.get("site_name") or ""),
+            str(meta.get("title") or ""),
+            str((rendered_snapshot or {}).get("meta", {}).get("title") or ""),
+            str(content.get("main_text_preview") or ""),
+        ]
+    )
+    org_candidates: Dict[str, Dict[str, Any]] = {}
+
+    def add_org(name: str, source: str, conf: float) -> None:
+        n = str(name or "").strip()
+        if len(n) < 2:
+            return
+        key = n.lower()
+        prev = org_candidates.get(key)
+        if not prev:
+            org_candidates[key] = {"name": n[:120], "confidence": conf, "source_set": {source}}
+            return
+        prev["confidence"] = max(float(prev.get("confidence") or 0.0), conf)
+        prev["source_set"].add(source)
+
+    if meta.get("site_name"):
+        add_org(str(meta.get("site_name")), "meta", 0.88)
+
+    for m in re.finditer(r"\b([A-Z][A-Za-z0-9&\.-]{1,40}(?:\s+[A-Z][A-Za-z0-9&\.-]{1,40}){0,3})\b", text_blob):
+        token = str(m.group(1) or "").strip()
+        if len(token) < 3:
+            continue
+        lower = token.lower()
+        if lower in STOPWORDS:
+            continue
+        if any(x in lower for x in ("inc", "llc", "ltd", "corp", "company", "group", "studio", "agency")):
+            add_org(token, "text", 0.74)
+
+    if "organization" in schema_all or "localbusiness" in schema_all:
+        if meta.get("site_name"):
+            add_org(str(meta.get("site_name")), "schema", 0.93)
+        elif meta.get("title"):
+            add_org(str(meta.get("title")).split("|")[0].split("-")[0].strip(), "schema", 0.79)
+
+    organizations: List[Dict[str, Any]] = []
+    for item in org_candidates.values():
+        sources = sorted(item.pop("source_set", set()))
+        item["source"] = "+".join(sources) if sources else "text"
+        item["confidence"] = round(float(item.get("confidence") or 0.0), 3)
+        organizations.append(item)
+    organizations = sorted(organizations, key=lambda x: float(x.get("confidence") or 0.0), reverse=True)[:20]
+    return {
+        "organizations": organizations,
+        "persons": [],
+        "products": [],
+        "locations": [],
+    }
+
+
+def _citation_model_v2(
+    *,
+    structured_data: Dict[str, Any],
+    segmentation: Dict[str, Any],
+    ai_understanding: Dict[str, Any] | None,
+    ingestion: Dict[str, Any] | None,
+) -> Dict[str, Any]:
+    raw = structured_data.get("raw") or {}
+    rendered = structured_data.get("rendered") or {}
+    raw_cov = float(raw.get("coverage_score") or 0.0) / 100.0
+    rendered_cov = float(rendered.get("coverage_score") or 0.0) / 100.0
+    if int(raw.get("count") or 0) > 0:
+        schema_score = min(1.0, max(raw_cov, 0.25))
+    elif int(rendered.get("count") or 0) > 0:
+        schema_score = min(0.7, max(rendered_cov * 0.7, 0.2))
+    else:
+        schema_score = 0.1
+
+    segmentation_score = float(segmentation.get("confidence") or 0.0)
+    if segmentation_score <= 0:
+        segmentation_score = float((segmentation.get("main_content_confidence") or {}).get("score") or 0.0)
+    segmentation_score = min(1.0, max(0.0, segmentation_score))
+
+    semantic_density = float((segmentation.get("main_content_analysis") or {}).get("semantic_density") or 0.0)
+    clarity = float((ai_understanding or {}).get("content_clarity") or 0.0) / 100.0
+    semantic_score = min(1.0, max(semantic_density * 1.8, clarity))
+
+    if str((ingestion or {}).get("status") or "").lower() == "evaluated":
+        ingestion_score = min(1.0, max(0.0, float((ingestion or {}).get("score") or 0.0) / 100.0))
+    else:
+        ingestion_score = 0.4
+
+    probability = (
+        (0.25 * schema_score)
+        + (0.25 * segmentation_score)
+        + (0.25 * semantic_score)
+        + (0.25 * ingestion_score)
+    )
+    available = sum(1 for x in [schema_score, segmentation_score, semantic_score, ingestion_score] if x > 0.0)
+    confidence = min(1.0, 0.5 + (available * 0.1) + abs(segmentation_score - semantic_score) * -0.1)
+    return {
+        "citation_probability": round(float(max(0.0, min(1.0, probability))), 4),
+        "confidence": round(float(max(0.0, min(1.0, confidence))), 4),
+        "version": "v2",
+        "components": {
+            "schema_score": round(schema_score, 4),
+            "segmentation_score": round(segmentation_score, 4),
+            "semantic_score": round(semantic_score, 4),
+            "ingestion_score": round(ingestion_score, 4),
+        },
+    }
+
+
 def _detect_page_type(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     meta = snapshot.get("meta") or {}
     content = snapshot.get("content") or {}
@@ -1484,6 +1765,18 @@ def run_llm_crawler_simulation(
 
     notify(84, "Diff and scoring")
     t3 = time.perf_counter()
+    structured_data = _build_structured_data_split(nojs_snapshot, rendered_snapshot)
+    page_classification = _page_classification_v2(nojs_snapshot, rendered_snapshot, structured_data)
+    if str(page_classification.get("type") or ""):
+        page_type_info = {
+            "page_type": str(page_classification.get("type") or "unknown"),
+            "confidence": float(page_classification.get("confidence") or 0.0),
+            "reasons": list(page_classification.get("signals") or []),
+            "scores": page_classification.get("scores") or {},
+        }
+        nojs_snapshot["page_type"] = page_type_info.get("page_type")
+        nojs_snapshot["page_type_confidence"] = page_type_info.get("confidence")
+
     diff = _build_diff(nojs_snapshot, rendered_snapshot, render_error=render_error)
     score = compute_score(
         nojs=nojs_snapshot,
@@ -1492,6 +1785,17 @@ def run_llm_crawler_simulation(
         policies=policies,
     )
     score = _apply_score_profile(score, nojs_snapshot, page_type_info)
+    if bool(structured_data.get("rendered_only")):
+        breakdown = score.get("breakdown") or {}
+        try:
+            breakdown["signals"] = round(max(0.0, float(breakdown.get("signals") or 0.0) - 3.0), 2)
+            score["breakdown"] = breakdown
+            score["total"] = max(0, int(round(float(score.get("total") or 0) - 4)))
+        except Exception:
+            pass
+        issues = list(score.get("top_issues") or [])
+        issues.append("Schema detected only after JS render (raw HTML has no schema)")
+        score["top_issues"] = list(dict.fromkeys(issues))[:10]
     if bool((diff.get("h1Consistency") or {}).get("h1_appears_only_after_js")):
         issues = list(score.get("top_issues") or [])
         issues.append("H1 appears only after JS")
@@ -1502,7 +1806,14 @@ def run_llm_crawler_simulation(
         llm_sim = _run_llm_simulation(nojs_snapshot)
     js_dep = _js_dependency_score(rendered_snapshot, diff, render_status=render_status)
     score["js_dependency_score"] = js_dep.get("score")
-    citation_prob = _compute_citation_probability(nojs_snapshot, score)
+    segmentation_payload = (nojs_snapshot.get("segmentation") or {})
+    citation_model = _citation_model_v2(
+        structured_data=structured_data,
+        segmentation=segmentation_payload,
+        ai_understanding=None,
+        ingestion=None,
+    )
+    citation_prob = round(float(citation_model.get("citation_probability") or 0.0) * 100.0, 2)
     entity_graph = _build_entity_graph(nojs_snapshot) if bool(getattr(settings, "LLM_CRAWLER_ENTITY_GRAPH_ENABLED", False)) else None
     if entity_graph:
         nojs_snapshot["entity_graph"] = entity_graph
@@ -1519,6 +1830,14 @@ def run_llm_crawler_simulation(
     )
     discoverability = _crawler_path_sim(nojs_snapshot)
     ai_understanding = _ai_understanding(nojs_snapshot, llm_sim)
+    entities = _extract_entities_v2(nojs_snapshot, rendered_snapshot, structured_data)
+    citation_model = _citation_model_v2(
+        structured_data=structured_data,
+        segmentation=segmentation_payload,
+        ai_understanding=ai_understanding,
+        ingestion=ingestion,
+    )
+    citation_prob = round(float(citation_model.get("citation_probability") or 0.0) * 100.0, 2)
     trust_signal_score = _trust_score(nojs_snapshot)
     content_loss_percent = _content_loss(diff, nojs_snapshot)
     citation_breakdown = _citation_breakdown(nojs_snapshot, page_type_info)
@@ -1572,7 +1891,9 @@ def run_llm_crawler_simulation(
         "js_dependency": js_dep,
         "cloaking": cloaking_result,
         "citation_probability": citation_prob,
+        "citation_model": citation_model,
         "entity_graph": entity_graph,
+        "entities": entities,
         "eeat_score": eeat,
         "vector_quality_score": vector_score,
         "llm_ingestion": ingestion,
@@ -1590,6 +1911,8 @@ def run_llm_crawler_simulation(
         "chunk_ranking_debug": answer_preview.get("chunk_ranking_debug") or ((llm_sim or {}).get("chunk_ranking_debug") if isinstance(llm_sim, dict) else []),
         "chunk_dedupe": chunk_dedupe,
         "metrics_bytes": metrics_bytes,
+        "structured_data": structured_data,
+        "segmentation": segmentation_payload,
         "snippet_library": snippet_library,
         "ai_blocks": ai_blocks,
         "critical_blocks": critical_blocks,
@@ -1599,9 +1922,14 @@ def run_llm_crawler_simulation(
         "page_type": page_type_info.get("page_type"),
         "page_type_confidence": page_type_info.get("confidence"),
         "page_type_reasons": page_type_info.get("reasons") or [],
+        "page_classification": page_classification,
         "noise_breakdown": noise_breakdown,
         "main_content_confidence": main_content_confidence,
         "content_segments": content_segments[:40],
+        "navigation_detection": segmentation_payload.get("navigation_detection") or {},
+        "ads_detection": segmentation_payload.get("ads_detection") or {},
+        "utility_detection": segmentation_payload.get("utility_detection") or {},
+        "main_content_analysis": segmentation_payload.get("main_content_analysis") or {},
         "ui_wow_enabled": quality_mode,
         "engine": "llm_crawler_mvp_v1",
     }
@@ -1614,6 +1942,14 @@ def _build_recommendations(nojs: Dict[str, Any], rendered: Optional[Dict[str, An
     social = (nojs.get("social") or {})
     resources = (nojs.get("resources") or {})
     schema = (nojs.get("schema") or {})
+    rendered_schema = ((rendered or {}).get("schema") or {}) if rendered else {}
+    schema_count_total = len(
+        set(
+            [str(x) for x in (schema.get("jsonld_types") or [])]
+            + [str(x) for x in (schema.get("microdata_types") or [])]
+            + [str(x) for x in (schema.get("rdfa_types") or [])]
+        )
+    )
     signals = (nojs.get("signals") or {})
     links = (nojs.get("links") or {})
     content = (nojs.get("content") or {})
@@ -1702,7 +2038,7 @@ def _build_recommendations(nojs: Dict[str, Any], rendered: Optional[Dict[str, An
             [f"Mixed content count: {resources.get('mixed_content_count')}"],
             ["network", "body"],
         )
-    if not schema.get("jsonld_types"):
+    if schema_count_total == 0:
         add_rec(
             "P1",
             "schema",
@@ -1712,6 +2048,34 @@ def _build_recommendations(nojs: Dict[str, Any], rendered: Optional[Dict[str, An
             ["head", "body"],
             "jsonld_organization",
         )
+    elif not (schema.get("jsonld_types") or []):
+        add_rec(
+            "P2",
+            "schema",
+            "Добавьте JSON-LD как primary source (сейчас разметка только microdata/RDFa)",
+            "+2..5",
+            ["Schema detected but JSON-LD is missing"],
+            ["head", "body"],
+            "jsonld_article",
+        )
+    if rendered and int(len((schema.get("jsonld_types") or []) + (schema.get("microdata_types") or []) + (schema.get("rdfa_types") or []))) == 0:
+        rendered_count = len(
+            set(
+                [str(x) for x in (rendered_schema.get("jsonld_types") or [])]
+                + [str(x) for x in (rendered_schema.get("microdata_types") or [])]
+                + [str(x) for x in (rendered_schema.get("rdfa_types") or [])]
+            )
+        )
+        if rendered_count > 0:
+            add_rec(
+                "P1",
+                "schema",
+                "Схема доступна только после JS — продублируйте schema.org в raw HTML",
+                "+5..9",
+                [f"raw_schema_count=0 rendered_schema_count={rendered_count}"],
+                ["head", "rendered_dom"],
+                "jsonld_organization",
+            )
     if float(schema.get("coverage_score") or 0) < 50:
         add_rec(
             "P1",
@@ -2300,6 +2664,8 @@ def _js_dependency_score(rendered_snapshot: Dict[str, Any] | None, diff: Dict[st
             "status": "not_executed",
             "reason": reason,
             "score": None,
+            "risk": "not_executed",
+            "coverage_ratio": None,
             "failures": None,
             "blocked": None,
             "content_loaded_by_js_ratio": None,
@@ -2309,20 +2675,39 @@ def _js_dependency_score(rendered_snapshot: Dict[str, Any] | None, diff: Dict[st
     blocked = len([x for x in (render_debug.get("failed_requests") or []) if str(x.get("resource_type") or "") in {"script", "stylesheet"}])
     text_coverage = diff.get("textCoverage")
     try:
-        ratio = 1 - float(text_coverage or 0)
+        coverage_ratio = float(text_coverage) if text_coverage is not None else None
     except Exception:
-        ratio = None
-    score = 0
-    if ratio is not None:
-        score += min(70, ratio * 100)
-    score += min(30, (failed + blocked) * 2)
+        coverage_ratio = None
+    if coverage_ratio is None:
+        return {
+            "status": "not_evaluated",
+            "reason": "coverage_unavailable",
+            "score": None,
+            "risk": "unknown",
+            "coverage_ratio": None,
+            "failures": failed,
+            "blocked": blocked,
+            "content_loaded_by_js_ratio": None,
+        }
+    coverage_ratio = max(0.0, min(1.0, coverage_ratio))
+    dependency_score = (1.0 - coverage_ratio) * 100.0
+    dependency_score += min(12.0, (failed * 0.8) + (blocked * 1.2))
+    dependency_score = max(0.0, min(100.0, dependency_score))
+    if coverage_ratio > 0.7:
+        risk = "low"
+    elif coverage_ratio >= 0.3:
+        risk = "medium"
+    else:
+        risk = "high"
     return {
         "status": "executed",
         "reason": "ok",
-        "score": round(min(100, score), 2),
+        "score": round(dependency_score, 2),
+        "risk": risk,
+        "coverage_ratio": round(coverage_ratio, 4),
         "failures": failed,
         "blocked": blocked,
-        "content_loaded_by_js_ratio": ratio,
+        "content_loaded_by_js_ratio": round(max(0.0, min(1.0, 1.0 - coverage_ratio)), 4),
     }
 
 
