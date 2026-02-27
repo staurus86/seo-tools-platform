@@ -38,6 +38,11 @@ class LlmCrawlerSegmentationTests(unittest.TestCase):
         self.assertIn("utility_detection", out)
         self.assertIn("content_extraction", out)
         self.assertIn("primary_extractor", out.get("content_extraction") or {})
+        self.assertIn("confidence_reason", out.get("content_extraction") or {})
+        self.assertIn("extractor_agreement_score", out.get("content_extraction") or {})
+        self.assertIn("segment_tree", out)
+        self.assertIn("main_content_nodes", out)
+        self.assertIn("noise_nodes", out)
         self.assertFalse(bool((out.get("ads_detection") or {}).get("ads_detected")))
 
     def test_strict_ads_detection_with_adtech_markers(self):

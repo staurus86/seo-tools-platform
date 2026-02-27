@@ -436,19 +436,27 @@ function _renderCritical(result) {
 
 function _renderBotMatrix(result) {
   const matrix = Array.isArray(result?.bot_matrix) ? result.bot_matrix : [];
+  const overall = _pct(result?.bot_visibility_score, null);
+  const coverage = result?.bot_visibility_coverage || {};
   const rows = matrix.map((r) => {
-    const access = r.allowed ? '✅ Allowed' : '❌ Blocked';
-    const quality = _pct(result?.score?.total, 0);
-    const risk = r.allowed ? 'Low' : 'High';
+    const accessState = String(r.access || (r.allowed ? 'allowed' : 'blocked')).toLowerCase();
+    const access = accessState === 'allowed' ? '✅ Allowed' : accessState === 'partial' ? '⚠ Partial' : '❌ Blocked';
+    const quality = _pct(r.content_visibility_score, _pct(result?.score?.total, 0));
+    const risk = _esc(r.risk || (r.allowed ? 'Low' : 'High'));
+    const delta = (r.content_delta_ratio === null || r.content_delta_ratio === undefined) ? '' : ` <span class="subtle text-xs">(delta ${_pct(_num(r.content_delta_ratio, 0) * 100, 0)}%)</span>`;
     return `<tr>
       <td>${_esc(r.profile)}</td>
       <td>${access}</td>
-      <td>${quality}%</td>
+      <td>${quality}%${delta}</td>
       <td>${risk}</td>
     </tr>`;
   }).join('');
   _setHTML('v2-bot-matrix', `
     <div class="section-title flex items-center gap-2"><i data-lucide="bot" class="w-4 h-4"></i>Bot Access Matrix</div>
+    <div class="text-xs subtle mb-2">
+      Bot visibility score: <span class="font-semibold">${overall === null ? '—' : `${overall}%`}</span>
+      ${coverage && coverage.profiles_total ? ` | coverage: ${_num(coverage.measured_profiles, 0)}/${_num(coverage.profiles_total, 0)} measured` : ''}
+    </div>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Bot</th><th>Access</th><th>Content quality</th><th>Risk</th></tr></thead>
@@ -495,7 +503,15 @@ function _renderContentExtraction(result) {
 
 function _renderLLMSim(result) {
   const llm = result?.llm || {};
-  if (!llm || llm.enabled === false) {
+  const scores = llm?.scores || {};
+  const preview = result?.ai_answer_preview || {};
+  const hasSignals = !!(
+    String(llm.summary || '').trim()
+    || (Array.isArray(llm.key_facts) && llm.key_facts.length)
+    || Object.keys(scores).length
+    || String(preview.answer || '').trim()
+  );
+  if (!hasSignals) {
     _setHTML('v2-llm-sim', `
       <div class="section-title flex items-center gap-2"><i data-lucide="messages-square" class="w-4 h-4"></i>LLM Simulation</div>
       <div class="card p-3 bg-slate-50 border-slate-200 text-sm">
@@ -505,21 +521,33 @@ function _renderLLMSim(result) {
     `);
     return;
   }
-  const scores = llm?.scores || {};
+  const summary = llm.summary || preview.answer || result?.ai_understanding?.topic || 'No summary';
+  const citation = _num(scores.citation_likelihood, _num(result?.citation_probability, NaN));
+  const answerQuality = _num(scores.answer_quality_score, _num(preview.confidence, NaN));
+  const hallucination = _num(
+    scores.hallucination_risk,
+    Number.isFinite(answerQuality) ? Math.max(5, 100 - answerQuality) : NaN
+  );
   const spans = Array.isArray(llm?.citation_spans) ? llm.citation_spans.slice(0, 3) : [];
+  const fallbackSpans = Array.isArray(preview?.bullets) ? preview.bullets.slice(0, 3).map((text) => ({ text })) : [];
+  const shownSpans = spans.length ? spans : fallbackSpans;
   const rank = Array.isArray(result?.chunk_ranking_debug) ? result.chunk_ranking_debug : [];
+  const modeBadge = String(llm.mode || '').toLowerCase() === 'heuristic_fallback'
+    ? '<div class="text-xs subtle mt-1">Mode: heuristic fallback (deterministic, no runtime LLM call)</div>'
+    : '';
   _setHTML('v2-llm-sim', `
     <div class="section-title flex items-center gap-2"><i data-lucide="messages-square" class="w-4 h-4"></i>LLM Simulation</div>
     <div class="card p-3 bg-slate-50 border-slate-200">
       <div class="subtle text-xs mb-1">Summary</div>
-      <div class="text-sm">${_esc(llm.summary || 'No summary')}</div>
+      <div class="text-sm">${_esc(summary)}</div>
+      ${modeBadge}
     </div>
     <div class="grid grid-cols-1 gap-2 mt-3 text-sm">
-      <div>Citation likelihood: <span class="font-semibold">${_pct(scores.citation_likelihood, '-')}%</span>${_meter(_num(scores.citation_likelihood, 0))}</div>
-      <div>Hallucination risk: <span class="font-semibold">${_pct(scores.hallucination_risk, '-')}%</span>${_meter(100 - _num(scores.hallucination_risk, 0))}</div>
-      <div>Answer quality: <span class="font-semibold">${_pct(scores.answer_quality_score, '-')}%</span>${_meter(_num(scores.answer_quality_score, 0))}</div>
+      <div>Citation likelihood: <span class="font-semibold">${_pct(citation, '-')}%</span>${Number.isFinite(citation) ? _meter(citation) : ''}</div>
+      <div>Hallucination risk: <span class="font-semibold">${_pct(hallucination, '-')}%</span>${Number.isFinite(hallucination) ? _meter(100 - hallucination) : ''}</div>
+      <div>Answer quality: <span class="font-semibold">${_pct(answerQuality, '-')}%</span>${Number.isFinite(answerQuality) ? _meter(answerQuality) : ''}</div>
     </div>
-    <div class="mt-3 text-xs subtle">Citation spans: ${_esc(spans.map((s) => s.text || '').join(' | ') || 'none')}</div>
+    <div class="mt-3 text-xs subtle">Citation spans: ${_esc(shownSpans.map((s) => s.text || '').join(' | ') || 'none')}</div>
     ${rank.length ? `<div class="mt-2 text-xs subtle">Top chunks: ${_esc(rank.map((r) => `#${r.idx}:${r.score}`).join(' | '))}</div>` : ''}
   `);
 }
@@ -573,15 +601,25 @@ function _renderCloakingJs(result) {
 function _renderEntityEeat(result) {
   const eeat = result?.eeat_score || {};
   const graph = result?.entity_graph || {};
+  const entities = result?.entities || {};
+  const orgs = Array.isArray(graph.organizations) && graph.organizations.length
+    ? graph.organizations
+    : (Array.isArray(entities.organizations) ? entities.organizations.map((x) => (x && typeof x === 'object') ? x.name : x).filter(Boolean) : []);
+  const persons = Array.isArray(graph.persons) && graph.persons.length
+    ? graph.persons
+    : (Array.isArray(entities.persons) ? entities.persons.map((x) => (x && typeof x === 'object') ? x.name : x).filter(Boolean) : []);
+  const products = Array.isArray(graph.products) && graph.products.length
+    ? graph.products
+    : (Array.isArray(entities.products) ? entities.products.map((x) => (x && typeof x === 'object') ? x.name : x).filter(Boolean) : []);
   const notEvaluated = _isNotEvaluated(eeat);
   _setHTML('v2-entity-eeat', `
     <div class="section-title flex items-center gap-2"><i data-lucide="network" class="w-4 h-4"></i>Entity & EEAT</div>
     <div class="text-sm space-y-1">
       <div>EEAT score: <span class="font-semibold">${notEvaluated ? '— Not evaluated' : _pct(eeat.score, '-')}</span></div>
       ${notEvaluated ? `<div class="text-xs subtle">Reason: ${_esc(eeat.reason || 'unknown')}</div>` : ''}
-      <div>Organizations: ${_esc((graph.organizations || []).slice(0, 4).join(', ') || '—')}</div>
-      <div>Persons: ${_esc((graph.persons || []).slice(0, 4).join(', ') || '—')}</div>
-      <div>Products: ${_esc((graph.products || []).slice(0, 4).join(', ') || '—')}</div>
+      <div>Organizations: ${_esc((orgs || []).slice(0, 4).join(', ') || '—')}</div>
+      <div>Persons: ${_esc((persons || []).slice(0, 4).join(', ') || '—')}</div>
+      <div>Products: ${_esc((products || []).slice(0, 4).join(', ') || '—')}</div>
     </div>
   `);
 }

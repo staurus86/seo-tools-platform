@@ -1,6 +1,6 @@
 import unittest
 
-from app.tools.llmCrawler.extraction import build_snapshot
+from app.tools.llmCrawler.extraction import build_snapshot, detect_challenge
 
 
 class LlmCrawlerExtractionSchemaTests(unittest.TestCase):
@@ -135,6 +135,31 @@ class LlmCrawlerExtractionSchemaTests(unittest.TestCase):
         self.assertTrue(entities.get("persons"))
         self.assertTrue(entities.get("products"))
         self.assertTrue(entities.get("locations"))
+
+    def test_challenge_detection_avoids_false_positive_on_legal_text(self):
+        html = """
+        <html><body>
+          <main>
+            <h1>Реклама 18+</h1>
+            <p>Рекламодатель ООО Тест, ИНН 1234567890, адрес и контакты компании.</p>
+          </main>
+        </body></html>
+        """
+        result = detect_challenge(200, {"server": "nginx"}, html)
+        self.assertFalse(bool(result.get("is_challenge")))
+        self.assertIn(result.get("status"), {"none", "suspected"})
+
+    def test_challenge_detection_detects_cloudflare_markers(self):
+        html = """
+        <html><body>
+          <script src="/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1"></script>
+          <div>Attention Required! Verify you are human</div>
+        </body></html>
+        """
+        result = detect_challenge(403, {"cf-ray": "12345", "server": "cloudflare"}, html)
+        self.assertTrue(bool(result.get("is_challenge")))
+        self.assertGreaterEqual(float(result.get("confidence") or 0), float(result.get("threshold") or 0))
+        self.assertIn("challenge_body", result.get("reasons") or [])
 
 
 if __name__ == "__main__":

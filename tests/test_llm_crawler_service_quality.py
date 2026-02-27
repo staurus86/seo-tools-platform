@@ -9,6 +9,8 @@ from app.tools.llmCrawler.service import (
     _build_structured_data_split,
     _build_improvement_library,
     _build_detector_layer,
+    _build_bot_visibility_matrix,
+    _citation_breakdown,
     _quality_gates,
     _recommendation_diagnostics,
     _content_quality_metrics,
@@ -18,6 +20,7 @@ from app.tools.llmCrawler.service import (
     _page_classification_v2,
     _js_dependency_score,
     _llm_ingestion,
+    _run_llm_simulation,
     _retrieval_simulation,
     _snippet_library,
     _extract_entities_v2,
@@ -69,6 +72,24 @@ class LlmCrawlerServiceQualityTests(unittest.TestCase):
         self.assertTrue(preview.get("warning"))
         self.assertEqual(preview.get("answer"), "Page not reliably summarizable")
         self.assertEqual(len(preview.get("fix_steps") or []), 2)
+
+    def test_llm_simulation_returns_fallback_when_disabled(self):
+        snapshot = self._snapshot()
+        llm = _run_llm_simulation(snapshot, enabled=False)
+        self.assertEqual(llm.get("status"), "evaluated")
+        self.assertFalse(bool(llm.get("enabled")))
+        self.assertEqual(llm.get("mode"), "heuristic_fallback")
+        self.assertTrue(str(llm.get("summary") or "").strip())
+        self.assertIn("scores", llm)
+        self.assertGreaterEqual(float((llm.get("scores") or {}).get("citation_likelihood") or 0), 0.0)
+
+    def test_citation_breakdown_uses_fallback_content_clarity(self):
+        snapshot = self._snapshot()
+        snapshot["content"]["readability_score"] = 0
+        snapshot["content"]["main_content_ratio"] = 0.63
+        snapshot["segmentation"] = {"main_ratio": 0.63, "main_content_confidence": {"score": 0.78}}
+        breakdown = _citation_breakdown(snapshot, page_type_info={"page_type": "article"}, ai_understanding=None)
+        self.assertGreaterEqual(float(breakdown.get("content_clarity") or 0), 20.0)
 
     def test_chunk_dedupe_metrics(self):
         snapshot = self._snapshot()
@@ -270,9 +291,33 @@ class LlmCrawlerServiceQualityTests(unittest.TestCase):
         self.assertIn("components", citation)
         self.assertIn("retrieval_score", citation["components"])
         self.assertIn("entity_score", citation["components"])
-        self.assertIn(citation.get("version"), {"v2", "v3"})
+        self.assertIn(citation.get("version"), {"v2", "v3", "v4"})
         self.assertIn("calibration_error_estimate", citation)
         self.assertIn("support_signals", citation)
+
+    def test_bot_visibility_matrix(self):
+        snapshot = self._snapshot()
+        matrix = _build_bot_visibility_matrix(
+            requested_profiles=["gptbot", "google-extended", "claudebot"],
+            policies={"robots": {"profiles": {"gptbot": {"allowed": True}, "google-extended": {"allowed": False, "reason": "Disallow: /"}}}},
+            ai_directives={
+                "profiles": {
+                    "gptbot": {"status": "allowed"},
+                    "google_extended": {"status": "blocked"},
+                    "claudebot": {"status": "restricted"},
+                }
+            },
+            nojs_snapshot=snapshot,
+            rendered_snapshot=None,
+            diff={"textCoverage": 0.82},
+            score={"total": 74},
+            js_dependency={"risk": "low"},
+        )
+        rows = matrix.get("matrix") or []
+        self.assertTrue(rows)
+        self.assertIn("bot_visibility_score", matrix)
+        blocked = [r for r in rows if r.get("profile") == "google-extended"]
+        self.assertTrue(blocked and blocked[0].get("access") in {"blocked", "partial"})
 
     def test_detector_layer_contract(self):
         detectors = _build_detector_layer(

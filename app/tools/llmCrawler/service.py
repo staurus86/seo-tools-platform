@@ -34,7 +34,23 @@ UA_RENDER = "Mozilla/5.0 (compatible; LLMCrawlerRendered/1.0; +https://example.c
 BOT_USER_AGENTS = {
     "gptbot": "Mozilla/5.0 (compatible; GPTBot/1.0; +https://openai.com/gptbot)",
     "googlebot": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+    "google-extended": "Mozilla/5.0 (compatible; Google-Extended/1.0; +https://developers.google.com/search/docs/crawling-indexing/google-common-crawlers)",
+    "bingbot": "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)",
+    "ccbot": "Mozilla/5.0 (compatible; CCBot/2.0; +https://commoncrawl.org/faq/)",
+    "claudebot": "Mozilla/5.0 (compatible; ClaudeBot/1.0; +https://www.anthropic.com/claudebot)",
+    "perplexitybot": "Mozilla/5.0 (compatible; PerplexityBot/1.0; +https://www.perplexity.ai/perplexitybot)",
+    "chatgpt-user": "Mozilla/5.0 (compatible; ChatGPT-User/1.0; +https://openai.com)",
 }
+DEFAULT_BOT_PROFILES = [
+    "gptbot",
+    "chatgpt-user",
+    "claudebot",
+    "perplexitybot",
+    "google-extended",
+    "ccbot",
+    "googlebot",
+    "bingbot",
+]
 STOPWORDS = {
     "the", "and", "for", "with", "that", "this", "from", "your", "you", "are", "was", "were", "into",
     "about", "have", "has", "will", "can", "not", "but", "our", "their", "also", "http", "https", "www",
@@ -134,6 +150,10 @@ def _safe_float(value: Any, fallback: float = 0.0) -> float:
         return float(value)
     except Exception:
         return float(fallback)
+
+
+def _safe_text(value: Any) -> str:
+    return str(value or "").strip()
 
 
 def _read_limited_body(response: requests.Response, max_html_bytes: int) -> tuple[bytes, bool]:
@@ -1732,13 +1752,19 @@ def _citation_model_v2(
 
     if str((ingestion or {}).get("status") or "").lower() == "evaluated":
         ingestion_score = min(1.0, max(0.0, _safe_float((ingestion or {}).get("ingestion_score"), _safe_float((ingestion or {}).get("score"), 0.0) / 100.0)))
+        ingestion_confidence = min(1.0, max(0.0, _safe_float((ingestion or {}).get("ingestion_confidence"), 0.55)))
     else:
         ingestion_score = 0.25
+        ingestion_confidence = 0.35
 
     if str((retrieval or {}).get("status") or "").lower() == "evaluated":
         retrieval_score = min(1.0, max(0.0, _safe_float((retrieval or {}).get("avg_score"), 0.0)))
+        retrieval_conf = min(1.0, max(0.0, _safe_float((retrieval or {}).get("retrieval_confidence"), 0.55)))
+        retrieval_variance = _safe_float((retrieval or {}).get("retrieval_variance"), 0.0)
     else:
         retrieval_score = 0.2
+        retrieval_conf = 0.35
+        retrieval_variance = 0.28
 
     raw_probability = (
         (0.25 * ingestion_score)
@@ -1750,21 +1776,53 @@ def _citation_model_v2(
     available = sum(1 for x in [schema_score, segmentation_score, entity_score, ingestion_score, retrieval_score] if x > 0.0)
     support = available / 5.0
     calibrated_probability = (raw_probability * (0.8 + (support * 0.2))) + ((1.0 - support) * 0.03)
+    calibration_v2 = bool(getattr(settings, "LLM_CRAWLER_CALIBRATION_V2_ENABLED", True))
+    if calibration_v2:
+        uncertainty = max(
+            0.0,
+            min(
+                1.0,
+                (1.0 - support) * 0.45
+                + (1.0 - ingestion_confidence) * 0.2
+                + (1.0 - retrieval_conf) * 0.2
+                + min(0.3, retrieval_variance),
+            ),
+        )
+        calibrated_probability = (calibrated_probability * (1.0 - (uncertainty * 0.18))) + (raw_probability * 0.08)
+    else:
+        uncertainty = max(0.0, min(1.0, 1.0 - support))
     calibrated_probability = max(0.0, min(1.0, calibrated_probability))
     calibration_error_estimate = abs(calibrated_probability - raw_probability) * (1.0 - support)
-    confidence = min(1.0, 0.42 + (available * 0.1))
+    confidence = min(
+        1.0,
+        max(
+            0.2,
+            0.28
+            + (available * 0.08)
+            + (ingestion_confidence * 0.18)
+            + (retrieval_conf * 0.2)
+            + ((1.0 - uncertainty) * 0.18),
+        ),
+    )
+    band_half = max(0.04, min(0.22, (1.0 - confidence) * 0.3 + (uncertainty * 0.18)))
+    ci_low = max(0.0, calibrated_probability - band_half)
+    ci_high = min(1.0, calibrated_probability + band_half)
     return {
         "citation_probability": round(float(calibrated_probability), 4),
         "confidence": round(float(max(0.0, min(1.0, confidence))), 4),
-        "version": "v3",
+        "version": "v4" if calibration_v2 else "v3",
         "support_signals": round(float(support), 4),
+        "uncertainty": round(float(uncertainty), 4),
         "calibration_error_estimate": round(float(calibration_error_estimate), 4),
+        "confidence_interval": {"low": round(float(ci_low), 4), "high": round(float(ci_high), 4)},
         "components": {
             "schema_score": round(schema_score, 4),
             "segmentation_score": round(segmentation_score, 4),
             "entity_score": round(entity_score, 4),
             "ingestion_score": round(ingestion_score, 4),
+            "ingestion_confidence": round(ingestion_confidence, 4),
             "retrieval_score": round(retrieval_score, 4),
+            "retrieval_confidence": round(retrieval_conf, 4),
             "raw_probability": round(float(raw_probability), 4),
         },
     }
@@ -2137,6 +2195,120 @@ def _ai_directive_audit(snapshot: Dict[str, Any], policies: Dict[str, Any]) -> D
     }
 
 
+def _directive_status_for_profile(ai_directives: Dict[str, Any], profile: str) -> str:
+    p = str(profile or "").lower().strip()
+    mapping = {
+        "google-extended": "google_extended",
+    }
+    key = mapping.get(p, p)
+    row = (ai_directives.get("profiles") or {}).get(key) or {}
+    status = str(row.get("status") or "").lower().strip()
+    return status or "allowed"
+
+
+def _build_bot_visibility_matrix(
+    *,
+    requested_profiles: List[str],
+    policies: Dict[str, Any],
+    ai_directives: Dict[str, Any],
+    nojs_snapshot: Dict[str, Any],
+    rendered_snapshot: Dict[str, Any] | None,
+    diff: Dict[str, Any],
+    score: Dict[str, Any],
+    js_dependency: Dict[str, Any],
+    gpt_snapshot: Dict[str, Any] | None = None,
+    gbot_snapshot: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    robots_profiles = (policies.get("robots") or {}).get("profiles") or {}
+    rows: List[Dict[str, Any]] = []
+    text_len = int(((nojs_snapshot.get("content") or {}).get("main_text_length") or 0))
+    main_ratio = _safe_float((nojs_snapshot.get("content") or {}).get("main_content_ratio"), 0.0)
+    boilerplate = _safe_float((nojs_snapshot.get("content") or {}).get("boilerplate_ratio"), 0.0)
+    total_score = _safe_float(score.get("total"), 0.0)
+    js_risk = str((js_dependency or {}).get("risk") or "unknown")
+    browser_len = int(((rendered_snapshot or nojs_snapshot).get("content") or {}).get("main_text_length") or 0)
+    browser_len = max(browser_len, text_len, 1)
+
+    base_visibility = (
+        (total_score * 0.45)
+        + (main_ratio * 100.0 * 0.25)
+        + ((1.0 - min(1.0, boilerplate)) * 100.0 * 0.15)
+        + (min(100.0, text_len / 18.0) * 0.15)
+    )
+    base_visibility = max(0.0, min(100.0, base_visibility))
+
+    profiles = list(dict.fromkeys((requested_profiles or []) + DEFAULT_BOT_PROFILES))
+    for profile in profiles:
+        p = str(profile or "").lower().strip()
+        rp = robots_profiles.get(p) or {}
+        robots_allowed = bool(rp.get("allowed", True))
+        directive_status = _directive_status_for_profile(ai_directives, p)
+        access = "blocked" if not robots_allowed else ("partial" if directive_status == "restricted" else "allowed")
+
+        if not robots_allowed:
+            vis = 0.0
+            delta = None
+            reason = str(rp.get("reason") or "blocked_by_robots")
+        else:
+            vis = base_visibility
+            reason = str(rp.get("reason") or "ok")
+            if directive_status == "restricted":
+                vis -= 20.0
+            if js_risk == "high":
+                vis -= 14.0
+            elif js_risk == "medium":
+                vis -= 7.0
+            if p in {"gptbot", "chatgpt-user"} and gpt_snapshot:
+                bot_len = int(((gpt_snapshot.get("content") or {}).get("main_text_length") or 0))
+                ratio = max(0.05, min(1.2, bot_len / max(1, browser_len)))
+                vis *= ratio
+                delta = round(max(0.0, 1.0 - min(1.0, ratio)), 4)
+            elif p in {"googlebot", "google-extended"} and gbot_snapshot:
+                bot_len = int(((gbot_snapshot.get("content") or {}).get("main_text_length") or 0))
+                ratio = max(0.05, min(1.2, bot_len / max(1, browser_len)))
+                vis *= ratio
+                delta = round(max(0.0, 1.0 - min(1.0, ratio)), 4)
+            else:
+                text_cov = _safe_float(diff.get("textCoverage"), 0.0)
+                if text_cov > 0:
+                    vis *= max(0.6, min(1.05, text_cov + 0.2))
+                delta = None
+        vis = round(max(0.0, min(100.0, vis)), 2)
+        risk = "low" if vis >= 75 else "medium" if vis >= 45 else "high"
+        rows.append(
+            {
+                "profile": p,
+                "allowed": robots_allowed,
+                "access": access,
+                "directive_status": directive_status,
+                "content_visibility_score": vis,
+                "content_delta_ratio": delta,
+                "risk": risk,
+                "reason": reason,
+            }
+        )
+
+    visible_scores = [float(r.get("content_visibility_score") or 0.0) for r in rows if str(r.get("access") or "") != "blocked"]
+    avg_visible = round(sum(visible_scores) / len(visible_scores), 2) if visible_scores else 0.0
+    measured_profiles = 0
+    for p in rows:
+        if p.get("content_delta_ratio") is not None:
+            measured_profiles += 1
+    inferred_profiles = max(0, len(rows) - measured_profiles)
+    confidence = min(1.0, max(0.25, 0.4 + ((measured_profiles / max(1, len(rows))) * 0.35) + (0.25 if len(visible_scores) >= 4 else 0.15)))
+    return {
+        "matrix": rows,
+        "bot_visibility_score": avg_visible,
+        "bot_visibility_scores": {str(r.get("profile")): r.get("content_visibility_score") for r in rows},
+        "bot_visibility_confidence": round(confidence, 4),
+        "coverage": {
+            "profiles_total": len(rows),
+            "measured_profiles": measured_profiles,
+            "inferred_profiles": inferred_profiles,
+        },
+    }
+
+
 def _detection_issues(
     snapshot: Dict[str, Any],
     ai_blocks: Dict[str, Any],
@@ -2156,7 +2328,8 @@ def _detection_issues(
         issues.append("Segmentation confidence is low (feed/mixed layout)")
     if float(ai_blocks.get("coverage_percent") or 0) < 35:
         issues.append("Low AI block detection coverage (<35%)")
-    if not (llm_sim or {}).get("enabled"):
+    llm_status = str((llm_sim or {}).get("status") or "").lower()
+    if llm_status in {"", "not_evaluated"}:
         issues.append("LLM simulation not executed")
     if ingestion and str(ingestion.get("status")) == "not_evaluated":
         issues.append(f"Ingestion not evaluated: {ingestion.get('reason')}")
@@ -2380,9 +2553,11 @@ def run_llm_crawler_simulation(
         "meta_robots": ((nojs_snapshot.get("meta") or {}).get("meta_robots") or ""),
         "x_robots_tag": ((nojs_snapshot.get("meta") or {}).get("x_robots_tag") or ""),
     }
-    bot_matrix = []
+    bot_matrix: List[Dict[str, Any]] = []
     robots_profiles = (policies.get("robots") or {}).get("profiles") or {}
-    for profile in profiles:
+    bot_visibility_enabled = bool(getattr(settings, "LLM_CRAWLER_BOT_VISIBILITY_ENABLED", True))
+    matrix_profiles = list(dict.fromkeys((profiles or []) + (DEFAULT_BOT_PROFILES if bot_visibility_enabled else [])))
+    for profile in matrix_profiles:
         bot_matrix.append(
             {
                 "profile": profile,
@@ -2509,9 +2684,8 @@ def run_llm_crawler_simulation(
         issues.append("H1 appears only after JS")
         score["top_issues"] = list(dict.fromkeys(issues))[:10]
     recommendations = _build_recommendations(nojs_snapshot, rendered_snapshot, policies, score)
-    llm_sim = None
-    if bool(getattr(settings, "LLM_SIMULATION_ENABLED", False)):
-        llm_sim = _run_llm_simulation(nojs_snapshot)
+    llm_enabled = bool(getattr(settings, "LLM_SIMULATION_ENABLED", False))
+    llm_sim = _run_llm_simulation(nojs_snapshot, enabled=llm_enabled)
     js_dep = _js_dependency_score(rendered_snapshot, diff, render_status=render_status)
     score["js_dependency_score"] = js_dep.get("score")
     segmentation_payload = (nojs_snapshot.get("segmentation") or {})
@@ -2530,9 +2704,12 @@ def run_llm_crawler_simulation(
     )
     citation_prob = round(float(citation_model.get("citation_probability") or 0.0) * 100.0, 2)
     entities = _extract_entities_v2(nojs_snapshot, rendered_snapshot, structured_data)
-    entity_graph = _build_entity_graph(nojs_snapshot, entities) if bool(getattr(settings, "LLM_CRAWLER_ENTITY_GRAPH_ENABLED", False)) else None
-    if entity_graph:
-        nojs_snapshot["entity_graph"] = entity_graph
+    entity_graph = _build_entity_graph(nojs_snapshot, entities)
+    if not bool(getattr(settings, "LLM_CRAWLER_ENTITY_GRAPH_ENABLED", False)):
+        entity_graph["mode"] = "heuristic_fallback"
+        entity_graph["reason"] = "feature_disabled"
+    nojs_snapshot["entity_graph"] = entity_graph
+    nojs_snapshot["entities"] = entities
     eeat = _compute_eeat(
         nojs_snapshot,
         score,
@@ -2542,7 +2719,7 @@ def run_llm_crawler_simulation(
     ingestion = _llm_ingestion(
         nojs_snapshot,
         diff,
-        llm_enabled=bool(getattr(settings, "LLM_SIMULATION_ENABLED", False)),
+        llm_enabled=llm_enabled,
     )
     content_quality = _content_quality_metrics(nojs_snapshot)
     discoverability = _crawler_path_sim(nojs_snapshot)
@@ -2560,7 +2737,7 @@ def run_llm_crawler_simulation(
     citation_prob = round(float(citation_model.get("citation_probability") or 0.0) * 100.0, 2)
     trust_signal_score = _trust_score(nojs_snapshot)
     content_loss_percent = _content_loss(diff, nojs_snapshot)
-    citation_breakdown = _citation_breakdown(nojs_snapshot, page_type_info)
+    citation_breakdown = _citation_breakdown(nojs_snapshot, page_type_info, ai_understanding=ai_understanding)
     projected_score = _projected_score(score, citation_breakdown)
     projected_waterfall = _projected_score_waterfall(score, citation_breakdown, trust_signal_score)
     answer_preview = _ai_answer_preview(nojs_snapshot, llm_sim, page_type_info)
@@ -2572,6 +2749,19 @@ def run_llm_crawler_simulation(
         metrics_bytes["rendered_text_html_ratio"] = rendered_metrics.get("text_html_ratio")
     ai_blocks = nojs_snapshot.get("ai_blocks") or {}
     ai_directives = _ai_directive_audit(nojs_snapshot, policies)
+    bot_visibility = _build_bot_visibility_matrix(
+        requested_profiles=profiles,
+        policies=policies,
+        ai_directives=ai_directives,
+        nojs_snapshot=nojs_snapshot,
+        rendered_snapshot=rendered_snapshot,
+        diff=diff,
+        score=score,
+        js_dependency=js_dep,
+        gpt_snapshot=gpt_snapshot,
+        gbot_snapshot=gbot_snapshot,
+    )
+    bot_matrix = bot_visibility.get("matrix") or bot_matrix
     snippet_library = _snippet_library()
     critical_blocks = _critical_blocks_checklist(nojs_snapshot, snippet_library, ai_blocks)
     detection_issues = _detection_issues(nojs_snapshot, ai_blocks, llm_sim, ingestion, eeat)
@@ -2642,7 +2832,12 @@ def run_llm_crawler_simulation(
         "diff": diff,
         "policies": policies,
         "score": score,
+        "ai_visibility_score": score.get("total"),
         "bot_matrix": bot_matrix,
+        "bot_visibility_score": bot_visibility.get("bot_visibility_score"),
+        "bot_visibility_scores": bot_visibility.get("bot_visibility_scores"),
+        "bot_visibility_confidence": bot_visibility.get("bot_visibility_confidence"),
+        "bot_visibility_coverage": bot_visibility.get("coverage"),
         "recommendations": recommendations,
         "llm": llm_sim,
         "js_dependency": js_dep,
@@ -2650,6 +2845,9 @@ def run_llm_crawler_simulation(
         "citation_probability": citation_prob,
         "citation_model": citation_model,
         "content_extraction": content_extraction,
+        "extraction_confidence": (content_extraction or {}).get("extraction_confidence"),
+        "extractor_agreement": (content_extraction or {}).get("extractor_agreement_score")
+        or (segmentation_payload.get("extractor_agreement")),
         "content_quality": content_quality,
         "retrieval": retrieval,
         "validation": validation,
@@ -2658,6 +2856,7 @@ def run_llm_crawler_simulation(
         "eeat_score": eeat,
         "vector_quality_score": vector_score,
         "llm_ingestion": ingestion,
+        "ingestion_quality_score": ingestion.get("ingestion_quality_score"),
         "discoverability": discoverability,
         "ai_understanding_score": ai_understanding.get("score"),
         "ai_understanding": ai_understanding,
@@ -2674,6 +2873,9 @@ def run_llm_crawler_simulation(
         "metrics_bytes": metrics_bytes,
         "structured_data": structured_data,
         "segmentation": segmentation_payload,
+        "segment_tree": (segmentation_payload.get("segment_tree") or [])[:80],
+        "main_content_nodes": (segmentation_payload.get("main_content_nodes") or [])[:80],
+        "noise_nodes": (segmentation_payload.get("noise_nodes") or [])[:120],
         "snippet_library": snippet_library,
         "ai_blocks": ai_blocks,
         "critical_blocks": critical_blocks,
@@ -2765,7 +2967,23 @@ def _build_recommendations(nojs: Dict[str, Any], rendered: Optional[Dict[str, An
             "access",
             "WAF/челлендж блокирует ботов — ослабьте правила для известных AI-ботов",
             "+8..14",
-            [f"Challenge reasons: {', '.join(challenge.get('reasons') or []) or '-'}"],
+            [
+                f"Challenge status: {challenge.get('status', 'detected')}",
+                f"Challenge confidence: {challenge.get('confidence', '-')}",
+                f"Challenge reasons: {', '.join(challenge.get('reasons') or []) or '-'}",
+            ],
+            ["network", "body"],
+        )
+    elif str(challenge.get("status") or "") == "suspected":
+        add_rec(
+            "P1",
+            "access",
+            "Обнаружены признаки challenge/WAF — проверьте доступность для AI-ботов",
+            "+3..6",
+            [
+                f"Challenge confidence: {challenge.get('confidence', '-')}",
+                f"Evidence: {', '.join(challenge.get('evidence') or []) or '-'}",
+            ],
             ["network", "body"],
         )
     if resources.get("cookie_wall"):
@@ -2994,35 +3212,80 @@ def _recommendation_diagnostics(
     }
 
 
-def _run_llm_simulation(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+def _run_llm_simulation(snapshot: Dict[str, Any], enabled: bool = True) -> Dict[str, Any]:
     content = snapshot.get("content") or {}
     ranked = _rank_chunks_for_question(snapshot, "What is this page about?", limit=3)
     ranked_text = " ".join([str(x.get("text") or "") for x in ranked])
     text = ranked_text or content.get("main_text_preview") or content.get("readability_text") or ""
-    text = str(text or "")
+    text = str(text or "").strip()
     if not text:
-        return {"enabled": False, "summary": "", "key_facts": [], "entities": [], "scores": {}}
+        text = " ".join(_main_segment_snippets(snapshot, limit=3)).strip()
+    if not text:
+        topic_info = _detect_topic(snapshot, None)
+        text = str(topic_info.get("topic") or "").strip()
+    if not text:
+        meta = snapshot.get("meta") or {}
+        headings = snapshot.get("headings") or {}
+        text = str(meta.get("title") or "").strip() or str((headings.get("h1_texts") or [""])[0]).strip()
     sentences = [s.strip() for s in re.split(r"[.!?]+", text) if s.strip()]
-    summary = " ".join(sentences[:2])[:400]
-    key_facts = sentences[:5]
-    words = re.findall(r"\b[A-ZА-Я][A-Za-zА-Яа-я0-9]+\b", text)
-    entities = list(dict.fromkeys(words))[:10]
+    if not sentences and text:
+        sentences = [text]
+    summary = " ".join(sentences[:2])[:400] if sentences else ""
+    key_facts = [x for x in sentences[:5] if len(x) >= 28]
+    if not key_facts and text:
+        key_facts = [text[:220]]
+
+    entity_graph = snapshot.get("entity_graph") or {}
+    entities: List[str] = []
+    for key in ("organizations", "persons", "products", "software", "locations"):
+        for item in (entity_graph.get(key) or []):
+            raw_name = item if not isinstance(item, dict) else item.get("name")
+            name = str(raw_name or "").strip()
+            if name and name not in entities:
+                entities.append(name[:100])
+    if not entities:
+        extracted_entities = snapshot.get("entities") or {}
+        for key in ("organizations", "persons", "products", "software", "locations"):
+            for item in (extracted_entities.get(key) or []):
+                raw_name = item if not isinstance(item, dict) else item.get("name")
+                name = str(raw_name or "").strip()
+                if name and name not in entities:
+                    entities.append(name[:100])
+    if not entities:
+        words = re.findall(r"\b[A-ZА-Я][A-Za-zА-Яа-я0-9]+\b", text)
+        entities = list(dict.fromkeys(words))[:10]
+
     citation_spans = []
-    for fact in key_facts[:3]:
+    for fact in key_facts[:4]:
         start = text.find(fact)
         if start != -1:
             citation_spans.append({"text": fact[:120], "start": start, "end": start + len(fact)})
+    avg_rank = (sum(float(x.get("score") or 0.0) for x in ranked) / max(1, len(ranked))) if ranked else 0.0
+    text_quality = min(95.0, max(15.0, len(text) / 22.0))
+    rank_bonus = min(18.0, avg_rank * 45.0)
+    answer_quality = round(min(95.0, max(20.0, (text_quality * 0.58) + rank_bonus + (8.0 if len(key_facts) >= 2 else 0.0))), 2)
+    citation_likelihood = round(min(95.0, max(25.0, (answer_quality * 0.72) + (10.0 if citation_spans else 0.0))), 2)
+    recommendation_likelihood = round(min(95.0, max(20.0, (answer_quality * 0.66) + 12.0)), 2)
+    hallucination_risk = round(max(5.0, min(95.0, 100.0 - answer_quality + (12.0 if not citation_spans else 0.0))), 2)
     scores = {
-        "citation_likelihood": 70 if citation_spans else 40,
-        "recommendation_likelihood": 60 if len(text) > 800 else 30,
-        "hallucination_risk": 20 if citation_spans else 40,
-        "answer_quality_score": 60 if len(text) > 800 else 40,
+        "citation_likelihood": citation_likelihood,
+        "recommendation_likelihood": recommendation_likelihood,
+        "hallucination_risk": hallucination_risk,
+        "answer_quality_score": answer_quality,
     }
+    mode = "llm" if enabled else "heuristic_fallback"
+    status = "evaluated" if (summary or key_facts or entities) else "not_evaluated"
+    reason = "ok" if enabled else "feature_disabled_heuristic_fallback"
+    if status == "not_evaluated":
+        reason = "insufficient_content"
     return {
-        "enabled": True,
+        "enabled": bool(enabled),
+        "mode": mode,
+        "status": status,
+        "reason": reason,
         "summary": summary,
         "key_facts": key_facts,
-        "entities": entities,
+        "entities": entities[:10],
         "citation_spans": citation_spans,
         "chunk_ranking_debug": [{"idx": r.get("idx"), "score": r.get("score")} for r in ranked],
         "scores": scores,
@@ -3199,6 +3462,8 @@ def _vector_quality_score(snapshot: Dict[str, Any], entity_graph: Dict[str, Any]
 
 def _llm_ingestion(snapshot: Dict[str, Any], diff: Dict[str, Any], llm_enabled: bool = True) -> Dict[str, Any]:
     content = snapshot.get("content") or {}
+    segmentation = snapshot.get("segmentation") or {}
+    noise = segmentation.get("noise_breakdown") or {}
     chunks = content.get("chunks") or []
     chunks_count = len(chunks)
     if chunks_count == 0:
@@ -3229,26 +3494,57 @@ def _llm_ingestion(snapshot: Dict[str, Any], diff: Dict[str, Any], llm_enabled: 
     chunks_survive_512 = survive_count(512)
     chunks_survive_1024 = survive_count(1024)
     chunks_survive_2048 = survive_count(2048)
-    ingestion_score = round(chunks_survive_1024 / max(1, chunks_count), 4)
+    raw_ingestion_score = round(chunks_survive_1024 / max(1, chunks_count), 4)
     lost = 0.0
     if diff.get("textCoverage") is not None:
         try:
             lost = max(0.0, 1 - float(diff.get("textCoverage")))
         except Exception:
             lost = 0.0
+    main_conf = _safe_float((segmentation.get("main_content_confidence") or {}).get("score"), 0.0)
+    if main_conf > 1.0:
+        main_conf = main_conf / 100.0
+    main_pct = _safe_float(noise.get("main_pct"), 0.0) / 100.0
+    noise_pct = (_safe_float(noise.get("ads_pct"), 0.0) + _safe_float(noise.get("live_pct"), 0.0) + _safe_float(noise.get("nav_pct"), 0.0)) / 100.0
+    readability_norm = max(0.0, min(1.0, readability / 100.0))
+    coverage = _safe_float(diff.get("textCoverage"), 0.0)
+    if coverage <= 0:
+        coverage = max(0.0, 1.0 - lost)
+    calibration_enabled = bool(getattr(settings, "LLM_CRAWLER_CALIBRATION_V2_ENABLED", True))
+    if calibration_enabled:
+        calibrated = (
+            (raw_ingestion_score * 0.45)
+            + (readability_norm * 0.15)
+            + (main_conf * 0.15)
+            + (main_pct * 0.15)
+            + (coverage * 0.10)
+        )
+        calibrated -= min(0.22, noise_pct * 0.35)
+        calibrated = max(0.0, min(1.0, calibrated))
+        ingestion_score = round(calibrated, 4)
+        calibration_error = abs(ingestion_score - raw_ingestion_score)
+        ingestion_confidence = max(0.25, min(1.0, 0.42 + (main_conf * 0.22) + (coverage * 0.2) + ((1.0 - min(1.0, noise_pct)) * 0.16)))
+    else:
+        ingestion_score = raw_ingestion_score
+        calibration_error = 0.0
+        ingestion_confidence = 0.55
+
+    ingestion_quality_score = round(ingestion_score * 100.0, 2)
     ingestion_risk = "low"
-    if lost > 0.5 or avg_quality < 40:
+    if lost > 0.5 or avg_quality < 40 or ingestion_quality_score < 40:
         ingestion_risk = "high"
-    elif lost > 0.3:
+    elif lost > 0.3 or ingestion_quality_score < 65:
         ingestion_risk = "medium"
     payload = _module_status(
         True,
         "ok",
-        float(avg_quality),
+        float(ingestion_quality_score),
         [
             f"Average chunk length: {round(avg_len, 2)}",
             f"Readability score: {round(readability, 2)}",
             f"Lost content percent: {round(lost * 100, 2)}",
+            f"Main content confidence: {round(main_conf, 4)}",
+            f"Noise ratio proxy: {round(noise_pct, 4)}",
         ],
     )
     payload.update(
@@ -3259,10 +3555,15 @@ def _llm_ingestion(snapshot: Dict[str, Any], diff: Dict[str, Any], llm_enabled: 
         "chunks_survive_1024": chunks_survive_1024,
         "chunks_survive_2048": chunks_survive_2048,
         "ingestion_score": ingestion_score,
+        "ingestion_quality_score": ingestion_quality_score,
+        "raw_ingestion_score": raw_ingestion_score,
+        "ingestion_confidence": round(ingestion_confidence, 4),
+        "calibration_error_estimate": round(calibration_error, 4),
         "avg_chunk_quality": avg_quality,
         "lost_content_percent": round(lost * 100, 2),
         "ingestion_risk": ingestion_risk,
         "mode": "llm" if llm_enabled else "heuristic_without_llm",
+        "ingestion_model_version": "v2" if calibration_enabled else "v1",
         }
     )
     if not llm_enabled:
@@ -3299,6 +3600,23 @@ def _ai_understanding(snapshot: Dict[str, Any], llm_sim: Dict[str, Any] | None) 
             + (entity_graph.get("persons") or [])
             + (entity_graph.get("products") or [])
         )[:10]
+    if not entities:
+        extracted_entities = snapshot.get("entities") or {}
+        fallback_entities: List[str] = []
+        for key in ("organizations", "persons", "products", "software", "locations"):
+            for row in (extracted_entities.get(key) or []):
+                if isinstance(row, dict):
+                    name = str(row.get("name") or "").strip()
+                else:
+                    name = str(row or "").strip()
+                if not name or name in fallback_entities:
+                    continue
+                fallback_entities.append(name[:100])
+                if len(fallback_entities) >= 10:
+                    break
+            if len(fallback_entities) >= 10:
+                break
+        entities = fallback_entities
     clarity = _content_clarity(snapshot, entity_graph)
     score = 50
     if topic:
@@ -3363,16 +3681,54 @@ def _content_loss(diff: Dict[str, Any], snapshot: Dict[str, Any]) -> float:
     return round(loss * 100, 2)
 
 
-def _citation_breakdown(snapshot: Dict[str, Any], page_type_info: Dict[str, Any] | None = None) -> Dict[str, Any]:
+def _citation_content_clarity(snapshot: Dict[str, Any], ai_understanding: Dict[str, Any] | None = None) -> float:
+    content = snapshot.get("content") or {}
+    headings = snapshot.get("headings") or {}
+    segmentation = snapshot.get("segmentation") or {}
+    ai_clarity = _safe_float((ai_understanding or {}).get("content_clarity"), -1.0)
+    if ai_clarity >= 0:
+        return min(100.0, max(0.0, ai_clarity))
+    readability = _safe_float(content.get("readability_score"), 0.0)
+    if readability > 0:
+        return min(100.0, max(0.0, readability))
+
+    main_ratio = _safe_float(segmentation.get("main_ratio"), _safe_float(content.get("main_content_ratio"), 0.0))
+    seg_conf = _safe_float((segmentation.get("main_content_confidence") or {}).get("score"), 0.0)
+    if seg_conf > 1.0:
+        seg_conf = seg_conf / 100.0
+    text_len = int(content.get("main_text_length") or 0)
+    text = str(content.get("main_text_preview") or "")
+    words = _tokens(text)
+    unique_ratio = (len(set(words)) / max(1, len(words))) if words else 0.0
+    h1 = int(headings.get("h1") or 0)
+    h2 = int(headings.get("h2") or 0)
+    heading_signal = min(1.0, (0.45 if h1 > 0 else 0.15) + min(0.55, h2 * 0.09))
+    length_signal = min(1.0, text_len / 1800.0)
+    score = (
+        (main_ratio * 42.0)
+        + (heading_signal * 20.0)
+        + (min(1.0, unique_ratio * 2.0) * 18.0)
+        + (length_signal * 15.0)
+        + (seg_conf * 5.0)
+    )
+    if text_len >= 250:
+        score = max(score, 20.0)
+    return round(min(100.0, max(0.0, score)), 2)
+
+
+def _citation_breakdown(
+    snapshot: Dict[str, Any],
+    page_type_info: Dict[str, Any] | None = None,
+    ai_understanding: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
     schema = snapshot.get("schema") or {}
     signals = snapshot.get("signals") or {}
-    content = snapshot.get("content") or {}
     page_type = str((page_type_info or {}).get("page_type") or "article")
-    readability = min(100, float(content.get("readability_score") or 0))
+    content_clarity = _citation_content_clarity(snapshot, ai_understanding=ai_understanding)
     base = {
         "schema": 100 if schema.get("coverage_score", 0) >= 75 else 50 if schema.get("coverage_score", 0) > 0 else 0,
         "author": 100 if signals.get("author_present") else 0,
-        "content_clarity": readability,
+        "content_clarity": content_clarity,
         "bot_accessibility": 100,
         "structure": min(100, (snapshot.get("headings") or {}).get("h2", 0) * 10),
     }

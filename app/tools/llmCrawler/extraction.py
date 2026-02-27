@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Set
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
+from app.config import settings
 from .patterns import detect_ai_blocks
 from .segmentation import segment_content
 try:  # optional dependency
@@ -21,6 +22,10 @@ try:  # optional dependency
     import extruct  # type: ignore
 except Exception:  # pragma: no cover
     extruct = None
+try:  # optional dependency
+    import justext  # type: ignore
+except Exception:  # pragma: no cover
+    justext = None
 
 
 def _safe_text(value: Any) -> str:
@@ -562,23 +567,113 @@ def _extract_social_meta(soup: BeautifulSoup) -> Dict[str, Any]:
 
 
 def detect_challenge(status_code: int | None, headers: Dict[str, Any], html: str) -> Dict[str, Any]:
+    if not bool(getattr(settings, "LLM_CRAWLER_CHALLENGE_V2_ENABLED", True)):
+        reasons: List[str] = []
+        h = {str(k).lower(): _safe_text(v).lower() for k, v in (headers or {}).items()}
+        body = _safe_text(html).lower()
+        if int(status_code or 0) in {401, 403, 429, 503}:
+            reasons.append(f"status_{int(status_code)}")
+        if "cf-ray" in h or "x-sucuri-id" in h or "x-ddos" in h:
+            reasons.append("waf_headers")
+        challenge_markers = [
+            "captcha",
+            "attention required",
+            "cloudflare",
+            "access denied",
+            "verify you are human",
+        ]
+        if any(token in body for token in challenge_markers):
+            reasons.append("challenge_body")
+        return {
+            "is_challenge": bool(reasons),
+            "status": "detected" if reasons else "none",
+            "risk": "high" if reasons else "low",
+            "confidence": 0.72 if reasons else 0.0,
+            "threshold": 0.55,
+            "reasons": reasons,
+            "evidence": reasons[:3],
+        }
+
     reasons: List[str] = []
     h = {str(k).lower(): _safe_text(v).lower() for k, v in (headers or {}).items()}
     body = _safe_text(html).lower()
-    if int(status_code or 0) in {401, 403, 429, 503}:
-        reasons.append(f"status_{int(status_code)}")
-    if "cf-ray" in h or "x-sucuri-id" in h or "x-ddos" in h:
+    score = 0.0
+    evidence: List[str] = []
+
+    code = int(status_code or 0)
+    if code in {403, 429, 503}:
+        score += 0.35
+        reasons.append(f"status_{code}")
+        evidence.append(f"http_status={code}")
+    elif code in {401}:
+        score += 0.18
+        reasons.append(f"status_{code}")
+        evidence.append(f"http_status={code}")
+
+    waf_headers = []
+    if "cf-ray" in h:
+        waf_headers.append("cf-ray")
+    if "cf-mitigated" in h:
+        waf_headers.append("cf-mitigated")
+    if "x-sucuri-id" in h:
+        waf_headers.append("x-sucuri-id")
+    if "x-ddos" in h:
+        waf_headers.append("x-ddos")
+    if "x-akamai" in h or "akamai" in (h.get("server") or ""):
+        waf_headers.append("akamai")
+    if waf_headers:
+        score += 0.28
         reasons.append("waf_headers")
-    challenge_markers = [
-        "captcha",
+        evidence.append(f"headers={','.join(waf_headers[:4])}")
+
+    body_markers = [
+        "/cdn-cgi/challenge-platform",
+        "cf-chl",
         "attention required",
-        "cloudflare",
-        "access denied",
         "verify you are human",
+        "checking your browser",
+        "captcha",
+        "hcaptcha",
+        "g-recaptcha",
+        "bot protection",
+        "just a moment...",
+        "access denied",
     ]
-    if any(token in body for token in challenge_markers):
+    marker_hits = [token for token in body_markers if token in body]
+    if marker_hits:
+        # Strong weight only for explicit challenge markers to reduce false positives.
+        strong = any(tok in marker_hits for tok in ["/cdn-cgi/challenge-platform", "cf-chl", "hcaptcha", "g-recaptcha"])
+        score += 0.44 if strong else 0.24
         reasons.append("challenge_body")
-    return {"is_challenge": bool(reasons), "reasons": reasons}
+        evidence.append(f"markers={','.join(marker_hits[:4])}")
+
+    script_hits = []
+    if re.search(r"(challenge-platform|cf_chl|turnstile|hcaptcha|recaptcha)", body):
+        script_hits.append("challenge_script")
+    if script_hits:
+        score += 0.22
+        reasons.append("challenge_scripts")
+        evidence.extend(script_hits[:2])
+
+    confidence = round(min(1.0, score), 3)
+    threshold = 0.55
+    is_challenge = confidence >= threshold
+    if is_challenge:
+        status = "detected"
+    elif confidence >= 0.35:
+        status = "suspected"
+    else:
+        status = "none"
+    risk = "high" if confidence >= 0.8 else "medium" if confidence >= 0.55 else "low"
+    return {
+        "is_challenge": bool(is_challenge),
+        "status": status,
+        "risk": risk,
+        "confidence": confidence,
+        "threshold": threshold,
+        "reasons": reasons,
+        "evidence": evidence[:6],
+    }
 
 
 def detect_resource_barriers(final_url: str, headers: Dict[str, Any], html: str, soup: BeautifulSoup) -> Dict[str, Any]:
@@ -672,8 +767,10 @@ def build_snapshot(
     links = _extract_links(soup, final_url, limit=20)
 
     # Reader-mode variants
+    fusion_enabled = bool(getattr(settings, "LLM_CRAWLER_FUSION_ENGINE_ENABLED", True))
     readability_text = ""
     trafilatura_text = ""
+    justext_text = ""
     if Document:
         try:
             readability_text = _safe_text(Document(html).summary())[:5000]
@@ -684,6 +781,14 @@ def build_snapshot(
             trafilatura_text = _safe_text(trafilatura.extract(html, url=final_url) or "")[:5000]
         except Exception:
             trafilatura_text = ""
+    if fusion_enabled and justext:
+        try:
+            stoplist = justext.get_stoplist("English")
+            paragraphs = justext.justext(html, stoplist)
+            kept = [p.text for p in paragraphs if not bool(getattr(p, "is_boilerplate", False))]
+            justext_text = _safe_text(" ".join(kept))[:5000]
+        except Exception:
+            justext_text = ""
 
     segmentation = segment_content(
         soup=soup,
@@ -693,6 +798,8 @@ def build_snapshot(
         headings=headings,
         readability_text=readability_text,
         trafilatura_text=trafilatura_text,
+        justext_text=justext_text if fusion_enabled else "",
+        fusion_enabled=fusion_enabled,
     )
     content_extraction = segmentation.get("content_extraction") or {}
     main_text = _safe_text(segmentation.get("main_text") or raw_main_text)
@@ -813,6 +920,7 @@ def build_snapshot(
             "main_text_preview": main_text[:2000],
             "readability_text": readability_text,
             "trafilatura_text": trafilatura_text,
+            "justext_text": justext_text,
             "main_content_ratio": round(main_content_ratio, 4),
             "boilerplate_ratio": round(boilerplate_ratio, 4),
             "noise_breakdown": segmentation.get("noise_breakdown") or {},
@@ -869,6 +977,9 @@ def build_snapshot(
             "confidence": segmentation.get("confidence"),
             "extractor_agreement": segmentation.get("extractor_agreement"),
             "main_selectors": segmentation.get("main_selectors") or [],
+            "segment_tree": (segmentation.get("segment_tree") or [])[:80],
+            "main_content_nodes": (segmentation.get("main_content_nodes") or [])[:80],
+            "noise_nodes": (segmentation.get("noise_nodes") or [])[:120],
             "content_extraction": content_extraction,
             "navigation_detection": segmentation.get("navigation_detection") or {},
             "ads_detection": segmentation.get("ads_detection") or {},

@@ -60,6 +60,14 @@ _UTILITY_HINT_RE = re.compile(
     r"(contact|contacts|support|phone|email|address|privacy|terms|cookie|login|signup|register|cta)",
     flags=re.I,
 )
+_REVIEW_RE = re.compile(r"(review|rating|testimonial|case study|обзор|рейтинг|отзыв)", flags=re.I)
+_FAQ_RE = re.compile(r"(faq|frequently asked|q&a|question|вопрос|ответ)", flags=re.I)
+_PRODUCT_RE = re.compile(r"(product|sku|price|pricing|buy|cart|checkout|товар|цена|купить)", flags=re.I)
+_CATEGORY_RE = re.compile(r"(category|catalog|collection|tag|категор|раздел)", flags=re.I)
+_LEGAL_RE = re.compile(r"(privacy|terms|policy|legal|gdpr|cookies|оферт|политик|условия)", flags=re.I)
+_HEADER_HINT_RE = re.compile(r"(header|topbar|navbar|site-header)", flags=re.I)
+_SIDEBAR_HINT_RE = re.compile(r"(sidebar|side-nav|aside|filter|facets?)", flags=re.I)
+_NOISE_RE = re.compile(r"(related posts|you may also like|recommended|similar items|share this|поделиться)", flags=re.I)
 _LINKISH_HINTS = {
     "home",
     "menu",
@@ -217,6 +225,36 @@ def _heading_based_text(soup: Any) -> str:
     return _norm(" ".join(parts))
 
 
+def _landmark_text(soup: Any) -> str:
+    parts: List[str] = []
+    selectors = [
+        "main",
+        "article",
+        "[role='main']",
+        "section[role='main']",
+        "section.content",
+        "div.content",
+        "div.article",
+    ]
+    for node in soup.select(", ".join(selectors)):
+        text = _norm(" ".join(getattr(node, "stripped_strings", [])))
+        if _word_count(text) < 30:
+            continue
+        parts.append(text)
+        if len(parts) >= 12:
+            break
+    return _norm(" ".join(parts))
+
+
+def _dom_depth(node: Any) -> int:
+    depth = 0
+    cur = node
+    while getattr(cur, "parent", None) is not None and depth < 64:
+        depth += 1
+        cur = cur.parent
+    return depth
+
+
 def _selector_key(node: Any) -> str:
     tag = str(getattr(node, "name", "") or "").lower()
     classes = [str(x).lower() for x in (getattr(node, "get", lambda *_: [])("class", []) or [])]
@@ -294,6 +332,13 @@ def _classify_block(
         reasons.append("live/score markers")
         return "live_scores", reasons, 0.84, mega_hint
 
+    if _HEADER_HINT_RE.search(attrs) and link_density > 0.2:
+        reasons.append("header/navigation hints")
+        return "header", reasons, 0.8, mega_hint
+    if _SIDEBAR_HINT_RE.search(attrs) and link_density > 0.18:
+        reasons.append("sidebar hints")
+        return "sidebar", reasons, 0.8, mega_hint
+
     if tag in {"footer"}:
         reasons.append("footer tag")
         return "footer", reasons, 0.86, mega_hint
@@ -309,6 +354,29 @@ def _classify_block(
     if link_density > 0.58 and text_density < 0.22:
         reasons.append("high link density")
         return "nav", reasons, 0.82, mega_hint
+
+    if _CATEGORY_RE.search(attrs) and link_density >= 0.2:
+        reasons.append("category/catalog hints")
+        return "category", reasons, 0.78, mega_hint
+
+    if _REVIEW_RE.search(attrs) or _REVIEW_RE.search(text):
+        reasons.append("review/testimonial markers")
+        return "reviews", reasons, 0.76, mega_hint
+    if _FAQ_RE.search(attrs) or _FAQ_RE.search(text):
+        reasons.append("faq markers")
+        return "faq", reasons, 0.78, mega_hint
+    if _PRODUCT_RE.search(attrs) or (_PRODUCT_RE.search(text) and words >= 20):
+        reasons.append("product/commerce markers")
+        return "product", reasons, 0.77, mega_hint
+    if _LEGAL_RE.search(attrs) or _LEGAL_RE.search(text):
+        reasons.append("legal/policy markers")
+        return "legal", reasons, 0.8, mega_hint
+    if _CTA_RE.search(text):
+        reasons.append("cta markers")
+        return "cta", reasons, 0.75, mega_hint
+    if _NOISE_RE.search(text):
+        reasons.append("generic recommendation/noise block")
+        return "noise", reasons, 0.72, mega_hint
 
     utility_match = bool(_UTILITY_HINT_RE.search(attrs) or _UTILITY_HINT_RE.search(text))
     has_contact = bool(_EMAIL_RE.search(text) or _PHONE_RE.search(text))
@@ -334,6 +402,8 @@ def segment_content(
     headings: Dict[str, Any] | None = None,
     readability_text: str | None = None,
     trafilatura_text: str | None = None,
+    justext_text: str | None = None,
+    fusion_enabled: bool = True,
     max_segments: int = 120,
 ) -> Dict[str, Any]:
     """Segment page content into main/noise classes with extractor fusion."""
@@ -384,17 +454,23 @@ def segment_content(
         link_density = round(float(link_count / max(1, words)), 4)
         unique_score = _unique_ratio(raw)
         length_norm = min(1.0, words / 220.0)
+        depth = _dom_depth(node)
+        depth_weight = max(0.2, 1.0 - min(0.7, abs(depth - 8) / 14.0))
         pos_ratio = idx / max(1, total_candidates - 1)
         position_weight = max(0.15, 1.0 - abs(pos_ratio - 0.45) * 1.4)
+        schema_hint = bool(getattr(node, "get", lambda *_: "")("itemtype") or getattr(node, "get", lambda *_: "")("typeof"))
+        schema_weight = 1.0 if schema_hint else 0.55
         rep_key = " ".join(_words(raw)[:16])
         repetition_counter[rep_key] += 1
         repetition_score = min(1.0, (repetition_counter[rep_key] - 1) / 4.0)
         block_score = (
-            (length_norm * 0.35)
-            + ((1.0 - min(1.0, link_density)) * 0.25)
-            + (priority * 0.20)
-            + (position_weight * 0.10)
-            + (unique_score * 0.10)
+            (length_norm * 0.30)
+            + ((1.0 - min(1.0, link_density)) * 0.22)
+            + (priority * 0.17)
+            + (position_weight * 0.08)
+            + (unique_score * 0.08)
+            + (depth_weight * 0.08)
+            + (schema_weight * 0.07)
         )
         block_score = max(0.0, min(1.0, block_score))
         total_links += link_count
@@ -414,13 +490,13 @@ def segment_content(
             utility_chars += len(raw)
 
         seg_class = "supporting"
-        if seg_type in {"nav", "footer"}:
+        if seg_type in {"nav", "footer", "header", "sidebar", "category"}:
             seg_class = "navigation"
-        elif seg_type in {"ads", "live_scores"}:
+        elif seg_type in {"ads", "live_scores", "noise"}:
             seg_class = "boilerplate"
-        elif seg_type == "utility":
+        elif seg_type in {"utility", "cta", "legal"}:
             seg_class = "utility"
-        elif seg_type == "main":
+        elif seg_type in {"main", "reviews", "faq", "product"}:
             if block_score >= 0.62 and words >= 70:
                 seg_class = "main"
             else:
@@ -449,6 +525,9 @@ def segment_content(
                 "position_weight": round(position_weight, 4),
                 "unique_score": round(unique_score, 4),
                 "repetition_score": round(repetition_score, 4),
+                "depth": depth,
+                "depth_weight": round(depth_weight, 4),
+                "schema_hint": bool(schema_hint),
                 "confidence": round(conf, 3),
                 "reasons": reasons[:3],
                 "text": raw[:500],
@@ -458,12 +537,15 @@ def segment_content(
     dom_main_text = _norm(" ".join(main_parts))
     dom_supporting_text = _norm(" ".join(supporting_parts))
     heading_based = _heading_based_text(soup)
+    landmark_text = _landmark_text(soup)
     extractor_texts = [
         str(extracted_text or ""),
         str(readability_text or ""),
         str(trafilatura_text or ""),
+        str(justext_text or ""),
         dom_main_text,
         heading_based,
+        landmark_text,
     ]
     agreement = _extractor_agreement(extractor_texts)
 
@@ -473,6 +555,9 @@ def segment_content(
         "readability": str(readability_text or ""),
         "trafilatura": str(trafilatura_text or ""),
     }
+    if fusion_enabled:
+        extractor_map["semantic_landmark"] = landmark_text
+        extractor_map["justext"] = str(justext_text or "")
     extractor_scores = {
         k: _extractor_quality(v, heading_terms)
         for k, v in extractor_map.items()
@@ -495,6 +580,36 @@ def segment_content(
         chosen = _norm(str(extractor_map.get(primary_extractor) or ""))
         if _word_count(chosen) >= _word_count(main_text):
             main_text = chosen
+    # Weighted fusion: when extractors disagree, merge top candidates to preserve semantic coverage.
+    weighted_candidates = [
+        (name, _norm(text), float(extractor_scores.get(name) or 0.0))
+        for name, text in extractor_map.items()
+        if _word_count(text) >= 55
+    ]
+    weighted_candidates.sort(key=lambda x: x[2], reverse=True)
+    if fusion_enabled and agreement < 0.42 and len(weighted_candidates) >= 2:
+        merged_parts: List[str] = []
+        seen = set()
+        for name, text, score in weighted_candidates[:3]:
+            if score < 0.2:
+                continue
+            for sent in re.split(r"(?<=[.!?])\s+", text):
+                clean = _norm(sent)
+                if _word_count(clean) < 8:
+                    continue
+                key = clean.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                merged_parts.append(clean)
+                if len(merged_parts) >= 24:
+                    break
+            if len(merged_parts) >= 24:
+                break
+        merged_text = _norm(" ".join(merged_parts))
+        if _word_count(merged_text) >= _word_count(main_text):
+            main_text = merged_text
+            primary_extractor = "weighted_merge"
     main_text = main_text[:140000]
 
     counts = {"main": 0, "ads": 0, "live_scores": 0, "nav": 0, "footer": 0, "utility": 0}
@@ -547,13 +662,46 @@ def segment_content(
     level = "high" if conf >= 0.75 else "medium" if conf >= 0.5 else "low"
     nav_ratio = round(float(nav_links / max(1, total_links)), 4) if total_links else 0.0
 
+    extraction_confidence = round(min(1.0, max(0.0, (agreement * 0.45) + (max(extractor_scores.values() or [0.0]) * 0.55))), 4)
+    if extraction_confidence >= 0.78:
+        confidence_reason = "Strong agreement and dense semantic overlap across extractors."
+    elif extraction_confidence >= 0.55:
+        confidence_reason = "Moderate extractor agreement; fused primary content selected."
+    else:
+        confidence_reason = "Low extractor agreement; fallback merge used to preserve meaning."
+    if not fusion_enabled:
+        confidence_reason = "Legacy extractor pipeline (fusion disabled by feature flag)."
+
+    segment_tree = [
+        {
+            "id": int(seg.get("id") or 0),
+            "type": seg.get("type"),
+            "segment_class": seg.get("segment_class"),
+            "selector": seg.get("selector"),
+            "depth": int(seg.get("depth") or 0),
+            "block_score": seg.get("block_score"),
+            "confidence": seg.get("confidence"),
+        }
+        for seg in segments[:80]
+    ]
+    main_nodes = [int(seg.get("id") or 0) for seg in segments if str(seg.get("segment_class") or "") == "main"][:80]
+    noise_nodes = [
+        int(seg.get("id") or 0)
+        for seg in segments
+        if str(seg.get("segment_class") or "") in {"navigation", "utility", "boilerplate"}
+    ][:120]
+
     return {
         "content_segments": segments[:60],
         "main_text": main_text,
         "content_extraction": {
             "primary_extractor": primary_extractor,
             "extractor_scores": extractor_scores,
-            "extraction_confidence": round(min(1.0, max(0.0, (agreement * 0.45) + (max(extractor_scores.values() or [0.0]) * 0.55))), 4),
+            "extraction_confidence": extraction_confidence,
+            "extractor_agreement_score": agreement,
+            "confidence_reason": confidence_reason,
+            "coverage_percent": round(main_text_ratio * 100.0, 2),
+            "available_extractors": len([x for x in extractor_map.values() if _word_count(str(x or "")) >= 30]),
         },
         "noise_breakdown": breakdown,
         "main_content_confidence": {
@@ -571,6 +719,9 @@ def segment_content(
         "confidence": round(conf, 4),
         "extractor_agreement": agreement,
         "main_selectors": [k for k, _ in main_selectors.most_common(6)],
+        "segment_tree": segment_tree,
+        "main_content_nodes": main_nodes,
+        "noise_nodes": noise_nodes,
         "navigation_detection": {
             "mega_menu_detected": bool(mega_menu_detected),
             "nav_link_ratio": nav_ratio,
@@ -585,5 +736,5 @@ def segment_content(
             "semantic_density": round(semantic_density, 4),
             "text_density": round(text_density_main, 4),
         },
-        "segment_version": "seg-fusion-v2",
+        "segment_version": "seg-fusion-v3" if fusion_enabled else "seg-fusion-v2",
     }
