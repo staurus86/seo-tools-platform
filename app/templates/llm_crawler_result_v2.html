@@ -1,72 +1,79 @@
 {% extends "base.html" %}
 {% block title %}LLM Crawler Simulation v2{% endblock %}
 {% block content %}
-<div class="llm-v2 max-w-6xl mx-auto py-6 space-y-6 text-slate-900">
-  <div class="flex items-center justify-between">
+<div class="llm-v2 max-w-6xl mx-auto py-6 space-y-6">
+  <div class="v2-topbar flex items-center justify-between">
     <div>
-      <a href="/" class="text-blue-500 hover:text-blue-700 text-sm"><i class="fas fa-arrow-left mr-1"></i>Назад</a>
-      <h2 class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-2">LLM Crawler Simulation v2</h2>
-      <p class="text-sm text-slate-500">Job ID: <span class="font-mono">{{ job_id }}</span></p>
+      <a href="/" class="v2-back text-sm"><i class="fas fa-arrow-left mr-1"></i>Назад</a>
+      <h2 class="text-3xl font-bold mt-2">LLM Crawler Simulation v2</h2>
+      <p class="text-sm subtle">Job ID: <span class="font-mono">{{ job_id }}</span></p>
     </div>
     <div class="flex gap-2">
-      <button id="v2-export-json" class="px-3 py-2 bg-slate-700 text-white rounded-lg text-sm hover:bg-slate-800"><i class="fas fa-download mr-1"></i>JSON</button>
-      <button id="v2-export-docx" class="px-3 py-2 bg-slate-600 text-white rounded-lg text-sm hover:bg-slate-700"><i class="fas fa-file-word mr-1"></i>DOCX</button>
-      <button id="v2-export-html" class="px-3 py-2 bg-slate-500 text-white rounded-lg text-sm hover:bg-slate-600"><i class="fas fa-file-code mr-1"></i>HTML</button>
+      <button id="v2-export-json" class="v2-btn v2-btn-primary"><i class="fas fa-download mr-1"></i>JSON</button>
+      <button id="v2-export-docx" class="v2-btn v2-btn-secondary"><i class="fas fa-file-word mr-1"></i>DOCX</button>
+      <button id="v2-export-html" class="v2-btn v2-btn-neutral"><i class="fas fa-file-code mr-1"></i>HTML</button>
     </div>
   </div>
 
   <div id="v2-hero" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
 
-  <div id="v2-ai-understands" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
+  <div id="v2-ai-understands" class="panel"></div>
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div id="v2-loss" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
-    <div id="v2-citation" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
+    <div id="v2-loss" class="panel"></div>
+    <div id="v2-citation" class="panel"></div>
   </div>
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div id="v2-trust" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
-    <div id="v2-fix" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
+    <div id="v2-trust" class="panel"></div>
+    <div id="v2-fix" class="panel"></div>
   </div>
 
-  <div id="v2-reasons" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
+  <div id="v2-reasons" class="panel"></div>
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div id="v2-preview" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
-    <div id="v2-discover" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
+    <div id="v2-preview" class="panel"></div>
+    <div id="v2-discover" class="panel"></div>
   </div>
+
+  <div id="v2-dom-diff" class="panel"></div>
 
   <div id="v2-critical" class="grid grid-cols-1 md:grid-cols-3 gap-3"></div>
 
-  <div id="v2-bot-matrix" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
+  <div id="v2-bot-matrix" class="panel"></div>
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div id="v2-content-vis" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
-    <div id="v2-llm-sim" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
+    <div id="v2-content-vis" class="panel"></div>
+    <div id="v2-llm-sim" class="panel"></div>
   </div>
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div id="v2-cloaking" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
-    <div id="v2-entity-eeat" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
+    <div id="v2-cloaking" class="panel"></div>
+    <div id="v2-entity-eeat" class="panel"></div>
   </div>
 
-  <div id="v2-schema" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
+  <div id="v2-schema" class="panel"></div>
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div id="v2-links" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
-    <div id="v2-access" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
+    <div id="v2-links" class="panel"></div>
+    <div id="v2-access" class="panel"></div>
   </div>
 
-  <div id="v2-tech" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
+  <div id="v2-tech" class="panel"></div>
 
-  <div id="v2-chunks" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
+  <div id="v2-chunks" class="panel"></div>
 
-  <div id="v2-recs" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
+  <div id="v2-recs" class="panel"></div>
 </div>
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/llm-crawler-v2.css?v={{ app_version }}">
 {% endblock %}
 
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
 <script>
   window.llmJobId = "{{ job_id }}";
 </script>

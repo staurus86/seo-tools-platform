@@ -1,427 +1,591 @@
 const V2_API = '/api/tools/llm-crawler';
 
-function riskColor(val) {
-  if (val >= 80) return 'text-emerald-600';
-  if (val >= 50) return 'text-amber-500';
-  return 'text-rose-600';
+function _esc(v) {
+  return String(v ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
-function clampScore(n) {
-  if (n === null || n === undefined) return '-';
-  const v = Number(n);
-  if (Number.isNaN(v)) return '-';
-  return Math.max(0, Math.min(100, v));
+function _num(v, fallback = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
 }
 
-function meter(value) {
-  const val = Math.max(0, Math.min(100, Number(value) || 0));
-  const color = val >= 80 ? 'bg-emerald-500' : val >= 50 ? 'bg-amber-500' : 'bg-rose-500';
-  return `<div class="h-2 bg-slate-200 rounded-full overflow-hidden"><div class="h-2 ${color}" style="width:${val}%"></div></div>`;
+function _pct(v, fallback = '-') {
+  if (v === null || v === undefined || v === '') return fallback;
+  const n = _num(v, NaN);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(100, Math.round(n * 100) / 100));
 }
 
-async function fetchJob(jobId) {
+function _riskClass(score) {
+  if (score >= 80) return 'risk-low';
+  if (score >= 50) return 'risk-mid';
+  return 'risk-high';
+}
+
+function _scoreColor(score) {
+  if (score >= 80) return '#16a34a';
+  if (score >= 50) return '#d97706';
+  return '#dc2626';
+}
+
+function _meter(value) {
+  const val = Math.max(0, Math.min(100, _num(value, 0)));
+  const color = val >= 80 ? '#16a34a' : val >= 50 ? '#d97706' : '#dc2626';
+  return `<div class="meter-track"><div class="meter-fill" style="width:${val}%;background:${color}"></div></div>`;
+}
+
+function _setHTML(id, html) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = html;
+}
+
+function _lucide() {
+  if (window.lucide && typeof window.lucide.createIcons === 'function') {
+    window.lucide.createIcons();
+  }
+}
+
+async function _fetchJob(jobId) {
   const resp = await fetch(`${V2_API}/jobs/${encodeURIComponent(jobId)}`);
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return resp.json();
 }
 
-function renderHero(result) {
-  const score = clampScore((result.score || {}).total);
-  const citation = clampScore(result.citation_probability);
-  const eeat = clampScore((result.eeat_score || {}).score);
-  const ingestion = clampScore((result.llm_ingestion || {}).avg_chunk_quality);
-  const jsRisk = clampScore((result.js_dependency || {}).score);
-  const color = score >= 80 ? 'text-emerald-600' : score >= 50 ? 'text-amber-500' : 'text-rose-600';
-  const ring = score >= 80 ? 'stroke-emerald-500' : score >= 50 ? 'stroke-amber-500' : 'stroke-rose-500';
-  document.getElementById('v2-hero').innerHTML = `
-    <div class="hero-score rounded-2xl p-6 shadow card">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2 text-slate-600">
-          <i class="fas fa-brain text-slate-500"></i>
-          <span class="font-semibold">AI Visibility Score</span>
+function _renderHero(result) {
+  const score = _pct(result?.score?.total, 0);
+  const projected = _pct(result?.projected_score_after_fixes, score);
+  const citation = _pct(result?.citation_probability, 0);
+  const eeat = _pct(result?.eeat_score?.score, 0);
+  const ingest = _pct(result?.llm_ingestion?.avg_chunk_quality, 0);
+  const js = _pct(result?.js_dependency?.score, 0);
+  const pillClass = _riskClass(score);
+  const pillText = score >= 80 ? 'Excellent' : score >= 50 ? 'Needs work' : 'Critical';
+  const ringColor = _scoreColor(score);
+  const ringDeg = Math.round((score / 100) * 360);
+  _setHTML('v2-hero', `
+    <div class="panel p-5 md:p-6">
+      <div class="flex items-start justify-between gap-5 flex-wrap">
+        <div class="flex gap-4">
+          <div class="score-ring" style="background: conic-gradient(${ringColor} ${ringDeg}deg, #dbe5f3 0deg);">
+            <div class="score-ring-inner">
+              <div class="score-ring-value">${score}</div>
+              <div class="score-ring-label">Score</div>
+            </div>
+          </div>
+          <div>
+            <div class="section-title flex items-center gap-2"><i data-lucide="sparkles" class="w-4 h-4"></i>AI Visibility Overview</div>
+            <div class="metric-kpi">${score}<span class="text-xl font-semibold subtle">/100</span></div>
+            <div class="subtle text-sm mt-1">Projected after fixes: <span class="font-semibold text-emerald-700">${projected}/100</span></div>
+          </div>
         </div>
-        <div class="pill ${score>=80?'pill-success':score>=50?'pill-warn':'pill-error'}">${score>=80?'Excellent':score>=50?'Needs work':'Poor'}</div>
+        <span class="risk-pill ${pillClass}">${pillText}</span>
       </div>
-      <div class="mt-4 flex items-center gap-6">
-        <div class="relative w-32 h-32">
-          <svg viewBox="0 0 36 36" class="w-32 h-32">
-            <path class="text-slate-200" stroke-width="4" stroke="currentColor" fill="none" d="M18 2a16 16 0 1 1 0 32 16 16 0 0 1 0-32"></path>
-            <path class="${ring}" stroke-width="4" stroke-linecap="round" fill="none"
-              d="M18 2a16 16 0 1 1 0 32 16 16 0 0 1 0-32"
-              stroke-dasharray="${score},100"></path>
-          </svg>
-          <div class="absolute inset-0 flex flex-col items-center justify-center">
-            <div class="text-3xl font-bold ${color}">${score}</div>
-            <div class="text-xs text-slate-500">/100</div>
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-3 text-sm text-slate-700">
-          <div class="card p-3 rounded-xl border border-slate-200">
-            <div class="text-xs text-slate-500">Citation probability</div>
-            <div class="text-lg font-semibold ${riskColor(citation)}">${citation}%</div>
-          </div>
-          <div class="card p-3 rounded-xl border border-slate-200">
-            <div class="text-xs text-slate-500">EEAT score</div>
-            <div class="text-lg font-semibold ${riskColor(eeat)}">${eeat}</div>
-          </div>
-          <div class="card p-3 rounded-xl border border-slate-200">
-            <div class="text-xs text-slate-500">LLM ingestion quality</div>
-            <div class="text-lg font-semibold ${riskColor(ingestion)}">${ingestion}</div>
-          </div>
-          <div class="card p-3 rounded-xl border border-slate-200">
-            <div class="text-xs text-slate-500">JS dependency risk</div>
-            <div class="text-lg font-semibold ${riskColor(100-jsRisk)}">${jsRisk === '-'?'-':jsRisk}</div>
-          </div>
-        </div>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-5">
+        <div class="card p-3 bg-slate-50 border-slate-200"><div class="subtle text-xs">Citation probability</div><div class="font-bold text-lg">${citation}%</div>${_meter(citation)}</div>
+        <div class="card p-3 bg-slate-50 border-slate-200"><div class="subtle text-xs">EEAT score</div><div class="font-bold text-lg">${eeat}%</div>${_meter(eeat)}</div>
+        <div class="card p-3 bg-slate-50 border-slate-200"><div class="subtle text-xs">Ingestion quality</div><div class="font-bold text-lg">${ingest}%</div>${_meter(ingest)}</div>
+        <div class="card p-3 bg-slate-50 border-slate-200"><div class="subtle text-xs">JS dependency risk</div><div class="font-bold text-lg">${js}%</div>${_meter(100 - js)}</div>
       </div>
     </div>
-  `;
+  `);
 }
 
-function renderCritical(result) {
-  const issues = (result.score?.top_issues || []).slice(0,6);
-  const good = issues.length === 0 ? ['No critical issues detected'] : [];
-  const cards = issues.map(t=> `<div class="card bg-rose-50 border border-rose-200 rounded-xl p-3 text-rose-800 text-sm flex gap-2"><i class="fas fa-alert text-rose-500"></i><span>${t}</span></div>`).join('') +
-    good.map(t=> `<div class="card bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-emerald-800 text-sm flex gap-2"><i class="fas fa-check text-emerald-600"></i><span>${t}</span></div>`).join('');
-  document.getElementById('v2-critical').innerHTML = cards;
+function _renderWhatAI(result) {
+  const ai = result?.ai_understanding || {};
+  const signals = result?.nojs?.signals || {};
+  const graph = result?.entity_graph || {};
+  const schemaTypes = result?.nojs?.schema?.jsonld_types || [];
+  const hasOrg = Array.isArray(graph.organizations) ? graph.organizations.length > 0 : schemaTypes.includes('Organization');
+  const topic = ai.topic || result?.llm?.summary || 'Topic not detected';
+  const confidence = _pct(ai.score, 0);
+  const entities = Array.isArray(ai.entities) ? ai.entities.slice(0, 8) : [];
+  _setHTML('v2-ai-understands', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="brain" class="w-4 h-4"></i>What AI Actually Understands</div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="card p-4 bg-slate-50 border-slate-200">
+        <div class="subtle text-xs">Topic detected</div>
+        <div class="font-semibold mt-1">${_esc(topic)}</div>
+        <div class="subtle text-xs mt-3">Confidence</div>
+        ${_meter(confidence)}
+      </div>
+      <div class="card p-4 bg-slate-50 border-slate-200 text-sm space-y-1">
+        <div>Organization: ${hasOrg ? '✅' : '❌'}</div>
+        <div>Product/entity detected: ${entities.length ? '✅' : '❌'}</div>
+        <div>Author: ${signals.author_present ? '✅' : '❌'}</div>
+        <div>Primary intent: ${_esc(ai.intent || 'informational')}</div>
+        <div>Content clarity: <span class="font-semibold">${_pct(ai.content_clarity, 0)}%</span></div>
+        <div class="subtle text-xs mt-2">Detected entities: ${entities.length ? _esc(entities.join(', ')) : 'not enough data'}</div>
+      </div>
+    </div>
+  `);
 }
 
-function renderBotMatrix(result) {
-  const matrix = result.bot_matrix || [];
-  const rows = matrix.map(r=>{
-    const allowed = r.allowed;
-    const icon = allowed ? '<i class="fas fa-check text-emerald-500"></i>' : '<i class="fas fa-ban text-rose-500"></i>';
-    return `<tr class="border-t border-slate-100">
-      <td class="p-2 font-semibold">${r.profile}</td>
-      <td class="p-2">${icon} ${allowed?'Allowed':'Blocked'}</td>
-      <td class="p-2">${r.reason||'-'}</td>
-    </tr>`;
-  }).join('');
-  document.getElementById('v2-bot-matrix').innerHTML = `
-    <div class="flex items-center justify-between mb-2">
-      <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Bot Access Matrix</h3>
+function _renderLoss(result) {
+  const extracted = _num(result?.nojs?.content?.main_text_length, 0);
+  const rendered = _num(result?.rendered?.content?.main_text_length, extracted);
+  const loss = _pct(result?.content_loss_percent, Math.max(0, Math.round((1 - extracted / Math.max(1, rendered)) * 100)));
+  const missing = Array.isArray(result?.diff?.missing) ? result.diff.missing : [];
+  _setHTML('v2-loss', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="scissors" class="w-4 h-4"></i>Content Loss Visualization</div>
+    <div class="grid grid-cols-3 gap-3 text-sm">
+      <div class="card p-3 bg-slate-50 border-slate-200"><div class="subtle text-xs">Total HTML text</div><div class="font-semibold">${rendered}</div></div>
+      <div class="card p-3 bg-slate-50 border-slate-200"><div class="subtle text-xs">Extracted main text</div><div class="font-semibold">${extracted}</div></div>
+      <div class="card p-3 bg-slate-50 border-slate-200"><div class="subtle text-xs">Lost content</div><div class="font-semibold">${loss}%</div>${_meter(100 - loss)}</div>
     </div>
-    <div class="overflow-auto">
-      <table class="min-w-full text-sm">
-        <thead class="text-left text-slate-500 uppercase text-xs">
-          <tr><th class="p-2">Bot</th><th class="p-2">Access</th><th class="p-2">Reason</th></tr>
-        </thead>
-        <tbody>${rows || '<tr><td class="p-2" colspan="3">No data</td></tr>'}</tbody>
-      </table>
-    </div>
-  `;
+    <div class="text-xs subtle mt-3">Likely lost sections: ${_esc(missing.join(' | ') || 'navigation, footer, menu blocks')}</div>
+  `);
 }
 
-function renderContentVis(result) {
-  const content = (result.nojs?.content) || {};
-  const ratio = Number(content.main_content_ratio || 0);
-  const boiler = Number(content.boilerplate_ratio || 0);
-  const ctxId = 'donut-ratio';
-  document.getElementById('v2-content-vis').innerHTML = `
-    <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-3">Content Extraction</h3>
-    <canvas id="${ctxId}" height="160"></canvas>
-    <div class="mt-3 text-sm text-slate-700 grid grid-cols-2 gap-2">
-      <div class="card p-3 border border-slate-200 rounded-xl">Text length: <span class="font-semibold">${content.main_text_length||0}</span></div>
-      <div class="card p-3 border border-slate-200 rounded-xl">Chunks: <span class="font-semibold">${(content.chunks||[]).length}</span></div>
+function _renderCitation(result) {
+  const b = result?.citation_breakdown || {};
+  const labels = ['Schema', 'Author', 'Content', 'Accessibility', 'Structure'];
+  const data = [_num(b.schema, 0), _num(b.author, 0), _num(b.content_clarity, 0), _num(b.bot_accessibility, 0), _num(b.structure, 0)];
+  _setHTML('v2-citation', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="quote" class="w-4 h-4"></i>Citation Readiness Breakdown</div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div><canvas id="v2-citation-radar" height="180"></canvas></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Factor</th><th>Score</th></tr></thead>
+          <tbody>
+            ${labels.map((l, i) => `<tr><td>${l}</td><td>${data[i]}%</td></tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
     </div>
-    <div class="mt-3 text-xs text-slate-500 line-clamp-5">${(content.main_text_preview||'').slice(0,400)}</div>
-  `;
-  const ctx = document.getElementById(ctxId);
-  if (ctx) {
+  `);
+  const ctx = document.getElementById('v2-citation-radar');
+  if (ctx && window.Chart) {
     new Chart(ctx, {
-      type: 'doughnut',
+      type: 'radar',
       data: {
-        labels: ['Main content','Boilerplate'],
+        labels,
         datasets: [{
-          data: [Math.round(ratio*100), Math.round(boiler*100)],
-          backgroundColor: ['#10b981', '#cbd5e1'],
-        }]
+          label: 'Citation readiness',
+          data,
+          borderColor: '#0ea5e9',
+          backgroundColor: 'rgba(14,165,233,0.16)',
+          pointBackgroundColor: '#0284c7',
+        }],
       },
-      options: {responsive:true, plugins:{legend:{display:true, position:'bottom'}}}
+      options: { scales: { r: { beginAtZero: true, max: 100 } }, plugins: { legend: { display: false } } },
     });
   }
 }
 
-function renderLLMSim(result) {
-  const llm = result.llm || {};
-  const scores = llm.scores || {};
-  document.getElementById('v2-llm-sim').innerHTML = `
-    <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-3">LLM Simulation</h3>
-    <div class="card border border-slate-200 rounded-xl p-3 mb-2">
-      <div class="text-xs text-slate-500 mb-1">Summary</div>
-      <div class="text-sm text-slate-800">${llm.summary || '—'}</div>
+function _renderTrust(result) {
+  const trust = _pct(result?.trust_signal_score, 0);
+  const schemaTypes = result?.nojs?.schema?.jsonld_types || [];
+  const hasOrg = schemaTypes.includes('Organization');
+  const hasArticle = schemaTypes.includes('Article');
+  const hasProduct = schemaTypes.includes('Product');
+  const hasAuthor = !!result?.nojs?.signals?.author_present;
+  _setHTML('v2-trust', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="shield-check" class="w-4 h-4"></i>Trust Signal Detection</div>
+    <div class="grid grid-cols-2 gap-3 text-sm">
+      <div class="card p-3 bg-slate-50 border-slate-200">Author page: ${hasAuthor ? '✅' : '❌'}</div>
+      <div class="card p-3 bg-slate-50 border-slate-200">Organization info: ${hasOrg ? '✅' : '❌'}</div>
+      <div class="card p-3 bg-slate-50 border-slate-200">Structured schema: ${schemaTypes.length ? '✅' : '❌'}</div>
+      <div class="card p-3 bg-slate-50 border-slate-200">Article/Product: ${(hasArticle || hasProduct) ? '✅' : '❌'}</div>
     </div>
-    <div class="text-sm text-slate-700">Citation likelihood: ${scores.citation_likelihood||'-'}%</div>
-    <div class="text-sm text-slate-700">Hallucination risk: ${scores.hallucination_risk||'-'}%</div>
-    <div class="text-sm text-slate-700">Answer quality: ${scores.answer_quality_score||'-'}%</div>
-  `;
+    <div class="mt-3 text-sm">Trust completeness: <span class="font-semibold">${trust}%</span></div>
+    ${_meter(trust)}
+  `);
 }
 
-function renderCloakingJs(result) {
-  const cloaking = result.cloaking || {};
-  const js = result.js_dependency || {};
-  document.getElementById('v2-cloaking').innerHTML = `
-    <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-3">Cloaking & JS Dependency</h3>
-    <div class="grid grid-cols-1 gap-2 text-sm">
-      <div class="card border border-slate-200 rounded-xl p-3">
-        <div class="text-xs text-slate-500">Cloaking risk</div>
-        <div class="text-base font-semibold">${cloaking.risk || 'n/a'}</div>
-        <div class="text-xs text-slate-500">Browser vs GPTBot: ${cloaking.similarity_scores?.browser_vs_gptbot ?? '-'}</div>
-        <div class="text-xs text-slate-500">Browser vs Googlebot: ${cloaking.similarity_scores?.browser_vs_googlebot ?? '-'}</div>
+function _renderReasons(result) {
+  const reasons = [
+    { title: 'Missing schema', delta: (_num(result?.citation_breakdown?.schema, 0) < 50) ? -15 : 0 },
+    { title: 'Missing author', delta: (_num(result?.citation_breakdown?.author, 0) === 0) ? -10 : 0 },
+    { title: 'Content loss', delta: -Math.round(_num(result?.content_loss_percent, 0) / 5) },
+  ].filter((x) => x.delta !== 0).sort((a, b) => a.delta - b.delta);
+  _setHTML('v2-reasons', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="alert-triangle" class="w-4 h-4"></i>Why Score Is Low</div>
+    <div class="space-y-2">
+      ${reasons.length ? reasons.map((r, idx) => `
+        <div class="card p-3 bg-slate-50 border-slate-200">
+          <div class="flex items-center justify-between text-sm">
+            <span>${idx + 1}. ${_esc(r.title)}</span>
+            <span class="font-semibold text-rose-600">${r.delta} points</span>
+          </div>
+          ${_meter(Math.max(0, 100 + r.delta))}
+        </div>
+      `).join('') : '<div class="subtle text-sm">No strong negative factors detected.</div>'}
+    </div>
+  `);
+}
+
+function _renderFix(result) {
+  const now = _pct(result?.score?.total, 0);
+  const projected = _pct(result?.projected_score_after_fixes, now);
+  const schemaGain = _num(result?.citation_breakdown?.schema, 0) < 50 ? 12 : 0;
+  const authorGain = _num(result?.citation_breakdown?.author, 0) === 0 ? 8 : 0;
+  _setHTML('v2-fix', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="sparkles" class="w-4 h-4"></i>Fix Impact Simulation</div>
+    <div class="text-sm">Current score: <span class="font-semibold">${now}/100</span></div>
+    <div class="text-sm text-emerald-700">Projected score after key fixes: <span class="font-semibold">${projected}/100</span></div>
+    <div class="mt-2">${_meter(projected)}</div>
+    <div class="mt-3 text-xs subtle">Estimated lifts: Organization schema ${schemaGain ? `+${schemaGain}` : '+0'} | Author signals ${authorGain ? `+${authorGain}` : '+0'}</div>
+  `);
+}
+
+function _renderPreview(result) {
+  const preview = result?.ai_answer_preview || {};
+  _setHTML('v2-preview', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="message-square-text" class="w-4 h-4"></i>AI Search Preview</div>
+    <div class="card p-3 bg-slate-50 border-slate-200">
+      <div class="subtle text-xs">When user asks</div>
+      <div class="font-semibold mt-1">${_esc(preview.question || 'What is this page about?')}</div>
+      <div class="text-sm mt-2">${_esc(preview.answer || 'Not enough content for stable answer')}</div>
+      <div class="subtle text-xs mt-2">Confidence: ${_pct(preview.confidence, '-')}</div>
+    </div>
+  `);
+}
+
+function _renderDiscoverability(result) {
+  const d = result?.discoverability || {};
+  const score = _pct(d.discoverability_score, 0);
+  _setHTML('v2-discover', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="route" class="w-4 h-4"></i>Discoverability Score</div>
+    <div class="text-sm">Internal link strength: <span class="font-semibold">${_pct(result?.nojs?.links?.anchor_quality_score, 0)}%</span></div>
+    <div class="text-sm">Navigation depth estimate: <span class="font-semibold">${_esc(d.click_depth_estimate || '-')} clicks</span></div>
+    <div class="text-sm">Discoverability score: <span class="font-semibold">${score}%</span></div>
+    <div class="mt-2">${_meter(score)}</div>
+  `);
+}
+
+function _renderDomDiff(result) {
+  const browserText = String(result?.rendered?.content?.main_text_preview || '').slice(0, 1400);
+  const aiText = String(result?.nojs?.content?.main_text_preview || '').slice(0, 1400);
+  const missing = Array.isArray(result?.diff?.missing) ? result.diff.missing : [];
+  _setHTML('v2-dom-diff', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="git-compare-arrows" class="w-4 h-4"></i>Visual DOM vs AI Text Diff</div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div>
+        <div class="subtle text-xs mb-1">Browser view (rendered)</div>
+        <div class="diff-box">${_esc(browserText || 'No rendered text')}</div>
       </div>
-      <div class="card border border-slate-200 rounded-xl p-3">
-        <div class="text-xs text-slate-500">JS dependency score</div>
-        <div class="text-base font-semibold">${js.score ?? '-'}</div>
-        <div class="text-xs text-slate-500">Failed requests: ${js.failures ?? '-'}</div>
-        <div class="text-xs text-slate-500">Blocked scripts/css: ${js.blocked ?? '-'}</div>
-      </div>
-    </div>
-  `;
-}
-
-function renderEntityEeat(result) {
-  const eeat = result.eeat_score || {};
-  const eg = result.entity_graph || {};
-  const org = (eg.organizations || [])[0] || '—';
-  const author = ((result.nojs?.signals?.author_samples)||[])[0] || '—';
-  document.getElementById('v2-entity-eeat').innerHTML = `
-    <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-3">Entities & EEAT</h3>
-    <div class="text-sm text-slate-700 space-y-1">
-      <div>Organization: <span class="font-semibold">${org}</span></div>
-      <div>Author: <span class="font-semibold">${author}</span></div>
-      <div>EEAT score: <span class="font-semibold">${eeat.score ?? '-'}</span></div>
-      <div class="text-xs text-slate-500">Entities: ${(eg.organizations||[]).slice(0,5).join(', ')}</div>
-    </div>
-  `;
-}
-
-function renderSchema(result) {
-  const schema = result.nojs?.schema || {};
-  document.getElementById('v2-schema').innerHTML = `
-    <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-3">Structured Data</h3>
-    <div class="text-sm text-slate-700 space-y-1">
-      <div>Types: ${(schema.jsonld_types||[]).join(', ') || '—'}</div>
-      <div>Coverage: ${schema.coverage_score ?? '-'}%</div>
-      <div>Microdata: ${(schema.microdata_types||[]).slice(0,5).join(', ')}</div>
-    </div>
-  `;
-}
-
-function renderLinks(result) {
-  const links = result.nojs?.links || {};
-  document.getElementById('v2-links').innerHTML = `
-    <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-3">Link Discovery</h3>
-    <div class="grid grid-cols-2 gap-2 text-sm">
-      <div class="card p-3 border rounded-xl">Internal links: <span class="font-semibold">${links.count||0}</span></div>
-      <div class="card p-3 border rounded-xl">JS-only links: <span class="font-semibold">${links.js_only_count||0}</span></div>
-      <div class="card p-3 border rounded-xl">Anchor quality: <span class="font-semibold">${links.anchor_quality_score||0}%</span></div>
-    </div>
-  `;
-}
-
-function renderAccess(result) {
-  const res = result.nojs?.resources || {};
-  document.getElementById('v2-access').innerHTML = `
-    <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-3">Access Barriers</h3>
-    <div class="grid grid-cols-1 gap-2 text-sm">
-      <div class="card p-3 border rounded-xl ${res.cookie_wall?'bg-amber-50':''}">Cookie wall: ${res.cookie_wall?'Yes':'No'}</div>
-      <div class="card p-3 border rounded-xl ${res.paywall?'bg-amber-50':''}">Paywall: ${res.paywall?'Yes':'No'}</div>
-      <div class="card p-3 border rounded-xl ${res.csp_strict?'bg-amber-50':''}">Strict CSP: ${res.csp_strict?'Yes':'No'}</div>
-    </div>
-  `;
-}
-
-function renderTech(result) {
-  const dbg = (result.rendered?.render_debug) || {};
-  document.getElementById('v2-tech').innerHTML = `
-    <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-3">Technical Diagnostics</h3>
-    <div class="text-sm text-slate-700 space-y-1">
-      <div>Console errors: ${(dbg.console_errors||[]).length}</div>
-      <div>Failed requests: ${(dbg.failed_requests||[]).length}</div>
-    </div>
-  `;
-}
-
-function renderChunks(result) {
-  const chunks = result.nojs?.content?.chunks || [];
-  const items = chunks.map(c=> `<div class="card border rounded-xl p-3"><div class="text-xs text-slate-500">Chunk ${c.idx}</div><div class="text-sm text-slate-800 line-clamp-3">${c.text.slice(0,180)}</div></div>`).join('');
-  document.getElementById('v2-chunks').innerHTML = `
-    <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-3">Chunks</h3>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-2">${items || '<p class="text-sm text-slate-500">No chunks</p>'}</div>
-  `;
-}
-
-function renderRecs(result) {
-  const recs = result.recommendations || [];
-  const items = recs.map(r=> `<div class="card border rounded-xl p-3">
-    <div class="text-xs uppercase text-slate-500">${r.priority||''}</div>
-    <div class="text-sm font-semibold">${r.title||''}</div>
-    <div class="text-xs text-slate-500">${r.area||''}</div>
-  </div>`).join('');
-  document.getElementById('v2-recs').innerHTML = `
-    <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-3">Recommendations</h3>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-2">${items || '<p class="text-sm text-slate-500">No recommendations</p>'}</div>
-  `;
-}
-
-function renderWhatAI(result) {
-  const ai = result.ai_understanding || {};
-  const signals = result.nojs?.signals || {};
-  document.getElementById('v2-ai-understands').innerHTML = `
-    <div class="flex items-center gap-2 mb-3"><i class="fas fa-brain text-indigo-500"></i><h3 class="text-lg font-semibold">What AI actually understands</h3></div>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-      <div class="bg-slate-50 rounded-xl p-3">
-        <div class="text-xs text-slate-500">Topic detected</div>
-        <div class="font-semibold text-slate-800">${ai.topic || 'Not detected'}</div>
-        <div class="text-xs text-slate-500 mt-2">Confidence</div>
-        ${meter(ai.score || 0)}
-      </div>
-      <div class="bg-slate-50 rounded-xl p-3 space-y-1">
-        <div>Organization: ${signals.author_present ? '✅' : '❌'}</div>
-        <div>Product: ${(ai.entities || [])[0] ? '✅' : '❌'}</div>
-        <div>Author: ${signals.author_present ? '✅' : '❌'}</div>
-        <div>Intent: ${ai.intent || 'informational'}</div>
-        <div>Content clarity: ${clampScore(ai.content_clarity)}%</div>
+      <div>
+        <div class="subtle text-xs mb-1">AI extracted view</div>
+        <div class="diff-box">${_esc(aiText || 'No extracted text')}</div>
       </div>
     </div>
-  `;
+    <div class="mt-3 text-xs subtle">Likely removed sections: ${_esc(missing.join(' | ') || 'navigation / footer / utility blocks')}</div>
+  `);
 }
 
-function renderLoss(result) {
-  const content = result.nojs?.content || {};
-  const renderedLen = result.rendered?.content?.main_text_length || content.main_text_length || 0;
-  const extracted = content.main_text_length || 0;
-  const loss = clampScore(result.content_loss_percent);
-  document.getElementById('v2-loss').innerHTML = `
-    <h3 class="text-lg font-semibold mb-2">Content loss</h3>
-    <div class="grid grid-cols-3 gap-3 text-sm">
-      <div class="bg-slate-50 rounded-xl p-3">HTML text: <span class="font-semibold">${renderedLen}</span></div>
-      <div class="bg-slate-50 rounded-xl p-3">Extracted: <span class="font-semibold">${extracted}</span></div>
-      <div class="bg-slate-50 rounded-xl p-3">Lost: <span class="font-semibold">${loss}%</span>${meter(100 - (result.content_loss_percent || 0))}</div>
+function _renderCritical(result) {
+  const issues = Array.isArray(result?.score?.top_issues) ? result.score.top_issues.slice(0, 6) : [];
+  const blocks = issues.length ? issues.map((txt, idx) => {
+    const cls = idx < 2 ? 'risk-high' : idx < 4 ? 'risk-mid' : 'risk-low';
+    const icon = idx < 2 ? 'alert-octagon' : idx < 4 ? 'alert-triangle' : 'check-circle-2';
+    return `<button type="button" data-target="v2-reasons" class="card w-full text-left p-3 ${cls === 'risk-high' ? 'bg-red-50' : cls === 'risk-mid' ? 'bg-amber-50' : 'bg-emerald-50'} border-slate-200">
+      <div class="flex items-start gap-2 text-sm">
+        <i data-lucide="${icon}" class="w-4 h-4 mt-0.5"></i>
+        <span>${_esc(txt)}</span>
+      </div>
+    </button>`;
+  }).join('') : `<div class="card p-3 bg-emerald-50 text-emerald-800 text-sm">No critical issues detected.</div>`;
+  _setHTML('v2-critical', blocks);
+  document.querySelectorAll('#v2-critical [data-target]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const target = document.getElementById(btn.getAttribute('data-target'));
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  });
+}
+
+function _renderBotMatrix(result) {
+  const matrix = Array.isArray(result?.bot_matrix) ? result.bot_matrix : [];
+  const rows = matrix.map((r) => {
+    const access = r.allowed ? '✅ Allowed' : '❌ Blocked';
+    const quality = _pct(result?.score?.total, 0);
+    const risk = r.allowed ? 'Low' : 'High';
+    return `<tr>
+      <td>${_esc(r.profile)}</td>
+      <td>${access}</td>
+      <td>${quality}%</td>
+      <td>${risk}</td>
+    </tr>`;
+  }).join('');
+  _setHTML('v2-bot-matrix', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="bot" class="w-4 h-4"></i>Bot Access Matrix</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Bot</th><th>Access</th><th>Content quality</th><th>Risk</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="4">No bot matrix data</td></tr>'}</tbody>
+      </table>
     </div>
-  `;
+  `);
 }
 
-function renderCitationBreakdown(result) {
-  const cb = result.citation_breakdown || {};
-  const labels = ['Schema','Author','Content','Accessibility','Structure'];
-  const data = [
-    cb.schema || 0, cb.author || 0, cb.content_clarity || 0, cb.bot_accessibility || 0, cb.structure || 0,
-  ];
-  const ctxId = 'v2-citation-chart';
-  document.getElementById('v2-citation').innerHTML = `
-    <h3 class="text-lg font-semibold mb-2">Citation readiness</h3>
-    <canvas id="${ctxId}" height="200"></canvas>
-  `;
-  const ctx = document.getElementById(ctxId);
+function _renderContentExtraction(result) {
+  const content = result?.nojs?.content || {};
+  const ratio = _pct(_num(content.main_content_ratio, 0) * 100, 0);
+  const boiler = _pct(_num(content.boilerplate_ratio, 0) * 100, 0);
+  _setHTML('v2-content-vis', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="file-text" class="w-4 h-4"></i>Content Extraction Visualization</div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div><canvas id="v2-content-donut" height="170"></canvas></div>
+      <div class="space-y-2 text-sm">
+        <div class="card p-3 bg-slate-50 border-slate-200">Main content: <span class="font-semibold">${ratio}%</span></div>
+        <div class="card p-3 bg-slate-50 border-slate-200">Boilerplate: <span class="font-semibold">${boiler}%</span></div>
+        <div class="card p-3 bg-slate-50 border-slate-200">Text length: <span class="font-semibold">${_num(content.main_text_length, 0)}</span></div>
+        <div class="card p-3 bg-slate-50 border-slate-200">Chunks: <span class="font-semibold">${(content.chunks || []).length}</span></div>
+      </div>
+    </div>
+    <details class="mt-3">
+      <summary class="cursor-pointer text-sm font-medium">Extracted text preview</summary>
+      <div class="diff-box mt-2">${_esc((content.main_text_preview || '').slice(0, 1500) || 'No preview')}</div>
+    </details>
+  `);
+  const ctx = document.getElementById('v2-content-donut');
   if (ctx && window.Chart) {
-    new Chart(ctx, {type:'radar', data:{labels, datasets:[{label:'Readiness', data, backgroundColor:'rgba(16,185,129,0.2)', borderColor:'#10b981'}]}, options:{scales:{r:{beginAtZero:true,max:100}}}});
+    new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Main content', 'Boilerplate'],
+        datasets: [{ data: [ratio, boiler], backgroundColor: ['#22c55e', '#cbd5e1'] }],
+      },
+      options: { plugins: { legend: { position: 'bottom' } } },
+    });
   }
 }
 
-function renderTrust(result) {
-  const signals = result.nojs?.signals || {};
-  const schema = result.nojs?.schema || {};
-  const trust = clampScore(result.trust_signal_score);
-  document.getElementById('v2-trust').innerHTML = `
-    <h3 class="text-lg font-semibold mb-2">Trust signals</h3>
-    <div class="grid grid-cols-2 gap-3 text-sm">
-      <div class="bg-slate-50 rounded-xl p-3">Author: ${signals.author_present ? '✅' : '❌'}</div>
-      <div class="bg-slate-50 rounded-xl p-3">Organization: ${(schema.jsonld_types||[]).includes('Organization') ? '✅' : '❌'}</div>
-      <div class="bg-slate-50 rounded-xl p-3">Contact: ${result.nojs?.meta?.canonical ? '✅' : '❌'}</div>
-      <div class="bg-slate-50 rounded-xl p-3">Schema: ${schema.jsonld_types?.length ? '✅' : '❌'}</div>
+function _renderLLMSim(result) {
+  const llm = result?.llm || {};
+  const scores = llm?.scores || {};
+  const spans = Array.isArray(llm?.citation_spans) ? llm.citation_spans.slice(0, 3) : [];
+  _setHTML('v2-llm-sim', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="messages-square" class="w-4 h-4"></i>LLM Simulation</div>
+    <div class="card p-3 bg-slate-50 border-slate-200">
+      <div class="subtle text-xs mb-1">Summary</div>
+      <div class="text-sm">${_esc(llm.summary || 'No summary')}</div>
     </div>
-    <div class="mt-3 text-sm">Trust completeness: ${trust}%</div>
-    ${meter(trust)}
-  `;
+    <div class="grid grid-cols-1 gap-2 mt-3 text-sm">
+      <div>Citation likelihood: <span class="font-semibold">${_pct(scores.citation_likelihood, '-')}%</span>${_meter(_num(scores.citation_likelihood, 0))}</div>
+      <div>Hallucination risk: <span class="font-semibold">${_pct(scores.hallucination_risk, '-')}%</span>${_meter(100 - _num(scores.hallucination_risk, 0))}</div>
+      <div>Answer quality: <span class="font-semibold">${_pct(scores.answer_quality_score, '-')}%</span>${_meter(_num(scores.answer_quality_score, 0))}</div>
+    </div>
+    <div class="mt-3 text-xs subtle">Citation spans: ${_esc(spans.map((s) => s.text || '').join(' | ') || 'none')}</div>
+  `);
 }
 
-function renderReasons(result) {
-  const items = [
-    {txt:'Missing schema', impact: (result.citation_breakdown?.schema||0) < 50 ? -15 : 0},
-    {txt:'Missing author', impact: (result.citation_breakdown?.author||0) === 0 ? -10 : 0},
-    {txt:'Content loss', impact: -(result.content_loss_percent || 0) / 5},
-  ].filter(i=>i.impact!==0).sort((a,b)=>a.impact-b.impact).slice(0,3);
-  const rows = items.map(i=>`<div class="flex justify-between text-sm"><span>${i.txt}</span><span class="text-rose-600">${i.impact.toFixed(0)}</span></div>`).join('');
-  document.getElementById('v2-reasons').innerHTML = `
-    <h3 class="text-lg font-semibold mb-2">Why score is low</h3>
-    ${rows || '<div class="text-sm text-slate-500">No major negatives</div>'}
-  `;
+function _renderCloakingJs(result) {
+  const cloak = result?.cloaking || {};
+  const js = result?.js_dependency || {};
+  _setHTML('v2-cloaking', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="shield-alert" class="w-4 h-4"></i>Cloaking & JS Dependency</div>
+    <div class="grid grid-cols-1 gap-2 text-sm">
+      <div class="card p-3 bg-slate-50 border-slate-200">
+        <div class="subtle text-xs">Cloaking risk</div>
+        <div class="font-semibold">${_esc(cloak.risk || 'n/a')}</div>
+        <div class="subtle text-xs mt-1">Browser vs GPTBot: ${_pct(cloak?.similarity_scores?.browser_vs_gptbot, '-')}</div>
+        <div class="subtle text-xs">Browser vs Googlebot: ${_pct(cloak?.similarity_scores?.browser_vs_googlebot, '-')}</div>
+      </div>
+      <div class="card p-3 bg-slate-50 border-slate-200">
+        <div class="subtle text-xs">JS dependency score</div>
+        <div class="font-semibold">${_pct(js.score, '-')}</div>
+        <div class="subtle text-xs">Failed resources: ${_num(js.failures, 0)}</div>
+        <div class="subtle text-xs">Blocked scripts/css: ${_num(js.blocked, 0)}</div>
+      </div>
+    </div>
+  `);
 }
 
-function renderFix(result) {
-  const projected = clampScore(result.projected_score_after_fixes);
-  const current = clampScore(result.score?.total);
-  document.getElementById('v2-fix').innerHTML = `
-    <h3 class="text-lg font-semibold mb-2">Fix impact simulation</h3>
-    <div class="text-sm">Current: ${current}</div>
-    <div class="text-sm text-emerald-600">Projected after fixes: ${projected}</div>
-    ${meter(projected)}
-  `;
+function _renderEntityEeat(result) {
+  const eeat = result?.eeat_score || {};
+  const graph = result?.entity_graph || {};
+  _setHTML('v2-entity-eeat', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="network" class="w-4 h-4"></i>Entity & EEAT</div>
+    <div class="text-sm space-y-1">
+      <div>EEAT score: <span class="font-semibold">${_pct(eeat.score, '-')}</span></div>
+      <div>Organizations: ${_esc((graph.organizations || []).slice(0, 4).join(', ') || '—')}</div>
+      <div>Persons: ${_esc((graph.persons || []).slice(0, 4).join(', ') || '—')}</div>
+      <div>Products: ${_esc((graph.products || []).slice(0, 4).join(', ') || '—')}</div>
+    </div>
+  `);
 }
 
-function renderPreview(result) {
-  const ap = result.ai_answer_preview || {};
-  document.getElementById('v2-preview').innerHTML = `
-    <h3 class="text-lg font-semibold mb-2">AI search preview</h3>
-    <div class="text-xs text-slate-500 mb-1">When user asks:</div>
-    <div class="font-semibold text-slate-800 mb-2">"${ap.question || 'What is this page about?'}"</div>
-    <div class="text-sm text-slate-700">${ap.answer || 'Not enough content'}</div>
-  `;
+function _renderSchema(result) {
+  const schema = result?.nojs?.schema || {};
+  const found = new Set((schema.jsonld_types || []).map((s) => String(s)));
+  const checklist = ['Organization', 'Article', 'Product', 'Breadcrumb'];
+  _setHTML('v2-schema', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="database" class="w-4 h-4"></i>Schema Visualization</div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+      ${checklist.map((k) => `<div class="card p-3 bg-slate-50 border-slate-200">${found.has(k) ? '✅' : '❌'} ${k}</div>`).join('')}
+    </div>
+    <div class="subtle text-xs mt-3">Coverage: ${_pct(schema.coverage_score, 0)}% | Microdata: ${_esc((schema.microdata_types || []).slice(0, 6).join(', ') || 'none')}</div>
+  `);
 }
 
-function renderDiscover(result) {
-  const d = result.discoverability || {};
-  document.getElementById('v2-discover').innerHTML = `
-    <h3 class="text-lg font-semibold mb-2">Discoverability</h3>
-    <div class="text-sm">Score: ${clampScore(d.discoverability_score)}%</div>
-    <div class="text-sm">Depth estimate: ${d.click_depth_estimate || '-'} clicks</div>
-    ${meter(d.discoverability_score || 0)}
-  `;
+function _renderLinks(result) {
+  const links = result?.nojs?.links || {};
+  _setHTML('v2-links', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="link" class="w-4 h-4"></i>Link Discovery</div>
+    <div class="grid grid-cols-2 gap-2 text-sm">
+      <div class="card p-3 bg-slate-50 border-slate-200">Internal links: <span class="font-semibold">${_num(links.count, 0)}</span></div>
+      <div class="card p-3 bg-slate-50 border-slate-200">JS-only links: <span class="font-semibold">${_num(links.js_only_count, 0)}</span></div>
+      <div class="card p-3 bg-slate-50 border-slate-200">Anchor clarity: <span class="font-semibold">${_pct(links.anchor_quality_score, 0)}%</span></div>
+      <div class="card p-3 bg-slate-50 border-slate-200">Unique links: <span class="font-semibold">${_num(links.unique_count, 0)}</span></div>
+    </div>
+  `);
+}
+
+function _renderAccess(result) {
+  const r = result?.nojs?.resources || {};
+  _setHTML('v2-access', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="lock" class="w-4 h-4"></i>Access Barriers</div>
+    <div class="grid grid-cols-1 gap-2 text-sm">
+      <div class="card p-3 ${r.cookie_wall ? 'bg-amber-50' : 'bg-slate-50'} border-slate-200">Cookie wall: ${r.cookie_wall ? '⚠ detected' : '✅ not detected'}</div>
+      <div class="card p-3 ${r.paywall ? 'bg-amber-50' : 'bg-slate-50'} border-slate-200">Paywall: ${r.paywall ? '⚠ detected' : '✅ not detected'}</div>
+      <div class="card p-3 ${r.login_wall ? 'bg-amber-50' : 'bg-slate-50'} border-slate-200">Login wall: ${r.login_wall ? '⚠ detected' : '✅ not detected'}</div>
+      <div class="card p-3 ${r.csp_strict ? 'bg-amber-50' : 'bg-slate-50'} border-slate-200">Strict CSP: ${r.csp_strict ? '⚠ strict' : '✅ ok'}</div>
+    </div>
+  `);
+}
+
+function _renderTech(result) {
+  const dbg = result?.rendered?.render_debug || {};
+  const errors = Array.isArray(dbg.console_errors) ? dbg.console_errors : [];
+  const failed = Array.isArray(dbg.failed_requests) ? dbg.failed_requests : [];
+  _setHTML('v2-tech', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="terminal-square" class="w-4 h-4"></i>Technical Diagnostics</div>
+    <div class="grid grid-cols-2 gap-2 text-sm mb-3">
+      <div class="card p-3 bg-slate-50 border-slate-200">Console errors: <span class="font-semibold">${errors.length}</span></div>
+      <div class="card p-3 bg-slate-50 border-slate-200">Failed requests: <span class="font-semibold">${failed.length}</span></div>
+    </div>
+    <details>
+      <summary class="cursor-pointer text-sm font-medium">View console / network logs</summary>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+        <div class="diff-box">${_esc(errors.join('\n') || 'No console errors')}</div>
+        <div class="diff-box">${_esc(failed.map((x) => `[${x.resource_type || '-'}] ${x.url || ''} ${x.failure_text || ''}`).join('\n') || 'No failed requests')}</div>
+      </div>
+    </details>
+  `);
+}
+
+function _renderChunks(result) {
+  const chunks = Array.isArray(result?.nojs?.content?.chunks) ? result.nojs.content.chunks : [];
+  const cards = chunks.slice(0, 12).map((c, idx) => {
+    const text = String(c.text || '');
+    const tokens = Math.max(1, Math.round(text.length / 4));
+    const hasEntity = /[A-ZА-Я][a-zа-я]+/.test(text);
+    return `<div class="card p-3 bg-slate-50 border-slate-200">
+      <div class="flex items-center justify-between text-xs subtle"><span>Chunk ${idx + 1}</span><span>~${tokens} tokens</span></div>
+      <div class="text-sm mt-1">${_esc(text.slice(0, 180))}${text.length > 180 ? '...' : ''}</div>
+      <div class="text-xs mt-2">${hasEntity ? 'Contains key info ✅' : 'Low-signal chunk ⚠'}</div>
+    </div>`;
+  }).join('');
+  _setHTML('v2-chunks', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="blocks" class="w-4 h-4"></i>Chunk Visualization</div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-2">${cards || '<div class="subtle text-sm">No chunks available.</div>'}</div>
+  `);
+}
+
+function _renderRecs(result) {
+  const recs = Array.isArray(result?.recommendations) ? result.recommendations : [];
+  const items = recs.map((r) => {
+    const pri = String(r.priority || 'P2').toUpperCase();
+    const badge = pri === 'P0' ? 'badge badge-p0' : pri === 'P1' ? 'badge badge-p1' : 'badge badge-p2';
+    const impact = pri === 'P0' ? '+12% AI visibility' : pri === 'P1' ? '+7% AI visibility' : '+3% AI visibility';
+    return `<div class="card p-3 bg-slate-50 border-slate-200">
+      <div class="flex items-center justify-between">
+        <span class="${badge}">${pri}</span>
+        <span class="text-xs subtle">${impact}</span>
+      </div>
+      <div class="text-sm font-semibold mt-2">${_esc(r.title || 'Recommendation')}</div>
+      <div class="text-xs subtle mt-1">Area: ${_esc(r.area || '-')}</div>
+    </div>`;
+  }).join('');
+  _setHTML('v2-recs', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="list-checks" class="w-4 h-4"></i>Recommendations</div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-2">${items || '<div class="subtle text-sm">No recommendations.</div>'}</div>
+  `);
+}
+
+function _wireExports(jobId, result) {
+  const jsonBtn = document.getElementById('v2-export-json');
+  const docxBtn = document.getElementById('v2-export-docx');
+  const htmlBtn = document.getElementById('v2-export-html');
+  if (jsonBtn) {
+    jsonBtn.onclick = () => {
+      const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = `llm_crawler_${jobId}.json`;
+      a.click();
+      URL.revokeObjectURL(href);
+    };
+  }
+  if (docxBtn) docxBtn.onclick = () => { window.location.href = `${V2_API}/jobs/${encodeURIComponent(jobId)}/report.docx`; };
+  if (htmlBtn) htmlBtn.onclick = () => { window.location.href = `${V2_API}/jobs/${encodeURIComponent(jobId)}/report`; };
+}
+
+function _renderPending(status, progress, message) {
+  const p = _pct(progress, 0);
+  _setHTML('v2-hero', `
+    <div class="panel p-5">
+      <div class="section-title flex items-center gap-2"><i data-lucide="loader-circle" class="w-4 h-4 animate-spin"></i>LLM Crawler is running</div>
+      <div class="text-sm subtle">Current status: <span class="font-semibold text-slate-700">${_esc(message || status)}</span></div>
+      <div class="mt-3">${_meter(p)}</div>
+      <div class="subtle text-xs mt-1">Progress: ${p}%</div>
+    </div>
+  `);
+  _lucide();
+}
+
+function _renderError(message) {
+  const root = document.querySelector('.llm-v2');
+  if (!root) return;
+  root.innerHTML = `<div class="card p-5 bg-red-50 border-red-200 text-red-700">Error loading results: ${_esc(message)}</div>`;
 }
 
 async function initV2(jobId) {
   try {
-    const data = await fetchJob(jobId);
+    const data = await _fetchJob(jobId);
     if (data.status !== 'done') {
-      const root = document.querySelector('.llm-v2');
-      if (root) root.innerHTML = `<div class="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-xl">Задача ещё выполняется (status=${data.status}). Обновите страницу позже.</div>`;
+      _renderPending(data.status || 'queued', data.progress, data.status_message);
+      setTimeout(() => initV2(jobId), 2500);
       return;
     }
+
     const result = data.result || {};
-    renderHero(result);
-    renderWhatAI(result);
-    renderLoss(result);
-    renderCitationBreakdown(result);
-    renderTrust(result);
-    renderReasons(result);
-    renderFix(result);
-    renderPreview(result);
-    renderDiscover(result);
-    renderCritical(result);
-    renderBotMatrix(result);
-    renderContentVis(result);
-    renderLLMSim(result);
-    renderCloakingJs(result);
-    renderEntityEeat(result);
-    renderSchema(result);
-    renderLinks(result);
-    renderAccess(result);
-    renderTech(result);
-    renderChunks(result);
-    renderRecs(result);
-    // export buttons
-    document.getElementById('v2-export-json').onclick = () => {
-      const blob = new Blob([JSON.stringify(result, null, 2)], {type:'application/json'});
-      const href = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = href; a.download = `llm_crawler_${jobId}.json`; a.click(); URL.revokeObjectURL(href);
-    };
-    document.getElementById('v2-export-docx').onclick = () => window.location.href = `${V2_API}/jobs/${encodeURIComponent(jobId)}/report.docx`;
-    document.getElementById('v2-export-html').onclick = () => window.location.href = `${V2_API}/jobs/${encodeURIComponent(jobId)}/report`;
-  } catch (e) {
-    console.error(e);
-    const root = document.querySelector('.max-w-6xl');
-    if (root) root.innerHTML = `<div class="bg-rose-50 border border-rose-200 text-rose-700 p-4 rounded-xl">Ошибка загрузки результатов: ${e}</div>`;
+    _renderHero(result);
+    _renderWhatAI(result);
+    _renderLoss(result);
+    _renderCitation(result);
+    _renderTrust(result);
+    _renderReasons(result);
+    _renderFix(result);
+    _renderPreview(result);
+    _renderDiscoverability(result);
+    _renderDomDiff(result);
+    _renderCritical(result);
+    _renderBotMatrix(result);
+    _renderContentExtraction(result);
+    _renderLLMSim(result);
+    _renderCloakingJs(result);
+    _renderEntityEeat(result);
+    _renderSchema(result);
+    _renderLinks(result);
+    _renderAccess(result);
+    _renderTech(result);
+    _renderChunks(result);
+    _renderRecs(result);
+    _wireExports(jobId, result);
+    _lucide();
+  } catch (err) {
+    console.error(err);
+    _renderError(err?.message || String(err));
   }
 }
 

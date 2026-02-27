@@ -48,7 +48,7 @@ try:
     from fastapi.staticfiles import StaticFiles
     from fastapi.templating import Jinja2Templates
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import HTMLResponse
+    from fastapi.responses import HTMLResponse, RedirectResponse
     from app.middleware import RateLimitMiddleware
     from app.core.memory_guard import start_memory_guard, stop_memory_guard, get_process_memory_snapshot
     logger.info("[OK] FastAPI imported successfully")
@@ -167,7 +167,6 @@ async def index(request: Request):
     """Main page with tools."""
     if templates:
         llm_enabled = False
-        llm_v2_enabled = bool(getattr(settings, "LLM_REPORT_V2_ENABLED", False))
         try:
             from app.tools.llmCrawler.feature_gate import is_llm_crawler_enabled_for_request
 
@@ -179,7 +178,6 @@ async def index(request: Request):
             {
                 "request": request,
                 "feature_llm_crawler_enabled": llm_enabled,
-                "feature_llm_crawler_v2_enabled": llm_v2_enabled,
             },
         )
     return HTMLResponse("<h1>SEO Tools Platform</h1><p>Templates not loaded</p>")
@@ -198,31 +196,19 @@ async def results_page(request: Request, task_id: str):
 
 @app.get("/llm-crawler/results/{job_id}", response_class=HTMLResponse)
 async def llm_crawler_results_page(request: Request, job_id: str):
-    """LLM crawler dedicated results page."""
+    """LLM crawler dedicated results page (single design)."""
     if templates:
-        if getattr(settings, "LLM_REPORT_V2_ENABLED", False):
-            return templates.TemplateResponse(
-                "llm_crawler_result_v2.html",
-                {"request": request, "job_id": job_id, "app_version": settings.APP_VERSION},
-            )
         return templates.TemplateResponse(
-            "llm_crawler_result.html",
-            {"request": request, "job_id": job_id},
+            "llm_crawler_result_v2.html",
+            {"request": request, "job_id": job_id, "app_version": settings.APP_VERSION},
         )
     return HTMLResponse(f"<h1>LLM Crawler Result</h1><p>Job: {job_id}</p>")
 
 
 @app.get("/llm-crawler/results/v2/{job_id}", response_class=HTMLResponse)
 async def llm_crawler_results_page_v2(request: Request, job_id: str):
-    """LLM crawler next-gen results page (behind flag)."""
-    if not getattr(settings, "LLM_REPORT_V2_ENABLED", False):
-        raise HTTPException(status_code=404, detail="LLM crawler v2 is disabled")
-    if templates:
-        return templates.TemplateResponse(
-            "llm_crawler_result_v2.html",
-            {"request": request, "job_id": job_id, "app_version": settings.APP_VERSION},
-        )
-    return HTMLResponse(f"<h1>LLM Crawler Result v2</h1><p>Job: {job_id}</p>")
+    """Backward-compatible alias to the single LLM crawler result page."""
+    return RedirectResponse(url=f"/llm-crawler/results/{job_id}", status_code=307)
 
 
 @app.get("/health")

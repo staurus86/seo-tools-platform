@@ -13,21 +13,18 @@ from .feature_gate import is_llm_crawler_enabled_for_request, request_subject
 from .queue import (
     check_rate_limit,
     create_job_record,
+    dec_subject,
     enqueue_job,
     get_job_record,
     get_worker_heartbeat,
-    get_redis_client,
     new_job_id,
     queue_depth,
     update_job_record,
     inc_subject,
 )
 from .schemas import LlmCrawlerJobStatusResponse, LlmCrawlerRunRequest
-from .service import run_llm_crawler_simulation
 from fastapi.responses import HTMLResponse
 from fastapi.responses import Response
-from io import BytesIO
-import datetime as dt
 
 
 router = APIRouter(prefix="/api/tools/llm-crawler", tags=["LLM Crawler Simulation"])
@@ -257,8 +254,6 @@ async def llm_worker_health(request: Request) -> Dict[str, Any]:
 @router.get("/jobs/{job_id}/report", response_class=HTMLResponse)
 async def llm_crawler_report(job_id: str, request: Request) -> HTMLResponse:
     _ensure_feature_enabled(request)
-    if not bool(getattr(settings, "LLM_REPORT_HTML_ENABLED", False)):
-        raise HTTPException(status_code=404, detail="HTML report disabled")
     job = get_job_record(job_id)
     if not job or not job.get("result"):
         raise HTTPException(status_code=404, detail="Job not found")
@@ -288,8 +283,6 @@ async def llm_crawler_report(job_id: str, request: Request) -> HTMLResponse:
 @router.get("/jobs/{job_id}/report.docx")
 async def llm_crawler_report_docx(job_id: str, request: Request) -> Response:
     _ensure_feature_enabled(request)
-    if not (bool(getattr(settings, "LLM_REPORT_HTML_ENABLED", False)) or bool(getattr(settings, "LLM_REPORT_V2_ENABLED", False))):
-        raise HTTPException(status_code=404, detail="DOCX report disabled")
     job = get_job_record(job_id)
     if not job or not job.get("result"):
         raise HTTPException(status_code=404, detail="Job not found")

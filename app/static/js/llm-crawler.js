@@ -142,8 +142,7 @@ async function startLlmCrawlerTask(event) {
         }
         showToast('LLM crawler job queued', 'success');
         setTimeout(() => {
-            const useV2 = Boolean(window.llmCrawlerV2Enabled);
-            window.location.href = useV2 ? `/llm-crawler/results/v2/${jobId}` : `/llm-crawler/results/${jobId}`;
+            window.location.href = `/llm-crawler/results/${jobId}`;
         }, 500);
     } catch (error) {
         showToast(_humanizeNetworkError(error) || 'Failed to start LLM crawler job', 'error');
