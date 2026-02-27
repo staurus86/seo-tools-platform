@@ -260,58 +260,39 @@ async def llm_crawler_report(job_id: str, request: Request) -> HTMLResponse:
     result = job.get("result") or {}
     title = f"LLM Crawler Report — {result.get('final_url') or result.get('requested_url') or job_id}"
     score = (result.get("score") or {}).get("total", "-")
-    summary = (result.get("llm") or {}).get("summary") or ""
     recs = result.get("recommendations") or []
-    v3 = bool(getattr(settings, "LLM_REPORT_V3_ENABLED", False))
-    if v3:
-        ai = result.get("ai_understanding") or {}
-        preview = result.get("ai_answer_preview") or {}
-        metrics = result.get("metrics_bytes") or {}
-        wf = result.get("projected_score_waterfall") or {}
-        body = f"""
-        <html><head><meta charset="utf-8"><title>{title}</title>
-        <style>
-        body{{font-family:Arial,sans-serif;max-width:1080px;margin:24px auto;padding:0 14px;background:#f7fbff;color:#0f172a}}
-        h1{{margin-bottom:4px}} .grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}}
-        .card{{background:#fff;border:1px solid #dbe5f3;border-radius:12px;padding:14px;margin:10px 0}}
-        .pill{{display:inline-block;padding:3px 10px;border-radius:999px;background:#e0f2fe;color:#0c4a6e;font-size:12px;font-weight:700}}
-        table{{width:100%;border-collapse:collapse}} th,td{{border:1px solid #e2e8f0;padding:8px;font-size:13px;text-align:left}}
-        th{{background:#f1f5f9}}
-        </style></head><body>
-        <h1>{title}</h1>
-        <p><span class="pill">Score {score}/100</span></p>
-        <div class="grid">
-          <div class="card"><h3>AI Understanding</h3><p><b>Topic:</b> {ai.get("topic","-")}</p><p><b>Confidence:</b> {ai.get("topic_confidence","-")}</p><p><b>Preview:</b> {preview.get("answer","-")}</p></div>
-          <div class="card"><h3>Metrics Consistency</h3><p>HTML bytes: {metrics.get("html_bytes","-")}</p><p>Text bytes: {metrics.get("text_bytes","-")}</p><p>Text/HTML ratio: {metrics.get("text_html_ratio","-")}</p></div>
-        </div>
-        <div class="card"><h3>Projected Waterfall</h3>
-          <table><thead><tr><th>Step</th><th>Score</th></tr></thead><tbody>
-            <tr><td>Baseline</td><td>{wf.get("baseline","-")}</td></tr>
-            {''.join([f"<tr><td>{s.get('label','Step')} (+{s.get('delta',0)})</td><td>{s.get('value','-')}</td></tr>" for s in (wf.get('steps') or [])])}
-            <tr><td>Projected</td><td>{wf.get("target","-")}</td></tr>
-          </tbody></table>
-        </div>
-        <div class="card"><h3>Recommendations with Evidence</h3><ul>
-        {''.join([f"<li><b>{r.get('priority','')}</b> {r.get('title','')}<br><small>Evidence: {', '.join((r.get('evidence') or [])[:3])}</small></li>" for r in recs]) or '<li>None</li>'}
-        </ul></div>
-        </body></html>
-        """
-    else:
-        body = f"""
-        <html><head><meta charset="utf-8"><title>{title}</title>
-        <style>body{{font-family:Arial,sans-serif;max-width:960px;margin:32px auto;padding:0 12px;}}h1{{margin-bottom:4px;}}.card{{border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin:12px 0;}}</style>
-        </head><body>
-        <h1>{title}</h1>
-        <p>Score: <strong>{score}</strong></p>
-        <div class="card"><h3>Summary</h3><p>{summary or '—'}</p></div>
-        <div class="card"><h3>Recommendations</h3><ul>
-        {''.join([f"<li><strong>{r.get('priority','')}</strong> {r.get('area','')}: {r.get('title','')}</li>" for r in recs]) or '<li>None</li>'}
-        </ul></div>
-        <div class="card"><h3>What bots miss</h3><ul>
-        {''.join([f"<li>{x}</li>" for x in (result.get('diff') or {}).get('missing', [])]) or '<li>None</li>'}
-        </ul></div>
-        </body></html>
-        """
+    ai = result.get("ai_understanding") or {}
+    preview = result.get("ai_answer_preview") or {}
+    metrics = result.get("metrics_bytes") or {}
+    wf = result.get("projected_score_waterfall") or {}
+    body = f"""
+    <html><head><meta charset="utf-8"><title>{title}</title>
+    <style>
+    body{{font-family:Arial,sans-serif;max-width:1080px;margin:24px auto;padding:0 14px;background:#f7fbff;color:#0f172a}}
+    h1{{margin-bottom:4px}} .grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}}
+    .card{{background:#fff;border:1px solid #dbe5f3;border-radius:12px;padding:14px;margin:10px 0}}
+    .pill{{display:inline-block;padding:3px 10px;border-radius:999px;background:#e0f2fe;color:#0c4a6e;font-size:12px;font-weight:700}}
+    table{{width:100%;border-collapse:collapse}} th,td{{border:1px solid #e2e8f0;padding:8px;font-size:13px;text-align:left}}
+    th{{background:#f1f5f9}}
+    </style></head><body>
+    <h1>{title}</h1>
+    <p><span class="pill">Score {score}/100</span></p>
+    <div class="grid">
+      <div class="card"><h3>AI Understanding</h3><p><b>Topic:</b> {ai.get("topic","-")}</p><p><b>Confidence:</b> {ai.get("topic_confidence","-")}</p><p><b>Preview:</b> {preview.get("answer","-")}</p></div>
+      <div class="card"><h3>Metrics Consistency</h3><p>HTML bytes: {metrics.get("html_bytes","-")}</p><p>Text bytes: {metrics.get("text_bytes","-")}</p><p>Text/HTML ratio: {metrics.get("text_html_ratio","-")}</p></div>
+    </div>
+    <div class="card"><h3>Projected Waterfall</h3>
+      <table><thead><tr><th>Step</th><th>Score</th></tr></thead><tbody>
+        <tr><td>Baseline</td><td>{wf.get("baseline","-")}</td></tr>
+        {''.join([f"<tr><td>{s.get('label','Step')} (+{s.get('delta',0)})</td><td>{s.get('value','-')}</td></tr>" for s in (wf.get('steps') or [])])}
+        <tr><td>Projected</td><td>{wf.get("target","-")}</td></tr>
+      </tbody></table>
+    </div>
+    <div class="card"><h3>Recommendations with Evidence</h3><ul>
+    {''.join([f"<li><b>{r.get('priority','')}</b> {r.get('title','')}<br><small>Evidence: {', '.join((r.get('evidence') or [])[:3])}</small></li>" for r in recs]) or '<li>None</li>'}
+    </ul></div>
+    </body></html>
+    """
     return HTMLResponse(content=body)
 
 
@@ -322,7 +303,7 @@ async def llm_crawler_report_docx(job_id: str, request: Request) -> Response:
     if not job or not job.get("result"):
         raise HTTPException(status_code=404, detail="Job not found")
     from app.tools.llmCrawler.report_docx import build_docx_v2
-    payload = build_docx_v2(job, job_id, wow_enabled=bool(getattr(settings, "LLM_REPORT_V3_ENABLED", False)))
+    payload = build_docx_v2(job, job_id, wow_enabled=True)
     return Response(
         content=payload.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",

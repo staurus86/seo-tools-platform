@@ -43,7 +43,7 @@ def _words(text: Any, limit: int = 25) -> str:
     return " ".join(parts[:limit]) + "..."
 
 
-def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = False) -> BytesIO:
+def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) -> BytesIO:
     try:
         from docx import Document  # type: ignore
         from docx.enum.text import WD_PARAGRAPH_ALIGNMENT  # type: ignore

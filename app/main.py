@@ -204,7 +204,7 @@ async def llm_crawler_results_page(request: Request, job_id: str):
                 "request": request,
                 "job_id": job_id,
                 "app_version": settings.APP_VERSION,
-                "llm_ui_wow_enabled": bool(getattr(settings, "LLM_UI_WOW_ENABLED", False)),
+                "llm_ui_wow_enabled": True,
             },
         )
     return HTMLResponse(f"<h1>LLM Crawler Result</h1><p>Job: {job_id}</p>")

@@ -729,9 +729,7 @@ def run_llm_crawler_simulation(
     profiles = list(options.get("profile") or ["generic-bot", "search-bot", "ai-bot", "gptbot", "google-extended"])
     profile_set = {str(p).lower().strip() for p in profiles if str(p).strip()}
     run_cloaking_requested = bool(options.get("runCloaking", False))
-    report_v3_enabled = bool(getattr(settings, "LLM_REPORT_V3_ENABLED", False))
-    ui_wow_enabled = bool(getattr(settings, "LLM_UI_WOW_ENABLED", False))
-    quality_mode = report_v3_enabled or ui_wow_enabled
+    quality_mode = True
 
     timings: Dict[str, Any] = {}
 
@@ -904,7 +902,7 @@ def run_llm_crawler_simulation(
         metrics_bytes["rendered_html_bytes"] = rendered_metrics.get("html_bytes")
         metrics_bytes["rendered_text_bytes"] = rendered_metrics.get("text_bytes")
         metrics_bytes["rendered_text_html_ratio"] = rendered_metrics.get("text_html_ratio")
-    snippet_library = _snippet_library() if quality_mode else {}
+    snippet_library = _snippet_library()
     timings["analysis_ms"] = int((time.perf_counter() - t3) * 1000)
     timings["total_ms"] = int((time.perf_counter() - started_at) * 1000)
 

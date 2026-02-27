@@ -58,7 +58,7 @@ async function _fetchJob(jobId) {
 }
 
 function _wowEnabled() {
-  return Boolean(window.llmUiWowEnabled);
+  return true;
 }
 
 function _isNotEvaluated(module) {
