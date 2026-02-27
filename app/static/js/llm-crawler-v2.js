@@ -13,6 +13,12 @@ function clampScore(n) {
   return Math.max(0, Math.min(100, v));
 }
 
+function meter(value) {
+  const val = Math.max(0, Math.min(100, Number(value) || 0));
+  const color = val >= 80 ? 'bg-emerald-500' : val >= 50 ? 'bg-amber-500' : 'bg-rose-500';
+  return `<div class="h-2 bg-slate-200 rounded-full overflow-hidden"><div class="h-2 ${color}" style="width:${val}%"></div></div>`;
+}
+
 async function fetchJob(jobId) {
   const resp = await fetch(`${V2_API}/jobs/${encodeURIComponent(jobId)}`);
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -258,6 +264,122 @@ function renderRecs(result) {
   `;
 }
 
+function renderWhatAI(result) {
+  const ai = result.ai_understanding || {};
+  const signals = result.nojs?.signals || {};
+  document.getElementById('v2-ai-understands').innerHTML = `
+    <div class="flex items-center gap-2 mb-3"><i class="fas fa-brain text-indigo-500"></i><h3 class="text-lg font-semibold">What AI actually understands</h3></div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+      <div class="bg-slate-50 rounded-xl p-3">
+        <div class="text-xs text-slate-500">Topic detected</div>
+        <div class="font-semibold text-slate-800">${ai.topic || 'Not detected'}</div>
+        <div class="text-xs text-slate-500 mt-2">Confidence</div>
+        ${meter(ai.score || 0)}
+      </div>
+      <div class="bg-slate-50 rounded-xl p-3 space-y-1">
+        <div>Organization: ${signals.author_present ? '✅' : '❌'}</div>
+        <div>Product: ${(ai.entities || [])[0] ? '✅' : '❌'}</div>
+        <div>Author: ${signals.author_present ? '✅' : '❌'}</div>
+        <div>Intent: ${ai.intent || 'informational'}</div>
+        <div>Content clarity: ${clampScore(ai.content_clarity)}%</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderLoss(result) {
+  const content = result.nojs?.content || {};
+  const renderedLen = result.rendered?.content?.main_text_length || content.main_text_length || 0;
+  const extracted = content.main_text_length || 0;
+  const loss = clampScore(result.content_loss_percent);
+  document.getElementById('v2-loss').innerHTML = `
+    <h3 class="text-lg font-semibold mb-2">Content loss</h3>
+    <div class="grid grid-cols-3 gap-3 text-sm">
+      <div class="bg-slate-50 rounded-xl p-3">HTML text: <span class="font-semibold">${renderedLen}</span></div>
+      <div class="bg-slate-50 rounded-xl p-3">Extracted: <span class="font-semibold">${extracted}</span></div>
+      <div class="bg-slate-50 rounded-xl p-3">Lost: <span class="font-semibold">${loss}%</span>${meter(100 - (result.content_loss_percent || 0))}</div>
+    </div>
+  `;
+}
+
+function renderCitationBreakdown(result) {
+  const cb = result.citation_breakdown || {};
+  const labels = ['Schema','Author','Content','Accessibility','Structure'];
+  const data = [
+    cb.schema || 0, cb.author || 0, cb.content_clarity || 0, cb.bot_accessibility || 0, cb.structure || 0,
+  ];
+  const ctxId = 'v2-citation-chart';
+  document.getElementById('v2-citation').innerHTML = `
+    <h3 class="text-lg font-semibold mb-2">Citation readiness</h3>
+    <canvas id="${ctxId}" height="200"></canvas>
+  `;
+  const ctx = document.getElementById(ctxId);
+  if (ctx && window.Chart) {
+    new Chart(ctx, {type:'radar', data:{labels, datasets:[{label:'Readiness', data, backgroundColor:'rgba(16,185,129,0.2)', borderColor:'#10b981'}]}, options:{scales:{r:{beginAtZero:true,max:100}}}});
+  }
+}
+
+function renderTrust(result) {
+  const signals = result.nojs?.signals || {};
+  const schema = result.nojs?.schema || {};
+  const trust = clampScore(result.trust_signal_score);
+  document.getElementById('v2-trust').innerHTML = `
+    <h3 class="text-lg font-semibold mb-2">Trust signals</h3>
+    <div class="grid grid-cols-2 gap-3 text-sm">
+      <div class="bg-slate-50 rounded-xl p-3">Author: ${signals.author_present ? '✅' : '❌'}</div>
+      <div class="bg-slate-50 rounded-xl p-3">Organization: ${(schema.jsonld_types||[]).includes('Organization') ? '✅' : '❌'}</div>
+      <div class="bg-slate-50 rounded-xl p-3">Contact: ${result.nojs?.meta?.canonical ? '✅' : '❌'}</div>
+      <div class="bg-slate-50 rounded-xl p-3">Schema: ${schema.jsonld_types?.length ? '✅' : '❌'}</div>
+    </div>
+    <div class="mt-3 text-sm">Trust completeness: ${trust}%</div>
+    ${meter(trust)}
+  `;
+}
+
+function renderReasons(result) {
+  const items = [
+    {txt:'Missing schema', impact: (result.citation_breakdown?.schema||0) < 50 ? -15 : 0},
+    {txt:'Missing author', impact: (result.citation_breakdown?.author||0) === 0 ? -10 : 0},
+    {txt:'Content loss', impact: -(result.content_loss_percent || 0) / 5},
+  ].filter(i=>i.impact!==0).sort((a,b)=>a.impact-b.impact).slice(0,3);
+  const rows = items.map(i=>`<div class="flex justify-between text-sm"><span>${i.txt}</span><span class="text-rose-600">${i.impact.toFixed(0)}</span></div>`).join('');
+  document.getElementById('v2-reasons').innerHTML = `
+    <h3 class="text-lg font-semibold mb-2">Why score is low</h3>
+    ${rows || '<div class="text-sm text-slate-500">No major negatives</div>'}
+  `;
+}
+
+function renderFix(result) {
+  const projected = clampScore(result.projected_score_after_fixes);
+  const current = clampScore(result.score?.total);
+  document.getElementById('v2-fix').innerHTML = `
+    <h3 class="text-lg font-semibold mb-2">Fix impact simulation</h3>
+    <div class="text-sm">Current: ${current}</div>
+    <div class="text-sm text-emerald-600">Projected after fixes: ${projected}</div>
+    ${meter(projected)}
+  `;
+}
+
+function renderPreview(result) {
+  const ap = result.ai_answer_preview || {};
+  document.getElementById('v2-preview').innerHTML = `
+    <h3 class="text-lg font-semibold mb-2">AI search preview</h3>
+    <div class="text-xs text-slate-500 mb-1">When user asks:</div>
+    <div class="font-semibold text-slate-800 mb-2">"${ap.question || 'What is this page about?'}"</div>
+    <div class="text-sm text-slate-700">${ap.answer || 'Not enough content'}</div>
+  `;
+}
+
+function renderDiscover(result) {
+  const d = result.discoverability || {};
+  document.getElementById('v2-discover').innerHTML = `
+    <h3 class="text-lg font-semibold mb-2">Discoverability</h3>
+    <div class="text-sm">Score: ${clampScore(d.discoverability_score)}%</div>
+    <div class="text-sm">Depth estimate: ${d.click_depth_estimate || '-'} clicks</div>
+    ${meter(d.discoverability_score || 0)}
+  `;
+}
+
 async function initV2(jobId) {
   try {
     const data = await fetchJob(jobId);
@@ -268,6 +390,14 @@ async function initV2(jobId) {
     }
     const result = data.result || {};
     renderHero(result);
+    renderWhatAI(result);
+    renderLoss(result);
+    renderCitationBreakdown(result);
+    renderTrust(result);
+    renderReasons(result);
+    renderFix(result);
+    renderPreview(result);
+    renderDiscover(result);
     renderCritical(result);
     renderBotMatrix(result);
     renderContentVis(result);
