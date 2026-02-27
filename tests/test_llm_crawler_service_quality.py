@@ -24,6 +24,15 @@ from app.tools.llmCrawler.service import (
     _retrieval_simulation,
     _snippet_library,
     _extract_entities_v2,
+    _llm_readability_score,
+    _content_segmentation_summary,
+    _js_dependency_detailed,
+    _llm_simulation_payload,
+    _trust_detailed,
+    _bot_simulation_payload,
+    _ai_ingestion_score,
+    _score_breakdown_explainability,
+    _analysis_quality_summary,
 )
 
 
@@ -453,6 +462,106 @@ class LlmCrawlerServiceQualityTests(unittest.TestCase):
         self.assertIn(diag.get("status"), {"ok", "warning"})
         self.assertTrue(isinstance(diag.get("issues"), list))
         self.assertEqual(diag.get("checked_rules"), 5)
+
+    def test_new_simulation_payload_contract(self):
+        snapshot = self._snapshot()
+        llm = _run_llm_simulation(snapshot, enabled=False)
+        preview = _ai_answer_preview(snapshot, llm_sim=llm)
+        payload = _llm_simulation_payload(snapshot, llm, preview, {"citation_probability": 0.62})
+        self.assertIn("summary", payload)
+        self.assertIn("answer", payload)
+        self.assertIn("citation_probability", payload)
+        self.assertIn("hallucination_risk", payload)
+        self.assertIn("source_chunks", payload)
+        self.assertIn(payload.get("mode"), {"llm", "heuristic_fallback", "extractive"})
+
+    def test_new_segmentation_and_quality_summary_contract(self):
+        segmentation = {
+            "segment_version": "seg-fusion-v3",
+            "segmentation_confidence": 0.74,
+            "extractor_agreement": 0.61,
+            "content_extraction": {"extractor_agreement_score": 0.66},
+            "content_segments": [
+                {"id": 1, "segment_class": "main"},
+                {"id": 2, "segment_class": "navigation"},
+                {"id": 3, "segment_class": "supporting"},
+                {"id": 4, "segment_class": "utility"},
+            ],
+            "segment_tree": [{"id": 1}, {"id": 2}],
+        }
+        content_segmentation = _content_segmentation_summary(segmentation)
+        self.assertIn("main_blocks", content_segmentation)
+        self.assertIn("confidence_score", content_segmentation)
+        quality = _analysis_quality_summary(
+            segmentation=segmentation,
+            entities={"entity_coverage_score": 35},
+            llm_simulation={"summary": "Fallback summary"},
+            content_segmentation=content_segmentation,
+        )
+        self.assertIn("analysis_quality_score", quality)
+        self.assertIn("status", quality)
+        self.assertTrue(isinstance(quality.get("warnings"), list))
+
+    def test_new_ingestion_and_js_details_contract(self):
+        nojs = self._snapshot()
+        rendered = self._snapshot()
+        rendered["content"]["main_text_length"] = 3200
+        entities = {"products": [{"name": "Vacuum meter"}], "entity_coverage_score": 42}
+        page_classification = {"type": "product", "confidence": 0.71}
+        js_dependency = {"status": "executed", "score": 46, "content_delta_ratio": 0.46}
+        js_detailed = _js_dependency_detailed(
+            nojs_snapshot=nojs,
+            rendered_snapshot=rendered,
+            js_dependency=js_dependency,
+            diff={"linksDiff": {"added": 9}},
+            entities=entities,
+            page_classification=page_classification,
+        )
+        self.assertIn("js_content_ratio", js_detailed)
+        self.assertIn("lost_elements", js_detailed)
+        self.assertIn(js_detailed.get("level"), {"safe", "moderate", "high", "critical"})
+
+        trust = _trust_detailed(nojs, {"organizations": ["Acme"]}, {"score": 66})
+        ingestion = _ai_ingestion_score(
+            content_extraction={"extraction_confidence": 0.76},
+            segmentation={"segmentation_confidence": 0.68},
+            structured_data={"coverage_score": 58},
+            entity_graph={"entity_coverage_score": 42},
+            trust_detailed=trust,
+            js_dependency=js_dependency,
+            llm_readability_score=_llm_readability_score(nojs),
+        )
+        self.assertIn("score", ingestion)
+        self.assertIn("level", ingestion)
+        self.assertTrue(isinstance(ingestion.get("reasons"), list))
+
+        llm_payload = {"citation_probability": 64}
+        breakdown = _score_breakdown_explainability(
+            content_segmentation={"confidence_score": 0.66},
+            entity_graph={"entity_coverage_score": 42},
+            llm_simulation=llm_payload,
+            js_dependency_detailed=js_detailed,
+            ai_ingestion_score=ingestion,
+        )
+        self.assertIn("content_score", breakdown)
+        self.assertIn("reasons", breakdown)
+
+    def test_new_bot_simulation_payload_contract(self):
+        bot_visibility = {
+            "matrix": [
+                {"profile": "gptbot", "content_visibility_score": 80},
+                {"profile": "google-extended", "content_visibility_score": 92},
+            ]
+        }
+        payload = _bot_simulation_payload(
+            bot_visibility=bot_visibility,
+            entities={"entity_coverage_score": 48},
+            citation_model={"citation_probability": 0.7},
+            js_dependency={"content_delta_ratio": 0.25},
+        )
+        self.assertEqual(len(payload), 2)
+        self.assertIn("bot_name", payload[0])
+        self.assertIn("modes", payload[0])
 
 
 if __name__ == "__main__":

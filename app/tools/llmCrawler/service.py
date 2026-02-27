@@ -1034,7 +1034,7 @@ def _content_clarity(snapshot: Dict[str, Any], entity_graph: Optional[Dict[str, 
     unique_ratio = (len(set(words)) / max(1, len(words))) if words else 0.0
     entity_count = 0
     if entity_graph:
-        entity_count = sum(len(v or []) for v in entity_graph.values())
+        entity_count = sum(len(v or []) for v in entity_graph.values() if isinstance(v, list))
     if entity_count == 0:
         entity_count = len(re.findall(r"\b[A-ZА-Я][A-Za-zА-Яа-я0-9]{2,}\b", main_preview))
     entity_density = min(1.0, entity_count / max(1, len(words)))
@@ -1544,6 +1544,8 @@ def _extract_entities_v2(nojs_snapshot: Dict[str, Any], rendered_snapshot: Dict[
         "organizations": {},
         "persons": {},
         "products": {},
+        "services": {},
+        "brands": {},
         "software": {},
         "locations": {},
     }
@@ -1578,6 +1580,8 @@ def _extract_entities_v2(nojs_snapshot: Dict[str, Any], rendered_snapshot: Dict[
             ("organizations", "organizations"),
             ("persons", "persons"),
             ("products", "products"),
+            ("services", "services"),
+            ("brands", "brands"),
             ("locations", "locations"),
         ):
             for value in (payload.get(key) or []):
@@ -1607,6 +1611,16 @@ def _extract_entities_v2(nojs_snapshot: Dict[str, Any], rendered_snapshot: Dict[
             part = _clean_entity_name(source_text.split("|")[0].split(":")[0])
             if len(part) >= 3:
                 add_entity("products", part, "schema+title", 0.86)
+    if {"service", "professionalservice"} & schema_all:
+        for source_text in [title] + [str(x) for x in (headings.get("h1_texts") or [])[:2]]:
+            part = _clean_entity_name(source_text.split("|")[0].split(":")[0])
+            if len(part) >= 3:
+                add_entity("services", part, "schema+title", 0.84)
+    if {"brand"} & schema_all:
+        for source_text in [title, site_name]:
+            part = _clean_entity_name(source_text.split("|")[0].split(":")[0] if source_text else "")
+            if len(part) >= 3:
+                add_entity("brands", part, "schema+title", 0.82)
     if {"softwareapplication", "software"} & schema_all:
         for source_text in [title] + [str(x) for x in (headings.get("h1_texts") or [])[:2]]:
             part = _clean_entity_name(source_text.split("|")[0].split(":")[0])
@@ -1640,6 +1654,20 @@ def _extract_entities_v2(nojs_snapshot: Dict[str, Any], rendered_snapshot: Dict[
         flags=re.I,
     ):
         add_entity("products", m.group(1), "text", 0.74)
+
+    for m in re.finditer(
+        r"\b([A-ZА-Я][A-Za-zА-Яа-я0-9\-]{2,}(?:\s+[A-Za-zА-Яа-я0-9\-]{1,20}){0,3})\s+(service|services|solution|solutions|consulting|integration|support|maintenance|услуг[аи]?|сервис)\b",
+        text_blob,
+        flags=re.I,
+    ):
+        add_entity("services", m.group(1), "text", 0.75)
+
+    for m in re.finditer(
+        r"\b([A-ZА-Я][A-Za-zА-Яа-я0-9&\.-]{2,}(?:\s+[A-ZА-Я][A-Za-zА-Яа-я0-9&\.-]{1,20}){0,2})\s+(brand|бренд|trade mark|tm|®)\b",
+        text_blob,
+        flags=re.I,
+    ):
+        add_entity("brands", m.group(1), "text", 0.73)
 
     for m in re.finditer(
         r"\b(in|at|from|город|в)\s+([A-ZА-Я][A-Za-zА-Яа-я\-]{2,}(?:\s+[A-ZА-Я][A-Za-zА-Яа-я\-]{2,}){0,2})\b",
@@ -1689,6 +1717,8 @@ def _extract_entities_v2(nojs_snapshot: Dict[str, Any], rendered_snapshot: Dict[
     organizations = finalize("organizations")
     persons = finalize("persons")
     products = finalize("products")
+    services = finalize("services")
+    brands = finalize("brands")
     software = finalize("software")
     locations = finalize("locations")
 
@@ -1706,16 +1736,32 @@ def _extract_entities_v2(nojs_snapshot: Dict[str, Any], rendered_snapshot: Dict[
             )
         ),
     )
-    total_entities = len(organizations) + len(persons) + len(products) + len(software) + len(locations)
+    total_entities = len(organizations) + len(persons) + len(products) + len(services) + len(brands) + len(software) + len(locations)
     entity_density = round(total_entities / words_total, 6)
+    present_groups = sum(
+        1 for group in [organizations, persons, products, services, brands, software, locations]
+        if bool(group)
+    )
+    entity_coverage_score = round((present_groups / 7.0) * 100.0, 2)
+    confidence_per_entity: Dict[str, float] = {}
+    for group in [organizations, persons, products, services, brands, software, locations]:
+        for row in group[:12]:
+            name = str(row.get("name") or "").strip()
+            if not name:
+                continue
+            confidence_per_entity[name[:120]] = float(row.get("confidence") or 0.0)
 
     return {
         "organizations": organizations,
         "persons": persons,
         "products": products,
+        "services": services,
+        "brands": brands,
         "software": software,
         "locations": locations,
         "entity_density": entity_density,
+        "entity_coverage_score": entity_coverage_score,
+        "confidence_per_entity": confidence_per_entity,
     }
 
 
@@ -2817,6 +2863,51 @@ def run_llm_crawler_simulation(
         rendered=rendered_snapshot,
         js_dependency=js_dep,
     )
+    llm_readability = _llm_readability_score(nojs_snapshot)
+    content_segmentation = _content_segmentation_summary(segmentation_payload)
+    js_dependency_detailed = _js_dependency_detailed(
+        nojs_snapshot=nojs_snapshot,
+        rendered_snapshot=rendered_snapshot,
+        js_dependency=js_dep,
+        diff=diff,
+        entities=entities,
+        page_classification=page_classification,
+    )
+    trust_detailed = _trust_detailed(nojs_snapshot, entity_graph, eeat)
+    ai_ingestion_score = _ai_ingestion_score(
+        content_extraction=content_extraction,
+        segmentation=segmentation_payload,
+        structured_data=structured_data,
+        entity_graph=entity_graph,
+        trust_detailed=trust_detailed,
+        js_dependency=js_dep,
+        llm_readability_score=llm_readability,
+    )
+    llm_simulation = _llm_simulation_payload(
+        snapshot=nojs_snapshot,
+        llm_sim=llm_sim,
+        answer_preview=answer_preview,
+        citation_model=citation_model,
+    )
+    bot_simulation = _bot_simulation_payload(
+        bot_visibility=bot_visibility,
+        entities=entities,
+        citation_model=citation_model,
+        js_dependency=js_dep,
+    )
+    score_breakdown = _score_breakdown_explainability(
+        content_segmentation=content_segmentation,
+        entity_graph=entity_graph,
+        llm_simulation=llm_simulation,
+        js_dependency_detailed=js_dependency_detailed,
+        ai_ingestion_score=ai_ingestion_score,
+    )
+    analysis_quality = _analysis_quality_summary(
+        segmentation=segmentation_payload,
+        entities=entities,
+        llm_simulation=llm_simulation,
+        content_segmentation=content_segmentation,
+    )
     timings["analysis_ms"] = int((time.perf_counter() - t3) * 1000)
     timings["total_ms"] = int((time.perf_counter() - started_at) * 1000)
     noise_breakdown = ((nojs_snapshot.get("segmentation") or {}).get("noise_breakdown") or {})
@@ -2848,24 +2939,31 @@ def run_llm_crawler_simulation(
         "bot_visibility_scores": bot_visibility.get("bot_visibility_scores"),
         "bot_visibility_confidence": bot_visibility.get("bot_visibility_confidence"),
         "bot_visibility_coverage": bot_visibility.get("coverage"),
+        "bot_simulation": bot_simulation,
         "recommendations": recommendations,
         "llm": llm_sim,
+        "llm_simulation": llm_simulation,
         "js_dependency": js_dep,
+        "js_dependency_detailed": js_dependency_detailed,
         "cloaking": cloaking_result,
         "citation_probability": citation_prob,
         "citation_model": citation_model,
         "content_extraction": content_extraction,
+        "content_segmentation": content_segmentation,
         "extraction_confidence": (content_extraction or {}).get("extraction_confidence"),
         "extractor_agreement": (content_extraction or {}).get("extractor_agreement_score")
         or (segmentation_payload.get("extractor_agreement")),
         "content_quality": content_quality,
+        "llm_readability_score": llm_readability,
         "retrieval": retrieval,
         "validation": validation,
         "entity_graph": entity_graph,
         "entities": entities,
         "eeat_score": eeat,
+        "trust_detailed": trust_detailed,
         "vector_quality_score": vector_score,
         "llm_ingestion": ingestion,
+        "ai_ingestion_score": ai_ingestion_score,
         "ingestion_quality_score": ingestion.get("ingestion_quality_score"),
         "discoverability": discoverability,
         "ai_understanding_score": ai_understanding.get("score"),
@@ -2896,6 +2994,9 @@ def run_llm_crawler_simulation(
         "detector_calibration": detector_calibration,
         "quality_gates": quality_gates,
         "quality_profile": quality_profile,
+        "score_breakdown": score_breakdown,
+        "analysis_quality": analysis_quality,
+        "analysis_quality_score": analysis_quality.get("analysis_quality_score"),
         "recommendation_diagnostics": recommendation_diagnostics,
         "page_type": page_type_info.get("page_type"),
         "page_type_confidence": page_type_info.get("confidence"),
@@ -3343,7 +3444,10 @@ def _build_entity_graph(snapshot: Dict[str, Any], extracted_entities: Dict[str, 
     orgs = set()
     persons = set()
     products = set()
+    services = set()
+    brands = set()
     locations = set()
+    confidence_per_entity: Dict[str, float] = {}
     schema_types = set()
     for key in ("jsonld_types", "microdata_types", "rdfa_types"):
         for item in (schema.get(key) or []):
@@ -3355,23 +3459,41 @@ def _build_entity_graph(snapshot: Dict[str, Any], extracted_entities: Dict[str, 
             persons.add("schema:Person")
         if "Product" in t:
             products.add("schema:Product")
+        if "Service" in t:
+            services.add("schema:Service")
+        if "Brand" in t:
+            brands.add("schema:Brand")
     if isinstance(extracted_entities, dict):
         for row in (extracted_entities.get("organizations") or []):
             name = _safe_text((row or {}).get("name") if isinstance(row, dict) else row)
             if name:
                 orgs.add(name[:100])
+                confidence_per_entity[name[:100]] = max(float(confidence_per_entity.get(name[:100]) or 0.0), float((row or {}).get("confidence") if isinstance(row, dict) else 0.72))
         for row in (extracted_entities.get("persons") or []):
             name = _safe_text((row or {}).get("name") if isinstance(row, dict) else row)
             if name:
                 persons.add(name[:100])
+                confidence_per_entity[name[:100]] = max(float(confidence_per_entity.get(name[:100]) or 0.0), float((row or {}).get("confidence") if isinstance(row, dict) else 0.7))
         for row in (extracted_entities.get("products") or []):
             name = _safe_text((row or {}).get("name") if isinstance(row, dict) else row)
             if name:
                 products.add(name[:100])
+                confidence_per_entity[name[:100]] = max(float(confidence_per_entity.get(name[:100]) or 0.0), float((row or {}).get("confidence") if isinstance(row, dict) else 0.73))
+        for row in (extracted_entities.get("services") or []):
+            name = _safe_text((row or {}).get("name") if isinstance(row, dict) else row)
+            if name:
+                services.add(name[:100])
+                confidence_per_entity[name[:100]] = max(float(confidence_per_entity.get(name[:100]) or 0.0), float((row or {}).get("confidence") if isinstance(row, dict) else 0.71))
+        for row in (extracted_entities.get("brands") or []):
+            name = _safe_text((row or {}).get("name") if isinstance(row, dict) else row)
+            if name:
+                brands.add(name[:100])
+                confidence_per_entity[name[:100]] = max(float(confidence_per_entity.get(name[:100]) or 0.0), float((row or {}).get("confidence") if isinstance(row, dict) else 0.7))
         for row in (extracted_entities.get("locations") or []):
             name = _safe_text((row or {}).get("name") if isinstance(row, dict) else row)
             if name:
                 locations.add(name[:100])
+                confidence_per_entity[name[:100]] = max(float(confidence_per_entity.get(name[:100]) or 0.0), float((row or {}).get("confidence") if isinstance(row, dict) else 0.68))
     for token in re.findall(r"\b[A-Z][A-Za-z]{2,}(?:\s+[A-Z][A-Za-z]{2,})+\b", text):
         if "inc" in token.lower() or "llc" in token.lower() or "ltd" in token.lower():
             orgs.add(token[:100])
@@ -3379,11 +3501,27 @@ def _build_entity_graph(snapshot: Dict[str, Any], extracted_entities: Dict[str, 
             persons.add(token[:100])
     for token in re.findall(r"\b[A-Z][A-Za-z]{2,}\s+(Street|St\.|Ave|Road|City)\b", text):
         locations.add(token[:100])
+    organizations = sorted(orgs)[:20]
+    people = sorted(persons)[:20]
+    product_nodes = sorted(products)[:20]
+    service_nodes = sorted(services)[:20]
+    brand_nodes = sorted(brands)[:20]
+    location_nodes = sorted(locations)[:20]
+    populated_groups = sum(1 for x in [organizations, people, product_nodes, service_nodes, brand_nodes, location_nodes] if x)
+    entity_coverage_score = round((populated_groups / 6.0) * 100.0, 2)
+    # Linkage proxy: more cross-type entities usually means better graph coverage for LLM grounding.
+    linkage_raw = (len(organizations) * 1.2) + len(product_nodes) + len(service_nodes) + (len(brand_nodes) * 0.8) + (len(people) * 0.7)
+    entity_linkage_score = round(max(0.0, min(100.0, linkage_raw * 4.5)), 2)
     return {
-        "organizations": sorted(orgs)[:20],
-        "persons": sorted(persons)[:20],
-        "products": sorted(products)[:20],
-        "locations": sorted(locations)[:20],
+        "organizations": organizations,
+        "persons": people,
+        "products": product_nodes,
+        "services": service_nodes,
+        "brands": brand_nodes,
+        "locations": location_nodes,
+        "confidence_per_entity": {k: round(float(v), 3) for k, v in list(confidence_per_entity.items())[:120]},
+        "entity_coverage_score": entity_coverage_score,
+        "entity_linkage_score": entity_linkage_score,
     }
 
 
@@ -3460,7 +3598,7 @@ def _vector_quality_score(snapshot: Dict[str, Any], entity_graph: Dict[str, Any]
     words = re.findall(r"[A-Za-zА-Яа-я0-9]+", text)
     unique = len(set(words))
     density = unique / max(1, len(words))
-    entities = sum(len(v or []) for v in (entity_graph or {}).values()) if entity_graph else 0
+    entities = sum(len(v or []) for v in (entity_graph or {}).values() if isinstance(v, list)) if entity_graph else 0
     score = 50
     score += min(20, entities * 2)
     if density < 0.2:
@@ -3853,6 +3991,329 @@ def _ai_visibility_score_model(
         "confidence_score": round(confidence, 4),
         "score_breakdown": breakdown,
         "version": "ai-visibility-v1",
+    }
+
+
+def _llm_readability_score(snapshot: Dict[str, Any]) -> float:
+    content = snapshot.get("content") or {}
+    text = str(content.get("main_text_preview") or "")
+    if not text.strip():
+        return 0.0
+    sentences = [s.strip() for s in re.split(r"[.!?]+", text) if s.strip()]
+    words = _tokens(text)
+    if not words:
+        return 0.0
+    avg_sentence_len = (len(words) / max(1, len(sentences))) if sentences else len(words)
+    definition_hits = len(re.findall(r"\b(is|means|defined as|это|означает|представляет собой)\b", text, flags=re.I))
+    explanatory_hits = len(re.findall(r"\b(because|therefore|so that|for example|например|потому что|поэтому)\b", text, flags=re.I))
+    clarity = 100.0
+    if avg_sentence_len > 30:
+        clarity -= min(35.0, (avg_sentence_len - 30) * 1.4)
+    elif avg_sentence_len < 7:
+        clarity -= 12.0
+    clarity += min(16.0, definition_hits * 3.5)
+    clarity += min(14.0, explanatory_hits * 3.0)
+    unique_ratio = len(set(words)) / max(1, len(words))
+    clarity += min(10.0, unique_ratio * 20.0)
+    clarity = max(0.0, min(100.0, clarity))
+    return round(clarity, 2)
+
+
+def _content_segmentation_summary(segmentation: Dict[str, Any]) -> Dict[str, Any]:
+    segments = segmentation.get("content_segments") or []
+    main_blocks = [s for s in segments if str((s or {}).get("segment_class") or "") == "main"]
+    support_blocks = [s for s in segments if str((s or {}).get("segment_class") or "") == "supporting"]
+    nav_blocks = [s for s in segments if str((s or {}).get("segment_class") or "") == "navigation"]
+    utility_blocks = [s for s in segments if str((s or {}).get("segment_class") or "") == "utility"]
+    conf = _safe_float(segmentation.get("segmentation_confidence"), _safe_float((segmentation.get("main_content_confidence") or {}).get("score"), 0.0))
+    if conf > 1.0:
+        conf = conf / 100.0
+    return {
+        "main_blocks": [int(x.get("id") or 0) for x in main_blocks[:60]],
+        "support_blocks": [int(x.get("id") or 0) for x in support_blocks[:80]],
+        "navigation_blocks": [int(x.get("id") or 0) for x in nav_blocks[:80]],
+        "utility_blocks": [int(x.get("id") or 0) for x in utility_blocks[:80]],
+        "confidence_score": round(max(0.0, min(1.0, conf)), 4),
+        "segment_tree": (segmentation.get("segment_tree") or [])[:80],
+        "version": str(segmentation.get("segment_version") or "seg-fusion-v3"),
+    }
+
+
+def _js_dependency_detailed(
+    nojs_snapshot: Dict[str, Any],
+    rendered_snapshot: Dict[str, Any] | None,
+    js_dependency: Dict[str, Any],
+    diff: Dict[str, Any],
+    entities: Dict[str, Any],
+    page_classification: Dict[str, Any],
+) -> Dict[str, Any]:
+    nojs_text = int(((nojs_snapshot.get("content") or {}).get("main_text_length") or 0))
+    rendered_text = int((((rendered_snapshot or {}).get("content") or {}).get("main_text_length") or 0))
+    rendered_text = max(rendered_text, nojs_text)
+    js_content_ratio = 0.0
+    if rendered_text > 0:
+        js_content_ratio = max(0.0, min(1.0, (rendered_text - nojs_text) / max(1, rendered_text)))
+    if js_content_ratio <= 0.1:
+        level = "safe"
+    elif js_content_ratio <= 0.3:
+        level = "moderate"
+    elif js_content_ratio <= 0.6:
+        level = "high"
+    else:
+        level = "critical"
+    links_diff = diff.get("linksDiff") or {}
+    links_lost = int(links_diff.get("added") or 0)
+    text_lost = max(0, rendered_text - nojs_text)
+    page_type = str((page_classification or {}).get("type") or (nojs_snapshot.get("page_type") or "unknown")).lower()
+    products_present = int(len((entities or {}).get("products") or []))
+    articles_hint = int(page_type in {"article", "docs", "blog", "news"})
+    lost_products = max(0, int(round(products_present * js_content_ratio))) if page_type in {"product", "marketplace", "category", "listing"} else 0
+    lost_articles = max(0, int(round(articles_hint * (js_content_ratio * 3.0))))
+    return {
+        "nojs_text_length": nojs_text,
+        "rendered_text_length": rendered_text,
+        "js_content_ratio": round(js_content_ratio, 4),
+        "score": js_dependency.get("score"),
+        "level": level,
+        "lost_elements": {
+            "links": links_lost,
+            "text": text_lost,
+            "products": lost_products,
+            "articles": lost_articles,
+        },
+        "critical_content_js_only": bool(js_content_ratio >= 0.6),
+        "version": "js-coverage-v2",
+    }
+
+
+def _llm_simulation_payload(
+    snapshot: Dict[str, Any],
+    llm_sim: Dict[str, Any] | None,
+    answer_preview: Dict[str, Any],
+    citation_model: Dict[str, Any],
+) -> Dict[str, Any]:
+    content = snapshot.get("content") or {}
+    text = str(content.get("main_text_preview") or "")
+    tokens = _tokens(text)
+    source_chunks: List[Dict[str, Any]] = []
+    if tokens:
+        chunks: List[List[str]] = []
+        step = 300
+        for i in range(0, len(tokens), step):
+            chunks.append(tokens[i:i + step])
+            if len(chunks) >= 16:
+                break
+        query = str(answer_preview.get("question") or "What is this page about?")
+        corpus = [" ".join(c) for c in chunks]
+        ranked: List[tuple[int, float, str]] = []
+        for idx, chunk in enumerate(corpus, start=1):
+            rel = _tfidf_cosine(query, chunk, corpus)
+            sem = min(1.0, _chunk_entity_density(chunk) * 3.0)
+            clarity = min(1.0, _chunk_content_ratio(chunk) * 1.2)
+            score = (rel * 0.45) + (sem * 0.3) + (clarity * 0.25)
+            ranked.append((idx, score, chunk))
+        ranked.sort(key=lambda x: x[1], reverse=True)
+        for idx, score, chunk in ranked[:4]:
+            source_chunks.append({"id": idx, "score": round(score, 4), "preview": chunk[:220]})
+    llm_scores = (llm_sim or {}).get("scores") or {}
+    citation_probability = _safe_float(llm_scores.get("citation_likelihood"), _safe_float(citation_model.get("citation_probability"), 0.0) * 100.0)
+    hallucination_risk = _safe_float(llm_scores.get("hallucination_risk"), max(0.0, 100.0 - _safe_float(answer_preview.get("confidence"), 0.0)))
+    return {
+        "summary": str((llm_sim or {}).get("summary") or answer_preview.get("answer") or "").strip(),
+        "answer": str(answer_preview.get("answer") or "").strip(),
+        "citation_probability": round(max(0.0, min(100.0, citation_probability)), 2),
+        "hallucination_risk": round(max(0.0, min(100.0, hallucination_risk)), 2),
+        "citation_spans": (llm_sim or {}).get("citation_spans") or [],
+        "source_chunks": source_chunks[:4],
+        "mode": str((llm_sim or {}).get("mode") or answer_preview.get("preview_mode") or "extractive"),
+        "version": "llm-sim-v2",
+    }
+
+
+def _trust_detailed(snapshot: Dict[str, Any], entity_graph: Dict[str, Any], eeat: Dict[str, Any]) -> Dict[str, Any]:
+    signals = snapshot.get("signals") or {}
+    author_present = bool(signals.get("author_present"))
+    publish_date_present = bool(signals.get("date_present"))
+    org_as_author = bool((entity_graph.get("organizations") or []) and not author_present)
+    author_conf = 0.0
+    if author_present and publish_date_present:
+        author_conf = 0.92
+    elif author_present:
+        author_conf = 0.78
+    elif org_as_author:
+        author_conf = 0.56
+    trust_score = _safe_float(eeat.get("score"), 0.0)
+    return {
+        "author_present": author_present,
+        "author_confidence": round(author_conf, 4),
+        "organization_as_author": org_as_author,
+        "publish_date_present": publish_date_present,
+        "trust_score": round(trust_score, 2),
+        "version": "trust-v2",
+    }
+
+
+def _bot_simulation_payload(
+    bot_visibility: Dict[str, Any],
+    entities: Dict[str, Any],
+    citation_model: Dict[str, Any],
+    js_dependency: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    matrix = bot_visibility.get("matrix") or []
+    entity_cov = _safe_float((entities or {}).get("entity_coverage_score"), 0.0)
+    if entity_cov > 1.0:
+        entity_cov = entity_cov / 100.0
+    citation_base = _safe_float(citation_model.get("citation_probability"), 0.0)
+    js_penalty = _safe_float((js_dependency or {}).get("content_delta_ratio"), 0.0)
+    out: List[Dict[str, Any]] = []
+    for row in matrix:
+        name = str(row.get("profile") or "")
+        vis = _safe_float(row.get("content_visibility_score"), 0.0) / 100.0
+        nojs_vis = max(0.0, min(1.0, vis * (1.0 - min(0.75, js_penalty * 0.9))))
+        partial_vis = max(nojs_vis, min(1.0, (nojs_vis + vis) / 2.0))
+        full_vis = min(1.0, vis)
+        entity_visibility = min(1.0, max(0.0, (full_vis * 0.7) + (entity_cov * 0.3)))
+        citation_probability = min(1.0, max(0.0, (citation_base * 0.75) + (entity_visibility * 0.25)))
+        out.append(
+            {
+                "bot_name": name,
+                "content_visibility": round(full_vis * 100.0, 2),
+                "entity_visibility": round(entity_visibility * 100.0, 2),
+                "citation_probability": round(citation_probability * 100.0, 2),
+                "modes": {
+                    "nojs": round(nojs_vis * 100.0, 2),
+                    "partial_js": round(partial_vis * 100.0, 2),
+                    "full_js": round(full_vis * 100.0, 2),
+                },
+            }
+        )
+    return out[:12]
+
+
+def _ai_ingestion_score(
+    *,
+    content_extraction: Dict[str, Any],
+    segmentation: Dict[str, Any],
+    structured_data: Dict[str, Any],
+    entity_graph: Dict[str, Any],
+    trust_detailed: Dict[str, Any],
+    js_dependency: Dict[str, Any],
+    llm_readability_score: float,
+) -> Dict[str, Any]:
+    extraction_conf = _safe_float(content_extraction.get("extraction_confidence"), 0.0)
+    seg_conf = _safe_float(segmentation.get("segmentation_confidence"), _safe_float((segmentation.get("main_content_confidence") or {}).get("score"), 0.0))
+    if seg_conf > 1.0:
+        seg_conf = seg_conf / 100.0
+    schema_cov = _safe_float(structured_data.get("coverage_score"), 0.0)
+    if schema_cov > 1.0:
+        schema_cov = schema_cov / 100.0
+    entity_cov = _safe_float(entity_graph.get("entity_coverage_score"), 0.0)
+    if entity_cov > 1.0:
+        entity_cov = entity_cov / 100.0
+    trust = _safe_float(trust_detailed.get("trust_score"), 0.0) / 100.0
+    js_health = 0.62
+    if str(js_dependency.get("status") or "") == "executed":
+        js_health = max(0.0, min(1.0, 1.0 - (_safe_float(js_dependency.get("score"), 0.0) / 100.0)))
+    readability = max(0.0, min(1.0, _safe_float(llm_readability_score, 0.0) / 100.0))
+    score = (
+        (extraction_conf * 0.18)
+        + (seg_conf * 0.2)
+        + (schema_cov * 0.15)
+        + (entity_cov * 0.14)
+        + (trust * 0.13)
+        + (js_health * 0.1)
+        + (readability * 0.1)
+    ) * 100.0
+    reasons: List[str] = []
+    if extraction_conf < 0.45:
+        reasons.append("low extractor confidence")
+    if seg_conf < 0.5:
+        reasons.append("segmentation confidence low")
+    if entity_cov < 0.25:
+        reasons.append("weak entity coverage")
+    if schema_cov < 0.3:
+        reasons.append("schema coverage low")
+    if js_health < 0.45:
+        reasons.append("high JS dependency")
+    if readability < 0.45:
+        reasons.append("low LLM readability")
+    if not reasons:
+        reasons.append("balanced ingestion signals")
+    level = "high" if score >= 75 else "medium" if score >= 45 else "low"
+    return {
+        "score": round(max(0.0, min(100.0, score)), 2),
+        "level": level,
+        "reasons": reasons[:6],
+        "version": "ingestion-score-v1",
+    }
+
+
+def _score_breakdown_explainability(
+    *,
+    content_segmentation: Dict[str, Any],
+    entity_graph: Dict[str, Any],
+    llm_simulation: Dict[str, Any],
+    js_dependency_detailed: Dict[str, Any],
+    ai_ingestion_score: Dict[str, Any],
+) -> Dict[str, Any]:
+    seg_conf = _safe_float(content_segmentation.get("confidence_score"), 0.0)
+    entity_cov = _safe_float(entity_graph.get("entity_coverage_score"), 0.0)
+    if entity_cov > 1.0:
+        entity_cov = entity_cov / 100.0
+    citation_prob = _safe_float(llm_simulation.get("citation_probability"), 0.0) / 100.0
+    js_ratio = _safe_float(js_dependency_detailed.get("js_content_ratio"), 0.0)
+    ingestion = _safe_float(ai_ingestion_score.get("score"), 0.0) / 100.0
+    content_score = max(0.0, min(100.0, ((seg_conf * 0.45) + ((1.0 - js_ratio) * 0.3) + (ingestion * 0.25)) * 100.0))
+    reasons: List[str] = []
+    if seg_conf < 0.45:
+        reasons.append("navigation noise high")
+    if js_ratio > 0.3:
+        reasons.append("content heavily depends on JS")
+    if entity_cov < 0.25:
+        reasons.append("weak entity coverage")
+    if citation_prob < 0.35:
+        reasons.append("citation evidence weak")
+    if not reasons:
+        reasons.append("healthy content-to-citation pipeline")
+    return {
+        "content_score": round(content_score, 2),
+        "entity_score": round(entity_cov * 100.0, 2),
+        "citation_score": round(citation_prob * 100.0, 2),
+        "ingestion_score": round(ingestion * 100.0, 2),
+        "js_resilience_score": round((1.0 - js_ratio) * 100.0, 2),
+        "reasons": reasons[:6],
+        "version": "score-explain-v1",
+    }
+
+
+def _analysis_quality_summary(
+    *,
+    segmentation: Dict[str, Any],
+    entities: Dict[str, Any],
+    llm_simulation: Dict[str, Any],
+    content_segmentation: Dict[str, Any],
+) -> Dict[str, Any]:
+    warnings: List[str] = []
+    agreement = _safe_float((segmentation.get("content_extraction") or {}).get("extractor_agreement_score"), _safe_float(segmentation.get("extractor_agreement"), 0.0))
+    if agreement < 0.35:
+        warnings.append("low_extractor_agreement")
+    entity_cov = _safe_float((entities or {}).get("entity_coverage_score"), 0.0)
+    if entity_cov <= 1.0:
+        entity_cov *= 100.0
+    if entity_cov < 20.0:
+        warnings.append("low_entity_coverage")
+    if not str(llm_simulation.get("summary") or "").strip():
+        warnings.append("missing_summary")
+    if not (content_segmentation.get("main_blocks") or []):
+        warnings.append("invalid_segmentation_main_blocks_empty")
+    score = 100.0
+    score -= min(35.0, len(warnings) * 14.0)
+    score += min(10.0, agreement * 8.0)
+    return {
+        "analysis_quality_score": round(max(0.0, min(100.0, score)), 2),
+        "warnings": warnings[:10],
+        "status": "ok" if not warnings else "warning" if len(warnings) <= 2 else "critical",
+        "version": "analysis-quality-v1",
     }
 
 
