@@ -135,6 +135,8 @@ function initLlmCrawlerResult(jobId) {
         const score = result?.score || {};
         const breakdown = score?.breakdown || {};
         const topIssues = Array.isArray(score?.top_issues) ? score.top_issues : [];
+        const botMatrix = Array.isArray(result?.bot_matrix) ? result.bot_matrix : [];
+        const recs = Array.isArray(result?.recommendations) ? result.recommendations : [];
         return `
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="bg-slate-50 border border-slate-200 rounded-lg p-4">
@@ -149,6 +151,30 @@ function initLlmCrawlerResult(jobId) {
                         <div>Structure: <span class="font-semibold">${_safeNum(breakdown.structure, 0)}</span></div>
                         <div>Signals: <span class="font-semibold">${_safeNum(breakdown.signals, 0)}</span></div>
                     </div>
+                </div>
+            </div>
+            <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-white border rounded-lg p-3">
+                    <h4 class="font-semibold text-slate-800 mb-2">Bot access matrix</h4>
+                    ${botMatrix.length ? `
+                        <div class="overflow-auto border rounded-lg">
+                            <table class="min-w-full text-sm">
+                                <thead class="bg-slate-50"><tr><th class="text-left p-2">Profile</th><th class="text-left p-2">Access</th><th class="text-left p-2">Reason</th></tr></thead>
+                                <tbody>
+                                    ${botMatrix.map((row) => `
+                                        <tr class="border-t">
+                                            <td class="p-2">${_escapeHtml(row.profile || '')}</td>
+                                            <td class="p-2">${row.allowed ? 'Allowed' : 'Blocked'}</td>
+                                            <td class="p-2">${_escapeHtml(row.reason || '-')}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>` : '<p class="text-sm text-slate-500">No bot data</p>'}
+                </div>
+                <div class="bg-white border rounded-lg p-3">
+                    <h4 class="font-semibold text-slate-800 mb-2">Recommended fixes</h4>
+                    ${recs.length ? `<ul class="list-disc pl-5 text-sm text-slate-700 space-y-1">${recs.map((r) => `<li><span class="font-semibold">${_escapeHtml(r.priority || 'P2')}</span> — ${_escapeHtml(r.title || '')}</li>`).join('')}</ul>` : '<p class="text-sm text-slate-500">No high-priority issues.</p>'}
                 </div>
             </div>
             <div class="mt-4">
