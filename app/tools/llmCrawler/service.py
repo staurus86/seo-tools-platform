@@ -10,6 +10,7 @@ from collections import Counter
 import requests
 import re
 import math
+import statistics
 
 from app.config import settings
 from app.tools.http_text import decode_response_text
@@ -19,6 +20,11 @@ from .patterns import DIRECTIVE_RESTRICTIVE_TOKENS
 from .policies import evaluate_profile_access, parse_robots_rules
 from .scoring import compute_score
 from .security import assert_safe_url, normalize_http_url, safe_redirect_target
+
+try:  # optional dependency
+    import spacy  # type: ignore
+except Exception:  # pragma: no cover - optional at runtime
+    spacy = None
 
 
 REDIRECT_STATUSES = {301, 302, 303, 307, 308}
@@ -103,6 +109,8 @@ UTILITY_CHUNK_RE = re.compile(
     r"(контакты|подписк|вход|регистрац|позвонить|почта|заказать))",
     flags=re.I,
 )
+_NLP_MODEL: Any = None
+_NLP_LOAD_ATTEMPTED = False
 
 
 def _utc_now() -> str:
@@ -114,6 +122,13 @@ def _safe_int(value: Any, fallback: int) -> int:
         return int(value)
     except Exception:
         return int(fallback)
+
+
+def _safe_float(value: Any, fallback: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return float(fallback)
 
 
 def _read_limited_body(response: requests.Response, max_html_bytes: int) -> tuple[bytes, bool]:
@@ -372,8 +387,11 @@ def _fetch_profile_snapshot(
 
 def _build_diff(nojs: Dict[str, Any], rendered: Optional[Dict[str, Any]], render_error: Optional[str] = None) -> Dict[str, Any]:
     if not rendered:
+        raw_text_length = int(((nojs.get("content") or {}).get("main_text_length") or 0))
         return {
             "textCoverage": None,
+            "raw_text_length": raw_text_length,
+            "rendered_text_length": 0,
             "linksDiff": {"added": 0, "removed": 0, "added_top": [], "removed_top": []},
             "headingsDiff": {"h1": 0, "h2": 0, "h3": 0},
             "h1Consistency": {"raw_h1": int((nojs.get("headings") or {}).get("h1") or 0), "rendered_h1": 0, "h1_appears_only_after_js": False},
@@ -408,6 +426,8 @@ def _build_diff(nojs: Dict[str, Any], rendered: Optional[Dict[str, Any]], render
         missing.append("Main content извлекается только reader-алгоритмом (raw пустой)")
     return {
         "textCoverage": text_coverage,
+        "raw_text_length": nojs_text,
+        "rendered_text_length": rendered_text,
         "linksDiff": {
             "added": len(added_links),
             "removed": len(removed_links),
@@ -658,6 +678,29 @@ def _module_status(evaluated: bool, reason: str = "", score: Optional[float] = N
     }
 
 
+def _get_nlp_model() -> Any:
+    global _NLP_MODEL, _NLP_LOAD_ATTEMPTED
+    if _NLP_MODEL is not None:
+        return _NLP_MODEL
+    if _NLP_LOAD_ATTEMPTED:
+        return None
+    _NLP_LOAD_ATTEMPTED = True
+    if spacy is None:
+        return None
+    for model in ("xx_ent_wiki_sm", "en_core_web_sm"):
+        try:
+            _NLP_MODEL = spacy.load(model)  # type: ignore[attr-defined]
+            return _NLP_MODEL
+        except Exception:
+            continue
+    return None
+
+
+def _clean_entity_name(value: str) -> str:
+    raw = re.sub(r"\s+", " ", str(value or "")).strip(" ,.;:()[]{}")
+    return raw[:120]
+
+
 def _content_clarity(snapshot: Dict[str, Any], entity_graph: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     content = snapshot.get("content") or {}
     headings = snapshot.get("headings") or {}
@@ -770,6 +813,116 @@ def _metrics_bytes(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _content_quality_metrics(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    content = snapshot.get("content") or {}
+    headings = snapshot.get("headings") or {}
+    metrics = _metrics_bytes(snapshot)
+    ratio = metrics.get("text_html_ratio")
+    if ratio is None:
+        text_len = int(content.get("main_text_length") or 0)
+        html_est = max(1, text_len * 2)
+        ratio = round(text_len / html_est, 4) if text_len > 0 else 0.0
+    text = str(content.get("main_text_preview") or "")
+    if not text:
+        return {
+            "status": "not_evaluated",
+            "reason": "missing_main_text",
+            "text_html_ratio": ratio,
+            "avg_paragraph_length": None,
+            "heading_count": int(headings.get("h1") or 0) + int(headings.get("h2") or 0) + int(headings.get("h3") or 0),
+            "duplicate_ratio": None,
+        }
+    paragraphs = [p.strip() for p in re.split(r"\n{2,}|(?<=\.)\s{2,}", text) if p.strip()]
+    if not paragraphs:
+        paragraphs = [x.strip() for x in _sentences(text) if x.strip()]
+    para_lengths = [len(p) for p in paragraphs if p]
+    avg_paragraph_length = round(statistics.mean(para_lengths), 2) if para_lengths else 0.0
+    words = _tokens(text)
+    dup_ratio = 0.0
+    if words:
+        dup_ratio = max(0.0, min(1.0, 1.0 - (len(set(words)) / max(1, len(words)))))
+    return {
+        "status": "evaluated",
+        "reason": "ok",
+        "text_html_ratio": ratio,
+        "avg_paragraph_length": avg_paragraph_length,
+        "heading_count": int(headings.get("h1") or 0) + int(headings.get("h2") or 0) + int(headings.get("h3") or 0),
+        "duplicate_ratio": round(dup_ratio, 4),
+    }
+
+
+def _retrieval_simulation(snapshot: Dict[str, Any], entities: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    content = snapshot.get("content") or {}
+    chunks = content.get("chunks") or []
+    if not chunks:
+        return {
+            "status": "not_evaluated",
+            "reason": "no_chunks_available",
+            "avg_score": 0.0,
+            "best_score": 0.0,
+            "retrieval_confidence": 0.0,
+            "queries": [],
+        }
+    meta = snapshot.get("meta") or {}
+    headings = snapshot.get("headings") or {}
+    ent = entities or {}
+    query_candidates: List[str] = []
+    if str(meta.get("title") or "").strip():
+        query_candidates.append(str(meta.get("title")))
+    h1_texts = headings.get("h1_texts") or []
+    if h1_texts:
+        query_candidates.append(str(h1_texts[0]))
+    for bucket in ("organizations", "products", "software"):
+        for item in (ent.get(bucket) or [])[:2]:
+            name = str((item or {}).get("name") if isinstance(item, dict) else item or "").strip()
+            if name:
+                query_candidates.append(name)
+    query_candidates = [q.strip() for q in query_candidates if q and q.strip()]
+    query_candidates = list(dict.fromkeys(query_candidates))[:6]
+    if not query_candidates:
+        query_candidates = ["What is this page about?"]
+
+    corpus = [str(c.get("text") or "") for c in chunks]
+    scores: List[float] = []
+    debug: List[Dict[str, Any]] = []
+    for query in query_candidates:
+        best = 0.0
+        for chunk in chunks:
+            text = str(chunk.get("text") or "")
+            sc = _tfidf_cosine(query, text, corpus)
+            if sc > best:
+                best = sc
+        best = max(0.0, min(1.0, float(best)))
+        scores.append(best)
+        debug.append({"query": query[:180], "best_overlap": round(best, 4)})
+    avg_score = (sum(scores) / max(1, len(scores))) if scores else 0.0
+    best_score = max(scores) if scores else 0.0
+    confidence = min(1.0, max(0.0, (avg_score * 0.7) + (best_score * 0.3)))
+    return {
+        "status": "evaluated",
+        "reason": "ok",
+        "avg_score": round(avg_score, 4),
+        "best_score": round(best_score, 4),
+        "retrieval_confidence": round(confidence, 4),
+        "queries": query_candidates,
+        "debug": debug[:10],
+    }
+
+
+def _validation_checks(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    content = snapshot.get("content") or {}
+    warnings: List[str] = []
+    text_len = int(content.get("main_text_length") or 0)
+    if text_len < 300:
+        warnings.append("low_content_confidence: extracted_text_length < 300")
+    if float(content.get("main_content_ratio") or 0.0) < 0.2:
+        warnings.append("main_content_ratio < 0.2")
+    return {
+        "content_sufficient": bool(text_len >= 300),
+        "warnings": warnings[:8],
+    }
+
+
 def _schema_snapshot_view(snapshot: Dict[str, Any] | None) -> Dict[str, Any]:
     schema = (snapshot or {}).get("schema") or {}
     jsonld = [str(x) for x in (schema.get("jsonld_types") or []) if str(x).strip()]
@@ -796,9 +949,25 @@ def _build_structured_data_split(nojs_snapshot: Dict[str, Any], rendered_snapsho
         source = "rendered"
     if int(raw.get("count") or 0) > 0 and int(rendered.get("count") or 0) > 0 and source != "rendered":
         source = "raw+rendered"
+    raw_types = list(raw.get("types") or [])
+    rendered_types = list(rendered.get("types") or [])
+    coverage_raw = _safe_float(raw.get("coverage_score"), 0.0) / 100.0
+    coverage_rendered = _safe_float(rendered.get("coverage_score"), 0.0) / 100.0
+    if int(raw.get("count") or 0) > 0 and int(rendered.get("count") or 0) > 0:
+        coverage_score = max(coverage_raw, coverage_rendered)
+    elif int(raw.get("count") or 0) > 0:
+        coverage_score = coverage_raw
+    elif int(rendered.get("count") or 0) > 0:
+        # Slightly reduce trust when schema exists only after JS.
+        coverage_score = coverage_rendered * 0.75
+    else:
+        coverage_score = 0.0
     return {
         "raw": raw,
         "rendered": rendered,
+        "raw_types": raw_types,
+        "rendered_types": rendered_types,
+        "coverage_score": round(max(0.0, min(1.0, coverage_score)), 4),
         "source": source,
         "rendered_only": bool(int(raw.get("count") or 0) == 0 and int(rendered.get("count") or 0) > 0),
     }
@@ -846,9 +1015,10 @@ def _page_classification_v2(nojs_snapshot: Dict[str, Any], rendered_snapshot: Di
         "product": [],
         "category": [],
         "listing": [],
+        "docs": [],
         "mixed": [],
     }
-    scores = {"homepage": 0, "article": 0, "product": 0, "category": 0, "listing": 0, "mixed": 0}
+    scores = {"homepage": 0, "article": 0, "product": 0, "category": 0, "listing": 0, "docs": 0, "mixed": 0}
 
     if has_org_schema:
         scores["homepage"] += 2
@@ -914,6 +1084,18 @@ def _page_classification_v2(nojs_snapshot: Dict[str, Any], rendered_snapshot: Di
     if has_itemlist:
         scores["listing"] += 1
 
+    if re.search(r"\b(docs|documentation|api|sdk|reference|manual|guide)\b", text_blob):
+        scores["docs"] += 2
+        signals_map["docs"].append("docs/api keywords")
+    if any(tok in path.lower() for tok in ("/docs", "/documentation", "/api", "/reference", "/manual", "/kb", "/help")):
+        scores["docs"] += 2
+        signals_map["docs"].append("documentation route")
+    if bool({"techarticle", "howto"} & all_schema):
+        scores["docs"] += 2
+        signals_map["docs"].append("docs schema hint")
+    if main_len >= 900 and links_count <= 140:
+        scores["docs"] += 1
+
     if scores["article"] >= 3 and (scores["listing"] >= 3 or scores["category"] >= 3):
         scores["mixed"] = max(scores["article"], scores["listing"], scores["category"])
         signals_map["mixed"] = ["article and listing signals overlap"]
@@ -939,62 +1121,182 @@ def _page_classification_v2(nojs_snapshot: Dict[str, Any], rendered_snapshot: Di
 def _extract_entities_v2(nojs_snapshot: Dict[str, Any], rendered_snapshot: Dict[str, Any] | None, structured_data: Dict[str, Any]) -> Dict[str, Any]:
     meta = nojs_snapshot.get("meta") or {}
     content = nojs_snapshot.get("content") or {}
+    headings = nojs_snapshot.get("headings") or {}
+    signals = nojs_snapshot.get("signals") or {}
+    links = nojs_snapshot.get("links") or {}
+    rendered_content = (rendered_snapshot or {}).get("content") or {}
+
     schema_raw = set(str(x).strip().lower() for x in ((structured_data.get("raw") or {}).get("types") or []))
     schema_rendered = set(str(x).strip().lower() for x in ((structured_data.get("rendered") or {}).get("types") or []))
     schema_all = schema_raw | schema_rendered
+
     text_blob = " ".join(
         [
             str(meta.get("site_name") or ""),
             str(meta.get("title") or ""),
-            str((rendered_snapshot or {}).get("meta", {}).get("title") or ""),
+            str(meta.get("description") or ""),
+            " ".join([str(x) for x in (headings.get("h1_texts") or [])]),
+            " ".join([str(x) for x in (headings.get("h2_texts") or [])]),
             str(content.get("main_text_preview") or ""),
+            str(rendered_content.get("main_text_preview") or ""),
+            " ".join([str((x or {}).get("anchor") or "") for x in (links.get("top") or [])[:40]]),
         ]
     )
-    org_candidates: Dict[str, Dict[str, Any]] = {}
 
-    def add_org(name: str, source: str, conf: float) -> None:
-        n = str(name or "").strip()
-        if len(n) < 2:
+    entities: Dict[str, Dict[str, Dict[str, Any]]] = {
+        "organizations": {},
+        "persons": {},
+        "products": {},
+        "software": {},
+        "locations": {},
+    }
+
+    def add_entity(bucket: str, name: str, source: str, confidence: float) -> None:
+        key_name = _clean_entity_name(name)
+        if len(key_name) < 2:
             return
-        key = n.lower()
-        prev = org_candidates.get(key)
+        key = key_name.lower()
+        prev = entities[bucket].get(key)
         if not prev:
-            org_candidates[key] = {"name": n[:120], "confidence": conf, "source_set": {source}}
+            entities[bucket][key] = {
+                "name": key_name,
+                "confidence": round(float(max(0.0, min(1.0, confidence))), 3),
+                "source_set": {source},
+            }
             return
-        prev["confidence"] = max(float(prev.get("confidence") or 0.0), conf)
+        prev["confidence"] = round(max(float(prev.get("confidence") or 0.0), float(confidence)), 3)
         prev["source_set"].add(source)
 
-    if meta.get("site_name"):
-        add_org(str(meta.get("site_name")), "meta", 0.88)
+    site_name = str(meta.get("site_name") or "").strip()
+    if site_name:
+        add_entity("organizations", site_name, "meta", 0.9)
 
-    for m in re.finditer(r"\b([A-Z][A-Za-z0-9&\.-]{1,40}(?:\s+[A-Z][A-Za-z0-9&\.-]{1,40}){0,3})\b", text_blob):
-        token = str(m.group(1) or "").strip()
-        if len(token) < 3:
-            continue
-        lower = token.lower()
-        if lower in STOPWORDS:
-            continue
-        if any(x in lower for x in ("inc", "llc", "ltd", "corp", "company", "group", "studio", "agency")):
-            add_org(token, "text", 0.74)
+    title = str(meta.get("title") or "").strip()
+    if title:
+        for part in re.split(r"[|\-–—:]", title):
+            token = _clean_entity_name(part)
+            if 3 <= len(token) <= 70 and token.lower() not in STOPWORDS:
+                if any(t in token.lower() for t in ("inc", "llc", "ltd", "corp", "ооо", "ao ", "oao")):
+                    add_entity("organizations", token, "meta", 0.78)
 
-    if "organization" in schema_all or "localbusiness" in schema_all:
-        if meta.get("site_name"):
-            add_org(str(meta.get("site_name")), "schema", 0.93)
-        elif meta.get("title"):
-            add_org(str(meta.get("title")).split("|")[0].split("-")[0].strip(), "schema", 0.79)
+    # Schema-driven hints (type-level).
+    if {"organization", "localbusiness", "website"} & schema_all:
+        if site_name:
+            add_entity("organizations", site_name, "schema", 0.95)
+    if {"person", "author"} & schema_all:
+        for sample in (signals.get("author_samples") or [])[:5]:
+            add_entity("persons", str(sample), "schema+meta", 0.92)
+    if {"product", "offer", "aggregateoffer", "individualproduct"} & schema_all:
+        for source_text in [title] + [str(x) for x in (headings.get("h1_texts") or [])[:2]]:
+            part = _clean_entity_name(source_text.split("|")[0].split(":")[0])
+            if len(part) >= 3:
+                add_entity("products", part, "schema+title", 0.86)
+    if {"softwareapplication", "software"} & schema_all:
+        for source_text in [title] + [str(x) for x in (headings.get("h1_texts") or [])[:2]]:
+            part = _clean_entity_name(source_text.split("|")[0].split(":")[0])
+            if len(part) >= 3:
+                add_entity("software", part, "schema+title", 0.88)
 
-    organizations: List[Dict[str, Any]] = []
-    for item in org_candidates.values():
-        sources = sorted(item.pop("source_set", set()))
-        item["source"] = "+".join(sources) if sources else "text"
-        item["confidence"] = round(float(item.get("confidence") or 0.0), 3)
-        organizations.append(item)
-    organizations = sorted(organizations, key=lambda x: float(x.get("confidence") or 0.0), reverse=True)[:20]
+    # Heuristic text patterns.
+    for m in re.finditer(
+        r"\b([A-ZА-Я][A-Za-zА-Яа-я0-9&\.-]{1,40}(?:\s+[A-ZА-Я][A-Za-zА-Яа-я0-9&\.-]{1,40}){0,3})\s+(Inc|LLC|Ltd|Corp|Group|Company|ООО|ЗАО|ОАО|АО)\b",
+        text_blob,
+    ):
+        add_entity("organizations", m.group(0), "text", 0.8)
+
+    for m in re.finditer(
+        r"\b(?:by|author|written by|автор)\s+([A-ZА-Я][A-Za-zА-Яа-я\-]{1,30}(?:\s+[A-ZА-Я][A-Za-zА-Яа-я\-]{1,30}){0,2})",
+        text_blob,
+        flags=re.I,
+    ):
+        add_entity("persons", m.group(1), "text", 0.76)
+
+    for m in re.finditer(
+        r"\b([A-ZА-Я][A-Za-zА-Яа-я0-9\-]{2,}(?:\s+[A-ZА-Яa-zа-я0-9\-]{1,20}){0,2})\s+(software|platform|app|sdk|api)\b",
+        text_blob,
+        flags=re.I,
+    ):
+        add_entity("software", m.group(1), "text", 0.78)
+
+    for m in re.finditer(
+        r"\b([A-ZА-Я][A-Za-zА-Яа-я0-9\-]{2,}(?:\s+[A-Za-zА-Яа-я0-9\-]{1,15}){0,3})\s+(\$|usd|eur|price|pricing|buy|купить|цена)\b",
+        text_blob,
+        flags=re.I,
+    ):
+        add_entity("products", m.group(1), "text", 0.74)
+
+    for m in re.finditer(
+        r"\b(in|at|from|город|в)\s+([A-ZА-Я][A-Za-zА-Яа-я\-]{2,}(?:\s+[A-ZА-Я][A-Za-zА-Яа-я\-]{2,}){0,2})\b",
+        text_blob,
+        flags=re.I,
+    ):
+        add_entity("locations", m.group(2), "text", 0.7)
+
+    # spaCy NER (optional).
+    nlp = _get_nlp_model()
+    if nlp is not None:
+        try:
+            doc = nlp(text_blob[:120000])
+            for ent in getattr(doc, "ents", []):
+                label = str(getattr(ent, "label_", "") or "").upper()
+                name = _clean_entity_name(str(getattr(ent, "text", "") or ""))
+                if len(name) < 2:
+                    continue
+                if label in {"ORG"}:
+                    add_entity("organizations", name, "spacy", 0.83)
+                elif label in {"PERSON", "PER"}:
+                    add_entity("persons", name, "spacy", 0.8)
+                elif label in {"PRODUCT"}:
+                    add_entity("products", name, "spacy", 0.8)
+                elif label in {"GPE", "LOC"}:
+                    add_entity("locations", name, "spacy", 0.78)
+        except Exception:
+            pass
+
+    def finalize(bucket: str, limit: int = 20) -> List[Dict[str, Any]]:
+        rows: List[Dict[str, Any]] = []
+        for item in entities[bucket].values():
+            sources = sorted(item.pop("source_set", set()))
+            rows.append(
+                {
+                    "name": item.get("name"),
+                    "confidence": round(float(item.get("confidence") or 0.0), 3),
+                    "source": "+".join(sources) if sources else "text",
+                }
+            )
+        rows.sort(key=lambda x: float(x.get("confidence") or 0.0), reverse=True)
+        return rows[:limit]
+
+    organizations = finalize("organizations")
+    persons = finalize("persons")
+    products = finalize("products")
+    software = finalize("software")
+    locations = finalize("locations")
+
+    words_total = max(
+        1,
+        len(
+            re.findall(
+                r"[A-Za-zА-Яа-я0-9]+",
+                " ".join(
+                    [
+                        str(content.get("main_text_preview") or ""),
+                        str(rendered_content.get("main_text_preview") or ""),
+                    ]
+                ),
+            )
+        ),
+    )
+    total_entities = len(organizations) + len(persons) + len(products) + len(software) + len(locations)
+    entity_density = round(total_entities / words_total, 6)
+
     return {
         "organizations": organizations,
-        "persons": [],
-        "products": [],
-        "locations": [],
+        "persons": persons,
+        "products": products,
+        "software": software,
+        "locations": locations,
+        "entity_density": entity_density,
     }
 
 
@@ -1004,49 +1306,60 @@ def _citation_model_v2(
     segmentation: Dict[str, Any],
     ai_understanding: Dict[str, Any] | None,
     ingestion: Dict[str, Any] | None,
+    retrieval: Dict[str, Any] | None = None,
+    entities: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     raw = structured_data.get("raw") or {}
     rendered = structured_data.get("rendered") or {}
-    raw_cov = float(raw.get("coverage_score") or 0.0) / 100.0
-    rendered_cov = float(rendered.get("coverage_score") or 0.0) / 100.0
+    raw_cov = _safe_float(raw.get("coverage_score"), 0.0) / 100.0
+    rendered_cov = _safe_float(rendered.get("coverage_score"), 0.0) / 100.0
     if int(raw.get("count") or 0) > 0:
-        schema_score = min(1.0, max(raw_cov, 0.25))
+        schema_score = min(1.0, max(raw_cov, 0.2))
     elif int(rendered.get("count") or 0) > 0:
-        schema_score = min(0.7, max(rendered_cov * 0.7, 0.2))
+        schema_score = min(0.8, max(rendered_cov * 0.7, 0.12))
     else:
-        schema_score = 0.1
+        schema_score = 0.05
 
-    segmentation_score = float(segmentation.get("confidence") or 0.0)
+    segmentation_score = _safe_float(segmentation.get("segmentation_confidence"), _safe_float(segmentation.get("confidence"), 0.0))
     if segmentation_score <= 0:
-        segmentation_score = float((segmentation.get("main_content_confidence") or {}).get("score") or 0.0)
+        segmentation_score = _safe_float((segmentation.get("main_content_confidence") or {}).get("score"), 0.0)
     segmentation_score = min(1.0, max(0.0, segmentation_score))
 
-    semantic_density = float((segmentation.get("main_content_analysis") or {}).get("semantic_density") or 0.0)
-    clarity = float((ai_understanding or {}).get("content_clarity") or 0.0) / 100.0
-    semantic_score = min(1.0, max(semantic_density * 1.8, clarity))
+    entity_density = _safe_float((entities or {}).get("entity_density"), 0.0)
+    if entity_density <= 0:
+        semantic_density = _safe_float((segmentation.get("main_content_analysis") or {}).get("semantic_density"), 0.0)
+        entity_density = semantic_density * 0.4
+    entity_score = min(1.0, max(0.0, entity_density * 80.0))
 
     if str((ingestion or {}).get("status") or "").lower() == "evaluated":
-        ingestion_score = min(1.0, max(0.0, float((ingestion or {}).get("score") or 0.0) / 100.0))
+        ingestion_score = min(1.0, max(0.0, _safe_float((ingestion or {}).get("ingestion_score"), _safe_float((ingestion or {}).get("score"), 0.0) / 100.0)))
     else:
-        ingestion_score = 0.4
+        ingestion_score = 0.25
+
+    if str((retrieval or {}).get("status") or "").lower() == "evaluated":
+        retrieval_score = min(1.0, max(0.0, _safe_float((retrieval or {}).get("avg_score"), 0.0)))
+    else:
+        retrieval_score = 0.2
 
     probability = (
-        (0.25 * schema_score)
-        + (0.25 * segmentation_score)
-        + (0.25 * semantic_score)
-        + (0.25 * ingestion_score)
+        (0.25 * ingestion_score)
+        + (0.25 * retrieval_score)
+        + (0.20 * segmentation_score)
+        + (0.15 * entity_score)
+        + (0.15 * schema_score)
     )
-    available = sum(1 for x in [schema_score, segmentation_score, semantic_score, ingestion_score] if x > 0.0)
-    confidence = min(1.0, 0.5 + (available * 0.1) + abs(segmentation_score - semantic_score) * -0.1)
+    available = sum(1 for x in [schema_score, segmentation_score, entity_score, ingestion_score, retrieval_score] if x > 0.0)
+    confidence = min(1.0, 0.45 + (available * 0.09))
     return {
         "citation_probability": round(float(max(0.0, min(1.0, probability))), 4),
         "confidence": round(float(max(0.0, min(1.0, confidence))), 4),
-        "version": "v2",
+        "version": "v3",
         "components": {
             "schema_score": round(schema_score, 4),
             "segmentation_score": round(segmentation_score, 4),
-            "semantic_score": round(semantic_score, 4),
+            "entity_score": round(entity_score, 4),
             "ingestion_score": round(ingestion_score, 4),
+            "retrieval_score": round(retrieval_score, 4),
         },
     }
 
@@ -1807,11 +2120,18 @@ def run_llm_crawler_simulation(
     js_dep = _js_dependency_score(rendered_snapshot, diff, render_status=render_status)
     score["js_dependency_score"] = js_dep.get("score")
     segmentation_payload = (nojs_snapshot.get("segmentation") or {})
+    content_extraction = (
+        segmentation_payload.get("content_extraction")
+        or (nojs_snapshot.get("content") or {}).get("content_extraction")
+        or {}
+    )
     citation_model = _citation_model_v2(
         structured_data=structured_data,
         segmentation=segmentation_payload,
         ai_understanding=None,
         ingestion=None,
+        retrieval=None,
+        entities=None,
     )
     citation_prob = round(float(citation_model.get("citation_probability") or 0.0) * 100.0, 2)
     entity_graph = _build_entity_graph(nojs_snapshot) if bool(getattr(settings, "LLM_CRAWLER_ENTITY_GRAPH_ENABLED", False)) else None
@@ -1828,14 +2148,19 @@ def run_llm_crawler_simulation(
         diff,
         llm_enabled=bool(getattr(settings, "LLM_SIMULATION_ENABLED", False)),
     )
+    content_quality = _content_quality_metrics(nojs_snapshot)
     discoverability = _crawler_path_sim(nojs_snapshot)
     ai_understanding = _ai_understanding(nojs_snapshot, llm_sim)
     entities = _extract_entities_v2(nojs_snapshot, rendered_snapshot, structured_data)
+    retrieval = _retrieval_simulation(nojs_snapshot, entities)
+    validation = _validation_checks(nojs_snapshot)
     citation_model = _citation_model_v2(
         structured_data=structured_data,
         segmentation=segmentation_payload,
         ai_understanding=ai_understanding,
         ingestion=ingestion,
+        retrieval=retrieval,
+        entities=entities,
     )
     citation_prob = round(float(citation_model.get("citation_probability") or 0.0) * 100.0, 2)
     trust_signal_score = _trust_score(nojs_snapshot)
@@ -1892,6 +2217,10 @@ def run_llm_crawler_simulation(
         "cloaking": cloaking_result,
         "citation_probability": citation_prob,
         "citation_model": citation_model,
+        "content_extraction": content_extraction,
+        "content_quality": content_quality,
+        "retrieval": retrieval,
+        "validation": validation,
         "entity_graph": entity_graph,
         "entities": entities,
         "eeat_score": eeat,
@@ -2394,6 +2723,21 @@ def _llm_ingestion(snapshot: Dict[str, Any], diff: Dict[str, Any], llm_enabled: 
     avg_len = sum(len(c.get("text") or "") for c in chunks) / max(1, chunks_count)
     readability = float(content.get("readability_score") or 0)
     avg_quality = round(min(100, (readability / 100) * 40 + min(60, avg_len / 40)), 2)
+    chunk_tokens = [len(_tokens(str(c.get("text") or ""))) for c in chunks]
+    def survive_count(budget: int) -> int:
+        used = 0
+        kept = 0
+        for t in chunk_tokens:
+            t_used = max(1, int(t))
+            if used + t_used > budget:
+                break
+            used += t_used
+            kept += 1
+        return kept
+    chunks_survive_512 = survive_count(512)
+    chunks_survive_1024 = survive_count(1024)
+    chunks_survive_2048 = survive_count(2048)
+    ingestion_score = round(chunks_survive_1024 / max(1, chunks_count), 4)
     lost = 0.0
     if diff.get("textCoverage") is not None:
         try:
@@ -2418,6 +2762,11 @@ def _llm_ingestion(snapshot: Dict[str, Any], diff: Dict[str, Any], llm_enabled: 
     payload.update(
         {
         "chunks_count": chunks_count,
+        "chunks_total": chunks_count,
+        "chunks_survive_512": chunks_survive_512,
+        "chunks_survive_1024": chunks_survive_1024,
+        "chunks_survive_2048": chunks_survive_2048,
+        "ingestion_score": ingestion_score,
         "avg_chunk_quality": avg_quality,
         "lost_content_percent": round(lost * 100, 2),
         "ingestion_risk": ingestion_risk,
@@ -2658,6 +3007,8 @@ def _ai_answer_preview(
 
 
 def _js_dependency_score(rendered_snapshot: Dict[str, Any] | None, diff: Dict[str, Any], render_status: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    raw_text_length = int(diff.get("raw_text_length") or 0)
+    rendered_text_length = int(diff.get("rendered_text_length") or 0)
     if not rendered_snapshot:
         reason = str((render_status or {}).get("reason") or "render_not_executed")
         return {
@@ -2666,6 +3017,8 @@ def _js_dependency_score(rendered_snapshot: Dict[str, Any] | None, diff: Dict[st
             "score": None,
             "risk": "not_executed",
             "coverage_ratio": None,
+            "raw_text_length": raw_text_length,
+            "rendered_text_length": rendered_text_length,
             "failures": None,
             "blocked": None,
             "content_loaded_by_js_ratio": None,
@@ -2685,13 +3038,15 @@ def _js_dependency_score(rendered_snapshot: Dict[str, Any] | None, diff: Dict[st
             "score": None,
             "risk": "unknown",
             "coverage_ratio": None,
+            "raw_text_length": raw_text_length,
+            "rendered_text_length": rendered_text_length,
             "failures": failed,
             "blocked": blocked,
             "content_loaded_by_js_ratio": None,
         }
     coverage_ratio = max(0.0, min(1.0, coverage_ratio))
     dependency_score = (1.0 - coverage_ratio) * 100.0
-    dependency_score += min(12.0, (failed * 0.8) + (blocked * 1.2))
+    dependency_score += min(5.0, (failed * 0.25) + (blocked * 0.5))
     dependency_score = max(0.0, min(100.0, dependency_score))
     if coverage_ratio > 0.7:
         risk = "low"
@@ -2705,6 +3060,8 @@ def _js_dependency_score(rendered_snapshot: Dict[str, Any] | None, diff: Dict[st
         "score": round(dependency_score, 2),
         "risk": risk,
         "coverage_ratio": round(coverage_ratio, 4),
+        "raw_text_length": raw_text_length,
+        "rendered_text_length": rendered_text_length,
         "failures": failed,
         "blocked": blocked,
         "content_loaded_by_js_ratio": round(max(0.0, min(1.0, 1.0 - coverage_ratio)), 4),

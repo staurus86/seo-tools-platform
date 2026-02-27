@@ -501,8 +501,9 @@ def build_snapshot(
         readability_text=readability_text,
         trafilatura_text=trafilatura_text,
     )
+    content_extraction = segmentation.get("content_extraction") or {}
     main_text = _safe_text(segmentation.get("main_text") or raw_main_text)
-    main_content_ratio = float(segmentation.get("main_ratio") or 0.0)
+    main_content_ratio = float(segmentation.get("main_text_ratio") or segmentation.get("main_ratio") or 0.0)
     if main_content_ratio <= 0:
         main_content_ratio = len(main_text) / max(1, len(full_text))
     boilerplate_ratio = float(segmentation.get("boilerplate_ratio") or max(0.0, 1.0 - main_content_ratio))
@@ -622,6 +623,7 @@ def build_snapshot(
             "noise_breakdown": segmentation.get("noise_breakdown") or {},
             "main_content_confidence": segmentation.get("main_content_confidence") or {},
             "main_content_analysis": segmentation.get("main_content_analysis") or {},
+            "content_extraction": content_extraction,
             "navigation_detection": segmentation.get("navigation_detection") or {},
             "ads_detection": segmentation.get("ads_detection") or {},
             "utility_detection": segmentation.get("utility_detection") or {},
@@ -662,10 +664,16 @@ def build_snapshot(
             "noise_breakdown": segmentation.get("noise_breakdown") or {},
             "main_content_confidence": segmentation.get("main_content_confidence") or {},
             "main_ratio": segmentation.get("main_ratio"),
+            "main_text_ratio": segmentation.get("main_text_ratio"),
+            "nav_ratio": segmentation.get("nav_ratio"),
+            "utility_ratio": segmentation.get("utility_ratio"),
+            "supporting_ratio": segmentation.get("supporting_ratio"),
             "boilerplate_ratio": segmentation.get("boilerplate_ratio"),
+            "segmentation_confidence": segmentation.get("segmentation_confidence"),
             "confidence": segmentation.get("confidence"),
             "extractor_agreement": segmentation.get("extractor_agreement"),
             "main_selectors": segmentation.get("main_selectors") or [],
+            "content_extraction": content_extraction,
             "navigation_detection": segmentation.get("navigation_detection") or {},
             "ads_detection": segmentation.get("ads_detection") or {},
             "utility_detection": segmentation.get("utility_detection") or {},

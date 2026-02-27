@@ -41,12 +41,14 @@ class LlmCrawlerExtractionSchemaTests(unittest.TestCase):
         )
         schema = snap.get("schema") or {}
         all_types = set(schema.get("jsonld_types") or []) | set(schema.get("microdata_types") or []) | set(schema.get("rdfa_types") or [])
+        seg = snap.get("segmentation") or {}
         self.assertIn("Organization", all_types)
         self.assertIn("ItemList", all_types)
         self.assertIn("FAQPage", all_types)
         self.assertIn("Review", all_types)
         self.assertGreaterEqual(int(schema.get("count") or 0), 4)
         self.assertGreaterEqual(int(schema.get("microdata_count") or 0), 1)
+        self.assertIn("content_extraction", seg)
 
     def test_detects_loose_jsonld_type_when_json_invalid(self):
         html = """

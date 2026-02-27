@@ -8,12 +8,16 @@ from app.tools.llmCrawler.service import (
     _apply_chunk_dedupe,
     _build_structured_data_split,
     _build_improvement_library,
+    _content_quality_metrics,
+    _citation_model_v2,
     _compute_eeat,
     _detect_page_type,
     _page_classification_v2,
     _js_dependency_score,
     _llm_ingestion,
+    _retrieval_simulation,
     _snippet_library,
+    _extract_entities_v2,
 )
 
 
@@ -205,6 +209,36 @@ class LlmCrawlerServiceQualityTests(unittest.TestCase):
         self.assertEqual(ingestion.get("status"), "evaluated")
         self.assertEqual(ingestion.get("mode"), "heuristic_without_llm")
         self.assertIsNotNone(ingestion.get("score"))
+        self.assertIn("chunks_survive_1024", ingestion)
+        self.assertIn("ingestion_score", ingestion)
+
+    def test_content_quality_metrics(self):
+        snapshot = self._snapshot()
+        quality = _content_quality_metrics(snapshot)
+        self.assertEqual(quality.get("status"), "evaluated")
+        self.assertIsNotNone(quality.get("text_html_ratio"))
+        self.assertGreaterEqual(float(quality.get("avg_paragraph_length") or 0), 0)
+
+    def test_retrieval_and_citation_model_v3(self):
+        snapshot = self._snapshot()
+        structured = _build_structured_data_split(snapshot, None)
+        entities = _extract_entities_v2(snapshot, None, structured)
+        retrieval = _retrieval_simulation(snapshot, entities)
+        self.assertEqual(retrieval.get("status"), "evaluated")
+        self.assertGreaterEqual(float(retrieval.get("avg_score") or 0), 0.0)
+
+        citation = _citation_model_v2(
+            structured_data=structured,
+            segmentation={"segmentation_confidence": 0.8, "main_content_analysis": {"semantic_density": 0.22}},
+            ai_understanding=None,
+            ingestion={"status": "evaluated", "ingestion_score": 0.6},
+            retrieval=retrieval,
+            entities=entities,
+        )
+        self.assertIn("components", citation)
+        self.assertIn("retrieval_score", citation["components"])
+        self.assertIn("entity_score", citation["components"])
+        self.assertIn(citation.get("version"), {"v2", "v3"})
 
     def test_eeat_heuristic_fallback_has_score(self):
         snapshot = self._snapshot()
@@ -243,6 +277,17 @@ class LlmCrawlerServiceQualityTests(unittest.TestCase):
         issues = ["LLM simulation not executed"]
         lib = _build_improvement_library(snapshot, snapshot["ai_blocks"], audit, issues, _snippet_library())
         self.assertTrue(lib.get("missing"))
+
+    def test_page_classification_v2_docs(self):
+        docs = self._snapshot()
+        docs["final_url"] = "https://example.com/docs/getting-started"
+        docs["meta"] = {"title": "API docs and SDK reference"}
+        docs["signals"] = {"author_present": False, "date_present": False, "organization_present": True}
+        docs["schema"] = {"jsonld_types": ["TechArticle"], "microdata_types": [], "rdfa_types": [], "coverage_score": 52}
+        docs["segmentation"] = {"noise_breakdown": {"nav_pct": 18, "live_pct": 0}, "utility_detection": {"utility_blocks": 1}, "main_ratio": 0.5}
+        structured = _build_structured_data_split(docs, None)
+        cls = _page_classification_v2(docs, None, structured)
+        self.assertIn(cls.get("type"), {"docs", "article"})
 
 
 if __name__ == "__main__":

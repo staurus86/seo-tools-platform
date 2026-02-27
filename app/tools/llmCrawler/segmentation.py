@@ -49,7 +49,7 @@ _AD_DOMAIN_RE = re.compile(
 
 _LIVE_RE = re.compile(r"(\b\d+\s*:\s*\d+\b|\blive\b|qualifier|schedule|match|score|fixture)", flags=re.I)
 _NAV_HINT_RE = re.compile(
-    r"(catalog|menu|nav|navigation|sidebar|megamenu|mega-menu|section-list|bitrix|bx-menu|header|footer|breadcrumbs)",
+    r"(catalog|menu|nav|navigation|sidebar|megamenu|mega-menu|section-list|header|footer|breadcrumbs)",
     flags=re.I,
 )
 _CTA_RE = re.compile(
@@ -60,6 +60,20 @@ _UTILITY_HINT_RE = re.compile(
     r"(contact|contacts|support|phone|email|address|privacy|terms|cookie|login|signup|register|cta)",
     flags=re.I,
 )
+_LINKISH_HINTS = {
+    "home",
+    "menu",
+    "catalog",
+    "category",
+    "news",
+    "contact",
+    "about",
+    "privacy",
+    "terms",
+    "login",
+    "signup",
+    "register",
+}
 
 _TAG_PRIORITY = {
     "main": 1.0,
@@ -113,6 +127,13 @@ def _text_density(text: str) -> float:
     return round(len(_words(raw)) / max(1, len(raw)), 4)
 
 
+def _unique_ratio(text: str) -> float:
+    ws = _words(text)
+    if not ws:
+        return 0.0
+    return round(len(set(ws)) / max(1, len(ws)), 4)
+
+
 def _extractor_agreement(texts: List[str]) -> float:
     cleaned = [t for t in texts if _word_count(t) >= 40]
     if len(cleaned) < 2:
@@ -125,6 +146,75 @@ def _extractor_agreement(texts: List[str]) -> float:
     if not sims:
         return 0.0
     return round(sum(sims) / len(sims), 4)
+
+
+def _heading_tokens(headings: Dict[str, Any] | None, soup: Any) -> set[str]:
+    raw: List[str] = []
+    h = headings or {}
+    for item in (h.get("h1_texts") or []):
+        raw.append(str(item))
+    for item in (h.get("h2_texts") or []):
+        raw.append(str(item))
+    if not raw:
+        for tag in (soup.find_all("h1") or [])[:4]:
+            raw.append(" ".join(tag.stripped_strings))
+        for tag in (soup.find_all("h2") or [])[:8]:
+            raw.append(" ".join(tag.stripped_strings))
+    return {w for w in _words(" ".join(raw)) if len(w) >= 3 and w not in _STOPWORDS}
+
+
+def _heading_overlap(text: str, heading_terms: set[str]) -> float:
+    if not heading_terms:
+        return 0.0
+    text_terms = _token_set(text)
+    if not text_terms:
+        return 0.0
+    return round(len(text_terms & heading_terms) / max(1, len(heading_terms)), 4)
+
+
+def _text_linkish_ratio(text: str) -> float:
+    ws = _words(text)
+    if not ws:
+        return 1.0
+    hint_hits = sum(1 for w in ws if w in _LINKISH_HINTS)
+    url_hits = len(re.findall(r"(https?://|www\.|/[a-z0-9_\-]{2,})", str(text or "").lower()))
+    ratio = (hint_hits + (url_hits * 2)) / max(1, len(ws))
+    return min(1.0, max(0.0, ratio * 3.0))
+
+
+def _extractor_quality(text: str, heading_terms: set[str]) -> float:
+    words = _word_count(text)
+    if words == 0:
+        return 0.0
+    text_len_norm = min(1.0, words / 900.0)
+    semantic = min(1.0, max(0.0, _semantic_density(text)))
+    overlap = min(1.0, max(0.0, _heading_overlap(text, heading_terms)))
+    low_link_density = 1.0 - _text_linkish_ratio(text)
+    uniq = min(1.0, max(0.0, _unique_ratio(text)))
+    score = (
+        (0.30 * text_len_norm)
+        + (0.25 * semantic)
+        + (0.20 * overlap)
+        + (0.15 * low_link_density)
+        + (0.10 * uniq)
+    )
+    return round(min(1.0, max(0.0, score)), 4)
+
+
+def _heading_based_text(soup: Any) -> str:
+    parts: List[str] = []
+    for node in soup.find_all(["h1", "h2", "h3", "p", "li"]):
+        text = _norm(" ".join(getattr(node, "stripped_strings", [])))
+        if not text:
+            continue
+        if str(getattr(node, "name", "")).lower() in {"h1", "h2", "h3"}:
+            parts.append(text)
+            continue
+        if len(text) >= 60:
+            parts.append(text)
+        if len(parts) >= 80:
+            break
+    return _norm(" ".join(parts))
 
 
 def _selector_key(node: Any) -> str:
@@ -211,7 +301,7 @@ def _classify_block(
         reasons.append("navigation tag")
         return "nav", reasons, 0.85, mega_hint
 
-    # Bitrix/mega-menu style nav detection.
+    # Generic mega-menu style nav detection.
     if mega_hint and link_density >= 0.5 and text_density < 0.2:
         reasons.append("mega menu link density")
         return "nav", reasons, 0.93, True
@@ -247,7 +337,6 @@ def segment_content(
     max_segments: int = 120,
 ) -> Dict[str, Any]:
     """Segment page content into main/noise classes with extractor fusion."""
-    del headings  # kept for API compatibility
     selectors = [
         "main",
         "article",
@@ -271,8 +360,12 @@ def segment_content(
     mega_menu_detected = False
     utility_blocks = 0
     utility_chars = 0
+    supporting_parts: List[str] = []
+    repetition_counter: Counter = Counter()
+    heading_terms = _heading_tokens(headings, soup)
+    total_candidates = max(1, len(candidates))
 
-    for node in candidates:
+    for idx, node in enumerate(candidates):
         if len(segments) >= max_segments:
             break
         raw = _norm(" ".join(getattr(node, "stripped_strings", [])))
@@ -289,6 +382,21 @@ def segment_content(
         words = _word_count(raw)
         text_density = _text_density(raw)
         link_density = round(float(link_count / max(1, words)), 4)
+        unique_score = _unique_ratio(raw)
+        length_norm = min(1.0, words / 220.0)
+        pos_ratio = idx / max(1, total_candidates - 1)
+        position_weight = max(0.15, 1.0 - abs(pos_ratio - 0.45) * 1.4)
+        rep_key = " ".join(_words(raw)[:16])
+        repetition_counter[rep_key] += 1
+        repetition_score = min(1.0, (repetition_counter[rep_key] - 1) / 4.0)
+        block_score = (
+            (length_norm * 0.35)
+            + ((1.0 - min(1.0, link_density)) * 0.25)
+            + (priority * 0.20)
+            + (position_weight * 0.10)
+            + (unique_score * 0.10)
+        )
+        block_score = max(0.0, min(1.0, block_score))
         total_links += link_count
 
         seg_type, reasons, conf, mega_hint = _classify_block(
@@ -305,14 +413,30 @@ def segment_content(
             utility_blocks += 1
             utility_chars += len(raw)
 
-        if seg_type == "main" and priority >= 0.55:
+        seg_class = "supporting"
+        if seg_type in {"nav", "footer"}:
+            seg_class = "navigation"
+        elif seg_type in {"ads", "live_scores"}:
+            seg_class = "boilerplate"
+        elif seg_type == "utility":
+            seg_class = "utility"
+        elif seg_type == "main":
+            if block_score >= 0.62 and words >= 70:
+                seg_class = "main"
+            else:
+                seg_class = "supporting"
+
+        if seg_class == "main" and priority >= 0.55:
             main_parts.append(raw)
             main_selectors[selector] += 1
+        elif seg_class == "supporting":
+            supporting_parts.append(raw)
 
         segments.append(
             {
                 "id": len(segments) + 1,
                 "type": seg_type,
+                "segment_class": seg_class,
                 "selector": selector,
                 "tag": str(getattr(node, "name", "") or ""),
                 "chars": len(raw),
@@ -321,6 +445,10 @@ def segment_content(
                 "link_density": link_density,
                 "text_density": text_density,
                 "priority": round(priority, 3),
+                "block_score": round(block_score, 4),
+                "position_weight": round(position_weight, 4),
+                "unique_score": round(unique_score, 4),
+                "repetition_score": round(repetition_score, 4),
                 "confidence": round(conf, 3),
                 "reasons": reasons[:3],
                 "text": raw[:500],
@@ -328,13 +456,30 @@ def segment_content(
         )
 
     dom_main_text = _norm(" ".join(main_parts))
+    dom_supporting_text = _norm(" ".join(supporting_parts))
+    heading_based = _heading_based_text(soup)
     extractor_texts = [
         str(extracted_text or ""),
         str(readability_text or ""),
         str(trafilatura_text or ""),
         dom_main_text,
+        heading_based,
     ]
     agreement = _extractor_agreement(extractor_texts)
+
+    extractor_map = {
+        "dom_density": dom_main_text,
+        "heading_based": heading_based,
+        "readability": str(readability_text or ""),
+        "trafilatura": str(trafilatura_text or ""),
+    }
+    extractor_scores = {
+        k: _extractor_quality(v, heading_terms)
+        for k, v in extractor_map.items()
+    }
+    primary_extractor = "dom_density"
+    if extractor_scores:
+        primary_extractor = max(extractor_scores.keys(), key=lambda key: extractor_scores[key])
 
     fallback_candidates = sorted(
         [_norm(x) for x in extractor_texts if _word_count(x) >= 60],
@@ -342,20 +487,33 @@ def segment_content(
         reverse=True,
     )
     main_text = dom_main_text or (fallback_candidates[0] if fallback_candidates else _norm(str(extracted_text or "")))
+    if _word_count(main_text) < 80 and _word_count(dom_supporting_text) >= 80:
+        main_text = _norm(f"{main_text} {dom_supporting_text}")
     if _word_count(main_text) < 60 and fallback_candidates:
         main_text = fallback_candidates[0]
+    if primary_extractor in extractor_map and _word_count(str(extractor_map.get(primary_extractor) or "")) >= 70:
+        chosen = _norm(str(extractor_map.get(primary_extractor) or ""))
+        if _word_count(chosen) >= _word_count(main_text):
+            main_text = chosen
     main_text = main_text[:140000]
 
     counts = {"main": 0, "ads": 0, "live_scores": 0, "nav": 0, "footer": 0, "utility": 0}
+    class_counts = {"main": 0, "supporting": 0, "navigation": 0, "utility": 0, "boilerplate": 0}
     total_chars = 0
     for seg in segments:
         seg_type = str(seg.get("type") or "utility")
         chars = int(seg.get("chars") or 0)
         counts[seg_type] = counts.get(seg_type, 0) + chars
+        seg_class = str(seg.get("segment_class") or "utility")
+        class_counts[seg_class] = class_counts.get(seg_class, 0) + chars
         total_chars += chars
     total_chars = max(1, total_chars)
 
-    main_ratio = round(float(len(main_text) / max(1, len(str(rendered_text or "")))), 4)
+    main_ratio = round(float(class_counts.get("main", 0) / total_chars), 4)
+    nav_ratio = round(float(class_counts.get("navigation", 0) / total_chars), 4)
+    utility_ratio = round(float(class_counts.get("utility", 0) / total_chars), 4)
+    supporting_ratio = round(float(class_counts.get("supporting", 0) / total_chars), 4)
+    main_text_ratio = round(float(len(main_text) / max(1, len(str(rendered_text or "")))), 4)
     boilerplate_ratio = round(max(0.0, 1.0 - main_ratio), 4)
     breakdown = {
         "main_pct": round((counts.get("main", 0) / total_chars) * 100, 2),
@@ -371,7 +529,7 @@ def segment_content(
         (agreement * 0.45)
         + (min(1.0, text_density_main / 0.24) * 0.25)
         + (min(1.0, semantic_density * 2.2) * 0.2)
-        + (min(1.0, main_ratio / 0.6) * 0.1)
+        + (min(1.0, main_text_ratio / 0.6) * 0.1)
     )
     conf = max(0.0, min(1.0, conf))
     reasons: List[str] = []
@@ -392,6 +550,11 @@ def segment_content(
     return {
         "content_segments": segments[:60],
         "main_text": main_text,
+        "content_extraction": {
+            "primary_extractor": primary_extractor,
+            "extractor_scores": extractor_scores,
+            "extraction_confidence": round(min(1.0, max(0.0, (agreement * 0.45) + (max(extractor_scores.values() or [0.0]) * 0.55))), 4),
+        },
         "noise_breakdown": breakdown,
         "main_content_confidence": {
             "level": level,
@@ -399,7 +562,12 @@ def segment_content(
             "reasons": reasons[:5],
         },
         "main_ratio": main_ratio,
+        "main_text_ratio": main_text_ratio,
+        "nav_ratio": nav_ratio,
+        "utility_ratio": utility_ratio,
+        "supporting_ratio": supporting_ratio,
         "boilerplate_ratio": boilerplate_ratio,
+        "segmentation_confidence": round(conf, 4),
         "confidence": round(conf, 4),
         "extractor_agreement": agreement,
         "main_selectors": [k for k, _ in main_selectors.most_common(6)],

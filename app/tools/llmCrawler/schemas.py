@@ -124,6 +124,7 @@ class LlmCrawlerJobStatusResponse(BaseModel):
     improvement_library: Dict[str, Any] | None = None
     detection_issues: List[str] | None = None
     segmentation: Dict[str, Any] | None = None
+    content_extraction: Dict[str, Any] | None = None
     navigation_detection: Dict[str, Any] | None = None
     ads_detection: Dict[str, Any] | None = None
     structured_data: Dict[str, Any] | None = None
@@ -131,5 +132,8 @@ class LlmCrawlerJobStatusResponse(BaseModel):
     js_dependency: Dict[str, Any] | None = None
     utility_detection: Dict[str, Any] | None = None
     main_content_analysis: Dict[str, Any] | None = None
+    content_quality: Dict[str, Any] | None = None
+    retrieval: Dict[str, Any] | None = None
     entities: Dict[str, Any] | None = None
     citation_model: Dict[str, Any] | None = None
+    validation: Dict[str, Any] | None = None
