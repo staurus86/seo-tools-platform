@@ -20,6 +20,7 @@ from .security import assert_safe_url, normalize_http_url, safe_redirect_target
 REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 UA_NOJS = "Mozilla/5.0 (compatible; LLMCrawlerNoJS/1.0; +https://example.com/bot)"
 UA_RENDER = "Mozilla/5.0 (compatible; LLMCrawlerRendered/1.0; +https://example.com/bot)"
+MAX_BROWSER_AGE_SEC = 300
 
 
 def _utc_now() -> str:
@@ -65,6 +66,12 @@ def _fetch_http(
     from .security import get_allowed_ips_for_url
     
     session = requests.Session()
+    session.headers.update(
+        {
+            "User-Agent": user_agent,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        }
+    )
     current = normalize_http_url(url)
     if not current:
         raise ValueError("Invalid URL")
@@ -78,19 +85,27 @@ def _fetch_http(
     final_timing_ms = 0
     started_at = time.perf_counter()
 
+    attempts = 3
+    last_err: Optional[Exception] = None
+
     for _ in range(max(1, int(max_redirect_hops)) + 1):
         assert_safe_url(current)
         step_start = time.perf_counter()
-        response = session.get(
-            current,
-            allow_redirects=False,
-            timeout=(5, timeout_sec),
-            stream=True,
-            headers={
-                "User-Agent": user_agent,
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            },
-        )
+        response = None
+        for attempt in range(attempts):
+            try:
+                response = session.get(
+                    current,
+                    allow_redirects=False,
+                    timeout=(5, timeout_sec),
+                    stream=True,
+                )
+                break
+            except Exception as exc:
+                last_err = exc
+                time.sleep(0.2 * (attempt + 1))
+        if response is None:
+            raise RuntimeError(f"HTTP fetch failed after retries: {last_err}")
         step_timing = int((time.perf_counter() - step_start) * 1000)
         status_code = int(response.status_code)
         location_raw = str(response.headers.get("Location") or "").strip()
@@ -164,7 +179,7 @@ def _rendered_fetch(
     allowed_ips = get_allowed_ips_for_url(initial_url)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+        browser = _get_or_create_browser(p)
         try:
             context = browser.new_context(user_agent=UA_RENDER)
             page = context.new_page()
@@ -213,7 +228,10 @@ def _rendered_fetch(
                 "redirect_chain": chain,
             }
         finally:
-            browser.close()
+            try:
+                context.close()
+            except Exception:
+                pass
 
 
 def _build_diff(nojs: Dict[str, Any], rendered: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -260,6 +278,10 @@ def _policies_from_robots(
     max_html_bytes: int,
     max_redirect_hops: int,
 ) -> Dict[str, Any]:
+    cached = _robots_cache_get(final_url)
+    if cached:
+        return cached
+
     parsed = urlparse(final_url)
     robots_url = urlunparse((parsed.scheme or "https", parsed.netloc, "/robots.txt", "", "", ""))
     robots_fetch = _fetch_http(
@@ -274,7 +296,7 @@ def _policies_from_robots(
     profiles: Dict[str, Any] = {}
     for profile in requested_profiles:
         profiles[profile] = evaluate_profile_access(rules=rules, profile=profile, url=final_url)
-    return {
+    payload = {
         "robots": {
             "url": robots_url,
             "final_url": robots_fetch.get("final_url"),
@@ -284,6 +306,60 @@ def _policies_from_robots(
             "rules_count": len(rules),
         },
     }
+    _robots_cache_put(final_url, payload)
+    return payload
+
+
+# ─── helpers ──────────────────────────────────────────────────────────────
+
+_browser_holder: Dict[str, Any] = {"browser": None, "created_at": 0.0}
+
+
+def _get_or_create_browser(p) -> Any:
+    now = time.time()
+    browser = _browser_holder.get("browser")
+    created = float(_browser_holder.get("created_at") or 0.0)
+    if browser:
+        try:
+            browser.is_connected()
+            if now - created < MAX_BROWSER_AGE_SEC:
+                return browser
+        except Exception:
+            browser = None
+    try:
+        browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+        _browser_holder["browser"] = browser
+        _browser_holder["created_at"] = now
+        return browser
+    except Exception:
+        _browser_holder["browser"] = None
+        _browser_holder["created_at"] = 0.0
+        raise
+
+
+_robots_cache: Dict[str, tuple[float, Dict[str, Any]]] = {}
+_ROBOTS_CACHE_TTL = 600  # seconds
+
+
+def _robots_cache_get(url: str) -> Optional[Dict[str, Any]]:
+    now = time.time()
+    entry = _robots_cache.get(url)
+    if not entry:
+        return None
+    ts, payload = entry
+    if now - ts > _ROBOTS_CACHE_TTL:
+        _robots_cache.pop(url, None)
+        return None
+    return payload
+
+
+def _robots_cache_put(url: str, payload: Dict[str, Any]) -> None:
+    if len(_robots_cache) > 200:
+        # drop oldest 50
+        oldest = sorted(_robots_cache.items(), key=lambda kv: kv[1][0])[:50]
+        for key, _ in oldest:
+            _robots_cache.pop(key, None)
+    _robots_cache[url] = (time.time(), payload)
 
 
 def run_llm_crawler_simulation(
@@ -407,4 +483,3 @@ def run_llm_crawler_simulation(
         "score": score,
         "engine": "llm_crawler_mvp_v1",
     }
-
