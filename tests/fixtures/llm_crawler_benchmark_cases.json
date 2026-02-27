@@ -1,0 +1,110 @@
+[
+  {
+    "id": "article_case",
+    "expected": {
+      "page_type": "article",
+      "min_seg_conf": 0.65,
+      "min_retrieval": 0.50,
+      "min_schema_types": 2,
+      "min_citation": 0.55
+    },
+    "result": {
+      "page_type": "article",
+      "segmentation": {"segmentation_confidence": 0.81},
+      "retrieval": {"avg_score": 0.73},
+      "structured_data": {"raw_types": ["Organization", "Article"], "rendered_types": []},
+      "citation_model": {"citation_probability": 0.72},
+      "quality_gates": {"status": "pass"}
+    }
+  },
+  {
+    "id": "homepage_case",
+    "expected": {
+      "page_type": "homepage",
+      "min_seg_conf": 0.45,
+      "min_retrieval": 0.35,
+      "min_schema_types": 1,
+      "min_citation": 0.45
+    },
+    "result": {
+      "page_type": "homepage",
+      "segmentation": {"segmentation_confidence": 0.58},
+      "retrieval": {"avg_score": 0.51},
+      "structured_data": {"raw_types": ["Organization", "WebSite"], "rendered_types": []},
+      "citation_model": {"citation_probability": 0.59},
+      "quality_gates": {"status": "pass"}
+    }
+  },
+  {
+    "id": "product_case",
+    "expected": {
+      "page_type": "product",
+      "min_seg_conf": 0.55,
+      "min_retrieval": 0.45,
+      "min_schema_types": 1,
+      "min_citation": 0.50
+    },
+    "result": {
+      "page_type": "product",
+      "segmentation": {"segmentation_confidence": 0.69},
+      "retrieval": {"avg_score": 0.66},
+      "structured_data": {"raw_types": ["Product", "Offer"], "rendered_types": []},
+      "citation_model": {"citation_probability": 0.67},
+      "quality_gates": {"status": "pass"}
+    }
+  },
+  {
+    "id": "docs_case",
+    "expected": {
+      "page_type": "docs",
+      "min_seg_conf": 0.60,
+      "min_retrieval": 0.50,
+      "min_schema_types": 1,
+      "min_citation": 0.50
+    },
+    "result": {
+      "page_type": "docs",
+      "segmentation": {"segmentation_confidence": 0.78},
+      "retrieval": {"avg_score": 0.74},
+      "structured_data": {"raw_types": ["TechArticle"], "rendered_types": []},
+      "citation_model": {"citation_probability": 0.71},
+      "quality_gates": {"status": "pass"}
+    }
+  },
+  {
+    "id": "listing_case",
+    "expected": {
+      "page_type": "listing",
+      "min_seg_conf": 0.40,
+      "min_retrieval": 0.35,
+      "min_schema_types": 1,
+      "min_citation": 0.40
+    },
+    "result": {
+      "page_type": "listing",
+      "segmentation": {"segmentation_confidence": 0.54},
+      "retrieval": {"avg_score": 0.47},
+      "structured_data": {"raw_types": ["ItemList"], "rendered_types": []},
+      "citation_model": {"citation_probability": 0.52},
+      "quality_gates": {"status": "warn"}
+    }
+  },
+  {
+    "id": "js_heavy_case",
+    "expected": {
+      "page_type": "mixed",
+      "min_seg_conf": 0.35,
+      "min_retrieval": 0.30,
+      "min_schema_types": 1,
+      "min_citation": 0.35
+    },
+    "result": {
+      "page_type": "mixed",
+      "segmentation": {"segmentation_confidence": 0.49},
+      "retrieval": {"avg_score": 0.44},
+      "structured_data": {"raw_types": [], "rendered_types": ["Organization", "FAQPage"]},
+      "citation_model": {"citation_probability": 0.48},
+      "quality_gates": {"status": "warn"}
+    }
+  }
+]

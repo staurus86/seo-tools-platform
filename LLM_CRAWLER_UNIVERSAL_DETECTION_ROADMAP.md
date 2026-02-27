@@ -93,3 +93,9 @@ Make detection robust across any website/page type while keeping backward compat
 2. Keep old scoring/fields intact.
 3. Add monitoring on detector coverage and confidence.
 4. Enable stricter gating only after KPI baseline stabilizes.
+
+## Local Quality Gate
+- Run benchmark gate locally:
+  - `python scripts/llm_crawler_quality_gate.py`
+- Full JSON output:
+  - `python scripts/llm_crawler_quality_gate.py --json`

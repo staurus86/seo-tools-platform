@@ -18,6 +18,7 @@ from app.tools.http_text import decode_response_text
 from .extraction import build_snapshot
 from .patterns import DIRECTIVE_RESTRICTIVE_TOKENS
 from .policies import evaluate_profile_access, parse_robots_rules
+from .quality import calibrate_detector_layer
 from .scoring import compute_score
 from .security import assert_safe_url, normalize_http_url, safe_redirect_target
 
@@ -2539,6 +2540,10 @@ def run_llm_crawler_simulation(
         citation_model=citation_model,
         validation=validation,
     )
+    detectors, detector_calibration = calibrate_detector_layer(
+        detectors,
+        page_type=str(page_type_info.get("page_type") or "unknown"),
+    )
     quality_gates = _quality_gates(
         detectors=detectors,
         segmentation=segmentation_payload,
@@ -2614,6 +2619,7 @@ def run_llm_crawler_simulation(
         "improvement_library": improvement_library,
         "detection_issues": detection_issues,
         "detectors": detectors,
+        "detector_calibration": detector_calibration,
         "quality_gates": quality_gates,
         "recommendation_diagnostics": recommendation_diagnostics,
         "page_type": page_type_info.get("page_type"),
