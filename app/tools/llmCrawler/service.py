@@ -512,6 +512,7 @@ def run_llm_crawler_simulation(
 def _build_recommendations(nojs: Dict[str, Any], rendered: Optional[Dict[str, Any]], policies: Dict[str, Any], score: Dict[str, Any]) -> List[Dict[str, str]]:
     recs: List[Dict[str, str]] = []
     meta = (nojs.get("meta") or {})
+    social = (nojs.get("social") or {})
     if "noindex" in str(meta.get("meta_robots") or "").lower():
         recs.append({"priority": "P0", "area": "crawlability", "title": "Уберите noindex для страниц, которые должны индексироваться ботами/LLM"})
     challenge = (nojs.get("challenge") or {})
@@ -523,9 +524,13 @@ def _build_recommendations(nojs: Dict[str, Any], rendered: Optional[Dict[str, An
     signals = (nojs.get("signals") or {})
     if not signals.get("author_present") or not signals.get("date_present"):
         recs.append({"priority": "P1", "area": "trust", "title": "Укажите автора/дату публикации — повышает понятность и доверие"})
+    if not social.get("og_present") or not social.get("twitter_present"):
+        recs.append({"priority": "P2", "area": "social", "title": "Добавьте OpenGraph/Twitter метатеги для консистентных сниппетов и LLM-карточек"})
     links = (nojs.get("links") or {})
     if int(links.get("js_only_count") or 0) > 0:
         recs.append({"priority": "P1", "area": "links", "title": "Избегайте JS-only ссылок — используйте href для навигации ботов"})
+    if float(links.get("anchor_quality_score") or 0) < 50:
+        recs.append({"priority": "P2", "area": "links", "title": "Улучшите анкоры ссылок — больше смысловых текстов вместо 'здесь/читать'"})
     content = (nojs.get("content") or {})
     if int(content.get("main_text_length") or 0) < 500:
         recs.append({"priority": "P2", "area": "content", "title": "Увеличьте основной текст/контент — сейчас он слишком короткий для извлечения"})
