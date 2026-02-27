@@ -115,10 +115,10 @@ async def run_llm_crawler(payload: LlmCrawlerRunRequest, request: Request) -> Di
             )
 
     worker_ok = _worker_is_healthy()
-    redis_ok = get_redis_client() is not None
+    inline_allowed = bool(getattr(settings, "LLM_CRAWLER_INLINE_FALLBACK", False))
 
-    # Fallback to inline execution when worker/Redis unavailable.
-    if (not worker_ok) or (not redis_ok):
+    # Fallback to inline execution only when explicitly allowed and worker is unavailable.
+    if inline_allowed and (not worker_ok):
         try:
             inline_job_id = new_job_id()
             job = create_job_record(
