@@ -8,11 +8,19 @@ from fastapi import Request
 from app.config import settings
 
 
+def _normalize_token(value: str) -> str:
+    token = str(value or "").strip()
+    if len(token) >= 2 and ((token[0] == token[-1] == '"') or (token[0] == token[-1] == "'")):
+        token = token[1:-1].strip()
+    return token
+
+
 def _allowlist_tokens() -> Set[str]:
     raw = str(getattr(settings, "LLM_CRAWLER_ALLOWLIST", "") or "").strip()
     if not raw:
         return set()
-    return {token.strip() for token in raw.split(",") if token.strip()}
+    tokens = {_normalize_token(token) for token in raw.split(",")}
+    return {token for token in tokens if token}
 
 
 def _request_identity(request: Request) -> Dict[str, str]:
@@ -41,10 +49,13 @@ def is_llm_crawler_enabled_for_request(request: Request) -> bool:
     allowlist = _allowlist_tokens()
     if not allowlist:
         return False
+    if "*" in allowlist:
+        return True
 
     return bool(
         identity["user_id"] in allowlist
         or identity["project_id"] in allowlist
+        or identity["ip"] in allowlist
     )
 
 
@@ -66,4 +77,3 @@ def request_subject(request: Request) -> str:
     if identity["ip"]:
         return f"ip:{identity['ip']}"
     return "unknown"
-

@@ -6,13 +6,20 @@ from pydantic_settings import BaseSettings
 from typing import Optional
 
 
+def env_bool(name: str, default: str = "false") -> bool:
+    raw = str(os.getenv(name, default) or "").strip()
+    if len(raw) >= 2 and ((raw[0] == raw[-1] == '"') or (raw[0] == raw[-1] == "'")):
+        raw = raw[1:-1].strip()
+    return raw.lower() in {"1", "true", "yes", "on"}
+
+
 class Settings(BaseSettings):
     """Настройки приложения"""
     
     # App
     APP_NAME: str = "SEO Tools Platform"
     APP_VERSION: str = "1.0.0"
-    DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
+    DEBUG: bool = env_bool("DEBUG", "false")
     
     # Server
     HOST: str = "0.0.0.0"
@@ -66,9 +73,9 @@ class Settings(BaseSettings):
     PAGESPEED_MAX_RETRIES: int = int(os.getenv("PAGESPEED_MAX_RETRIES", "3"))
 
     # LLM Crawler Simulation rollout and limits
-    FEATURE_LLM_CRAWLER: bool = os.getenv("FEATURE_LLM_CRAWLER", "false").lower() == "true"
+    FEATURE_LLM_CRAWLER: bool = env_bool("FEATURE_LLM_CRAWLER", "false")
     LLM_CRAWLER_ALLOWLIST: str = os.getenv("LLM_CRAWLER_ALLOWLIST", "")
-    LLM_CRAWLER_ALLOW_ADMIN: bool = os.getenv("LLM_CRAWLER_ALLOW_ADMIN", "true").lower() == "true"
+    LLM_CRAWLER_ALLOW_ADMIN: bool = env_bool("LLM_CRAWLER_ALLOW_ADMIN", "true")
     JOB_CONCURRENCY: int = int(os.getenv("JOB_CONCURRENCY", "2"))
     FETCH_TIMEOUT_MS: int = int(os.getenv("FETCH_TIMEOUT_MS", "20000"))
     MAX_HTML_BYTES: int = int(os.getenv("MAX_HTML_BYTES", "2000000"))
@@ -79,24 +86,24 @@ class Settings(BaseSettings):
     LLM_CRAWLER_QUEUE_KEY: str = os.getenv("LLM_CRAWLER_QUEUE_KEY", "llmCrawler:queue")
     LLM_CRAWLER_WORKER_HEARTBEAT_KEY: str = os.getenv("LLM_CRAWLER_WORKER_HEARTBEAT_KEY", "llmCrawler:worker:heartbeat")
     LLM_CRAWLER_WORKER_HEARTBEAT_TTL_SEC: int = int(os.getenv("LLM_CRAWLER_WORKER_HEARTBEAT_TTL_SEC", "120"))
-    LLM_CRAWLER_REQUIRE_HEALTHY_WORKER: bool = os.getenv("LLM_CRAWLER_REQUIRE_HEALTHY_WORKER", "true").lower() == "true"
+    LLM_CRAWLER_REQUIRE_HEALTHY_WORKER: bool = env_bool("LLM_CRAWLER_REQUIRE_HEALTHY_WORKER", "true")
     LLM_CRAWLER_STUCK_JOB_TIMEOUT_SEC: int = int(os.getenv("LLM_CRAWLER_STUCK_JOB_TIMEOUT_SEC", "300"))
-    LLM_CRAWLER_INLINE_FALLBACK: bool = os.getenv("LLM_CRAWLER_INLINE_FALLBACK", "false").lower() == "true"
+    LLM_CRAWLER_INLINE_FALLBACK: bool = env_bool("LLM_CRAWLER_INLINE_FALLBACK", "false")
     LLM_CRAWLER_JOB_TTL_SECONDS: int = int(os.getenv("LLM_CRAWLER_JOB_TTL_SECONDS", str(86400)))
     LLM_CRAWLER_MAX_JOB_BYTES: int = int(os.getenv("LLM_CRAWLER_MAX_JOB_BYTES", str(1_500_000)))
-    LLM_CRAWLER_COMPRESS_RESULTS: bool = os.getenv("LLM_CRAWLER_COMPRESS_RESULTS", "true").lower() == "true"
-    LLM_CRAWLER_CLOAKING_ENABLED: bool = os.getenv("LLM_CRAWLER_CLOAKING_ENABLED", "false").lower() == "true"
-    LLM_CRAWLER_EEAT_ENABLED: bool = os.getenv("LLM_CRAWLER_EEAT_ENABLED", "false").lower() == "true"
-    LLM_CRAWLER_ENTITY_GRAPH_ENABLED: bool = os.getenv("LLM_CRAWLER_ENTITY_GRAPH_ENABLED", "false").lower() == "true"
-    LLM_CRAWLER_VECTOR_SCORE_ENABLED: bool = os.getenv("LLM_CRAWLER_VECTOR_SCORE_ENABLED", "false").lower() == "true"
-    LLM_REPORT_V2_ENABLED: bool = os.getenv("LLM_REPORT_V2_ENABLED", "false").lower() == "true"
-    LLM_REPORT_V3_ENABLED: bool = os.getenv("LLM_REPORT_V3_ENABLED", "false").lower() == "true"
-    LLM_UI_WOW_ENABLED: bool = os.getenv("LLM_UI_WOW_ENABLED", "false").lower() == "true"
+    LLM_CRAWLER_COMPRESS_RESULTS: bool = env_bool("LLM_CRAWLER_COMPRESS_RESULTS", "true")
+    LLM_CRAWLER_CLOAKING_ENABLED: bool = env_bool("LLM_CRAWLER_CLOAKING_ENABLED", "false")
+    LLM_CRAWLER_EEAT_ENABLED: bool = env_bool("LLM_CRAWLER_EEAT_ENABLED", "false")
+    LLM_CRAWLER_ENTITY_GRAPH_ENABLED: bool = env_bool("LLM_CRAWLER_ENTITY_GRAPH_ENABLED", "false")
+    LLM_CRAWLER_VECTOR_SCORE_ENABLED: bool = env_bool("LLM_CRAWLER_VECTOR_SCORE_ENABLED", "false")
+    LLM_REPORT_V2_ENABLED: bool = env_bool("LLM_REPORT_V2_ENABLED", "false")
+    LLM_REPORT_V3_ENABLED: bool = env_bool("LLM_REPORT_V3_ENABLED", "false")
+    LLM_UI_WOW_ENABLED: bool = env_bool("LLM_UI_WOW_ENABLED", "false")
     MAX_JOBS_PER_MINUTE: int = int(os.getenv("MAX_JOBS_PER_MINUTE", "10"))
     MAX_CONCURRENT_JOBS: int = int(os.getenv("MAX_CONCURRENT_JOBS", "2"))
-    LLM_CRAWLER_LIMITS_ENABLED: bool = os.getenv("LLM_CRAWLER_LIMITS_ENABLED", "false").lower() == "true"
-    LLM_SIMULATION_ENABLED: bool = os.getenv("LLM_SIMULATION_ENABLED", "false").lower() == "true"
-    LLM_REPORT_HTML_ENABLED: bool = os.getenv("LLM_REPORT_HTML_ENABLED", "false").lower() == "true"
+    LLM_CRAWLER_LIMITS_ENABLED: bool = env_bool("LLM_CRAWLER_LIMITS_ENABLED", "false")
+    LLM_SIMULATION_ENABLED: bool = env_bool("LLM_SIMULATION_ENABLED", "false")
+    LLM_REPORT_HTML_ENABLED: bool = env_bool("LLM_REPORT_HTML_ENABLED", "false")
 
     # Bot check v2
     BOT_CHECK_ENGINE: str = os.getenv("BOT_CHECK_ENGINE", "legacy")
@@ -111,10 +118,10 @@ class Settings(BaseSettings):
     # Render audit v2
     RENDER_AUDIT_ENGINE: str = os.getenv("RENDER_AUDIT_ENGINE", "v2")
     RENDER_AUDIT_TIMEOUT: int = int(os.getenv("RENDER_AUDIT_TIMEOUT", "35"))
-    RENDER_AUDIT_DEBUG: bool = os.getenv("RENDER_AUDIT_DEBUG", "false").lower() == "true"
+    RENDER_AUDIT_DEBUG: bool = env_bool("RENDER_AUDIT_DEBUG", "false")
 
     # Site Audit Pro rollout
-    SITE_AUDIT_PRO_ENABLED: bool = os.getenv("SITE_AUDIT_PRO_ENABLED", "true").lower() == "true"
+    SITE_AUDIT_PRO_ENABLED: bool = env_bool("SITE_AUDIT_PRO_ENABLED", "true")
     SITE_AUDIT_PRO_DEFAULT_MODE: str = os.getenv("SITE_AUDIT_PRO_DEFAULT_MODE", "quick")
     SITE_AUDIT_PRO_MAX_PAGES_LIMIT: int = int(os.getenv("SITE_AUDIT_PRO_MAX_PAGES_LIMIT", "5"))
     SITE_AUDIT_PRO_MAX_PAGES_LIMIT_QUICK: int = int(os.getenv("SITE_AUDIT_PRO_MAX_PAGES_LIMIT_QUICK", "5"))
