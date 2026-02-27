@@ -27,7 +27,7 @@ from .service import run_llm_crawler_simulation
 from fastapi.responses import HTMLResponse
 from fastapi.responses import Response
 from io import BytesIO
-import datetime
+import datetime as dt
 
 
 router = APIRouter(prefix="/api/tools/llm-crawler", tags=["LLM Crawler Simulation"])
@@ -302,7 +302,7 @@ async def llm_crawler_report_docx(job_id: str, request: Request) -> Response:
     doc = Document()
     doc.styles["Normal"].font.name = "Arial"
     doc.add_heading("LLM Crawler Report", level=1)
-    doc.add_paragraph(f"Generated: {datetime.datetime.utcnow().isoformat()}Z")
+    doc.add_paragraph(f"Generated: {dt.datetime.utcnow().isoformat()}Z")
     doc.add_paragraph(f"URL: {result.get('final_url') or result.get('requested_url') or '-'}")
 
     score = (result.get("score") or {}).get("total", "-")
