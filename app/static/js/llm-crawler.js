@@ -164,7 +164,6 @@ function initLlmCrawlerResult(jobId) {
     const resultBox = document.getElementById('llm-result-box');
     const downloadBtn = document.getElementById('llm-download-json');
     const downloadDocxBtn = document.getElementById('llm-download-docx');
-    const downloadDocxBtn = document.getElementById('llm-download-docx');
 
     let pollHandle = null;
     let latestResult = null;
