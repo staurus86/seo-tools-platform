@@ -261,7 +261,11 @@ function renderRecs(result) {
 async function initV2(jobId) {
   try {
     const data = await fetchJob(jobId);
-    if (data.status !== 'done') throw new Error('Job not finished');
+    if (data.status !== 'done') {
+      const root = document.querySelector('.llm-v2');
+      if (root) root.innerHTML = `<div class="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-xl">Задача ещё выполняется (status=${data.status}). Обновите страницу позже.</div>`;
+      return;
+    }
     const result = data.result || {};
     renderHero(result);
     renderCritical(result);
