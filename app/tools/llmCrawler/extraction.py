@@ -7,8 +7,14 @@ from typing import Any, Dict, List, Set
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
-import trafilatura
-from readability import Document
+try:  # optional dependency
+    import trafilatura  # type: ignore
+except Exception:  # pragma: no cover - optional at runtime
+    trafilatura = None
+try:  # optional dependency
+    from readability import Document  # type: ignore
+except Exception:  # pragma: no cover
+    Document = None
 
 
 def _safe_text(value: Any) -> str:
@@ -202,14 +208,16 @@ def build_snapshot(
     # Reader-mode variants
     readability_text = ""
     trafilatura_text = ""
-    try:
-        readability_text = _safe_text(Document(html).summary())[:5000]
-    except Exception:
-        readability_text = ""
-    try:
-        trafilatura_text = _safe_text(trafilatura.extract(html, url=final_url) or "")[:5000]
-    except Exception:
-        trafilatura_text = ""
+    if Document:
+        try:
+            readability_text = _safe_text(Document(html).summary())[:5000]
+        except Exception:
+            readability_text = ""
+    if trafilatura:
+        try:
+            trafilatura_text = _safe_text(trafilatura.extract(html, url=final_url) or "")[:5000]
+        except Exception:
+            trafilatura_text = ""
     links = _extract_links(soup, final_url, limit=20)
     schema_types = _extract_jsonld_types(soup)
     x_robots_tag = _safe_text((headers or {}).get("X-Robots-Tag") or (headers or {}).get("x-robots-tag"))

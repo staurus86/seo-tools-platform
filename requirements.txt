@@ -32,6 +32,8 @@ python-dateutil==2.8.2
 tenacity==8.2.3
 tqdm==4.66.1
 validators==0.22.0
+trafilatura==2.0.0
+readability-lxml==0.8.1
 
 # Testing
 pytest==7.4.4
