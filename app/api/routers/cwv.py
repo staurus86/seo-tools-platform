@@ -5,10 +5,10 @@ import re
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import field_validator
 
-from app.validators import URLModel
+from app.validators import URLModel, normalize_http_input as _normalize_http_input
 from app.api.routers._task_store import create_task_pending, update_task_state
 
 router = APIRouter(tags=["SEO Tools"])
