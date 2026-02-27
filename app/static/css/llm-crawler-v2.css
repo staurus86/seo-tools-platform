@@ -2,11 +2,11 @@
   background: radial-gradient(circle at 30% 30%, #dbeafe, #e2e8f0 55%, #f8fafc);
 }
 .dark .hero-score {
-  background: radial-gradient(circle at 30% 30%, #0f172a, #111827 55%, #0b1224);
+  background: radial-gradient(circle at 30% 30%, #0f172a, #0b1224 55%, #0a0f1f);
 }
 .card {
   transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
+  }
 .card:hover {
   transform: translateY(-2px);
   box-shadow: 0 12px 30px rgba(0,0,0,0.08);

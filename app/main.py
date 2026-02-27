@@ -167,6 +167,7 @@ async def index(request: Request):
     """Main page with tools."""
     if templates:
         llm_enabled = False
+        llm_v2_enabled = bool(getattr(settings, "LLM_REPORT_V2_ENABLED", False))
         try:
             from app.tools.llmCrawler.feature_gate import is_llm_crawler_enabled_for_request
 
@@ -178,6 +179,7 @@ async def index(request: Request):
             {
                 "request": request,
                 "feature_llm_crawler_enabled": llm_enabled,
+                "feature_llm_crawler_v2_enabled": llm_v2_enabled,
             },
         )
     return HTMLResponse("<h1>SEO Tools Platform</h1><p>Templates not loaded</p>")
