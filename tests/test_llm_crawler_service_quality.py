@@ -7,6 +7,7 @@ from app.tools.llmCrawler.service import (
     _ai_understanding,
     _apply_chunk_dedupe,
     _build_improvement_library,
+    _compute_eeat,
     _detect_page_type,
     _js_dependency_score,
     _llm_ingestion,
@@ -114,6 +115,30 @@ class LlmCrawlerServiceQualityTests(unittest.TestCase):
         ingestion = _llm_ingestion(snapshot, diff={"textCoverage": 0.7})
         self.assertEqual(ingestion.get("status"), "not_evaluated")
         self.assertEqual(ingestion.get("reason"), "no_chunks_available")
+
+    def test_ingestion_fallback_when_llm_disabled(self):
+        snapshot = self._snapshot()
+        ingestion = _llm_ingestion(snapshot, diff={"textCoverage": 0.8}, llm_enabled=False)
+        self.assertEqual(ingestion.get("status"), "evaluated")
+        self.assertEqual(ingestion.get("mode"), "heuristic_without_llm")
+        self.assertIsNotNone(ingestion.get("score"))
+
+    def test_eeat_heuristic_fallback_has_score(self):
+        snapshot = self._snapshot()
+        snapshot["signals"].update(
+            {
+                "has_contact_info": True,
+                "has_legal_docs": True,
+                "has_reviews": True,
+                "trust_badges": False,
+                "organization_present": True,
+            }
+        )
+        eeat = _compute_eeat(snapshot, score={"total": 70}, mode="heuristic_fallback")
+        self.assertEqual(eeat.get("status"), "evaluated")
+        self.assertEqual(eeat.get("mode"), "heuristic_fallback")
+        self.assertGreater(float(eeat.get("score") or 0), 0)
+        self.assertIn("components", eeat)
 
     def test_directive_audit_and_library(self):
         snapshot = self._snapshot()

@@ -183,7 +183,127 @@ def _extract_links(soup: BeautifulSoup, base_url: str, limit: int = 20) -> Dict[
     }
 
 
+def _detect_author_info(soup: BeautifulSoup, text: str) -> bool:
+    raw = (text or "").lower()
+    if soup.find(attrs={"rel": re.compile("author", re.I)}):
+        return True
+    if soup.find(attrs={"itemprop": re.compile("author", re.I)}):
+        return True
+    if soup.find(attrs={"class": re.compile(r"author|byline|editor|reviewed|эксперт|автор", re.I)}):
+        return True
+    author_tokens = (
+        "author",
+        "written by",
+        "editor",
+        "reviewed by",
+        "fact checked",
+        "автор",
+        "редактор",
+        "проверено",
+        "эксперт",
+        "материал подготовил",
+    )
+    return any(token in raw for token in author_tokens)
+
+
+def _detect_contact_info(soup: BeautifulSoup, text: str) -> bool:
+    raw = (text or "").lower()
+    if soup.find("a", href=re.compile(r"^(mailto:|tel:)", re.I)):
+        return True
+    if soup.find(attrs={"itemprop": re.compile(r"address|telephone|email|contactpoint", re.I)}):
+        return True
+    contact_tokens = (
+        "contact",
+        "contacts",
+        "support",
+        "customer service",
+        "hotline",
+        "address",
+        "email",
+        "e-mail",
+        "контакты",
+        "связаться",
+        "поддержка",
+        "горячая линия",
+        "адрес",
+        "почта",
+    )
+    return any(token in raw for token in contact_tokens)
+
+
+def _detect_legal_docs(text: str) -> bool:
+    raw = (text or "").lower()
+    legal_tokens = (
+        "privacy policy",
+        "terms of use",
+        "terms and conditions",
+        "gdpr",
+        "ccpa",
+        "cookie policy",
+        "refund policy",
+        "disclaimer",
+        "privacy",
+        "terms",
+        "cookies",
+        "политика конфиденциальности",
+        "политика обработки персональных данных",
+        "условия использования",
+        "пользовательское соглашение",
+        "оферта",
+        "куки",
+    )
+    return any(token in raw for token in legal_tokens)
+
+
+def _detect_reviews(soup: BeautifulSoup, text: str) -> bool:
+    raw = (text or "").lower()
+    if soup.find(attrs={"itemprop": re.compile("review|rating", re.I)}):
+        return True
+    if soup.find(attrs={"class": re.compile(r"review|rating|testimonial|отзыв", re.I)}):
+        return True
+    review_tokens = (
+        "review",
+        "rating",
+        "testimonial",
+        "stars",
+        "score",
+        "customer stories",
+        "отзыв",
+        "отзывы",
+        "рейтинг",
+        "оценка",
+    )
+    return any(token in raw for token in review_tokens)
+
+
+def _detect_trust_badges(text: str) -> bool:
+    raw = (text or "").lower()
+    badge_tokens = (
+        "secure",
+        "verified",
+        "ssl",
+        "tls",
+        "https",
+        "guarantee",
+        "trusted",
+        "certified",
+        "official partner",
+        "money-back",
+        "warranty",
+        "iso",
+        "pci dss",
+        "безопасно",
+        "защищено",
+        "проверено",
+        "гарантия",
+        "сертификат",
+        "лицензия",
+    )
+    return any(token in raw for token in badge_tokens)
+
+
 def _extract_author_date_signals(soup: BeautifulSoup) -> Dict[str, Any]:
+    text = _safe_text(" ".join(soup.stripped_strings))[:80000]
     author_candidates = []
     for tag in soup.find_all("meta"):
         name = _safe_text(tag.get("name")).lower()
@@ -202,11 +322,23 @@ def _extract_author_date_signals(soup: BeautifulSoup) -> Dict[str, Any]:
         if dt:
             date_candidates.append(dt)
 
+    author_present = bool([x for x in author_candidates if x]) or _detect_author_info(soup, text)
+    organization_present = bool(
+        soup.find(attrs={"itemprop": re.compile(r"organization|publisher|brand", re.I)})
+        or soup.find(attrs={"class": re.compile(r"organization|company|publisher|brand", re.I)})
+        or soup.find("meta", attrs={"property": re.compile(r"og:site_name", re.I)})
+    )
+
     return {
-        "author_present": bool([x for x in author_candidates if x]),
+        "author_present": author_present,
         "author_samples": [x for x in author_candidates if x][:5],
         "date_present": bool([x for x in date_candidates if x]),
         "date_samples": [x for x in date_candidates if x][:5],
+        "has_contact_info": _detect_contact_info(soup, text),
+        "has_legal_docs": _detect_legal_docs(text),
+        "has_reviews": _detect_reviews(soup, text),
+        "trust_badges": _detect_trust_badges(text),
+        "organization_present": organization_present,
     }
 
 
@@ -412,6 +544,9 @@ def build_snapshot(
     coverage_score = round((coverage_found / max(1, len(required_schema))) * 100, 2)
     x_robots_tag = _safe_text((headers or {}).get("X-Robots-Tag") or (headers or {}).get("x-robots-tag"))
     signals = _extract_author_date_signals(soup)
+    if not bool(signals.get("organization_present")):
+        lower_types = {str(x).lower() for x in total_types}
+        signals["organization_present"] = bool({"organization", "localbusiness"} & lower_types)
     social = _extract_social_meta(soup)
     challenge = detect_challenge(status_code, headers, html)
     resources = detect_resource_barriers(final_url, headers, html, soup)

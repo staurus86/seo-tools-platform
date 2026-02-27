@@ -1396,16 +1396,16 @@ def run_llm_crawler_simulation(
     entity_graph = _build_entity_graph(nojs_snapshot) if bool(getattr(settings, "LLM_CRAWLER_ENTITY_GRAPH_ENABLED", False)) else None
     if entity_graph:
         nojs_snapshot["entity_graph"] = entity_graph
-    eeat = (
-        _compute_eeat(nojs_snapshot, score)
-        if bool(getattr(settings, "LLM_CRAWLER_EEAT_ENABLED", False))
-        else _module_status(False, "feature_disabled", None, ["Enable LLM_CRAWLER_EEAT_ENABLED"])
+    eeat = _compute_eeat(
+        nojs_snapshot,
+        score,
+        mode="full" if bool(getattr(settings, "LLM_CRAWLER_EEAT_ENABLED", False)) else "heuristic_fallback",
     )
     vector_score = _vector_quality_score(nojs_snapshot, entity_graph) if bool(getattr(settings, "LLM_CRAWLER_VECTOR_SCORE_ENABLED", False)) else None
-    ingestion = (
-        _llm_ingestion(nojs_snapshot, diff)
-        if bool(getattr(settings, "LLM_SIMULATION_ENABLED", False))
-        else _module_status(False, "feature_disabled", None, ["Enable LLM_SIMULATION_ENABLED"])
+    ingestion = _llm_ingestion(
+        nojs_snapshot,
+        diff,
+        llm_enabled=bool(getattr(settings, "LLM_SIMULATION_ENABLED", False)),
     )
     discoverability = _crawler_path_sim(nojs_snapshot)
     ai_understanding = _ai_understanding(nojs_snapshot, llm_sim)
@@ -1763,6 +1763,10 @@ def _compute_citation_probability(snapshot: Dict[str, Any], score: Dict[str, Any
         base += 10
     if signals.get("date_present"):
         base += 5
+    if signals.get("organization_present"):
+        base += 8
+    if signals.get("has_contact_info"):
+        base += 4
     if int(headings.get("h1") or 0) >= 1 and int(headings.get("h2") or 0) >= 2:
         base += 10
     ratio = float(content.get("main_content_ratio") or 0)
@@ -1773,6 +1777,15 @@ def _compute_citation_probability(snapshot: Dict[str, Any], score: Dict[str, Any
     return float(max(0, min(100, base)))
 
 
+def _has_schema_type(schema: Dict[str, Any], wanted: set[str]) -> bool:
+    all_types = set()
+    for key in ("jsonld_types", "microdata_types", "rdfa_types"):
+        for item in (schema.get(key) or []):
+            all_types.add(str(item).strip().lower())
+    wanted_l = {str(x).strip().lower() for x in wanted}
+    return bool(all_types & wanted_l)
+
+
 def _build_entity_graph(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     schema = snapshot.get("schema") or {}
     text = ((snapshot.get("content") or {}).get("main_text_preview") or "") + " " + ((snapshot.get("meta") or {}).get("title") or "")
@@ -1780,7 +1793,11 @@ def _build_entity_graph(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     persons = set()
     products = set()
     locations = set()
-    for t in schema.get("jsonld_types", []):
+    schema_types = set()
+    for key in ("jsonld_types", "microdata_types", "rdfa_types"):
+        for item in (schema.get(key) or []):
+            schema_types.add(str(item))
+    for t in schema_types:
         if "Organization" in t:
             orgs.add("schema:Organization")
         if "Person" in t:
@@ -1802,40 +1819,70 @@ def _build_entity_graph(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _compute_eeat(snapshot: Dict[str, Any], score: Dict[str, Any]) -> Dict[str, Any]:
+def _compute_eeat(snapshot: Dict[str, Any], score: Dict[str, Any], mode: str = "heuristic_fallback") -> Dict[str, Any]:
     signals = snapshot.get("signals") or {}
     schema = snapshot.get("schema") or {}
     meta = snapshot.get("meta") or {}
     content = snapshot.get("content") or {}
     if int(content.get("main_text_length") or 0) < 120:
         return _module_status(False, "insufficient_content", None, ["Not enough extracted text for EEAT evaluation"])
-    total = 50
+
+    word_count = int(content.get("word_count") or 0)
+    has_author = bool(signals.get("author_present"))
+    has_date = bool(signals.get("date_present"))
+    has_contact = bool(signals.get("has_contact_info"))
+    has_legal = bool(signals.get("has_legal_docs"))
+    has_reviews = bool(signals.get("has_reviews"))
+    trust_badges = bool(signals.get("trust_badges"))
+    org_present = bool(signals.get("organization_present")) or _has_schema_type(schema, {"Organization", "LocalBusiness"})
+    schema_cov = float(schema.get("coverage_score") or 0.0)
+
+    expertise = min(20.0, 6.0 + (12.0 if has_author else 0.0) + (2.0 if has_date else 0.0))
+    authoritativeness = min(
+        30.0,
+        8.0
+        + (8.0 if has_reviews else 0.0)
+        + (5.0 if trust_badges else 0.0)
+        + (6.0 if org_present else 0.0)
+        + min(6.0, schema_cov / 16.0),
+    )
+    trustworthiness = 0.0
+    if has_contact and has_legal:
+        trustworthiness = 30.0
+    elif has_contact or has_legal:
+        trustworthiness = 18.0
+    else:
+        trustworthiness = 6.0
+    if str(snapshot.get("final_url") or "").lower().startswith("https"):
+        trustworthiness = min(30.0, trustworthiness + 2.0)
+    experience = 20.0 if (word_count >= 300 and has_author) else (10.0 if word_count >= 500 else 0.0)
+    components = {
+        "expertise": round(expertise, 1),
+        "authoritativeness": round(authoritativeness, 1),
+        "trustworthiness": round(trustworthiness, 1),
+        "experience": round(experience, 1),
+    }
+    total = round(min(100.0, sum(float(v) for v in components.values())), 1)
     factors: List[str] = []
-    if signals.get("author_present"):
-        total += 10
-        factors.append("Author signal present")
-    else:
-        factors.append("Author signal missing")
-    if signals.get("date_present"):
-        total += 5
-        factors.append("Publish date present")
-    else:
-        factors.append("Publish date missing")
-    if schema.get("coverage_score", 0) >= 50:
-        total += 10
-        factors.append("Schema coverage >= 50%")
-    if schema.get("coverage_score", 0) >= 75:
-        total += 5
-        factors.append("Schema coverage >= 75%")
+    factors.append(f"Author signal: {'yes' if has_author else 'no'}")
+    factors.append(f"Publish date: {'yes' if has_date else 'no'}")
+    factors.append(f"Organization signal: {'yes' if org_present else 'no'}")
+    factors.append(f"Contact info: {'yes' if has_contact else 'no'}")
+    factors.append(f"Legal pages: {'yes' if has_legal else 'no'}")
+    factors.append(f"Reviews/testimonials: {'yes' if has_reviews else 'no'}")
+    factors.append(f"Trust badges: {'yes' if trust_badges else 'no'}")
+    factors.append(f"Schema coverage: {round(schema_cov, 2)}%")
     if meta.get("canonical"):
-        total += 3
         factors.append("Canonical URL present")
-    if signals.get("author_samples"):
-        total += 2
+    if has_author and signals.get("author_samples"):
         factors.append("Author samples in metadata")
-    total = max(0, min(100, total))
+
     payload = _module_status(True, "ok", float(total), factors)
     payload["score"] = float(total)
+    payload["components"] = components
+    payload["mode"] = "full" if mode == "full" else "heuristic_fallback"
+    if mode != "full":
+        payload["notes"] = ["Computed from deterministic heuristics (Site Audit Pro pattern set)."]
     return payload
 
 
@@ -1855,7 +1902,7 @@ def _vector_quality_score(snapshot: Dict[str, Any], entity_graph: Dict[str, Any]
     return float(max(0, min(100, round(score, 2))))
 
 
-def _llm_ingestion(snapshot: Dict[str, Any], diff: Dict[str, Any]) -> Dict[str, Any]:
+def _llm_ingestion(snapshot: Dict[str, Any], diff: Dict[str, Any], llm_enabled: bool = True) -> Dict[str, Any]:
     content = snapshot.get("content") or {}
     chunks = content.get("chunks") or []
     chunks_count = len(chunks)
@@ -1900,8 +1947,13 @@ def _llm_ingestion(snapshot: Dict[str, Any], diff: Dict[str, Any]) -> Dict[str, 
         "avg_chunk_quality": avg_quality,
         "lost_content_percent": round(lost * 100, 2),
         "ingestion_risk": ingestion_risk,
+        "mode": "llm" if llm_enabled else "heuristic_without_llm",
         }
     )
+    if not llm_enabled:
+        factors = list(payload.get("factors") or [])
+        factors.append("Computed without LLM runtime using extraction/chunk heuristics.")
+        payload["factors"] = factors
     return payload
 
 
@@ -1967,11 +2019,21 @@ def _trust_score(snapshot: Dict[str, Any]) -> float:
     schema = snapshot.get("schema") or {}
     trust = 0
     if signals.get("author_present"):
-        trust += 25
+        trust += 18
     if signals.get("date_present"):
-        trust += 15
+        trust += 10
+    if signals.get("has_contact_info"):
+        trust += 18
+    if signals.get("has_legal_docs"):
+        trust += 14
+    if signals.get("trust_badges"):
+        trust += 12
+    if signals.get("organization_present"):
+        trust += 8
     if schema.get("coverage_score", 0) >= 50:
-        trust += 30
+        trust += 15
+    if _has_schema_type(schema, {"Organization", "Article", "FAQPage", "Review"}):
+        trust += 5
     return float(max(0, min(100, trust)))
 
 
