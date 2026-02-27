@@ -35,6 +35,8 @@ tqdm==4.66.1
 validators==0.22.0
 trafilatura==2.0.0
 readability-lxml==0.8.1
+# keep requests compatibility and avoid RequestsDependencyWarning
+chardet==5.2.0
 
 # Testing
 pytest==7.4.4
