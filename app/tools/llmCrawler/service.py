@@ -18,7 +18,7 @@ from app.tools.http_text import decode_response_text
 from .extraction import build_snapshot
 from .patterns import DIRECTIVE_RESTRICTIVE_TOKENS
 from .policies import evaluate_profile_access, parse_robots_rules
-from .quality import calibrate_detector_layer
+from .quality import build_runtime_quality_profile, calibrate_detector_layer
 from .scoring import compute_score
 from .security import assert_safe_url, normalize_http_url, safe_redirect_target
 
@@ -31,7 +31,6 @@ except Exception:  # pragma: no cover - optional at runtime
 REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 UA_NOJS = "Mozilla/5.0 (compatible; LLMCrawlerNoJS/1.0; +https://example.com/bot)"
 UA_RENDER = "Mozilla/5.0 (compatible; LLMCrawlerRendered/1.0; +https://example.com/bot)"
-MAX_BROWSER_AGE_SEC = 300
 BOT_USER_AGENTS = {
     "gptbot": "Mozilla/5.0 (compatible; GPTBot/1.0; +https://openai.com/gptbot)",
     "googlebot": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
@@ -277,7 +276,10 @@ def _rendered_fetch(
     allowed_ips = get_allowed_ips_for_url(initial_url)
 
     with sync_playwright() as p:
-        browser = _get_or_create_browser(p)
+        # Do not reuse browser between runs: sync_playwright() closes its own loop/context.
+        # Reusing cached browser across calls can trigger "Event loop is closed".
+        browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+        context = None
         try:
             context = browser.new_context(user_agent=UA_RENDER)
             page = context.new_page()
@@ -347,8 +349,13 @@ def _rendered_fetch(
                 "failed_requests": failed_requests[:50],
             }
         finally:
+            if context is not None:
+                try:
+                    context.close()
+                except Exception:
+                    pass
             try:
-                context.close()
+                browser.close()
             except Exception:
                 pass
 
@@ -2203,31 +2210,6 @@ def _policies_from_robots(
 
 # ─── helpers ──────────────────────────────────────────────────────────────
 
-_browser_holder: Dict[str, Any] = {"browser": None, "created_at": 0.0}
-
-
-def _get_or_create_browser(p) -> Any:
-    now = time.time()
-    browser = _browser_holder.get("browser")
-    created = float(_browser_holder.get("created_at") or 0.0)
-    if browser:
-        try:
-            browser.is_connected()
-            if now - created < MAX_BROWSER_AGE_SEC:
-                return browser
-        except Exception:
-            browser = None
-    try:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
-        _browser_holder["browser"] = browser
-        _browser_holder["created_at"] = now
-        return browser
-    except Exception:
-        _browser_holder["browser"] = None
-        _browser_holder["created_at"] = 0.0
-        raise
-
-
 _robots_cache: Dict[str, tuple[float, Dict[str, Any]]] = {}
 _ROBOTS_CACHE_TTL = 600  # seconds
 
@@ -2551,6 +2533,14 @@ def run_llm_crawler_simulation(
         citation_model=citation_model,
         validation=validation,
     )
+    quality_profile = build_runtime_quality_profile(
+        page_type=str(page_type_info.get("page_type") or "unknown"),
+        detectors=detectors,
+        detector_calibration=detector_calibration,
+        quality_gates=quality_gates,
+        retrieval=retrieval,
+        citation_model=citation_model,
+    )
     recommendation_diagnostics = _recommendation_diagnostics(
         recommendations=recommendations,
         nojs=nojs_snapshot,
@@ -2621,6 +2611,7 @@ def run_llm_crawler_simulation(
         "detectors": detectors,
         "detector_calibration": detector_calibration,
         "quality_gates": quality_gates,
+        "quality_profile": quality_profile,
         "recommendation_diagnostics": recommendation_diagnostics,
         "page_type": page_type_info.get("page_type"),
         "page_type_confidence": page_type_info.get("confidence"),

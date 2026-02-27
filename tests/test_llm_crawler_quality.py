@@ -1,6 +1,7 @@
 import unittest
 
 from app.tools.llmCrawler.quality import (
+    build_runtime_quality_profile,
     calibrate_detector_layer,
     evaluate_benchmark_cases,
     evaluate_quality_gate,
@@ -36,6 +37,19 @@ class LlmCrawlerQualityTests(unittest.TestCase):
         self.assertIn("benchmark", payload)
         self.assertIn("gate", payload)
         self.assertIn(payload["gate"].get("status"), {"pass", "warn", "fail"})
+
+    def test_runtime_quality_profile(self):
+        profile = build_runtime_quality_profile(
+            page_type="article",
+            detectors={"summary": {"coverage_ratio": 0.85, "avg_confidence": 0.76}},
+            detector_calibration={"profile_id": "article-v1", "downgraded_count": 0},
+            quality_gates={"status": "pass"},
+            retrieval={"retrieval_confidence": 0.71, "score_stddev": 0.08},
+            citation_model={"calibration_error_estimate": 0.03},
+        )
+        self.assertIn(profile.get("status"), {"stable", "warning", "unstable"})
+        self.assertEqual(profile.get("profile_id"), "article-v1")
+        self.assertTrue(isinstance(profile.get("drift_flags"), list))
 
 
 if __name__ == "__main__":

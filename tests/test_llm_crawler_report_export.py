@@ -47,6 +47,26 @@ class LlmCrawlerReportExportTests(unittest.TestCase):
                 "rendered": {"content": {"main_text_length": 2400}, "render_debug": {"console_errors": [], "failed_requests": []}},
                 "bot_matrix": [{"profile": "gptbot", "allowed": True, "reason": "ok"}],
                 "metrics_bytes": {"html_bytes": 24000, "text_bytes": 1800, "text_html_ratio": 0.075},
+                "quality_profile": {
+                    "status": "stable",
+                    "profile_id": "article-v1",
+                    "coverage_ratio": 0.84,
+                    "avg_detector_confidence": 0.76,
+                    "retrieval_confidence": 0.71,
+                    "retrieval_variance": 0.08,
+                    "citation_calibration_error": 0.03,
+                    "drift_flags": [],
+                },
+                "quality_gates": {
+                    "status": "pass",
+                    "passed": 6,
+                    "total": 6,
+                    "checks": [
+                        {"metric": "page_type_accuracy", "value": 0.9, "threshold": 0.8, "pass": True},
+                        {"metric": "citation_pass_rate", "value": 0.82, "threshold": 0.75, "pass": True},
+                    ],
+                },
+                "detector_calibration": {"profile_id": "article-v1", "downgraded_count": 0},
                 "recommendations": [
                     {
                         "priority": "P1",
@@ -67,4 +87,3 @@ class LlmCrawlerReportExportTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

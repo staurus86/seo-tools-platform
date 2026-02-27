@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 from app.config import settings
 
 from .feature_gate import is_llm_crawler_enabled_for_request, request_subject
+from .quality import run_quality_gate_from_file
 from .queue import (
     check_rate_limit,
     create_job_record,
@@ -252,6 +253,18 @@ async def llm_worker_health(request: Request) -> Dict[str, Any]:
     }
 
 
+@router.get("/quality-gate")
+async def llm_crawler_quality_gate(request: Request) -> Dict[str, Any]:
+    _ensure_feature_enabled(request)
+    role = str(request.headers.get("x-role", "") or "").strip().lower()
+    if role != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required for quality gate endpoint")
+    try:
+        return run_quality_gate_from_file()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Quality gate failed: {exc}") from exc
+
+
 @router.get("/jobs/{job_id}/report", response_class=HTMLResponse)
 async def llm_crawler_report(job_id: str, request: Request) -> HTMLResponse:
     _ensure_feature_enabled(request)
@@ -273,6 +286,10 @@ async def llm_crawler_report(job_id: str, request: Request) -> HTMLResponse:
     ai_directives = result.get("ai_directives") or {}
     detection_issues = result.get("detection_issues") or []
     improvement_library = result.get("improvement_library") or {}
+    quality_profile = result.get("quality_profile") or {}
+    quality_gates = result.get("quality_gates") or {}
+    detector_calibration = result.get("detector_calibration") or {}
+    quality_checks = quality_gates.get("checks") or []
     body = f"""
     <html><head><meta charset="utf-8"><title>{title}</title>
     <style>
@@ -308,6 +325,21 @@ async def llm_crawler_report(job_id: str, request: Request) -> HTMLResponse:
       <p>Coverage: {ai_blocks.get("coverage_percent","-")}%</p>
       <p>Missing critical: {', '.join(ai_blocks.get("missing_critical") or []) or 'none'}</p>
       <p>Directive restricted tokens: {', '.join(ai_directives.get("meta_restrictive_tokens") or []) or 'none'}</p>
+    </div>
+    <div class="card"><h3>Runtime Quality Profile</h3>
+      <p>Status: <b>{quality_profile.get("status","not_evaluated")}</b></p>
+      <p>Profile: {quality_profile.get("profile_id", detector_calibration.get("profile_id","-"))} | Page type: {quality_profile.get("page_type", result.get("page_type","-"))}</p>
+      <p>Detector coverage: {quality_profile.get("coverage_ratio","-")}</p>
+      <p>Avg detector confidence: {quality_profile.get("avg_detector_confidence","-")}</p>
+      <p>Retrieval confidence: {quality_profile.get("retrieval_confidence","-")} | Variance: {quality_profile.get("retrieval_variance","-")}</p>
+      <p>Citation calibration error: {quality_profile.get("citation_calibration_error","-")}</p>
+      <p>Drift flags: {', '.join(quality_profile.get("drift_flags") or []) or 'none'}</p>
+    </div>
+    <div class="card"><h3>Quality Gates</h3>
+      <p>Status: <b>{quality_gates.get("status","not_evaluated")}</b> | Passed: {quality_gates.get("passed","-")} / {quality_gates.get("total","-")}</p>
+      <table><thead><tr><th>Metric</th><th>Value</th><th>Threshold</th><th>Pass</th></tr></thead><tbody>
+        {''.join([f"<tr><td>{c.get('metric','-')}</td><td>{c.get('value','-')}</td><td>{c.get('threshold','-')}</td><td>{'✅' if c.get('pass') else '❌'}</td></tr>" for c in quality_checks]) or '<tr><td colspan=\"4\">No checks</td></tr>'}
+      </tbody></table>
     </div>
     <div class="card"><h3>Detection Issues</h3><ul>
     {''.join([f"<li>{x}</li>" for x in detection_issues]) or '<li>None</li>'}

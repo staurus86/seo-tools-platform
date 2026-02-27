@@ -126,6 +126,7 @@ class LlmCrawlerJobStatusResponse(BaseModel):
     detectors: Dict[str, Any] | None = None
     detector_calibration: Dict[str, Any] | None = None
     quality_gates: Dict[str, Any] | None = None
+    quality_profile: Dict[str, Any] | None = None
     recommendation_diagnostics: Dict[str, Any] | None = None
     segmentation: Dict[str, Any] | None = None
     content_extraction: Dict[str, Any] | None = None

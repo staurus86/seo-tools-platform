@@ -263,3 +263,56 @@ def run_quality_gate_from_file(path: str | None = None, thresholds: Dict[str, fl
     benchmark = evaluate_benchmark_cases(cases)
     gate = evaluate_quality_gate(benchmark, thresholds=thresholds)
     return {"benchmark": benchmark, "gate": gate}
+
+
+def build_runtime_quality_profile(
+    *,
+    page_type: str,
+    detectors: Dict[str, Any],
+    detector_calibration: Dict[str, Any],
+    quality_gates: Dict[str, Any],
+    retrieval: Dict[str, Any],
+    citation_model: Dict[str, Any],
+) -> Dict[str, Any]:
+    summary = detectors.get("summary") or {}
+    coverage = _safe_float(summary.get("coverage_ratio"), 0.0)
+    avg_conf = _safe_float(summary.get("avg_confidence"), 0.0)
+    downgraded = int(detector_calibration.get("downgraded_count") or 0)
+    retrieval_std = _safe_float(retrieval.get("score_stddev"), 0.0)
+    retrieval_conf = _safe_float(retrieval.get("retrieval_confidence"), 0.0)
+    citation_cal_error = _safe_float(citation_model.get("calibration_error_estimate"), 0.0)
+    gates_status = str(quality_gates.get("status") or "unknown")
+
+    drift_flags: List[str] = []
+    if coverage < 0.7:
+        drift_flags.append("low_detector_coverage")
+    if avg_conf < 0.5:
+        drift_flags.append("low_average_detector_confidence")
+    if downgraded >= 3:
+        drift_flags.append("high_calibration_downgrades")
+    if retrieval_std > 0.22:
+        drift_flags.append("retrieval_high_variance")
+    if retrieval_conf < 0.45:
+        drift_flags.append("retrieval_low_confidence")
+    if citation_cal_error > 0.08:
+        drift_flags.append("citation_calibration_instability")
+    if gates_status == "fail":
+        drift_flags.append("quality_gates_failed")
+
+    status = "stable"
+    if drift_flags:
+        status = "warning" if len(drift_flags) <= 2 else "unstable"
+
+    return {
+        "status": status,
+        "page_type": str(page_type or "unknown"),
+        "profile_id": str(detector_calibration.get("profile_id") or "unknown"),
+        "coverage_ratio": round(coverage, 4),
+        "avg_detector_confidence": round(avg_conf, 4),
+        "retrieval_confidence": round(retrieval_conf, 4),
+        "retrieval_variance": round(retrieval_std, 4),
+        "citation_calibration_error": round(citation_cal_error, 4),
+        "drift_flags": drift_flags[:8],
+        "quality_gates_status": gates_status,
+        "version": "runtime-quality-profile-v1",
+    }

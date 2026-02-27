@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
-from app.tools.llmCrawler.router import get_llm_crawler_job, run_llm_crawler
+from app.tools.llmCrawler.router import get_llm_crawler_job, llm_crawler_quality_gate, run_llm_crawler
 from app.tools.llmCrawler.schemas import LlmCrawlerRunRequest
 
 
@@ -69,6 +69,28 @@ class LlmCrawlerRouteTests(unittest.IsolatedAsyncioTestCase):
             response = await get_llm_crawler_job("llmcrawler-test-1", req)
         self.assertEqual(response.get("status"), "done")
         self.assertEqual(response.get("progress"), 100)
+
+    async def test_quality_gate_admin(self):
+        req = _FakeRequest(headers={"x-role": "admin"})
+        with patch("app.tools.llmCrawler.router.run_quality_gate_from_file", return_value={"gate": {"status": "pass"}}):
+            response = await llm_crawler_quality_gate(req)
+        self.assertIn("gate", response)
+
+    async def test_quality_gate_forbidden_non_admin(self):
+        req = _FakeRequest(headers={"x-role": "user"})
+        with patch("app.tools.llmCrawler.router.settings.FEATURE_LLM_CRAWLER", True):
+            with self.assertRaises(HTTPException) as ctx:
+                await llm_crawler_quality_gate(req)
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    async def test_quality_gate_returns_500_on_runner_error(self):
+        req = _FakeRequest(headers={"x-role": "admin"})
+        with patch("app.tools.llmCrawler.router.settings.FEATURE_LLM_CRAWLER", True), patch(
+            "app.tools.llmCrawler.router.run_quality_gate_from_file", side_effect=RuntimeError("broken benchmark")
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                await llm_crawler_quality_gate(req)
+        self.assertEqual(ctx.exception.status_code, 500)
 
 
 if __name__ == "__main__":

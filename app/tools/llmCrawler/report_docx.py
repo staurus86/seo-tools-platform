@@ -207,6 +207,9 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
     ai_directives = result.get("ai_directives") or {}
     improvement_library = result.get("improvement_library") or {}
     detection_issues = result.get("detection_issues") or []
+    quality_profile = result.get("quality_profile") or {}
+    quality_gates = result.get("quality_gates") or {}
+    detector_calibration = result.get("detector_calibration") or {}
     content_loss = _num(result.get("content_loss_percent"), 0)
     main_text_len = int(_num(nojs_content.get("main_text_length"), 0))
     rendered_text_len = int(_num(rendered_content.get("main_text_length"), main_text_len))
@@ -248,12 +251,18 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
     else:
         add_kv("EEAT score", _pct(eeat))
     add_kv("Trust completeness", _pct(trust))
+    add_kv("Runtime quality profile", str(quality_profile.get("status") or "not_evaluated"))
+    add_kv(
+        "Quality gates",
+        f"{str(quality_gates.get('status') or 'not_evaluated')} ({quality_gates.get('passed', '-')}/{quality_gates.get('total', '-')})",
+    )
     add_callout(
         "Snapshot",
         [
             f"Quality status: {_score_badge(score_total)}",
             f"Projected lift: +{round(max(0.0, projected - score_total), 2)} points",
             f"Content loss: {_pct(content_loss)}",
+            f"Runtime profile: {quality_profile.get('status', 'not_evaluated')}",
         ],
         fill_hex="EEF8FF",
         accent_hex="0E7490",
@@ -475,7 +484,38 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
             doc.add_paragraph(str(row)[:220], style="List Bullet")
     doc.add_page_break()
 
-    # PAGE 11: ACCESS BARRIERS
+    # PAGE 11: MODEL QUALITY & DRIFT
+    add_heading("📈 Model Quality & Drift", 1, color="0B3B63")
+    add_kv("Runtime profile status", quality_profile.get("status", "not_evaluated"))
+    add_kv("Profile ID", quality_profile.get("profile_id", detector_calibration.get("profile_id", "-")))
+    add_kv("Quality gates status", quality_gates.get("status", "not_evaluated"))
+    add_kv("Gate checks pass", f"{quality_gates.get('passed', '-')} / {quality_gates.get('total', '-')}")
+    add_kv("Coverage ratio", _pct(_num(quality_profile.get("coverage_ratio"), 0) * 100, "-"))
+    add_kv("Avg detector confidence", _pct(_num(quality_profile.get("avg_detector_confidence"), 0) * 100, "-"))
+    add_kv("Retrieval confidence", _pct(_num(quality_profile.get("retrieval_confidence"), 0) * 100, "-"))
+    add_kv("Retrieval variance", _pct(_num(quality_profile.get("retrieval_variance"), 0) * 100, "-"))
+    add_kv("Citation calibration error", _pct(_num(quality_profile.get("citation_calibration_error"), 0) * 100, "-"))
+    add_kv("Calibration downgrades", detector_calibration.get("downgraded_count", 0))
+    drift_flags = quality_profile.get("drift_flags") or []
+    add_kv("Drift flags", ", ".join([str(x) for x in drift_flags[:8]]) or "none")
+    quality_checks = quality_gates.get("checks") or []
+    if quality_checks:
+        add_heading("Quality gate checks", 2, color="0E7490")
+        add_table(
+            ["Metric", "Value", "Threshold", "Status"],
+            [
+                [
+                    c.get("metric", "-"),
+                    _pct(_num(c.get("value"), 0) * 100, "-"),
+                    _pct(_num(c.get("threshold"), 0) * 100, "-"),
+                    "✅ pass" if c.get("pass") else "❌ fail",
+                ]
+                for c in quality_checks[:20]
+            ],
+        )
+    doc.add_page_break()
+
+    # PAGE 12: ACCESS BARRIERS
     add_heading("🔒 Access Barriers", 1, color="0B3B63")
     add_kv("Cookie wall", _yesno(resources.get("cookie_wall")))
     add_kv("Paywall", _yesno(resources.get("paywall")))
@@ -487,7 +527,7 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
         add_page.runs[0].font.size = Pt(1)
     doc.add_page_break()
 
-    # PAGE 12: ENTITY + RECOMMENDATIONS
+    # PAGE 13: ENTITY + RECOMMENDATIONS
     add_heading("🧭 Entity Graph & Recommendations", 1, color="0B3B63")
     add_kv("Organizations", ", ".join((entity_graph.get("organizations") or [])[:12]) or "-")
     add_kv("Persons", ", ".join((entity_graph.get("persons") or [])[:12]) or "-")

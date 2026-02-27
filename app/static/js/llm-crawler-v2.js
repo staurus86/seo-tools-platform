@@ -33,6 +33,14 @@ function _scoreColor(score) {
   return '#dc2626';
 }
 
+function _qualityBadge(status) {
+  const s = String(status || 'unknown').toLowerCase();
+  if (s === 'stable' || s === 'pass') return { cls: 'risk-low', label: s === 'stable' ? 'Stable' : 'Pass' };
+  if (s === 'warning' || s === 'warn') return { cls: 'risk-mid', label: s === 'warning' ? 'Warning' : 'Warn' };
+  if (s === 'unstable' || s === 'fail') return { cls: 'risk-high', label: s === 'unstable' ? 'Unstable' : 'Fail' };
+  return { cls: 'risk-mid', label: 'Unknown' };
+}
+
 function _meter(value) {
   const val = Math.max(0, Math.min(100, _num(value, 0)));
   const color = val >= 80 ? '#16a34a' : val >= 50 ? '#d97706' : '#dc2626';
@@ -702,6 +710,71 @@ function _renderDetectors(result) {
   });
 }
 
+function _renderQualityProfile(result) {
+  const profile = result?.quality_profile || {};
+  const gates = result?.quality_gates || {};
+  const calibration = result?.detector_calibration || {};
+  const detectorsSummary = result?.detectors?.summary || {};
+  const driftFlags = Array.isArray(profile.drift_flags) ? profile.drift_flags.slice(0, 8) : [];
+  const checks = Array.isArray(gates.checks) ? gates.checks : [];
+  const profileBadge = _qualityBadge(profile.status);
+  const gatesBadge = _qualityBadge(gates.status);
+  const hasProfile = Object.keys(profile).length > 0;
+  const hasGates = Object.keys(gates).length > 0;
+
+  if (!hasProfile && !hasGates) {
+    _setHTML('v2-quality', `
+      <div class="section-title flex items-center gap-2"><i data-lucide="activity" class="w-4 h-4"></i>Model Quality & Drift Profile</div>
+      <div class="text-sm subtle">Not evaluated for this run.</div>
+    `);
+    return;
+  }
+
+  _setHTML('v2-quality', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="activity" class="w-4 h-4"></i>Model Quality & Drift Profile</div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div class="card p-3 bg-slate-50 border-slate-200">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold">Runtime profile</div>
+          <span class="risk-pill ${profileBadge.cls}">${profileBadge.label}</span>
+        </div>
+        <div class="text-xs subtle mt-2">Profile: ${_esc(profile.profile_id || calibration.profile_id || 'unknown')} | Page type: ${_esc(profile.page_type || result?.page_type || 'unknown')}</div>
+        <div class="grid grid-cols-2 gap-2 mt-3 text-xs">
+          <div class="card p-2 bg-white border-slate-200"><div class="subtle">Coverage</div><div class="font-semibold">${_pct(_num(profile.coverage_ratio, detectorsSummary.coverage_ratio) * 100, 0)}%</div></div>
+          <div class="card p-2 bg-white border-slate-200"><div class="subtle">Avg detector conf</div><div class="font-semibold">${_pct(_num(profile.avg_detector_confidence, detectorsSummary.avg_confidence) * 100, 0)}%</div></div>
+          <div class="card p-2 bg-white border-slate-200"><div class="subtle">Retrieval conf</div><div class="font-semibold">${_pct(_num(profile.retrieval_confidence, 0) * 100, 0)}%</div></div>
+          <div class="card p-2 bg-white border-slate-200"><div class="subtle">Retrieval variance</div><div class="font-semibold">${_pct(_num(profile.retrieval_variance, 0) * 100, 0)}%</div></div>
+          <div class="card p-2 bg-white border-slate-200"><div class="subtle">Citation cal error</div><div class="font-semibold">${_pct(_num(profile.citation_calibration_error, 0) * 100, 0)}%</div></div>
+          <div class="card p-2 bg-white border-slate-200"><div class="subtle">Calibration downgrades</div><div class="font-semibold">${_num(calibration.downgraded_count, 0)}</div></div>
+        </div>
+        ${driftFlags.length ? `<div class="mt-3 text-xs"><div class="subtle mb-1">Drift flags</div><div class="flex flex-wrap gap-1">${driftFlags.map((f) => `<span class="badge badge-p1">${_esc(f)}</span>`).join('')}</div></div>` : '<div class="mt-3 text-xs subtle">No drift flags.</div>'}
+      </div>
+      <div class="card p-3 bg-slate-50 border-slate-200">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold">Quality gates</div>
+          <span class="risk-pill ${gatesBadge.cls}">${gatesBadge.label}</span>
+        </div>
+        <div class="text-xs subtle mt-2">Passed checks: ${_num(gates.passed, 0)} / ${_num(gates.total, checks.length)}</div>
+        <div class="table-wrap mt-2">
+          <table>
+            <thead><tr><th>Metric</th><th>Value</th><th>Threshold</th><th>Status</th></tr></thead>
+            <tbody>
+              ${checks.length ? checks.map((c) => `
+                <tr>
+                  <td>${_esc(c.metric || '-')}</td>
+                  <td>${_pct(_num(c.value, 0) * 100, 0)}%</td>
+                  <td>${_pct(_num(c.threshold, 0) * 100, 0)}%</td>
+                  <td>${c.pass ? '✅ pass' : '❌ fail'}</td>
+                </tr>
+              `).join('') : '<tr><td colspan="4">No gate checks in payload</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `);
+}
+
 function _renderChunks(result) {
   const chunks = Array.isArray(result?.nojs?.content?.chunks) ? result.nojs.content.chunks : [];
   const dedupe = result?.chunk_dedupe || result?.nojs?.content?.chunk_dedupe || {};
@@ -878,6 +951,7 @@ async function initV2(jobId) {
     _renderAccess(result);
     _renderTech(result);
     _renderDetectors(result);
+    _renderQualityProfile(result);
     _renderChunks(result);
     _renderRecs(result);
     _wireExports(jobId, result);
