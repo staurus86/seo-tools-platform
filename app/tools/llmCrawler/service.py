@@ -37,25 +37,63 @@ STOPWORDS = {
 }
 PAGE_TYPE_PATTERNS = {
     "listing": [
-        r"\b(news|feed|updates|posts|stories|latest|archive|категор|лента|новости|обновления)\b",
-        r"/(news|feed|blog|category|archive|live)",
+        r"\b(news|feed|updates|posts|stories|latest|archive|категор|лента|новости|обновления|catalog|collection|index)\b",
+        r"/(news|feed|blog|category|archive|live|catalog|collection|topics|tag)",
     ],
     "service": [
-        r"\b(service|services|consulting|agency|support|integration|аудит|услуг|поддержк)\b",
-        r"/(service|services|solutions|consulting)",
+        r"\b(service|services|consulting|agency|support|integration|аудит|услуг|поддержк|implementation|managed)\b",
+        r"/(service|services|solutions|consulting|agency|support)",
     ],
     "review": [
-        r"\b(review|rating|comparison|vs|best|тест|обзор|рейтинг|сравнение)\b",
+        r"\b(review|rating|comparison|vs|best|тест|обзор|рейтинг|сравнение|pros and cons)\b",
         r"/(review|reviews|rating|compare)",
     ],
     "product": [
-        r"\b(product|price|pricing|buy|shop|sku|catalog|цена|купить|товар)\b",
-        r"/(product|products|shop|catalog|store)",
+        r"\b(product|price|pricing|buy|shop|sku|catalog|цена|купить|товар|model|spec)\b",
+        r"/(product|products|shop|catalog|store|item|sku)",
     ],
     "article": [
-        r"\b(article|guide|how to|tutorial|insights|исследование|гайд|статья)\b",
-        r"/(article|articles|blog|guide|guides)",
+        r"\b(article|guide|how to|tutorial|insights|исследование|гайд|статья|analysis|report)\b",
+        r"/(article|articles|blog|guide|guides|insights)",
     ],
+    "homepage": [
+        r"^/$",
+        r"\b(home|homepage|главная)\b",
+    ],
+    "category": [
+        r"\b(category|catalog|collection|topics|products|services|раздел|категория)\b",
+        r"/(category|catalog|collection|topics|tags?)",
+    ],
+    "news": [
+        r"\b(news|breaking|live|journal|press|новости|события)\b",
+        r"/(news|press|journal|live)",
+    ],
+    "docs": [
+        r"\b(docs|documentation|api|sdk|reference|manual|документац|справка)\b",
+        r"/(docs|documentation|api|reference|manual)",
+    ],
+    "faq": [
+        r"\b(faq|frequently asked|q&a|вопросы)\b",
+        r"/(faq|questions|help-center|support/faq)",
+    ],
+    "event": [
+        r"\b(event|schedule|tickets|webinar|conference|матч|расписание|турнир)\b",
+        r"/(events|event|schedule|matches|webinar|conference)",
+    ],
+}
+
+PAGE_TYPE_SCHEMA_HINTS = {
+    "article": {"article", "newsarticle", "blogposting", "techarticle", "analysisnewsarticle", "liveblogposting"},
+    "listing": {"itemlist", "collectionpage"},
+    "service": {"service", "professionalservice"},
+    "product": {"product", "offer", "aggregateoffer", "individualproduct"},
+    "review": {"review", "aggregaterating", "rating"},
+    "homepage": {"website", "webpage", "organization"},
+    "category": {"itemlist", "collectionpage", "website"},
+    "news": {"newsarticle", "liveblogposting"},
+    "docs": {"howto", "techarticle"},
+    "faq": {"faqpage", "qapage", "question"},
+    "event": {"event", "sportsevent", "musicevent"},
 }
 UTILITY_CHUNK_RE = re.compile(
     r"(\b(contact|contacts|support|call|phone|email|subscribe|newsletter|login|signup|register|buy now|get started|book demo|cta|footer|privacy|terms)\b|"
@@ -758,7 +796,15 @@ def _detect_page_type(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     ads_pct = float(noise.get("ads_pct") or 0.0)
     live_pct = float(noise.get("live_pct") or 0.0)
     nav_pct = float(noise.get("nav_pct") or 0.0)
-    jsonld_types = {str(x) for x in (schema.get("jsonld_types") or [])}
+    schema_types = {
+        str(x).strip().lower()
+        for x in (
+            (schema.get("jsonld_types") or [])
+            + (schema.get("microdata_types") or [])
+            + (schema.get("rdfa_types") or [])
+        )
+        if str(x).strip()
+    }
 
     reasons: List[str] = []
     page_type = "unknown"
@@ -768,11 +814,32 @@ def _detect_page_type(snapshot: Dict[str, Any]) -> Dict[str, Any]:
         pats = PAGE_TYPE_PATTERNS.get(key) or []
         return sum(1 for p in pats if re.search(p, text_hint, flags=re.I))
 
-    score_article = hit_count("article") + (2 if bool(signals.get("author_present") or signals.get("date_present")) else 0) + (1 if main_len >= 1000 else 0)
-    score_listing = hit_count("listing") + (2 if links_count >= 80 else 0) + (2 if nav_pct >= 45 else 0) + (2 if live_pct >= 18 else 0)
-    score_service = hit_count("service") + (1 if "Organization" in jsonld_types else 0)
-    score_product = hit_count("product") + (2 if "Product" in jsonld_types else 0)
-    score_review = hit_count("review") + (2 if ("Review" in jsonld_types or "AggregateRating" in jsonld_types) else 0)
+    def schema_hit(page_kind: str) -> int:
+        hints = PAGE_TYPE_SCHEMA_HINTS.get(page_kind) or set()
+        return 2 if (schema_types & hints) else 0
+
+    score_article = (
+        hit_count("article")
+        + schema_hit("article")
+        + (2 if bool(signals.get("author_present") or signals.get("date_present")) else 0)
+        + (1 if main_len >= 1000 else 0)
+    )
+    score_listing = (
+        hit_count("listing")
+        + schema_hit("listing")
+        + (2 if links_count >= 80 else 0)
+        + (2 if nav_pct >= 45 else 0)
+        + (2 if live_pct >= 18 else 0)
+    )
+    score_service = hit_count("service") + schema_hit("service") + (1 if bool(signals.get("organization_present")) else 0)
+    score_product = hit_count("product") + schema_hit("product")
+    score_review = hit_count("review") + schema_hit("review")
+    score_homepage = hit_count("homepage") + schema_hit("homepage") + (2 if path in {"", "/"} else 0)
+    score_category = hit_count("category") + schema_hit("category")
+    score_news = hit_count("news") + schema_hit("news") + (1 if live_pct >= 12 else 0)
+    score_docs = hit_count("docs") + schema_hit("docs")
+    score_faq = hit_count("faq") + schema_hit("faq")
+    score_event = hit_count("event") + schema_hit("event") + (1 if live_pct >= 15 else 0)
     score_mixed = (2 if ads_pct >= 20 else 0) + (2 if live_pct >= 15 else 0) + (1 if main_pct < 30 else 0)
 
     scores = {
@@ -781,6 +848,12 @@ def _detect_page_type(snapshot: Dict[str, Any]) -> Dict[str, Any]:
         "service": score_service,
         "product": score_product,
         "review": score_review,
+        "homepage": score_homepage,
+        "category": score_category,
+        "news": score_news,
+        "docs": score_docs,
+        "faq": score_faq,
+        "event": score_event,
         "mixed": score_mixed,
     }
     # Prefer explicit intent pages when URL/title patterns are strong.
@@ -799,15 +872,40 @@ def _detect_page_type(snapshot: Dict[str, Any]) -> Dict[str, Any]:
         confidence = min(0.9, 0.6 + (score_review * 0.07))
         reasons.append(f"Explicit review signals ({score_review} hits)")
         return {"page_type": page_type, "confidence": round(confidence, 3), "reasons": reasons[:4], "scores": scores}
+    if score_listing >= 4 and links_count >= 80:
+        page_type = "listing"
+        confidence = min(0.9, 0.58 + (score_listing * 0.06))
+        reasons.append(f"High listing/feed density ({score_listing} hits)")
+        return {"page_type": page_type, "confidence": round(confidence, 3), "reasons": reasons[:4], "scores": scores}
+    if score_docs >= 3:
+        page_type = "docs"
+        confidence = min(0.91, 0.58 + (score_docs * 0.08))
+        reasons.append(f"Documentation signals ({score_docs} hits)")
+        return {"page_type": page_type, "confidence": round(confidence, 3), "reasons": reasons[:4], "scores": scores}
+    if score_news >= 3:
+        page_type = "news"
+        confidence = min(0.9, 0.58 + (score_news * 0.08))
+        reasons.append(f"News/feed signals ({score_news} hits)")
+        return {"page_type": page_type, "confidence": round(confidence, 3), "reasons": reasons[:4], "scores": scores}
+    if score_faq >= 3:
+        page_type = "faq"
+        confidence = min(0.88, 0.56 + (score_faq * 0.08))
+        reasons.append(f"FAQ signals ({score_faq} hits)")
+        return {"page_type": page_type, "confidence": round(confidence, 3), "reasons": reasons[:4], "scores": scores}
+    if score_event >= 3:
+        page_type = "event"
+        confidence = min(0.88, 0.56 + (score_event * 0.08))
+        reasons.append(f"Event signals ({score_event} hits)")
+        return {"page_type": page_type, "confidence": round(confidence, 3), "reasons": reasons[:4], "scores": scores}
 
     best_type = max(scores.keys(), key=lambda k: scores[k])
     best_score = int(scores.get(best_type) or 0)
     second_score = sorted(scores.values(), reverse=True)[1] if len(scores) > 1 else 0
 
     if path in {"", "/"} and links_count >= 40 and main_len < 2200:
-        page_type = "listing"
+        page_type = "homepage" if score_homepage >= 2 else "listing"
         confidence = 0.72
-        reasons.append("Homepage-like route with high link density")
+        reasons.append("Home route with high link density")
     elif best_score <= 0:
         page_type = "unknown"
         confidence = 0.35
@@ -822,11 +920,17 @@ def _detect_page_type(snapshot: Dict[str, Any]) -> Dict[str, Any]:
         reasons.append("Low main content percent with high noise profile")
     if page_type == "listing" and live_pct >= 18:
         reasons.append("Live-score feed markers detected")
+    if page_type == "news" and live_pct >= 12:
+        reasons.append("News/live markers detected")
+    if page_type == "homepage" and bool(signals.get("organization_present")):
+        reasons.append("Organization signals support homepage type")
+    if page_type == "category" and links_count >= 60:
+        reasons.append("High link count supports category/listing type")
     if page_type == "article" and bool(signals.get("author_present") or signals.get("date_present")):
         reasons.append("Author/date signals support article classification")
-    if page_type == "product" and "Product" in jsonld_types:
+    if page_type == "product" and ("product" in schema_types):
         reasons.append("Product schema detected")
-    if page_type == "review" and ("Review" in jsonld_types or "AggregateRating" in jsonld_types):
+    if page_type == "review" and (("review" in schema_types) or ("aggregaterating" in schema_types)):
         reasons.append("Review/rating schema detected")
 
     return {"page_type": page_type, "confidence": round(confidence, 3), "reasons": reasons[:4], "scores": scores}
@@ -844,6 +948,12 @@ def _apply_score_profile(score: Dict[str, Any], snapshot: Dict[str, Any], page_t
         "service": {"access": 26, "content": 29, "structure": 15, "signals": 30},
         "product": {"access": 25, "content": 25, "structure": 15, "signals": 35},
         "review": {"access": 24, "content": 28, "structure": 14, "signals": 34},
+        "homepage": {"access": 29, "content": 31, "structure": 10, "signals": 30},
+        "category": {"access": 30, "content": 33, "structure": 9, "signals": 28},
+        "news": {"access": 27, "content": 31, "structure": 14, "signals": 28},
+        "docs": {"access": 26, "content": 32, "structure": 18, "signals": 24},
+        "faq": {"access": 27, "content": 33, "structure": 14, "signals": 26},
+        "event": {"access": 29, "content": 30, "structure": 12, "signals": 29},
         "unknown": {"access": 28, "content": 32, "structure": 12, "signals": 28},
     }
     weights = weights_map.get(page_type, weights_map["article"])
@@ -891,7 +1001,7 @@ def _critical_blocks_checklist(snapshot: Dict[str, Any], snippets: Dict[str, str
     schema = snapshot.get("schema") or {}
     entity = snapshot.get("entity_graph") or {}
     schema_types = {
-        str(x)
+        str(x).strip().lower()
         for x in (
             (schema.get("jsonld_types") or [])
             + (schema.get("microdata_types") or [])
@@ -949,7 +1059,7 @@ def _critical_blocks_checklist(snapshot: Dict[str, Any], snippets: Dict[str, str
     add_check(
         "organization",
         "Organization",
-        bool(("Organization" in schema_types) or (entity.get("organizations") or [])),
+        bool(("organization" in schema_types) or (entity.get("organizations") or [])),
         f"schema_types={len(schema_types)} organizations={len(entity.get('organizations') or [])}",
         "JSON-LD + entity graph",
         "jsonld_organization",
@@ -957,17 +1067,17 @@ def _critical_blocks_checklist(snapshot: Dict[str, Any], snippets: Dict[str, str
     add_check(
         "breadcrumb",
         "Breadcrumb",
-        bool(("BreadcrumbList" in schema_types) or ("breadcrumb_block" in detected_ids)),
-        f"BreadcrumbList_in_schema={('BreadcrumbList' in schema_types)}",
+        bool(("breadcrumblist" in schema_types) or ("breadcrumb_block" in detected_ids)),
+        f"BreadcrumbList_in_schema={('breadcrumblist' in schema_types)}",
         "schema + DOM block detection",
         "jsonld_breadcrumb",
     )
     add_check(
         "jsonld",
-        "Schema JSON-LD",
+        "Schema markup (JSON-LD/Microdata/RDFa)",
         bool(schema_types),
-        f"jsonld_types={', '.join(sorted(schema_types)[:6]) or 'none'}",
-        "HTML <script type=application/ld+json>",
+        f"schema_types={', '.join(sorted(schema_types)[:6]) or 'none'}",
+        "Markup in JSON-LD, microdata, RDFa",
         "jsonld_article",
     )
     return checks
@@ -2068,9 +2178,15 @@ def _citation_breakdown(snapshot: Dict[str, Any], page_type_info: Dict[str, Any]
         "service": {"schema": 0.32, "author": 0.12, "content_clarity": 0.20, "bot_accessibility": 0.18, "structure": 0.18},
         "product": {"schema": 0.34, "author": 0.08, "content_clarity": 0.18, "bot_accessibility": 0.16, "structure": 0.24},
         "review": {"schema": 0.28, "author": 0.14, "content_clarity": 0.22, "bot_accessibility": 0.16, "structure": 0.20},
+        "homepage": {"schema": 0.26, "author": 0.05, "content_clarity": 0.27, "bot_accessibility": 0.24, "structure": 0.18},
+        "category": {"schema": 0.28, "author": 0.04, "content_clarity": 0.30, "bot_accessibility": 0.24, "structure": 0.14},
+        "news": {"schema": 0.30, "author": 0.18, "content_clarity": 0.20, "bot_accessibility": 0.16, "structure": 0.16},
+        "docs": {"schema": 0.20, "author": 0.08, "content_clarity": 0.34, "bot_accessibility": 0.16, "structure": 0.22},
+        "faq": {"schema": 0.24, "author": 0.06, "content_clarity": 0.32, "bot_accessibility": 0.18, "structure": 0.20},
+        "event": {"schema": 0.24, "author": 0.10, "content_clarity": 0.28, "bot_accessibility": 0.20, "structure": 0.18},
         "unknown": {"schema": 0.22, "author": 0.10, "content_clarity": 0.30, "bot_accessibility": 0.20, "structure": 0.18},
     }
-    if page_type in {"listing", "mixed"}:
+    if page_type in {"listing", "mixed", "category", "homepage", "news"}:
         # Do not over-penalize structure on feed-like pages.
         base["structure"] = max(20.0, float(base["structure"]))
     weights = weights_map.get(page_type, weights_map["article"])

@@ -29,7 +29,30 @@ class LlmCrawlerPatternTests(unittest.TestCase):
         self.assertIn("Contact info", labels)
         self.assertGreater(float(result.get("coverage_percent") or 0), 0)
 
+    def test_detect_ai_blocks_page_profile_for_product(self):
+        html = """
+        <html><head>
+          <script type="application/ld+json">{"@context":"https://schema.org","@type":"Product","name":"Vacuum Meter"}</script>
+        </head>
+        <body>
+          <main><h1>Vacuum Meter X100</h1><p>Technical specification and pricing.</p></main>
+          <div class="pricing">$199</div>
+          <section class="specs">Dimensions and voltage specification</section>
+        </body></html>
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        result = detect_ai_blocks(
+            soup=soup,
+            main_text="Vacuum meter product page with pricing and technical specs.",
+            full_text="Vacuum meter product page with pricing and technical specs.",
+            schema_types=["Product", "Offer"],
+            page_type="product",
+        )
+        detected_ids = {str(x.get("id")) for x in (result.get("detected") or [])}
+        self.assertIn("pricing_block", detected_ids)
+        self.assertIn("product_specs", detected_ids)
+        self.assertEqual(str(result.get("page_type_profile")), "product")
+
 
 if __name__ == "__main__":
     unittest.main()
-

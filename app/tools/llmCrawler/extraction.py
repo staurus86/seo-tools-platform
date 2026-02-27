@@ -83,9 +83,13 @@ def _extract_jsonld_types(soup: BeautifulSoup) -> List[str]:
             for value in payload.values():
                 collect_types(value)
 
-    for script in soup.find_all("script", attrs={"type": re.compile(r"application/ld\+json", re.I)}):
+    for script in soup.find_all("script"):
+        script_type = _safe_text(script.get("type")).lower()
         payload = _safe_text(script.string or script.text)
         if not payload:
+            continue
+        candidate = ("ld+json" in script_type) or ("@context" in payload and "schema.org" in payload.lower())
+        if not candidate:
             continue
         try:
             parsed = json.loads(payload)
@@ -93,6 +97,10 @@ def _extract_jsonld_types(soup: BeautifulSoup) -> List[str]:
         except Exception:
             # Fallback for slightly invalid JSON-LD payloads.
             for match in re.finditer(r'"@type"\s*:\s*"(.*?)"', payload, flags=re.I):
+                norm = _normalize_schema_type(match.group(1))
+                if norm:
+                    found.add(norm)
+            for match in re.finditer(r"'@type'\s*:\s*'(.*?)'", payload, flags=re.I):
                 norm = _normalize_schema_type(match.group(1))
                 if norm:
                     found.add(norm)
@@ -539,9 +547,24 @@ def build_snapshot(
     microdata_types = sorted({x for x in microdata_types if _safe_text(x)})
     rdfa_types = sorted({x for x in rdfa_types if _safe_text(x)})
     total_types = set(schema_types) | set(microdata_types) | set(rdfa_types)
-    required_schema = {"Organization", "Person", "Article", "Product"}
-    coverage_found = len(total_types & required_schema)
-    coverage_score = round((coverage_found / max(1, len(required_schema))) * 100, 2)
+    lower_total = {str(x).strip().lower() for x in total_types}
+    required_schema_l = {"organization"}
+    if lower_total & {"article", "newsarticle", "blogposting", "techarticle", "analysisnewsarticle", "liveblogposting"}:
+        required_schema_l.update({"article", "person"})
+    if lower_total & {"product", "offer", "aggregateoffer", "individualproduct"}:
+        required_schema_l.add("product")
+    if lower_total & {"faqpage", "qapage", "question"}:
+        required_schema_l.add("faqpage")
+    if lower_total & {"review", "aggregaterating", "rating"}:
+        required_schema_l.add("review")
+    if lower_total & {"itemlist", "collectionpage"}:
+        required_schema_l.add("itemlist")
+    if lower_total & {"event", "sportsevent", "musicevent"}:
+        required_schema_l.add("event")
+    if len(required_schema_l) == 1:
+        required_schema_l.add("article")
+    coverage_found = len(lower_total & required_schema_l)
+    coverage_score = round((coverage_found / max(1, len(required_schema_l))) * 100, 2)
     x_robots_tag = _safe_text((headers or {}).get("X-Robots-Tag") or (headers or {}).get("x-robots-tag"))
     signals = _extract_author_date_signals(soup)
     if not bool(signals.get("organization_present")):
@@ -605,6 +628,7 @@ def build_snapshot(
             "microdata_types": microdata_types[:50],
             "rdfa_types": rdfa_types[:50],
             "coverage_score": coverage_score,
+            "coverage_required_types": sorted(required_schema_l),
             "count": len(total_types),
             "jsonld_count": len(schema_types),
             "microdata_count": len(microdata_types),

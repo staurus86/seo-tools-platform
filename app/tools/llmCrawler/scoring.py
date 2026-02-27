@@ -111,7 +111,13 @@ def compute_score(
     # Signals (0-30)
     signals_score = 0.0
     schema = (source.get("schema") or {})
-    schema_types = schema.get("jsonld_types") or []
+    schema_types = list(
+        dict.fromkeys(
+            (schema.get("jsonld_types") or [])
+            + (schema.get("microdata_types") or [])
+            + (schema.get("rdfa_types") or [])
+        )
+    )
     coverage_score = float(schema.get("coverage_score") or 0.0)
     schema_bonus = min(10.0, float(len(schema_types) * 2))
     if coverage_score >= 75:

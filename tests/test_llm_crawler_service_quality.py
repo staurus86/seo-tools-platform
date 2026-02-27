@@ -109,6 +109,23 @@ class LlmCrawlerServiceQualityTests(unittest.TestCase):
         rv = _detect_page_type(review_snapshot)
         self.assertEqual(rv.get("page_type"), "review")
 
+    def test_page_type_detection_homepage_and_docs(self):
+        homepage = self._snapshot()
+        homepage["final_url"] = "https://example.com/"
+        homepage["meta"] = {"title": "Acme Company Homepage"}
+        homepage["links"] = {"count": 120}
+        homepage["signals"] = {"organization_present": True}
+        homepage["schema"] = {"jsonld_types": ["WebSite", "Organization"], "microdata_types": [], "rdfa_types": []}
+        hp = _detect_page_type(homepage)
+        self.assertEqual(hp.get("page_type"), "homepage")
+
+        docs = self._snapshot()
+        docs["final_url"] = "https://example.com/docs/api-reference"
+        docs["meta"] = {"title": "API documentation and SDK reference"}
+        docs["schema"] = {"jsonld_types": ["TechArticle"], "microdata_types": [], "rdfa_types": []}
+        d = _detect_page_type(docs)
+        self.assertIn(d.get("page_type"), {"docs", "article"})
+
     def test_ingestion_not_evaluated_without_chunks(self):
         snapshot = self._snapshot()
         snapshot["content"]["chunks"] = []

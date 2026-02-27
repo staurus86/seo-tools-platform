@@ -71,7 +71,31 @@ class LlmCrawlerExtractionSchemaTests(unittest.TestCase):
         schema = snap.get("schema") or {}
         self.assertIn("Organization", set(schema.get("jsonld_types") or []))
 
+    def test_detects_jsonld_without_type_attribute(self):
+        html = """
+        <html><head>
+          <script>
+            {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Q?"}]}
+          </script>
+        </head><body><main><p>Content</p></main></body></html>
+        """
+        snap = build_snapshot(
+            html=html,
+            final_url="https://example.com/faq",
+            status_code=200,
+            headers={},
+            timing_ms=12,
+            redirect_chain=[],
+            show_headers=False,
+            content_type="text/html",
+            size_bytes=len(html),
+            truncated=False,
+        )
+        schema = snap.get("schema") or {}
+        jsonld_types = set(schema.get("jsonld_types") or [])
+        self.assertIn("FAQPage", jsonld_types)
+        self.assertIn("Question", jsonld_types)
+
 
 if __name__ == "__main__":
     unittest.main()
-
