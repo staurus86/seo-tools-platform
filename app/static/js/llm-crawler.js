@@ -163,6 +163,7 @@ function initLlmCrawlerResult(jobId) {
     const resultBox = document.getElementById('llm-result-box');
     const downloadBtn = document.getElementById('llm-download-json');
     const downloadDocxBtn = document.getElementById('llm-download-docx');
+    const downloadDocxBtn = document.getElementById('llm-download-docx');
 
     let pollHandle = null;
     let latestResult = null;
@@ -504,6 +505,10 @@ function initLlmCrawlerResult(jobId) {
                 if (downloadBtn) {
                     downloadBtn.disabled = false;
                     downloadBtn.classList.remove('opacity-50');
+                }
+                if (downloadDocxBtn) {
+                    downloadDocxBtn.disabled = false;
+                    downloadDocxBtn.classList.remove('opacity-50');
                 }
                 if (pollHandle) {
                     clearInterval(pollHandle);
