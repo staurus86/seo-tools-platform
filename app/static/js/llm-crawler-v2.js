@@ -78,6 +78,16 @@ function _copyText(txt) {
   navigator.clipboard?.writeText(text).catch(() => {});
 }
 
+function _pageTypeLabel(v) {
+  const val = String(v || '').toLowerCase();
+  if (val === 'listing_feed') return 'Listing / Feed';
+  if (val === 'homepage') return 'Homepage';
+  if (val === 'category') return 'Category';
+  if (val === 'product') return 'Product';
+  if (val === 'article') return 'Article';
+  return val || 'Unknown';
+}
+
 function _renderHero(result) {
   const score = _pct(result?.score?.total, 0);
   const projected = _pct(result?.projected_score_after_fixes, score);
@@ -124,12 +134,14 @@ function _renderWhatAI(result) {
   const signals = result?.nojs?.signals || {};
   const graph = result?.entity_graph || {};
   const schemaTypes = result?.nojs?.schema?.jsonld_types || [];
+  const conf = result?.main_content_confidence || result?.nojs?.content?.main_content_confidence || {};
   const hasOrg = Array.isArray(graph.organizations) ? graph.organizations.length > 0 : schemaTypes.includes('Organization');
   const topic = ai.topic || result?.llm?.summary || 'Topic not detected';
   const confidence = _pct(ai.topic_confidence ?? ai.score, 0);
   const entities = Array.isArray(ai.entities) ? ai.entities.slice(0, 8) : [];
   const clarity = ai.content_clarity;
   const clarityKnown = !(ai.content_clarity_status === 'not_evaluated' || clarity === null || clarity === undefined);
+  const pageType = _pageTypeLabel(result?.page_type);
   _setHTML('v2-ai-understands', `
     <div class="section-title flex items-center gap-2"><i data-lucide="brain" class="w-4 h-4"></i>What AI Actually Understands</div>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -141,12 +153,15 @@ function _renderWhatAI(result) {
         ${_meter(confidence)}
       </div>
       <div class="card p-4 bg-slate-50 border-slate-200 text-sm space-y-1">
+        <div>Page type: <span class="font-semibold">${_esc(pageType)}</span> <span class="subtle text-xs">(${_pct(result?.page_type_confidence, 0)}%)</span></div>
         <div>Organization: ${hasOrg ? '✅' : '❌'}</div>
         <div>Product/entity detected: ${entities.length ? '✅' : '❌'}</div>
         <div>Author: ${signals.author_present ? '✅' : '❌'}</div>
         <div>Primary intent: ${_esc(ai.intent || 'informational')}</div>
         <div>Content clarity: <span class="font-semibold">${clarityKnown ? `${_pct(clarity, 0)}%` : '— Not evaluated'}</span></div>
         ${clarityKnown ? '' : `<div class="text-xs subtle">Reason: ${_esc(ai.content_clarity_reason || 'insufficient data')}</div>`}
+        <div>Main-content confidence: <span class="font-semibold">${_esc(String(conf.level || 'unknown'))}</span></div>
+        ${Array.isArray(conf.reasons) && conf.reasons.length ? `<div class="text-xs subtle">${_esc(conf.reasons.join(' | '))}</div>` : ''}
         <div class="subtle text-xs mt-2">Detected entities: ${entities.length ? _esc(entities.join(', ')) : 'not enough data'}</div>
       </div>
     </div>
@@ -180,6 +195,41 @@ function _renderLoss(result) {
     </div>
     <div class="text-xs subtle mt-3">Likely lost sections: ${_esc(missing.join(' | ') || 'navigation, footer, menu blocks')}</div>
   `);
+}
+
+function _renderNoise(result) {
+  const noise = result?.noise_breakdown || result?.nojs?.segmentation?.noise_breakdown || {};
+  const conf = result?.main_content_confidence || result?.nojs?.segmentation?.main_content_confidence || {};
+  const main = _pct(noise.main_pct, 0);
+  const ads = _pct(noise.ads_pct, 0);
+  const live = _pct(noise.live_pct, 0);
+  const nav = _pct(noise.nav_pct, 0);
+  const utility = _pct(noise.utility_pct, 0);
+  _setHTML('v2-noise', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="pie-chart" class="w-4 h-4"></i>Noise & Segmentation</div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div><canvas id="v2-noise-donut" height="170"></canvas></div>
+      <div class="space-y-2 text-sm">
+        <div class="card p-3 bg-slate-50 border-slate-200">Main: <span class="font-semibold">${main}%</span></div>
+        <div class="card p-3 bg-slate-50 border-slate-200">Ads: <span class="font-semibold">${ads}%</span></div>
+        <div class="card p-3 bg-slate-50 border-slate-200">Live scores: <span class="font-semibold">${live}%</span></div>
+        <div class="card p-3 bg-slate-50 border-slate-200">Nav/footer: <span class="font-semibold">${nav}%</span></div>
+        <div class="card p-3 bg-slate-50 border-slate-200">Utility: <span class="font-semibold">${utility}%</span></div>
+      </div>
+    </div>
+    <div class="text-xs subtle mt-3">Main-content confidence: <span class="font-semibold">${_esc(String(conf.level || 'unknown'))}</span>${Array.isArray(conf.reasons) && conf.reasons.length ? ` | ${_esc(conf.reasons.join(' | '))}` : ''}</div>
+  `);
+  const ctx = document.getElementById('v2-noise-donut');
+  if (ctx && window.Chart) {
+    new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Main', 'Ads', 'Live', 'Nav/Footer', 'Utility'],
+        datasets: [{ data: [main, ads, live, nav, utility], backgroundColor: ['#22c55e', '#f97316', '#ef4444', '#94a3b8', '#0ea5e9'] }],
+      },
+      options: { plugins: { legend: { position: 'bottom' } } },
+    });
+  }
 }
 
 function _renderCitation(result) {
@@ -292,6 +342,7 @@ function _renderFix(result) {
 function _renderPreview(result) {
   const preview = result?.ai_answer_preview || {};
   const bullets = Array.isArray(preview.bullets) ? preview.bullets.slice(0, 3) : [];
+  const warning = preview.warning || '';
   _setHTML('v2-preview', `
     <div class="section-title flex items-center gap-2"><i data-lucide="message-square-text" class="w-4 h-4"></i>AI Search Preview</div>
     <div class="card p-3 bg-slate-50 border-slate-200">
@@ -299,6 +350,7 @@ function _renderPreview(result) {
       <div class="font-semibold mt-1">${_esc(preview.question || 'What is this page about?')}</div>
       <div class="text-sm mt-2">${_esc(preview.answer || 'Not enough content for stable answer')}</div>
       <div class="subtle text-xs mt-2">Mode: ${_esc(preview.preview_mode || result.preview_mode || 'extractive')} | Confidence: ${_pct(preview.confidence, '-')}</div>
+      ${warning ? `<div class="mt-2 text-xs text-amber-700">${_esc(warning)}</div>` : ''}
       ${bullets.length ? `<ul class="list-disc pl-5 text-xs subtle mt-2">${bullets.map((b) => `<li>${_esc(b)}</li>`).join('')}</ul>` : ''}
     </div>
   `);
@@ -383,6 +435,7 @@ function _renderBotMatrix(result) {
 
 function _renderContentExtraction(result) {
   const content = result?.nojs?.content || {};
+  const dedupe = result?.chunk_dedupe || content.chunk_dedupe || {};
   const ratio = _pct(_num(content.main_content_ratio, 0) * 100, 0);
   const boiler = _pct(_num(content.boilerplate_ratio, 0) * 100, 0);
   _setHTML('v2-content-vis', `
@@ -393,9 +446,10 @@ function _renderContentExtraction(result) {
         <div class="card p-3 bg-slate-50 border-slate-200">Main content: <span class="font-semibold">${ratio}%</span></div>
         <div class="card p-3 bg-slate-50 border-slate-200">Boilerplate: <span class="font-semibold">${boiler}%</span></div>
         <div class="card p-3 bg-slate-50 border-slate-200">Text length: <span class="font-semibold">${_num(content.main_text_length, 0)}</span></div>
-        <div class="card p-3 bg-slate-50 border-slate-200">Chunks: <span class="font-semibold">${(content.chunks || []).length}</span></div>
+        <div class="card p-3 bg-slate-50 border-slate-200">Chunks (unique): <span class="font-semibold">${_num(dedupe.chunks_unique, (content.chunks || []).length)}</span></div>
       </div>
     </div>
+    ${_num(dedupe.removed_duplicates, 0) > 0 ? `<div class="text-xs subtle mt-2" title="dedupe_ratio = removed_duplicates / chunks_total">Removed ${_num(dedupe.removed_duplicates, 0)} duplicate chunks (${_pct(dedupe.dedupe_ratio, 0)}%)</div>` : ''}
     <details class="mt-3">
       <summary class="cursor-pointer text-sm font-medium">Extracted text preview</summary>
       <div class="diff-box mt-2">${_esc((content.main_text_preview || '').slice(0, 1500) || 'No preview')}</div>
@@ -557,6 +611,7 @@ function _renderTech(result) {
 
 function _renderDetectors(result) {
   const blocks = result?.ai_blocks || {};
+  const critical = Array.isArray(result?.critical_blocks) ? result.critical_blocks : [];
   const directives = result?.ai_directives || {};
   const issues = Array.isArray(result?.detection_issues) ? result.detection_issues : [];
   const improvement = result?.improvement_library || {};
@@ -570,6 +625,17 @@ function _renderDetectors(result) {
     return `<tr><td>${_esc(k)}</td><td><span class="risk-pill ${badge}">${_esc(status)}</span></td><td>${_esc(p.reason || '-')}</td></tr>`;
   }).join('');
   const missingLib = Array.isArray(improvement?.missing) ? improvement.missing.slice(0, 8) : [];
+  const criticalRows = critical.map((c) => {
+    const missing = String(c.status || '') !== 'present';
+    const icon = missing ? '❌' : '✅';
+    const btn = (missing && c.snippet) ? `<button type="button" class="v2-btn v2-btn-neutral text-xs mt-2" data-snippet="${_esc(c.snippet)}">Copy snippet</button>` : '';
+    return `<div class="card p-2 bg-slate-50 border-slate-200">
+      <div class="text-sm font-semibold">${icon} ${_esc(c.label || c.id)}</div>
+      <div class="text-xs subtle mt-1">${_esc(c.evidence || '')}</div>
+      <div class="text-xs subtle">Where: ${_esc(c.where || '-')}</div>
+      ${btn}
+    </div>`;
+  }).join('');
   _setHTML('v2-detectors', `
     <div class="section-title flex items-center gap-2"><i data-lucide="radar" class="w-4 h-4"></i>AI Detection Coverage & Library</div>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -594,6 +660,7 @@ function _renderDetectors(result) {
         </div>
       </div>
     </div>
+    ${critical.length ? `<div class="mt-3"><div class="text-sm font-semibold mb-2">Critical blocks checklist</div><div class="grid grid-cols-1 md:grid-cols-2 gap-2">${criticalRows}</div></div>` : ''}
     ${issues.length ? `<div class="card p-3 bg-amber-50 border-amber-200 mt-3"><div class="text-xs font-semibold mb-1">Detection issues</div><ul class="list-disc pl-5 text-xs">${issues.map((i) => `<li>${_esc(i)}</li>`).join('')}</ul></div>` : ''}
     ${missingLib.length ? `<details class="mt-3"><summary class="cursor-pointer text-sm font-medium">Improvement library suggestions</summary><div class="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">${missingLib.map((m) => `<div class="card p-2 bg-slate-50 border-slate-200"><div class="text-sm font-semibold">${_esc(m.title || m.id)}</div><div class="text-xs subtle">${_esc(m.why || '')}</div><div class="text-xs subtle mt-1">Reason: ${_esc(m.reason || '-')}</div>${m.snippet ? `<button type="button" class="v2-btn v2-btn-neutral text-xs mt-2" data-snippet="${_esc(m.snippet)}">Copy snippet</button>` : ''}</div>`).join('')}</div></details>` : ''}
   `);
@@ -608,6 +675,7 @@ function _renderDetectors(result) {
 
 function _renderChunks(result) {
   const chunks = Array.isArray(result?.nojs?.content?.chunks) ? result.nojs.content.chunks : [];
+  const dedupe = result?.chunk_dedupe || result?.nojs?.content?.chunk_dedupe || {};
   const cards = chunks.slice(0, 12).map((c, idx) => {
     const text = String(c.text || '');
     const tokens = Math.max(1, Math.round(text.length / 4));
@@ -620,6 +688,10 @@ function _renderChunks(result) {
   }).join('');
   _setHTML('v2-chunks', `
     <div class="section-title flex items-center gap-2"><i data-lucide="blocks" class="w-4 h-4"></i>Chunk Visualization</div>
+    <div class="text-xs subtle mb-2">
+      Unique chunks: <span class="font-semibold">${_num(dedupe.chunks_unique, chunks.length)}</span> / ${_num(dedupe.chunks_total, chunks.length)}
+      ${_num(dedupe.removed_duplicates, 0) > 0 ? `<span class="ml-2 badge badge-p2" title="Near-duplicate chunks removed by similarity threshold">Removed ${_num(dedupe.removed_duplicates, 0)} duplicates</span>` : ''}
+    </div>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-2">${cards || '<div class="subtle text-sm">No chunks available.</div>'}</div>
   `);
 }
@@ -630,6 +702,7 @@ function _renderRecs(result) {
     const pri = String(r.priority || 'P2').toUpperCase();
     const badge = pri === 'P0' ? 'badge badge-p0' : pri === 'P1' ? 'badge badge-p1' : 'badge badge-p2';
     const impact = r.expected_lift || (pri === 'P0' ? '+12% AI visibility' : pri === 'P1' ? '+7% AI visibility' : '+3% AI visibility');
+    const citationFx = r.expected_citation_effect || (pri === 'P0' ? '+8..12' : pri === 'P1' ? '+4..8' : '+1..3');
     const evidence = Array.isArray(r.evidence) ? r.evidence.slice(0, 3) : [];
     const source = Array.isArray(r.source) ? r.source.join(', ') : (r.source || '-');
     const snippet = r.snippet || '';
@@ -641,6 +714,7 @@ function _renderRecs(result) {
       </div>
       <div class="text-sm font-semibold mt-2">${_esc(r.title || 'Recommendation')}</div>
       <div class="text-xs subtle mt-1">Area: ${_esc(r.area || '-')}</div>
+      <div class="text-xs subtle mt-1">Expected effect on citation probability: <span class="font-semibold">${_esc(citationFx)}</span></div>
       ${evidence.length ? `<ul class="list-disc pl-5 text-xs subtle mt-2">${evidence.map((e) => `<li>${_esc(e)}</li>`).join('')}</ul>` : ''}
       <div class="text-xs subtle mt-1">Source: ${_esc(source)}</div>
       ${snippetBtn}
@@ -755,6 +829,7 @@ async function initV2(jobId) {
     _renderWhatAI(result);
     _renderLoss(result);
     _renderCitation(result);
+    _renderNoise(result);
     _renderTrust(result);
     _renderReasons(result);
     _renderFix(result);

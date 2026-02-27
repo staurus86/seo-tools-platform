@@ -4,7 +4,9 @@ from app.tools.llmCrawler.service import (
     _ai_answer_preview,
     _ai_directive_audit,
     _ai_understanding,
+    _apply_chunk_dedupe,
     _build_improvement_library,
+    _detect_page_type,
     _llm_ingestion,
     _snippet_library,
 )
@@ -47,6 +49,32 @@ class LlmCrawlerServiceQualityTests(unittest.TestCase):
         self.assertEqual(preview.get("preview_mode"), "extractive")
         self.assertTrue(preview.get("answer"))
         self.assertTrue(preview.get("chunk_ranking_debug"))
+
+    def test_preview_warns_for_feed_like_pages(self):
+        snapshot = self._snapshot()
+        snapshot["segmentation"] = {"main_content_confidence": {"level": "low", "reasons": ["feed layout"]}}
+        preview = _ai_answer_preview(snapshot, llm_sim=None, page_type_info={"page_type": "listing_feed"})
+        self.assertTrue(preview.get("warning"))
+
+    def test_chunk_dedupe_metrics(self):
+        snapshot = self._snapshot()
+        snapshot["content"]["chunks"] = [
+            {"idx": 1, "text": "Vacuum meter calibration and pressure measurement guide."},
+            {"idx": 2, "text": "Vacuum meter calibration and pressure measurement guide."},
+            {"idx": 3, "text": "Maintenance schedule and tolerance checks."},
+        ]
+        stats = _apply_chunk_dedupe(snapshot)
+        self.assertEqual(stats.get("chunks_total"), 3)
+        self.assertEqual(stats.get("chunks_unique"), 2)
+        self.assertGreater(stats.get("dedupe_ratio", 0), 0)
+
+    def test_page_type_detection_listing_feed(self):
+        snapshot = self._snapshot()
+        snapshot["final_url"] = "https://example.com/news"
+        snapshot["links"] = {"count": 120}
+        snapshot["segmentation"] = {"noise_breakdown": {"live_pct": 22, "nav_pct": 30}}
+        page_type = _detect_page_type(snapshot)
+        self.assertEqual(page_type.get("page_type"), "listing_feed")
 
     def test_ingestion_not_evaluated_without_chunks(self):
         snapshot = self._snapshot()

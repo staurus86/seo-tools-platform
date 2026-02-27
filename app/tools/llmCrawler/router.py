@@ -264,6 +264,9 @@ async def llm_crawler_report(job_id: str, request: Request) -> HTMLResponse:
     ai = result.get("ai_understanding") or {}
     preview = result.get("ai_answer_preview") or {}
     metrics = result.get("metrics_bytes") or {}
+    noise = result.get("noise_breakdown") or (((result.get("nojs") or {}).get("segmentation") or {}).get("noise_breakdown") or {})
+    main_conf = result.get("main_content_confidence") or (((result.get("nojs") or {}).get("segmentation") or {}).get("main_content_confidence") or {})
+    dedupe = result.get("chunk_dedupe") or (((result.get("nojs") or {}).get("content") or {}).get("chunk_dedupe") or {})
     wf = result.get("projected_score_waterfall") or {}
     ai_blocks = result.get("ai_blocks") or {}
     ai_directives = result.get("ai_directives") or {}
@@ -285,6 +288,10 @@ async def llm_crawler_report(job_id: str, request: Request) -> HTMLResponse:
       <div class="card"><h3>AI Understanding</h3><p><b>Topic:</b> {ai.get("topic","-")}</p><p><b>Confidence:</b> {ai.get("topic_confidence","-")}</p><p><b>Preview:</b> {preview.get("answer","-")}</p></div>
       <div class="card"><h3>Metrics Consistency</h3><p>HTML bytes: {metrics.get("html_bytes","-")}</p><p>Text bytes: {metrics.get("text_bytes","-")}</p><p>Text/HTML ratio: {metrics.get("text_html_ratio","-")}</p></div>
     </div>
+    <div class="grid">
+      <div class="card"><h3>Noise & Segmentation</h3><p>Main: {noise.get("main_pct","-")}% | Ads: {noise.get("ads_pct","-")}%</p><p>Live: {noise.get("live_pct","-")}% | Nav: {noise.get("nav_pct","-")}%</p><p><b>Confidence:</b> {(main_conf or {}).get("level","-")} ({', '.join((main_conf or {}).get("reasons") or [])})</p></div>
+      <div class="card"><h3>Chunk Dedupe</h3><p>Total: {dedupe.get("chunks_total","-")}</p><p>Unique: {dedupe.get("chunks_unique","-")}</p><p>Removed duplicates: {dedupe.get("removed_duplicates","-")} ({dedupe.get("dedupe_ratio","-")}%)</p></div>
+    </div>
     <div class="card"><h3>Projected Waterfall</h3>
       <table><thead><tr><th>Step</th><th>Score</th></tr></thead><tbody>
         <tr><td>Baseline</td><td>{wf.get("baseline","-")}</td></tr>
@@ -292,8 +299,9 @@ async def llm_crawler_report(job_id: str, request: Request) -> HTMLResponse:
         <tr><td>Projected</td><td>{wf.get("target","-")}</td></tr>
       </tbody></table>
     </div>
+    <div class="card"><h3>AI Preview</h3><p><b>Q:</b> {preview.get("question","What is this page about?")}</p><p><b>A:</b> {preview.get("answer","-")}</p><p><small>Warning: {preview.get("warning","none")}</small></p></div>
     <div class="card"><h3>Recommendations with Evidence</h3><ul>
-    {''.join([f"<li><b>{r.get('priority','')}</b> {r.get('title','')}<br><small>Evidence: {', '.join((r.get('evidence') or [])[:3])}</small></li>" for r in recs]) or '<li>None</li>'}
+    {''.join([f"<li><b>{r.get('priority','')}</b> {r.get('title','')}<br><small>Evidence: {', '.join((r.get('evidence') or [])[:3])}</small><br><small>Citation effect: {r.get('expected_citation_effect','-')}</small></li>" for r in recs]) or '<li>None</li>'}
     </ul></div>
     <div class="card"><h3>Detection Coverage</h3>
       <p>Coverage: {ai_blocks.get("coverage_percent","-")}%</p>

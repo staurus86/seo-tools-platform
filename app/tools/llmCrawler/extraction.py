@@ -8,6 +8,7 @@ from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 from .patterns import detect_ai_blocks
+from .segmentation import segment_content
 try:  # optional dependency
     import trafilatura  # type: ignore
 except Exception:  # pragma: no cover - optional at runtime
@@ -272,8 +273,17 @@ def build_snapshot(
         "h2_texts": [_safe_text(tag.get_text(" ", strip=True))[:240] for tag in h2_tags[:8]],
     }
 
-    main_text = _extract_main_text(soup)
+    raw_main_text = _extract_main_text(soup)
     full_text = _safe_text(" ".join(soup.stripped_strings))
+    links = _extract_links(soup, final_url, limit=20)
+    segmentation = segment_content(
+        soup=soup,
+        rendered_text=full_text,
+        extracted_text=raw_main_text,
+        links=links,
+        headings=headings,
+    )
+    main_text = _safe_text(segmentation.get("main_text") or raw_main_text)
     main_content_ratio = len(main_text) / max(1, len(full_text))
     boilerplate_ratio = max(0.0, 1.0 - main_content_ratio)
 
@@ -307,7 +317,6 @@ def build_snapshot(
             start = end - overlap
 
     words = re.findall(r"[A-Za-zА-Яа-я0-9]+", main_text)
-    links = _extract_links(soup, final_url, limit=20)
     schema_types = _extract_jsonld_types(soup)
     microdata_types: List[str] = []
     rdfa_types: List[str] = []
@@ -365,6 +374,7 @@ def build_snapshot(
         },
         "content": {
             "main_text_length": len(main_text),
+            "raw_main_text_length": len(raw_main_text),
             "word_count": len(words),
             "readability_score": _flesch_reading_ease(main_text),
             "main_text_preview": main_text[:2000],
@@ -372,6 +382,9 @@ def build_snapshot(
             "trafilatura_text": trafilatura_text,
             "main_content_ratio": round(main_content_ratio, 4),
             "boilerplate_ratio": round(boilerplate_ratio, 4),
+            "noise_breakdown": segmentation.get("noise_breakdown") or {},
+            "main_content_confidence": segmentation.get("main_content_confidence") or {},
+            "main_source": "segmented_main" if main_text != raw_main_text else "raw_main",
             "chunks": chunks,
         },
         "headings": headings,
@@ -399,6 +412,12 @@ def build_snapshot(
         "signals": signals,
         "challenge": challenge,
         "ai_blocks": ai_blocks,
+        "segmentation": {
+            "content_segments": (segmentation.get("content_segments") or [])[:60],
+            "noise_breakdown": segmentation.get("noise_breakdown") or {},
+            "main_content_confidence": segmentation.get("main_content_confidence") or {},
+            "segment_version": segmentation.get("segment_version") or "seg-v1",
+        },
     }
 
     if show_headers:

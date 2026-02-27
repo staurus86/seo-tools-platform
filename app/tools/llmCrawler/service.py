@@ -479,6 +479,60 @@ def _build_extractive_preview(chunks: List[Dict[str, Any]], bullets: int = 3) ->
     return lines
 
 
+def _normalize_chunk_text(text: str) -> str:
+    return " ".join(_tokens(text))
+
+
+def _jaccard_tokens(a: str, b: str) -> float:
+    ta = set(_tokens(a))
+    tb = set(_tokens(b))
+    if not ta or not tb:
+        return 0.0
+    return float(len(ta & tb) / max(1, len(ta | tb)))
+
+
+def _dedupe_chunks(chunks: List[Dict[str, Any]], similarity_threshold: float = 0.9) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    total = len(chunks or [])
+    if total == 0:
+        return [], {"chunks_total": 0, "chunks_unique": 0, "removed_duplicates": 0, "dedupe_ratio": 0.0}
+    unique: List[Dict[str, Any]] = []
+    hashes: set[int] = set()
+    for chunk in chunks:
+        text = str((chunk or {}).get("text") or "")
+        norm = _normalize_chunk_text(text)
+        sig = hash(norm)
+        is_dup = sig in hashes
+        if not is_dup:
+            for existing in unique[-8:]:
+                sim = _jaccard_tokens(text, str(existing.get("text") or ""))
+                if sim >= similarity_threshold:
+                    is_dup = True
+                    break
+        if is_dup:
+            continue
+        hashes.add(sig)
+        unique.append({"idx": len(unique) + 1, "text": text})
+    unique_total = len(unique)
+    removed = max(0, total - unique_total)
+    ratio = round((removed / max(1, total)) * 100, 2)
+    return unique, {
+        "chunks_total": total,
+        "chunks_unique": unique_total,
+        "removed_duplicates": removed,
+        "dedupe_ratio": ratio,
+    }
+
+
+def _apply_chunk_dedupe(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    content = snapshot.get("content") or {}
+    chunks = content.get("chunks") or []
+    unique, stats = _dedupe_chunks(chunks)
+    content["chunks"] = unique
+    content["chunk_dedupe"] = stats
+    snapshot["content"] = content
+    return stats
+
+
 def _module_status(evaluated: bool, reason: str = "", score: Optional[float] = None, factors: Optional[List[str]] = None) -> Dict[str, Any]:
     return {
         "status": "evaluated" if evaluated else "not_evaluated",
@@ -600,6 +654,93 @@ def _metrics_bytes(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _detect_page_type(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    meta = snapshot.get("meta") or {}
+    content = snapshot.get("content") or {}
+    schema = snapshot.get("schema") or {}
+    signals = snapshot.get("signals") or {}
+    links = snapshot.get("links") or {}
+    seg = snapshot.get("segmentation") or {}
+    noise = (seg.get("noise_breakdown") or {})
+    final_url = str(snapshot.get("final_url") or "")
+    path = urlparse(final_url).path.lower() if final_url else "/"
+    title = str(meta.get("title") or "").lower()
+    main_len = int(content.get("main_text_length") or 0)
+    links_count = int(links.get("count") or 0)
+    live_pct = float(noise.get("live_pct") or 0.0)
+    nav_pct = float(noise.get("nav_pct") or 0.0)
+    jsonld_types = {str(x) for x in (schema.get("jsonld_types") or [])}
+
+    reasons: List[str] = []
+    page_type = "article"
+    confidence = 0.62
+
+    if "Product" in jsonld_types or re.search(r"\b(price|pricing|buy|shop|cart|sku|цена|купить)\b", title, re.I):
+        page_type = "product"
+        confidence = 0.84
+        reasons.append("Product schema/commerce terms detected")
+    elif path in {"", "/"} and links_count >= 40:
+        page_type = "homepage"
+        confidence = 0.77
+        reasons.append("Root page with high link density")
+    elif live_pct >= 18 or links_count >= 80 or nav_pct >= 45:
+        page_type = "listing_feed"
+        confidence = 0.82 if live_pct >= 18 else 0.74
+        reasons.append("Feed/listing pattern (live/nav/links density)")
+    elif links_count >= 35 and main_len < 1800:
+        page_type = "category"
+        confidence = 0.68
+        reasons.append("Category/list pattern by links-to-text ratio")
+    elif bool(signals.get("author_present") or signals.get("date_present")) and main_len >= 600:
+        page_type = "article"
+        confidence = 0.86
+        reasons.append("Article-like body with author/date signals")
+    else:
+        reasons.append("Default article profile")
+
+    return {"page_type": page_type, "confidence": round(confidence, 3), "reasons": reasons[:4]}
+
+
+def _apply_score_profile(score: Dict[str, Any], snapshot: Dict[str, Any], page_type_info: Dict[str, Any]) -> Dict[str, Any]:
+    breakdown = score.get("breakdown") or {}
+    if not breakdown:
+        return score
+    page_type = str(page_type_info.get("page_type") or "article")
+    weights_map = {
+        "article": {"access": 25, "content": 30, "structure": 20, "signals": 25},
+        "listing_feed": {"access": 30, "content": 35, "structure": 10, "signals": 25},
+        "product": {"access": 25, "content": 25, "structure": 15, "signals": 35},
+        "category": {"access": 30, "content": 30, "structure": 15, "signals": 25},
+        "homepage": {"access": 35, "content": 25, "structure": 10, "signals": 30},
+    }
+    weights = weights_map.get(page_type, weights_map["article"])
+    maxima = {"access": 35.0, "content": 30.0, "structure": 20.0, "signals": 30.0}
+
+    def scaled(key: str) -> float:
+        val = float(breakdown.get(key) or 0.0)
+        return max(0.0, min(1.0, val / maxima[key])) * float(weights[key])
+
+    adjusted_total = scaled("access") + scaled("content") + scaled("structure") + scaled("signals")
+    headings = snapshot.get("headings") or {}
+    meta = snapshot.get("meta") or {}
+    content = snapshot.get("content") or {}
+    # Missing H1 should be a penalty, not a hard floor to zero for feed/listing style pages.
+    if int(headings.get("h1") or 0) == 0 and str(meta.get("title") or "").strip() and int(content.get("main_text_length") or 0) >= 500:
+        adjusted_total = max(20.0, adjusted_total)
+        breakdown["structure"] = max(4.0, float(breakdown.get("structure") or 0.0))
+
+    score["raw_total"] = int(score.get("total") or 0)
+    score["total"] = int(round(max(0.0, min(100.0, adjusted_total))))
+    score["breakdown"] = breakdown
+    score["profile"] = {
+        "page_type": page_type,
+        "weights": weights,
+        "confidence": page_type_info.get("confidence"),
+        "reasons": page_type_info.get("reasons") or [],
+    }
+    return score
+
+
 def _snippet_library() -> Dict[str, str]:
     return {
         "jsonld_organization": """<script type=\"application/ld+json\">{\"@context\":\"https://schema.org\",\"@type\":\"Organization\",\"name\":\"Your Company\",\"url\":\"https://example.com\",\"logo\":\"https://example.com/logo.png\"}</script>""",
@@ -609,6 +750,87 @@ def _snippet_library() -> Dict[str, str]:
         "author_block_html": """<section class=\"author-box\"><p>By <strong>Author Name</strong></p><time datetime=\"2026-01-01\">January 1, 2026</time></section>""",
         "robots_ai_allow": """User-agent: GPTBot\nAllow: /\n\nUser-agent: Google-Extended\nAllow: /\n""",
     }
+
+
+def _critical_blocks_checklist(snapshot: Dict[str, Any], snippets: Dict[str, str], ai_blocks: Dict[str, Any]) -> List[Dict[str, Any]]:
+    headings = snapshot.get("headings") or {}
+    signals = snapshot.get("signals") or {}
+    schema = snapshot.get("schema") or {}
+    entity = snapshot.get("entity_graph") or {}
+    schema_types = {str(x) for x in (schema.get("jsonld_types") or [])}
+    detected_ids = {str(x.get("id") or "") for x in (ai_blocks.get("detected") or []) if isinstance(x, dict)}
+
+    checks: List[Dict[str, Any]] = []
+
+    def add_check(
+        key: str,
+        label: str,
+        present: bool,
+        evidence: str,
+        where: str,
+        snippet_key: str | None = None,
+    ) -> None:
+        item: Dict[str, Any] = {
+            "id": key,
+            "label": label,
+            "status": "present" if present else "missing",
+            "evidence": evidence,
+            "where": where,
+        }
+        if (not present) and snippet_key and snippets.get(snippet_key):
+            item["snippet_key"] = snippet_key
+            item["snippet"] = snippets[snippet_key]
+        checks.append(item)
+
+    add_check(
+        "h1",
+        "H1",
+        int(headings.get("h1") or 0) > 0,
+        f"h1_count={int(headings.get('h1') or 0)}",
+        "DOM headings",
+        None,
+    )
+    add_check(
+        "author",
+        "Author",
+        bool(signals.get("author_present")),
+        f"author_present={bool(signals.get('author_present'))}",
+        "meta/body signals",
+        "author_block_html",
+    )
+    add_check(
+        "date",
+        "Date",
+        bool(signals.get("date_present")),
+        f"date_present={bool(signals.get('date_present'))}",
+        "meta/time tags",
+        "author_block_html",
+    )
+    add_check(
+        "organization",
+        "Organization",
+        bool(("Organization" in schema_types) or (entity.get("organizations") or [])),
+        f"schema_types={len(schema_types)} organizations={len(entity.get('organizations') or [])}",
+        "JSON-LD + entity graph",
+        "jsonld_organization",
+    )
+    add_check(
+        "breadcrumb",
+        "Breadcrumb",
+        bool(("BreadcrumbList" in schema_types) or ("breadcrumb_block" in detected_ids)),
+        f"BreadcrumbList_in_schema={('BreadcrumbList' in schema_types)}",
+        "schema + DOM block detection",
+        "jsonld_breadcrumb",
+    )
+    add_check(
+        "jsonld",
+        "Schema JSON-LD",
+        bool(schema_types),
+        f"jsonld_types={', '.join(sorted(schema_types)[:6]) or 'none'}",
+        "HTML <script type=application/ld+json>",
+        "jsonld_article",
+    )
+    return checks
 
 
 def _ai_directive_audit(snapshot: Dict[str, Any], policies: Dict[str, Any]) -> Dict[str, Any]:
@@ -660,10 +882,14 @@ def _detection_issues(
 ) -> List[str]:
     issues: List[str] = []
     content = snapshot.get("content") or {}
+    seg = snapshot.get("segmentation") or {}
+    conf = (seg.get("main_content_confidence") or {}).get("level")
     if int(content.get("main_text_length") or 0) < 250:
         issues.append("Insufficient extracted text (<250 chars)")
     if float(content.get("main_content_ratio") or 0) < 0.2:
         issues.append("Very low main content ratio (<20%)")
+    if str(conf or "").lower() == "low":
+        issues.append("Segmentation confidence is low (feed/mixed layout)")
     if float(ai_blocks.get("coverage_percent") or 0) < 35:
         issues.append("Low AI block detection coverage (<35%)")
     if not (llm_sim or {}).get("enabled"):
@@ -896,6 +1122,10 @@ def run_llm_crawler_simulation(
     )
     if bool(options.get("include_raw_html")):
         nojs_snapshot["raw_html"] = str(nojs_http.get("body_text") or "")[:200000]
+    chunk_dedupe = _apply_chunk_dedupe(nojs_snapshot)
+    page_type_info = _detect_page_type(nojs_snapshot)
+    nojs_snapshot["page_type"] = page_type_info.get("page_type")
+    nojs_snapshot["page_type_confidence"] = page_type_info.get("confidence")
     timings["nojs_ms"] = int((time.perf_counter() - t0) * 1000)
 
     notify(40, "Robots and policy checks")
@@ -955,6 +1185,7 @@ def run_llm_crawler_simulation(
             rendered_snapshot["render_debug"] = render_debug
             if bool(options.get("include_rendered_html")):
                 rendered_snapshot["rendered_html"] = str(rendered_http.get("body_text") or "")[:200000]
+            _apply_chunk_dedupe(rendered_snapshot)
         except Exception as exc:
             render_error = f"Rendered fetch failed: {exc}"
             notify(70, render_error)
@@ -1007,6 +1238,7 @@ def run_llm_crawler_simulation(
         diff=diff,
         policies=policies,
     )
+    score = _apply_score_profile(score, nojs_snapshot, page_type_info)
     recommendations = _build_recommendations(nojs_snapshot, rendered_snapshot, policies, score)
     llm_sim = None
     if bool(getattr(settings, "LLM_SIMULATION_ENABLED", False)):
@@ -1032,10 +1264,10 @@ def run_llm_crawler_simulation(
     ai_understanding = _ai_understanding(nojs_snapshot, llm_sim)
     trust_signal_score = _trust_score(nojs_snapshot)
     content_loss_percent = _content_loss(diff, nojs_snapshot)
-    citation_breakdown = _citation_breakdown(nojs_snapshot)
+    citation_breakdown = _citation_breakdown(nojs_snapshot, page_type_info)
     projected_score = _projected_score(score, citation_breakdown)
     projected_waterfall = _projected_score_waterfall(score, citation_breakdown, trust_signal_score)
-    answer_preview = _ai_answer_preview(nojs_snapshot, llm_sim)
+    answer_preview = _ai_answer_preview(nojs_snapshot, llm_sim, page_type_info)
     metrics_bytes = _metrics_bytes(nojs_snapshot)
     if rendered_snapshot:
         rendered_metrics = _metrics_bytes(rendered_snapshot)
@@ -1045,6 +1277,7 @@ def run_llm_crawler_simulation(
     ai_blocks = nojs_snapshot.get("ai_blocks") or {}
     ai_directives = _ai_directive_audit(nojs_snapshot, policies)
     snippet_library = _snippet_library()
+    critical_blocks = _critical_blocks_checklist(nojs_snapshot, snippet_library, ai_blocks)
     detection_issues = _detection_issues(nojs_snapshot, ai_blocks, llm_sim, ingestion, eeat)
     improvement_library = _build_improvement_library(
         nojs_snapshot,
@@ -1055,6 +1288,9 @@ def run_llm_crawler_simulation(
     )
     timings["analysis_ms"] = int((time.perf_counter() - t3) * 1000)
     timings["total_ms"] = int((time.perf_counter() - started_at) * 1000)
+    noise_breakdown = ((nojs_snapshot.get("segmentation") or {}).get("noise_breakdown") or {})
+    main_content_confidence = ((nojs_snapshot.get("segmentation") or {}).get("main_content_confidence") or {})
+    content_segments = ((nojs_snapshot.get("segmentation") or {}).get("content_segments") or [])
 
     notify(100, "Done")
     return {
@@ -1094,12 +1330,20 @@ def run_llm_crawler_simulation(
         "ai_answer_preview": answer_preview,
         "preview_mode": answer_preview.get("preview_mode"),
         "chunk_ranking_debug": answer_preview.get("chunk_ranking_debug") or ((llm_sim or {}).get("chunk_ranking_debug") if isinstance(llm_sim, dict) else []),
+        "chunk_dedupe": chunk_dedupe,
         "metrics_bytes": metrics_bytes,
         "snippet_library": snippet_library,
         "ai_blocks": ai_blocks,
+        "critical_blocks": critical_blocks,
         "ai_directives": ai_directives,
         "improvement_library": improvement_library,
         "detection_issues": detection_issues,
+        "page_type": page_type_info.get("page_type"),
+        "page_type_confidence": page_type_info.get("confidence"),
+        "page_type_reasons": page_type_info.get("reasons") or [],
+        "noise_breakdown": noise_breakdown,
+        "main_content_confidence": main_content_confidence,
+        "content_segments": content_segments[:40],
         "ui_wow_enabled": quality_mode,
         "engine": "llm_crawler_mvp_v1",
     }
@@ -1116,15 +1360,27 @@ def _build_recommendations(nojs: Dict[str, Any], rendered: Optional[Dict[str, An
     links = (nojs.get("links") or {})
     content = (nojs.get("content") or {})
     challenge = (nojs.get("challenge") or {})
+    segmentation = (nojs.get("segmentation") or {})
+    main_conf = (segmentation.get("main_content_confidence") or {})
     ai_blocks = (nojs.get("ai_blocks") or {})
     missing_blocks = [str(x) for x in (ai_blocks.get("missing_critical") or [])]
 
-    def add_rec(priority: str, area: str, title: str, expected_lift: str, evidence: List[str], source: List[str], snippet_key: str | None = None) -> None:
+    def add_rec(
+        priority: str,
+        area: str,
+        title: str,
+        expected_lift: str,
+        evidence: List[str],
+        source: List[str],
+        snippet_key: str | None = None,
+        citation_effect: str | None = None,
+    ) -> None:
         rec: Dict[str, Any] = {
             "priority": priority,
             "area": area,
             "title": title,
             "expected_lift": expected_lift,
+            "expected_citation_effect": citation_effect or ("+8..12" if priority == "P0" else "+4..8" if priority == "P1" else "+1..3"),
             "evidence": evidence[:3],
             "source": source[:3],
         }
@@ -1253,6 +1509,16 @@ def _build_recommendations(nojs: Dict[str, Any], rendered: Optional[Dict[str, An
             "+3..6",
             [f"main_text_length={content.get('main_text_length', 0)}"],
             ["body"],
+        )
+    if str(main_conf.get("level") or "").lower() == "low":
+        add_rec(
+            "P1",
+            "segmentation",
+            "Страница похожа на ленту/микс-контент — выделите main-блок и снизьте шум меню/рекламы",
+            "+6..10",
+            (main_conf.get("reasons") or ["Low segmentation confidence"])[:3],
+            ["body", "dom_segments"],
+            citation_effect="+6..11",
         )
     if float(score.get("js_dependency_score", 0)) > 70:
         add_rec(
@@ -1555,17 +1821,38 @@ def _content_loss(diff: Dict[str, Any], snapshot: Dict[str, Any]) -> float:
     return round(loss * 100, 2)
 
 
-def _citation_breakdown(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+def _citation_breakdown(snapshot: Dict[str, Any], page_type_info: Dict[str, Any] | None = None) -> Dict[str, Any]:
     schema = snapshot.get("schema") or {}
     signals = snapshot.get("signals") or {}
     content = snapshot.get("content") or {}
-    return {
+    page_type = str((page_type_info or {}).get("page_type") or "article")
+    readability = min(100, float(content.get("readability_score") or 0))
+    base = {
         "schema": 100 if schema.get("coverage_score", 0) >= 75 else 50 if schema.get("coverage_score", 0) > 0 else 0,
         "author": 100 if signals.get("author_present") else 0,
-        "content_clarity": min(100, float(content.get("readability_score") or 0)),
+        "content_clarity": readability,
         "bot_accessibility": 100,
         "structure": min(100, (snapshot.get("headings") or {}).get("h2", 0) * 10),
     }
+    weights_map = {
+        "article": {"schema": 0.30, "author": 0.25, "content_clarity": 0.20, "bot_accessibility": 0.15, "structure": 0.10},
+        "listing_feed": {"schema": 0.22, "author": 0.08, "content_clarity": 0.34, "bot_accessibility": 0.24, "structure": 0.12},
+        "product": {"schema": 0.34, "author": 0.08, "content_clarity": 0.18, "bot_accessibility": 0.16, "structure": 0.24},
+        "category": {"schema": 0.24, "author": 0.10, "content_clarity": 0.28, "bot_accessibility": 0.22, "structure": 0.16},
+        "homepage": {"schema": 0.20, "author": 0.08, "content_clarity": 0.27, "bot_accessibility": 0.30, "structure": 0.15},
+    }
+    if page_type in {"listing_feed", "homepage"}:
+        # Do not over-penalize structure on feed-like pages.
+        base["structure"] = max(20.0, float(base["structure"]))
+    weights = weights_map.get(page_type, weights_map["article"])
+    weighted = round(
+        sum(float(base[k]) * float(weights.get(k, 0.0)) for k in ["schema", "author", "content_clarity", "bot_accessibility", "structure"]),
+        2,
+    )
+    base["weighted_score"] = weighted
+    base["page_type"] = page_type
+    base["profile_weights"] = weights
+    return base
 
 
 def _projected_score(score: Dict[str, Any], citation_breakdown: Dict[str, Any]) -> float:
@@ -1598,7 +1885,11 @@ def _projected_score_waterfall(score: Dict[str, Any], citation_breakdown: Dict[s
     return {"baseline": round(base, 2), "target": round(target, 2), "steps": steps}
 
 
-def _ai_answer_preview(snapshot: Dict[str, Any], llm_sim: Dict[str, Any] | None) -> Dict[str, Any]:
+def _ai_answer_preview(
+    snapshot: Dict[str, Any],
+    llm_sim: Dict[str, Any] | None,
+    page_type_info: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
     question = "What is this page about?"
     ranked = _rank_chunks_for_question(snapshot, question, limit=3)
     bullets = _build_extractive_preview(ranked, bullets=3)
@@ -1610,15 +1901,25 @@ def _ai_answer_preview(snapshot: Dict[str, Any], llm_sim: Dict[str, Any] | None)
         answer = " ".join(_sentences(ranked_text)[:2]).strip()
     if not answer:
         answer = (snapshot.get("content") or {}).get("main_text_preview", "")[:280]
+    if not bullets and answer:
+        bullets = [s.strip() for s in _sentences(answer)[:3] if len(s.strip()) >= 35]
     confidence = (llm_sim or {}).get("scores", {}).get("answer_quality_score", None)
     if confidence is None and ranked:
         confidence = round(min(100, (sum(float(x.get("score") or 0) for x in ranked) / max(1, len(ranked))) * 100), 2)
+    seg = snapshot.get("segmentation") or {}
+    seg_conf = str(((seg.get("main_content_confidence") or {}).get("level") or "")).lower()
+    page_type = str((page_type_info or {}).get("page_type") or "")
+    warning = None
+    if seg_conf == "low" or page_type in {"listing_feed"}:
+        warning = "Page looks like a feed/mixed content; AI citations may be unstable."
     return {
         "question": question,
         "answer": answer or "Not enough content",
         "confidence": confidence,
         "preview_mode": mode,
         "bullets": bullets,
+        "warning": warning,
+        "page_type": page_type,
         "chunk_ranking_debug": [
             {"idx": int(x.get("idx") or 0), "score": x.get("score"), "relevance": x.get("relevance")}
             for x in ranked

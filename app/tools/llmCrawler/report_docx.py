@@ -43,10 +43,33 @@ def _words(text: Any, limit: int = 25) -> str:
     return " ".join(parts[:limit]) + "..."
 
 
+def _progress_bar(value: Any, width: int = 18) -> str:
+    try:
+        v = max(0.0, min(100.0, float(value)))
+    except Exception:
+        return "—"
+    filled = int(round((v / 100.0) * width))
+    return f"{'█' * filled}{'░' * (width - filled)} {round(v, 1)}%"
+
+
+def _score_badge(value: Any) -> str:
+    try:
+        v = float(value)
+    except Exception:
+        return "⚪ Not evaluated"
+    if v >= 80:
+        return "✅ Excellent"
+    if v >= 50:
+        return "⚠ Needs work"
+    return "❌ Critical"
+
+
 def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) -> BytesIO:
     try:
         from docx import Document  # type: ignore
         from docx.enum.text import WD_PARAGRAPH_ALIGNMENT  # type: ignore
+        from docx.oxml import parse_xml  # type: ignore
+        from docx.oxml.ns import nsdecls  # type: ignore
         from docx.shared import Inches, Pt, RGBColor  # type: ignore
     except Exception as exc:
         raise RuntimeError(f"python-docx unavailable: {exc}")
@@ -81,6 +104,56 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
         r2 = p.add_run(str(value))
         r2.font.color.rgb = RGBColor.from_string("111827")
 
+    def shade_cell(cell: Any, fill_hex: str) -> None:
+        tc_pr = cell._tc.get_or_add_tcPr()
+        tc_pr.append(parse_xml(rf'<w:shd {nsdecls("w")} w:fill="{fill_hex}"/>'))
+
+    def add_callout(title: str, lines: list[str], fill_hex: str = "EEF6FF", accent_hex: str = "0F4C81") -> None:
+        table = doc.add_table(rows=1, cols=1)
+        table.style = "Table Grid"
+        cell = table.cell(0, 0)
+        shade_cell(cell, fill_hex)
+        p = cell.paragraphs[0]
+        h = p.add_run(title)
+        h.bold = True
+        h.font.color.rgb = RGBColor.from_string(accent_hex)
+        for line in lines:
+            lp = cell.add_paragraph(str(line))
+            if lp.runs:
+                lp.runs[0].font.size = Pt(10)
+
+    def add_kpi_cards(items: list[dict[str, Any]]) -> None:
+        if not items:
+            return
+        cols = 2
+        rows = (len(items) + cols - 1) // cols
+        table = doc.add_table(rows=rows, cols=cols)
+        table.style = "Table Grid"
+        idx = 0
+        for r in range(rows):
+            for c in range(cols):
+                cell = table.cell(r, c)
+                shade_cell(cell, "F8FBFF")
+                if idx >= len(items):
+                    cell.text = ""
+                    continue
+                item = items[idx]
+                idx += 1
+                p = cell.paragraphs[0]
+                t = p.add_run(str(item.get("title", "")))
+                t.bold = True
+                t.font.color.rgb = RGBColor.from_string("475569")
+                v = cell.add_paragraph(str(item.get("value", "-")))
+                if v.runs:
+                    v.runs[0].bold = True
+                    v.runs[0].font.size = Pt(15)
+                    v.runs[0].font.color.rgb = RGBColor.from_string("0F172A")
+                if item.get("note"):
+                    n = cell.add_paragraph(str(item.get("note")))
+                    if n.runs:
+                        n.runs[0].font.size = Pt(9)
+                        n.runs[0].font.color.rgb = RGBColor.from_string("64748B")
+
     def add_table(headers, rows):
         table = doc.add_table(rows=1, cols=len(headers))
         table.style = "Table Grid"
@@ -110,6 +183,11 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
     nojs_content = nojs.get("content") or {}
     rendered = result.get("rendered") or {}
     rendered_content = (rendered.get("content") or {}) if isinstance(rendered, dict) else {}
+    segmentation = (result.get("segmentation") or nojs.get("segmentation") or {})
+    noise_breakdown = (result.get("noise_breakdown") or segmentation.get("noise_breakdown") or nojs_content.get("noise_breakdown") or {})
+    main_confidence = (result.get("main_content_confidence") or segmentation.get("main_content_confidence") or nojs_content.get("main_content_confidence") or {})
+    chunk_dedupe = (result.get("chunk_dedupe") or nojs_content.get("chunk_dedupe") or {})
+    page_type = str(result.get("page_type") or nojs.get("page_type") or "-")
     schema = nojs.get("schema") or {}
     resources = nojs.get("resources") or {}
     recommendations = result.get("recommendations") or []
@@ -123,6 +201,7 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
     projected_wf = result.get("projected_score_waterfall") or {}
     cloaking = result.get("cloaking") or {}
     ai_blocks = result.get("ai_blocks") or {}
+    critical_blocks = result.get("critical_blocks") or []
     ai_directives = result.get("ai_directives") or {}
     improvement_library = result.get("improvement_library") or {}
     detection_issues = result.get("detection_issues") or []
@@ -148,10 +227,17 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
     lbl.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     if lbl.runs:
         lbl.runs[0].font.color.rgb = RGBColor.from_string("475569")
+    kpi_items = [
+        {"title": "Current score", "value": f"{round(score_total, 2)} / 100", "note": _score_badge(score_total)},
+        {"title": "Projected score", "value": f"{round(projected, 2)} / 100", "note": _score_badge(projected)},
+        {"title": "Citation likelihood", "value": _pct(citation), "note": _progress_bar(citation)},
+        {"title": "Trust completeness", "value": _pct(trust), "note": _progress_bar(trust)},
+    ]
+    add_kpi_cards(kpi_items)
     doc.add_page_break()
 
     # PAGE 2: EXECUTIVE SUMMARY
-    add_heading("Executive Summary", 1, color="0B3B63")
+    add_heading("⚡ Executive Summary", 1, color="0B3B63")
     add_kv("Overall score", f"{round(score_total, 2)} / 100")
     add_kv("Projected score after fixes", f"{round(projected, 2)} / 100")
     add_kv("Citation likelihood", _pct(citation))
@@ -160,6 +246,16 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
     else:
         add_kv("EEAT score", _pct(eeat))
     add_kv("Trust completeness", _pct(trust))
+    add_callout(
+        "Snapshot",
+        [
+            f"Quality status: {_score_badge(score_total)}",
+            f"Projected lift: +{round(max(0.0, projected - score_total), 2)} points",
+            f"Content loss: {_pct(content_loss)}",
+        ],
+        fill_hex="EEF8FF",
+        accent_hex="0E7490",
+    )
     if projected_wf and wow_enabled:
         add_heading("Projected Impact Waterfall", 2, color="0E7490")
         rows = [["Baseline", projected_wf.get("baseline", score_total)]]
@@ -168,7 +264,7 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
         rows.append(["Projected", projected_wf.get("target", projected)])
         add_table(["Step", "Score"], rows)
     doc.add_paragraph("")
-    add_heading("⚠ Key Findings", 2, color="9A3412")
+    add_heading("⚠ Top Findings", 2, color="9A3412")
     if top_issues:
         for issue in top_issues[:6]:
             doc.add_paragraph(str(issue), style="List Bullet")
@@ -177,8 +273,9 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
     doc.add_page_break()
 
     # PAGE 3: WHAT AI UNDERSTANDS
-    add_heading("AI Understanding Summary", 1, color="0B3B63")
+    add_heading("🧠 AI Understanding Summary", 1, color="0B3B63")
     add_kv("Topic detected", _safe(ai_understanding, ["topic"], llm.get("summary", "Not detected")))
+    add_kv("Page type", page_type)
     add_kv("AI understanding score", _pct(_safe(ai_understanding, ["score"], 0)))
     add_kv("Topic confidence", _pct(_safe(ai_understanding, ["topic_confidence"], 0)))
     add_kv("Topic fallback used", _yesno(_safe(ai_understanding, ["topic_fallback_used"], False)))
@@ -189,6 +286,16 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
         add_kv("Content clarity", _pct(_safe(ai_understanding, ["content_clarity"], 0)))
     add_kv("Discoverability score", _pct(discoverability.get("discoverability_score", 0)))
     add_kv("Click depth estimate", discoverability.get("click_depth_estimate", "-"))
+    add_callout(
+        "AI Readiness Indicators",
+        [
+            f"Understanding: {_progress_bar(_safe(ai_understanding, ['score'], 0))}",
+            f"Content clarity: {_progress_bar(_safe(ai_understanding, ['content_clarity'], 0)) if _safe(ai_understanding, ['content_clarity'], None) is not None else '—'}",
+            f"Discoverability: {_progress_bar(discoverability.get('discoverability_score', 0))}",
+        ],
+        fill_hex="F0F9FF",
+        accent_hex="0369A1",
+    )
     doc.add_paragraph("")
     add_heading("Detected Entities", 2, color="0E7490")
     entities = _safe(ai_understanding, ["entities"], [])
@@ -200,7 +307,7 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
     doc.add_page_break()
 
     # PAGE 4: CONTENT LOSS ANALYSIS
-    add_heading("Content Loss Analysis", 1, color="0B3B63")
+    add_heading("📉 Content Loss Analysis", 1, color="0B3B63")
     add_kv("Total HTML text length", rendered_text_len)
     add_kv("Extracted main text length", main_text_len)
     add_kv("Lost content percent", _pct(content_loss))
@@ -210,6 +317,19 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
     add_kv("Main content ratio", _pct(_num(nojs_content.get("main_content_ratio"), 0) * 100))
     add_kv("Boilerplate ratio", _pct(_num(nojs_content.get("boilerplate_ratio"), 0) * 100))
     add_kv("Chunks count", len(nojs_content.get("chunks") or []))
+    add_kv("Unique chunks", int(_num(chunk_dedupe.get("chunks_unique"), len(nojs_content.get("chunks") or []))))
+    add_kv("Removed duplicate chunks", int(_num(chunk_dedupe.get("removed_duplicates"), 0)))
+    add_kv("Dedupe ratio", _pct(chunk_dedupe.get("dedupe_ratio"), "0%"))
+    add_callout(
+        "Content Ratios",
+        [
+            f"Text/HTML: {_progress_bar(_num(metrics_bytes.get('text_html_ratio'), 0) * 100)}",
+            f"Main content: {_progress_bar(_num(nojs_content.get('main_content_ratio'), 0) * 100)}",
+            f"Boilerplate: {_progress_bar(_num(nojs_content.get('boilerplate_ratio'), 0) * 100)}",
+        ],
+        fill_hex="F8FAFC",
+        accent_hex="475569",
+    )
     if wow_enabled and (nojs_content.get("chunks") or []):
         add_heading("Top Chunk Excerpts", 2, color="0E7490")
         for ch in (nojs_content.get("chunks") or [])[:3]:
@@ -218,8 +338,23 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
     doc.add_paragraph(str(nojs_content.get("main_text_preview", ""))[:1200] or "No preview.")
     doc.add_page_break()
 
-    # PAGE 5: CITATION READINESS BREAKDOWN
-    add_heading("Citation Readiness Breakdown", 1, color="0B3B63")
+    # PAGE 5: NOISE & SEGMENTATION
+    add_heading("🧹 Noise & Segmentation", 1, color="0B3B63")
+    add_kv("Main content percent", _pct(noise_breakdown.get("main_pct"), "-"))
+    add_kv("Ads percent", _pct(noise_breakdown.get("ads_pct"), "-"))
+    add_kv("Live scores percent", _pct(noise_breakdown.get("live_pct"), "-"))
+    add_kv("Navigation/footer percent", _pct(noise_breakdown.get("nav_pct"), "-"))
+    add_kv("Utility percent", _pct(noise_breakdown.get("utility_pct"), "-"))
+    add_kv("Main-content confidence", str(main_confidence.get("level") or "unknown"))
+    reasons = main_confidence.get("reasons") or []
+    if reasons:
+        add_heading("Confidence reasons", 2, color="0E7490")
+        for reason in reasons[:6]:
+            doc.add_paragraph(str(reason), style="List Bullet")
+    doc.add_page_break()
+
+    # PAGE 6: CITATION READINESS BREAKDOWN
+    add_heading("📚 Citation Readiness Breakdown", 1, color="0B3B63")
     add_table(
         ["Factor", "Score"],
         [
@@ -235,8 +370,8 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
     add_kv("Projected score", f"{round(projected, 2)} / 100")
     doc.add_page_break()
 
-    # PAGE 6: BOT ACCESS
-    add_heading("Bot Access Matrix", 1, color="0B3B63")
+    # PAGE 7: BOT ACCESS
+    add_heading("🤖 Bot Access Matrix", 1, color="0B3B63")
     matrix_rows = []
     for m in bot_matrix:
         matrix_rows.append(
@@ -252,8 +387,8 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
     add_kv("x-robots-tag", _safe(result, ["policies", "meta", "x_robots_tag"], "-"))
     doc.add_page_break()
 
-    # PAGE 7: LLM SIMULATION
-    add_heading("LLM Simulation", 1, color="0B3B63")
+    # PAGE 8: LLM SIMULATION
+    add_heading("💬 LLM Simulation", 1, color="0B3B63")
     add_kv("Summary", llm.get("summary", "Not available"))
     key_facts = llm.get("key_facts") or []
     if key_facts:
@@ -273,10 +408,17 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
     add_kv("Question", preview.get("question", "What is this page about?"))
     add_kv("Answer", preview.get("answer", "Not enough content"))
     add_kv("Confidence", _pct(preview.get("confidence"), "-"))
+    if preview.get("warning"):
+        add_kv("Warning", preview.get("warning"))
+    bullets = preview.get("bullets") or []
+    if bullets:
+        add_heading("Key bullets", 2, color="0E7490")
+        for b in bullets[:5]:
+            doc.add_paragraph(str(b), style="List Bullet")
     doc.add_page_break()
 
-    # PAGE 8: STRUCTURED DATA
-    add_heading("Structured Data & Site Structure", 1, color="0B3B63")
+    # PAGE 9: STRUCTURED DATA
+    add_heading("🧩 Structured Data & Site Structure", 1, color="0B3B63")
     add_kv("Schema coverage", _pct(schema.get("coverage_score"), "-"))
     add_kv("Organization schema", _yesno("Organization" in (schema.get("jsonld_types") or [])))
     add_kv("Article schema", _yesno("Article" in (schema.get("jsonld_types") or [])))
@@ -286,8 +428,8 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
     add_kv("RDFa types", ", ".join((schema.get("rdfa_types") or [])[:8]) or "-")
     doc.add_page_break()
 
-    # PAGE 9: TECHNICAL DIAGNOSTICS
-    add_heading("Technical Diagnostics", 1, color="0B3B63")
+    # PAGE 10: TECHNICAL DIAGNOSTICS
+    add_heading("🛠 Technical Diagnostics", 1, color="0B3B63")
     add_kv("JS dependency score", _pct(js_dependency.get("score"), "-"))
     add_kv("Failed resources", js_dependency.get("failures", 0))
     add_kv("Blocked scripts/styles", js_dependency.get("blocked", 0))
@@ -298,6 +440,17 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
         add_kv("Similarity browser vs googlebot", _pct(_safe(cloaking, ["similarity_scores", "browser_vs_googlebot"], "-")))
     else:
         add_kv("Cloaking reason", cloaking.get("reason", "not_run"))
+    if cloaking.get("status") == "executed":
+        add_callout(
+            "Cloaking quick view",
+            [
+                f"Risk: {cloaking.get('risk', 'unknown')}",
+                f"Browser vs GPTBot: {_pct(_safe(cloaking, ['similarity_scores', 'browser_vs_gptbot'], '-'))}",
+                f"Browser vs Googlebot: {_pct(_safe(cloaking, ['similarity_scores', 'browser_vs_googlebot'], '-'))}",
+            ],
+            fill_hex="F0FDF4",
+            accent_hex="166534",
+        )
     add_kv("Console errors", len(diagnostics.get("console_errors") or []))
     add_kv("Failed requests", len(diagnostics.get("failed_requests") or []))
     if diagnostics.get("console_errors"):
@@ -306,8 +459,8 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
             doc.add_paragraph(str(row)[:220], style="List Bullet")
     doc.add_page_break()
 
-    # PAGE 10: ACCESS BARRIERS
-    add_heading("Access Barriers", 1, color="0B3B63")
+    # PAGE 11: ACCESS BARRIERS
+    add_heading("🔒 Access Barriers", 1, color="0B3B63")
     add_kv("Cookie wall", _yesno(resources.get("cookie_wall")))
     add_kv("Paywall", _yesno(resources.get("paywall")))
     add_kv("Login wall", _yesno(resources.get("login_wall")))
@@ -318,8 +471,8 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
         add_page.runs[0].font.size = Pt(1)
     doc.add_page_break()
 
-    # PAGE 11: ENTITY + RECOMMENDATIONS
-    add_heading("Entity Graph & Recommendations", 1, color="0B3B63")
+    # PAGE 12: ENTITY + RECOMMENDATIONS
+    add_heading("🧭 Entity Graph & Recommendations", 1, color="0B3B63")
     add_kv("Organizations", ", ".join((entity_graph.get("organizations") or [])[:12]) or "-")
     add_kv("Persons", ", ".join((entity_graph.get("persons") or [])[:12]) or "-")
     add_kv("Products", ", ".join((entity_graph.get("products") or [])[:12]) or "-")
@@ -332,13 +485,32 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
             area = rec.get("area", "-")
             title = rec.get("title", "-")
             expected = rec.get("expected_lift") or ("+12 score" if pri == "P0" else "+7 score" if pri == "P1" else "+3 score")
-            doc.add_paragraph(f"{pri} | {area} | {title} | expected impact {expected}", style="List Bullet")
+            citation_effect = rec.get("expected_citation_effect") or "-"
+            doc.add_paragraph(
+                f"{pri} | {area} | {title} | expected impact {expected} | citation effect {citation_effect}",
+                style="List Bullet",
+            )
             evidence = rec.get("evidence") or []
             if evidence:
                 for ev in evidence[:3]:
                     doc.add_paragraph(f"Evidence: {ev}", style="List Bullet")
     else:
         doc.add_paragraph("No recommendations.")
+
+    if recommendations:
+        p0 = len([r for r in recommendations if str(r.get("priority", "")).upper() == "P0"])
+        p1 = len([r for r in recommendations if str(r.get("priority", "")).upper() == "P1"])
+        p2 = len([r for r in recommendations if str(r.get("priority", "")).upper() == "P2"])
+        add_callout(
+            "Recommendation mix",
+            [
+                f"P0 critical: {p0}",
+                f"P1 recommended: {p1}",
+                f"P2 optional: {p2}",
+            ],
+            fill_hex="FFF7ED",
+            accent_hex="9A3412",
+        )
 
     add_heading("AI Detection Coverage", 2, color="0E7490")
     add_kv("Coverage percent", _pct(ai_blocks.get("coverage_percent"), "-"))
@@ -351,6 +523,12 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
         add_heading("Missing critical blocks", 3, color="9A3412")
         for m in missing_critical[:8]:
             doc.add_paragraph(str(m), style="List Bullet")
+    if critical_blocks:
+        add_heading("Critical block checklist", 2, color="0E7490")
+        for item in critical_blocks[:12]:
+            status = "✅" if str(item.get("status")) == "present" else "❌"
+            line = f"{status} {item.get('label', item.get('id', '-'))}: {item.get('evidence', '-')}"
+            doc.add_paragraph(line, style="List Bullet")
 
     directives_profiles = (ai_directives.get("profiles") or {})
     if directives_profiles:
