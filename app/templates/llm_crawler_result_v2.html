@@ -76,6 +76,7 @@
 <script src="https://unpkg.com/lucide@latest"></script>
 <script>
   window.llmJobId = "{{ job_id }}";
+  window.llmUiWowEnabled = {{ llm_ui_wow_enabled|default(false)|lower }};
 </script>
 <script src="/static/js/llm-crawler-v2.js?v={{ app_version }}"></script>
 {% endblock %}

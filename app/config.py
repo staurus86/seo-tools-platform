@@ -90,6 +90,8 @@ class Settings(BaseSettings):
     LLM_CRAWLER_ENTITY_GRAPH_ENABLED: bool = os.getenv("LLM_CRAWLER_ENTITY_GRAPH_ENABLED", "false").lower() == "true"
     LLM_CRAWLER_VECTOR_SCORE_ENABLED: bool = os.getenv("LLM_CRAWLER_VECTOR_SCORE_ENABLED", "false").lower() == "true"
     LLM_REPORT_V2_ENABLED: bool = os.getenv("LLM_REPORT_V2_ENABLED", "false").lower() == "true"
+    LLM_REPORT_V3_ENABLED: bool = os.getenv("LLM_REPORT_V3_ENABLED", "false").lower() == "true"
+    LLM_UI_WOW_ENABLED: bool = os.getenv("LLM_UI_WOW_ENABLED", "false").lower() == "true"
     MAX_JOBS_PER_MINUTE: int = int(os.getenv("MAX_JOBS_PER_MINUTE", "10"))
     MAX_CONCURRENT_JOBS: int = int(os.getenv("MAX_CONCURRENT_JOBS", "2"))
     LLM_CRAWLER_LIMITS_ENABLED: bool = os.getenv("LLM_CRAWLER_LIMITS_ENABLED", "false").lower() == "true"

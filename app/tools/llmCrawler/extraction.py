@@ -235,6 +235,10 @@ def build_snapshot(
     soup = BeautifulSoup(html or "", "html.parser")
     title_tag = soup.find("title")
     title = _safe_text(title_tag.get_text(" ", strip=True) if title_tag else "")
+    meta_description = ""
+    desc_tag = soup.find("meta", attrs={"name": re.compile(r"description", re.I)})
+    if desc_tag:
+        meta_description = _safe_text(desc_tag.get("content"))
     meta_robots = ""
     meta_tag = soup.find("meta", attrs={"name": re.compile(r"robots", re.I)})
     if meta_tag:
@@ -256,16 +260,35 @@ def build_snapshot(
         if len(hreflang) >= 50:
             break
 
+    h1_tags = soup.find_all("h1")
+    h2_tags = soup.find_all("h2")
+    h3_tags = soup.find_all("h3")
     headings = {
-        "h1": len(soup.find_all("h1")),
-        "h2": len(soup.find_all("h2")),
-        "h3": len(soup.find_all("h3")),
+        "h1": len(h1_tags),
+        "h2": len(h2_tags),
+        "h3": len(h3_tags),
+        "h1_texts": [_safe_text(tag.get_text(" ", strip=True))[:240] for tag in h1_tags[:5]],
+        "h2_texts": [_safe_text(tag.get_text(" ", strip=True))[:240] for tag in h2_tags[:8]],
     }
 
     main_text = _extract_main_text(soup)
     full_text = _safe_text(" ".join(soup.stripped_strings))
     main_content_ratio = len(main_text) / max(1, len(full_text))
     boilerplate_ratio = max(0.0, 1.0 - main_content_ratio)
+
+    # Reader-mode variants
+    readability_text = ""
+    trafilatura_text = ""
+    if Document:
+        try:
+            readability_text = _safe_text(Document(html).summary())[:5000]
+        except Exception:
+            readability_text = ""
+    if trafilatura:
+        try:
+            trafilatura_text = _safe_text(trafilatura.extract(html, url=final_url) or "")[:5000]
+        except Exception:
+            trafilatura_text = ""
 
     # Chunking (simple fixed-size by characters)
     chunks: List[Dict[str, Any]] = []
@@ -283,19 +306,6 @@ def build_snapshot(
             start = end - overlap
 
     words = re.findall(r"[A-Za-zА-Яа-я0-9]+", main_text)
-    # Reader-mode variants
-    readability_text = ""
-    trafilatura_text = ""
-    if Document:
-        try:
-            readability_text = _safe_text(Document(html).summary())[:5000]
-        except Exception:
-            readability_text = ""
-    if trafilatura:
-        try:
-            trafilatura_text = _safe_text(trafilatura.extract(html, url=final_url) or "")[:5000]
-        except Exception:
-            trafilatura_text = ""
     links = _extract_links(soup, final_url, limit=20)
     schema_types = _extract_jsonld_types(soup)
     microdata_types: List[str] = []
@@ -334,6 +344,7 @@ def build_snapshot(
         "redirect_chain": redirect_chain,
         "meta": {
             "title": title,
+            "description": meta_description,
             "meta_robots": meta_robots,
             "canonical": canonical,
             "hreflang": hreflang,

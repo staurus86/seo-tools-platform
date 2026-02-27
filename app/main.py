@@ -200,7 +200,12 @@ async def llm_crawler_results_page(request: Request, job_id: str):
     if templates:
         return templates.TemplateResponse(
             "llm_crawler_result_v2.html",
-            {"request": request, "job_id": job_id, "app_version": settings.APP_VERSION},
+            {
+                "request": request,
+                "job_id": job_id,
+                "app_version": settings.APP_VERSION,
+                "llm_ui_wow_enabled": bool(getattr(settings, "LLM_UI_WOW_ENABLED", False)),
+            },
         )
     return HTMLResponse(f"<h1>LLM Crawler Result</h1><p>Job: {job_id}</p>")
 

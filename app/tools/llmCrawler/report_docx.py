@@ -43,7 +43,7 @@ def _words(text: Any, limit: int = 25) -> str:
     return " ".join(parts[:limit]) + "..."
 
 
-def build_docx_v2(job: Dict[str, Any], job_id: str) -> BytesIO:
+def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = False) -> BytesIO:
     try:
         from docx import Document  # type: ignore
         from docx.enum.text import WD_PARAGRAPH_ALIGNMENT  # type: ignore
@@ -118,6 +118,10 @@ def build_docx_v2(job: Dict[str, Any], job_id: str) -> BytesIO:
     diagnostics = (rendered.get("render_debug") or {}) if isinstance(rendered, dict) else {}
     js_dependency = result.get("js_dependency") or {}
     entity_graph = result.get("entity_graph") or {}
+    metrics_bytes = result.get("metrics_bytes") or {}
+    snippet_library = result.get("snippet_library") or {}
+    projected_wf = result.get("projected_score_waterfall") or {}
+    cloaking = result.get("cloaking") or {}
     content_loss = _num(result.get("content_loss_percent"), 0)
     main_text_len = int(_num(nojs_content.get("main_text_length"), 0))
     rendered_text_len = int(_num(rendered_content.get("main_text_length"), main_text_len))
@@ -127,7 +131,7 @@ def build_docx_v2(job: Dict[str, Any], job_id: str) -> BytesIO:
     add_subtitle("Enterprise LLM Crawler Simulation Report")
     doc.add_paragraph("")
     add_kv("URL analyzed", final_url)
-    add_kv("Generated", f"{dt.datetime.utcnow().isoformat()}Z")
+    add_kv("Generated", f"{dt.datetime.now(dt.timezone.utc).isoformat()}")
     add_kv("Job ID", job_id)
     doc.add_paragraph("")
     score_p = doc.add_paragraph()
@@ -147,8 +151,18 @@ def build_docx_v2(job: Dict[str, Any], job_id: str) -> BytesIO:
     add_kv("Overall score", f"{round(score_total, 2)} / 100")
     add_kv("Projected score after fixes", f"{round(projected, 2)} / 100")
     add_kv("Citation likelihood", _pct(citation))
-    add_kv("EEAT score", _pct(eeat))
+    if (result.get("eeat_score") or {}).get("status") == "not_evaluated":
+        add_kv("EEAT score", f"— Not evaluated ({(result.get('eeat_score') or {}).get('reason', 'unknown')})")
+    else:
+        add_kv("EEAT score", _pct(eeat))
     add_kv("Trust completeness", _pct(trust))
+    if projected_wf and wow_enabled:
+        add_heading("Projected Impact Waterfall", 2, color="0E7490")
+        rows = [["Baseline", projected_wf.get("baseline", score_total)]]
+        for step in projected_wf.get("steps") or []:
+            rows.append([f"{step.get('label', 'Step')} (+{step.get('delta', 0)})", step.get("value", "-")])
+        rows.append(["Projected", projected_wf.get("target", projected)])
+        add_table(["Step", "Score"], rows)
     doc.add_paragraph("")
     add_heading("⚠ Key Findings", 2, color="9A3412")
     if top_issues:
@@ -162,8 +176,13 @@ def build_docx_v2(job: Dict[str, Any], job_id: str) -> BytesIO:
     add_heading("AI Understanding Summary", 1, color="0B3B63")
     add_kv("Topic detected", _safe(ai_understanding, ["topic"], llm.get("summary", "Not detected")))
     add_kv("AI understanding score", _pct(_safe(ai_understanding, ["score"], 0)))
+    add_kv("Topic confidence", _pct(_safe(ai_understanding, ["topic_confidence"], 0)))
+    add_kv("Topic fallback used", _yesno(_safe(ai_understanding, ["topic_fallback_used"], False)))
     add_kv("Primary intent", _safe(ai_understanding, ["intent"], "informational"))
-    add_kv("Content clarity", _pct(_safe(ai_understanding, ["content_clarity"], 0)))
+    if _safe(ai_understanding, ["content_clarity_status"], "") == "not_evaluated":
+        add_kv("Content clarity", f"— Not evaluated ({_safe(ai_understanding, ['content_clarity_reason'], 'unknown')})")
+    else:
+        add_kv("Content clarity", _pct(_safe(ai_understanding, ["content_clarity"], 0)))
     add_kv("Discoverability score", _pct(discoverability.get("discoverability_score", 0)))
     add_kv("Click depth estimate", discoverability.get("click_depth_estimate", "-"))
     doc.add_paragraph("")
@@ -181,9 +200,16 @@ def build_docx_v2(job: Dict[str, Any], job_id: str) -> BytesIO:
     add_kv("Total HTML text length", rendered_text_len)
     add_kv("Extracted main text length", main_text_len)
     add_kv("Lost content percent", _pct(content_loss))
+    add_kv("HTML bytes", metrics_bytes.get("html_bytes", rendered_text_len))
+    add_kv("Text bytes", metrics_bytes.get("text_bytes", main_text_len))
+    add_kv("Text/HTML ratio", _pct(_num(metrics_bytes.get("text_html_ratio"), 0) * 100))
     add_kv("Main content ratio", _pct(_num(nojs_content.get("main_content_ratio"), 0) * 100))
     add_kv("Boilerplate ratio", _pct(_num(nojs_content.get("boilerplate_ratio"), 0) * 100))
     add_kv("Chunks count", len(nojs_content.get("chunks") or []))
+    if wow_enabled and (nojs_content.get("chunks") or []):
+        add_heading("Top Chunk Excerpts", 2, color="0E7490")
+        for ch in (nojs_content.get("chunks") or [])[:3]:
+            doc.add_paragraph(f"Chunk {ch.get('idx', '-')}: {_words(ch.get('text', ''), 35)}", style="List Bullet")
     add_heading("Extracted Text Preview", 2, color="0E7490")
     doc.add_paragraph(str(nojs_content.get("main_text_preview", ""))[:1200] or "No preview.")
     doc.add_page_break()
@@ -217,6 +243,9 @@ def build_docx_v2(job: Dict[str, Any], job_id: str) -> BytesIO:
             ]
         )
     add_table(["Bot", "Access", "Reason"], matrix_rows or [["-", "-", "-"]])
+    add_heading("Directives", 2, color="0E7490")
+    add_kv("meta robots", _safe(result, ["policies", "meta", "meta_robots"], "-"))
+    add_kv("x-robots-tag", _safe(result, ["policies", "meta", "x_robots_tag"], "-"))
     doc.add_page_break()
 
     # PAGE 7: LLM SIMULATION
@@ -258,6 +287,13 @@ def build_docx_v2(job: Dict[str, Any], job_id: str) -> BytesIO:
     add_kv("JS dependency score", _pct(js_dependency.get("score"), "-"))
     add_kv("Failed resources", js_dependency.get("failures", 0))
     add_kv("Blocked scripts/styles", js_dependency.get("blocked", 0))
+    add_kv("Cloaking status", cloaking.get("status", "not_executed"))
+    if cloaking.get("status") == "executed":
+        add_kv("Cloaking risk", cloaking.get("risk", "unknown"))
+        add_kv("Similarity browser vs gptbot", _pct(_safe(cloaking, ["similarity_scores", "browser_vs_gptbot"], "-")))
+        add_kv("Similarity browser vs googlebot", _pct(_safe(cloaking, ["similarity_scores", "browser_vs_googlebot"], "-")))
+    else:
+        add_kv("Cloaking reason", cloaking.get("reason", "not_run"))
     add_kv("Console errors", len(diagnostics.get("console_errors") or []))
     add_kv("Failed requests", len(diagnostics.get("failed_requests") or []))
     if diagnostics.get("console_errors"):
@@ -291,10 +327,21 @@ def build_docx_v2(job: Dict[str, Any], job_id: str) -> BytesIO:
             pri = str(rec.get("priority", "P2")).upper()
             area = rec.get("area", "-")
             title = rec.get("title", "-")
-            expected = "+12 score" if pri == "P0" else "+7 score" if pri == "P1" else "+3 score"
+            expected = rec.get("expected_lift") or ("+12 score" if pri == "P0" else "+7 score" if pri == "P1" else "+3 score")
             doc.add_paragraph(f"{pri} | {area} | {title} | expected impact {expected}", style="List Bullet")
+            evidence = rec.get("evidence") or []
+            if evidence:
+                for ev in evidence[:3]:
+                    doc.add_paragraph(f"Evidence: {ev}", style="List Bullet")
     else:
         doc.add_paragraph("No recommendations.")
+
+    if wow_enabled and snippet_library:
+        doc.add_page_break()
+        add_heading("Appendix: Copy-Paste Snippets", 1, color="0B3B63")
+        for key, snippet in snippet_library.items():
+            add_heading(str(key), 2, color="0E7490")
+            doc.add_paragraph(str(snippet)[:1800])
 
     bio = BytesIO()
     doc.save(bio)

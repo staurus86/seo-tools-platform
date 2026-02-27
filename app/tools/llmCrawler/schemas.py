@@ -35,6 +35,7 @@ class LlmCrawlerOptions(BaseModel):
     showHeaders: bool = False
     include_raw_html: bool = False
     include_rendered_html: bool = False
+    runCloaking: bool = False
 
     @field_validator("timeoutMs", mode="before")
     @classmethod
@@ -105,3 +106,7 @@ class LlmCrawlerJobStatusResponse(BaseModel):
     citation_breakdown: Dict[str, Any] | None = None
     discoverability_score: float | None = None
     ai_answer_preview: Dict[str, Any] | None = None
+    topic_fallback_used: bool | None = None
+    preview_mode: str | None = None
+    chunk_ranking_debug: List[Dict[str, Any]] | None = None
+    metrics_bytes: Dict[str, Any] | None = None

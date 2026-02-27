@@ -57,12 +57,35 @@ async function _fetchJob(jobId) {
   return resp.json();
 }
 
+function _wowEnabled() {
+  return Boolean(window.llmUiWowEnabled);
+}
+
+function _isNotEvaluated(module) {
+  return module && String(module.status || '').toLowerCase() === 'not_evaluated';
+}
+
+function _metricValue(value, fallback = '—') {
+  if (value === null || value === undefined || value === '') return fallback;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function _copyText(txt) {
+  const text = String(txt || '');
+  if (!text) return;
+  navigator.clipboard?.writeText(text).catch(() => {});
+}
+
 function _renderHero(result) {
   const score = _pct(result?.score?.total, 0);
   const projected = _pct(result?.projected_score_after_fixes, score);
   const citation = _pct(result?.citation_probability, 0);
-  const eeat = _pct(result?.eeat_score?.score, 0);
-  const ingest = _pct(result?.llm_ingestion?.avg_chunk_quality, 0);
+  const eeatModule = result?.eeat_score || {};
+  const ingestModule = result?.llm_ingestion || {};
+  const eeat = _isNotEvaluated(eeatModule) ? '—' : _pct(result?.eeat_score?.score, 0);
+  const ingest = _isNotEvaluated(ingestModule) ? '—' : _pct(result?.llm_ingestion?.avg_chunk_quality, 0);
   const js = _pct(result?.js_dependency?.score, 0);
   const pillClass = _riskClass(score);
   const pillText = score >= 80 ? 'Excellent' : score >= 50 ? 'Needs work' : 'Critical';
@@ -88,8 +111,8 @@ function _renderHero(result) {
       </div>
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-5">
         <div class="card p-3 bg-slate-50 border-slate-200"><div class="subtle text-xs">Citation probability</div><div class="font-bold text-lg">${citation}%</div>${_meter(citation)}</div>
-        <div class="card p-3 bg-slate-50 border-slate-200"><div class="subtle text-xs">EEAT score</div><div class="font-bold text-lg">${eeat}%</div>${_meter(eeat)}</div>
-        <div class="card p-3 bg-slate-50 border-slate-200"><div class="subtle text-xs">Ingestion quality</div><div class="font-bold text-lg">${ingest}%</div>${_meter(ingest)}</div>
+        <div class="card p-3 bg-slate-50 border-slate-200"><div class="subtle text-xs">EEAT score</div><div class="font-bold text-lg">${eeat}${eeat === '—' ? '' : '%'}</div>${eeat === '—' ? `<div class="text-xs subtle mt-1">Not evaluated: ${_esc(eeatModule.reason || 'unknown')}</div>` : _meter(eeat)}</div>
+        <div class="card p-3 bg-slate-50 border-slate-200"><div class="subtle text-xs">Ingestion quality</div><div class="font-bold text-lg">${ingest}${ingest === '—' ? '' : '%'}</div>${ingest === '—' ? `<div class="text-xs subtle mt-1">Not evaluated: ${_esc(ingestModule.reason || 'unknown')}</div>` : _meter(ingest)}</div>
         <div class="card p-3 bg-slate-50 border-slate-200"><div class="subtle text-xs">JS dependency risk</div><div class="font-bold text-lg">${js}%</div>${_meter(100 - js)}</div>
       </div>
     </div>
@@ -103,14 +126,17 @@ function _renderWhatAI(result) {
   const schemaTypes = result?.nojs?.schema?.jsonld_types || [];
   const hasOrg = Array.isArray(graph.organizations) ? graph.organizations.length > 0 : schemaTypes.includes('Organization');
   const topic = ai.topic || result?.llm?.summary || 'Topic not detected';
-  const confidence = _pct(ai.score, 0);
+  const confidence = _pct(ai.topic_confidence ?? ai.score, 0);
   const entities = Array.isArray(ai.entities) ? ai.entities.slice(0, 8) : [];
+  const clarity = ai.content_clarity;
+  const clarityKnown = !(ai.content_clarity_status === 'not_evaluated' || clarity === null || clarity === undefined);
   _setHTML('v2-ai-understands', `
     <div class="section-title flex items-center gap-2"><i data-lucide="brain" class="w-4 h-4"></i>What AI Actually Understands</div>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div class="card p-4 bg-slate-50 border-slate-200">
         <div class="subtle text-xs">Topic detected</div>
         <div class="font-semibold mt-1">${_esc(topic)}</div>
+        ${ai.topic_fallback_used ? '<div class="text-xs subtle mt-1">Fallback mode: title/H1/keywords heuristic</div>' : ''}
         <div class="subtle text-xs mt-3">Confidence</div>
         ${_meter(confidence)}
       </div>
@@ -119,7 +145,8 @@ function _renderWhatAI(result) {
         <div>Product/entity detected: ${entities.length ? '✅' : '❌'}</div>
         <div>Author: ${signals.author_present ? '✅' : '❌'}</div>
         <div>Primary intent: ${_esc(ai.intent || 'informational')}</div>
-        <div>Content clarity: <span class="font-semibold">${_pct(ai.content_clarity, 0)}%</span></div>
+        <div>Content clarity: <span class="font-semibold">${clarityKnown ? `${_pct(clarity, 0)}%` : '— Not evaluated'}</span></div>
+        ${clarityKnown ? '' : `<div class="text-xs subtle">Reason: ${_esc(ai.content_clarity_reason || 'insufficient data')}</div>`}
         <div class="subtle text-xs mt-2">Detected entities: ${entities.length ? _esc(entities.join(', ')) : 'not enough data'}</div>
       </div>
     </div>
@@ -131,12 +158,25 @@ function _renderLoss(result) {
   const rendered = _num(result?.rendered?.content?.main_text_length, extracted);
   const loss = _pct(result?.content_loss_percent, Math.max(0, Math.round((1 - extracted / Math.max(1, rendered)) * 100)));
   const missing = Array.isArray(result?.diff?.missing) ? result.diff.missing : [];
+  const m = result?.metrics_bytes || {};
+  const htmlBytes = _metricValue(m.html_bytes, extracted ? extracted * 4 : 0);
+  const textBytes = _metricValue(m.text_bytes, extracted);
+  const ratio = _pct(_num(m.text_html_ratio, 0) * 100, 0);
+  const mainRatio = _pct(_num(m.main_content_ratio, 0) * 100, 0);
+  const boilRatio = _pct(_num(m.boilerplate_ratio, 0) * 100, 0);
   _setHTML('v2-loss', `
     <div class="section-title flex items-center gap-2"><i data-lucide="scissors" class="w-4 h-4"></i>Content Loss Visualization</div>
     <div class="grid grid-cols-3 gap-3 text-sm">
       <div class="card p-3 bg-slate-50 border-slate-200"><div class="subtle text-xs">Total HTML text</div><div class="font-semibold">${rendered}</div></div>
       <div class="card p-3 bg-slate-50 border-slate-200"><div class="subtle text-xs">Extracted main text</div><div class="font-semibold">${extracted}</div></div>
       <div class="card p-3 bg-slate-50 border-slate-200"><div class="subtle text-xs">Lost content</div><div class="font-semibold">${loss}%</div>${_meter(100 - loss)}</div>
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs mt-3">
+      <div class="card p-2 bg-slate-50 border-slate-200"><div class="subtle">HTML bytes</div><div class="font-semibold">${htmlBytes}</div></div>
+      <div class="card p-2 bg-slate-50 border-slate-200"><div class="subtle">Text bytes</div><div class="font-semibold">${textBytes}</div></div>
+      <div class="card p-2 bg-slate-50 border-slate-200" title="${_esc(m.formula || 'text_html_ratio = text_bytes / html_bytes')}"><div class="subtle">Text/HTML ratio</div><div class="font-semibold">${ratio}%</div></div>
+      <div class="card p-2 bg-slate-50 border-slate-200"><div class="subtle">Main content</div><div class="font-semibold">${mainRatio}%</div></div>
+      <div class="card p-2 bg-slate-50 border-slate-200"><div class="subtle">Boilerplate</div><div class="font-semibold">${boilRatio}%</div></div>
     </div>
     <div class="text-xs subtle mt-3">Likely lost sections: ${_esc(missing.join(' | ') || 'navigation, footer, menu blocks')}</div>
   `);
@@ -226,24 +266,40 @@ function _renderFix(result) {
   const projected = _pct(result?.projected_score_after_fixes, now);
   const schemaGain = _num(result?.citation_breakdown?.schema, 0) < 50 ? 12 : 0;
   const authorGain = _num(result?.citation_breakdown?.author, 0) === 0 ? 8 : 0;
+  const wf = result?.projected_score_waterfall || {};
   _setHTML('v2-fix', `
     <div class="section-title flex items-center gap-2"><i data-lucide="sparkles" class="w-4 h-4"></i>Fix Impact Simulation</div>
     <div class="text-sm">Current score: <span class="font-semibold">${now}/100</span></div>
     <div class="text-sm text-emerald-700">Projected score after key fixes: <span class="font-semibold">${projected}/100</span></div>
     <div class="mt-2">${_meter(projected)}</div>
     <div class="mt-3 text-xs subtle">Estimated lifts: Organization schema ${schemaGain ? `+${schemaGain}` : '+0'} | Author signals ${authorGain ? `+${authorGain}` : '+0'}</div>
+    ${_wowEnabled() ? '<div class="mt-3"><canvas id="v2-waterfall" height="140"></canvas></div>' : ''}
   `);
+  if (_wowEnabled() && window.Chart) {
+    const ctx = document.getElementById('v2-waterfall');
+    if (ctx) {
+      const labels = ['Baseline', ...((wf.steps || []).map((s) => s.label || 'Step')), 'Projected'];
+      const values = [wf.baseline ?? now, ...((wf.steps || []).map((s) => s.value || 0)), wf.target ?? projected];
+      new Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets: [{ label: 'Score', data: values, backgroundColor: ['#64748b', ...labels.slice(1, -1).map(() => '#0ea5e9'), '#16a34a'] }] },
+        options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: 100 } } },
+      });
+    }
+  }
 }
 
 function _renderPreview(result) {
   const preview = result?.ai_answer_preview || {};
+  const bullets = Array.isArray(preview.bullets) ? preview.bullets.slice(0, 3) : [];
   _setHTML('v2-preview', `
     <div class="section-title flex items-center gap-2"><i data-lucide="message-square-text" class="w-4 h-4"></i>AI Search Preview</div>
     <div class="card p-3 bg-slate-50 border-slate-200">
       <div class="subtle text-xs">When user asks</div>
       <div class="font-semibold mt-1">${_esc(preview.question || 'What is this page about?')}</div>
       <div class="text-sm mt-2">${_esc(preview.answer || 'Not enough content for stable answer')}</div>
-      <div class="subtle text-xs mt-2">Confidence: ${_pct(preview.confidence, '-')}</div>
+      <div class="subtle text-xs mt-2">Mode: ${_esc(preview.preview_mode || result.preview_mode || 'extractive')} | Confidence: ${_pct(preview.confidence, '-')}</div>
+      ${bullets.length ? `<ul class="list-disc pl-5 text-xs subtle mt-2">${bullets.map((b) => `<li>${_esc(b)}</li>`).join('')}</ul>` : ''}
     </div>
   `);
 }
@@ -360,8 +416,19 @@ function _renderContentExtraction(result) {
 
 function _renderLLMSim(result) {
   const llm = result?.llm || {};
+  if (!llm || llm.enabled === false) {
+    _setHTML('v2-llm-sim', `
+      <div class="section-title flex items-center gap-2"><i data-lucide="messages-square" class="w-4 h-4"></i>LLM Simulation</div>
+      <div class="card p-3 bg-slate-50 border-slate-200 text-sm">
+        <div class="font-semibold">— Not evaluated</div>
+        <div class="subtle text-xs mt-1">Reason: LLM_SIMULATION disabled or no extractable content</div>
+      </div>
+    `);
+    return;
+  }
   const scores = llm?.scores || {};
   const spans = Array.isArray(llm?.citation_spans) ? llm.citation_spans.slice(0, 3) : [];
+  const rank = Array.isArray(result?.chunk_ranking_debug) ? result.chunk_ranking_debug : [];
   _setHTML('v2-llm-sim', `
     <div class="section-title flex items-center gap-2"><i data-lucide="messages-square" class="w-4 h-4"></i>LLM Simulation</div>
     <div class="card p-3 bg-slate-50 border-slate-200">
@@ -374,20 +441,30 @@ function _renderLLMSim(result) {
       <div>Answer quality: <span class="font-semibold">${_pct(scores.answer_quality_score, '-')}%</span>${_meter(_num(scores.answer_quality_score, 0))}</div>
     </div>
     <div class="mt-3 text-xs subtle">Citation spans: ${_esc(spans.map((s) => s.text || '').join(' | ') || 'none')}</div>
+    ${rank.length ? `<div class="mt-2 text-xs subtle">Top chunks: ${_esc(rank.map((r) => `#${r.idx}:${r.score}`).join(' | '))}</div>` : ''}
   `);
 }
 
 function _renderCloakingJs(result) {
   const cloak = result?.cloaking || {};
   const js = result?.js_dependency || {};
+  const status = String(cloak.status || '');
+  const executed = status === 'executed';
+  const evidence = Array.isArray(cloak.evidence) ? cloak.evidence.slice(0, 3) : [];
   _setHTML('v2-cloaking', `
     <div class="section-title flex items-center gap-2"><i data-lucide="shield-alert" class="w-4 h-4"></i>Cloaking & JS Dependency</div>
     <div class="grid grid-cols-1 gap-2 text-sm">
       <div class="card p-3 bg-slate-50 border-slate-200">
         <div class="subtle text-xs">Cloaking risk</div>
-        <div class="font-semibold">${_esc(cloak.risk || 'n/a')}</div>
-        <div class="subtle text-xs mt-1">Browser vs GPTBot: ${_pct(cloak?.similarity_scores?.browser_vs_gptbot, '-')}</div>
-        <div class="subtle text-xs">Browser vs Googlebot: ${_pct(cloak?.similarity_scores?.browser_vs_googlebot, '-')}</div>
+        <div class="font-semibold">${executed ? _esc(cloak.risk || 'unknown') : 'Not executed'}</div>
+        ${executed ? `
+          <div class="subtle text-xs mt-1">Browser vs GPTBot: ${_pct(cloak?.similarity_scores?.browser_vs_gptbot, '-')}</div>
+          <div class="subtle text-xs">Browser vs Googlebot: ${_pct(cloak?.similarity_scores?.browser_vs_googlebot, '-')}</div>
+          ${evidence.length ? `<ul class="list-disc pl-5 text-xs subtle mt-2">${evidence.map((e) => `<li>${_esc(e)}</li>`).join('')}</ul>` : ''}
+        ` : `
+          <div class="subtle text-xs mt-1">Reason: ${_esc(cloak.reason || 'profiles not requested')}</div>
+          ${(cloak.can_run && _wowEnabled()) ? '<button id="v2-run-cloaking" class="mt-2 v2-btn v2-btn-primary text-xs">Run cloaking check</button>' : ''}
+        `}
       </div>
       <div class="card p-3 bg-slate-50 border-slate-200">
         <div class="subtle text-xs">JS dependency score</div>
@@ -397,15 +474,21 @@ function _renderCloakingJs(result) {
       </div>
     </div>
   `);
+  const runBtn = document.getElementById('v2-run-cloaking');
+  if (runBtn) {
+    runBtn.addEventListener('click', () => _runCloakingCheck(result));
+  }
 }
 
 function _renderEntityEeat(result) {
   const eeat = result?.eeat_score || {};
   const graph = result?.entity_graph || {};
+  const notEvaluated = _isNotEvaluated(eeat);
   _setHTML('v2-entity-eeat', `
     <div class="section-title flex items-center gap-2"><i data-lucide="network" class="w-4 h-4"></i>Entity & EEAT</div>
     <div class="text-sm space-y-1">
-      <div>EEAT score: <span class="font-semibold">${_pct(eeat.score, '-')}</span></div>
+      <div>EEAT score: <span class="font-semibold">${notEvaluated ? '— Not evaluated' : _pct(eeat.score, '-')}</span></div>
+      ${notEvaluated ? `<div class="text-xs subtle">Reason: ${_esc(eeat.reason || 'unknown')}</div>` : ''}
       <div>Organizations: ${_esc((graph.organizations || []).slice(0, 4).join(', ') || '—')}</div>
       <div>Persons: ${_esc((graph.persons || []).slice(0, 4).join(', ') || '—')}</div>
       <div>Products: ${_esc((graph.products || []).slice(0, 4).join(', ') || '—')}</div>
@@ -495,7 +578,11 @@ function _renderRecs(result) {
   const items = recs.map((r) => {
     const pri = String(r.priority || 'P2').toUpperCase();
     const badge = pri === 'P0' ? 'badge badge-p0' : pri === 'P1' ? 'badge badge-p1' : 'badge badge-p2';
-    const impact = pri === 'P0' ? '+12% AI visibility' : pri === 'P1' ? '+7% AI visibility' : '+3% AI visibility';
+    const impact = r.expected_lift || (pri === 'P0' ? '+12% AI visibility' : pri === 'P1' ? '+7% AI visibility' : '+3% AI visibility');
+    const evidence = Array.isArray(r.evidence) ? r.evidence.slice(0, 3) : [];
+    const source = Array.isArray(r.source) ? r.source.join(', ') : (r.source || '-');
+    const snippet = r.snippet || '';
+    const snippetBtn = snippet ? `<button type="button" class="v2-btn v2-btn-neutral text-xs mt-2" data-snippet="${_esc(snippet)}">Copy snippet</button>` : '';
     return `<div class="card p-3 bg-slate-50 border-slate-200">
       <div class="flex items-center justify-between">
         <span class="${badge}">${pri}</span>
@@ -503,12 +590,37 @@ function _renderRecs(result) {
       </div>
       <div class="text-sm font-semibold mt-2">${_esc(r.title || 'Recommendation')}</div>
       <div class="text-xs subtle mt-1">Area: ${_esc(r.area || '-')}</div>
+      ${evidence.length ? `<ul class="list-disc pl-5 text-xs subtle mt-2">${evidence.map((e) => `<li>${_esc(e)}</li>`).join('')}</ul>` : ''}
+      <div class="text-xs subtle mt-1">Source: ${_esc(source)}</div>
+      ${snippetBtn}
     </div>`;
   }).join('');
+  const snippetsBlock = _wowEnabled() ? `
+    <details class="mt-3">
+      <summary class="cursor-pointer text-sm font-medium">Copy-paste templates</summary>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+        ${Object.entries(result?.snippet_library || {}).map(([k, v]) => `
+          <div class="card p-2 bg-slate-50 border-slate-200">
+            <div class="text-xs font-semibold">${_esc(k)}</div>
+            <div class="diff-box mt-1">${_esc(String(v).slice(0, 500))}</div>
+            <button type="button" class="v2-btn v2-btn-neutral text-xs mt-2" data-snippet="${_esc(v)}">Copy snippet</button>
+          </div>
+        `).join('')}
+      </div>
+    </details>` : '';
   _setHTML('v2-recs', `
     <div class="section-title flex items-center gap-2"><i data-lucide="list-checks" class="w-4 h-4"></i>Recommendations</div>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-2">${items || '<div class="subtle text-sm">No recommendations.</div>'}</div>
+    ${snippetsBlock}
   `);
+  document.querySelectorAll('#v2-recs [data-snippet]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const txt = btn.getAttribute('data-snippet') || '';
+      _copyText(txt);
+      btn.textContent = 'Copied';
+      setTimeout(() => { btn.textContent = 'Copy snippet'; }, 1200);
+    });
+  });
 }
 
 function _wireExports(jobId, result) {
@@ -528,6 +640,35 @@ function _wireExports(jobId, result) {
   }
   if (docxBtn) docxBtn.onclick = () => { window.location.href = `${V2_API}/jobs/${encodeURIComponent(jobId)}/report.docx`; };
   if (htmlBtn) htmlBtn.onclick = () => { window.location.href = `${V2_API}/jobs/${encodeURIComponent(jobId)}/report`; };
+}
+
+async function _runCloakingCheck(result) {
+  const url = result?.final_url || result?.requested_url;
+  if (!url) return;
+  try {
+    const payload = {
+      url,
+      options: {
+        renderJs: true,
+        timeoutMs: 20000,
+        profile: ['gptbot', 'google-extended', 'search-bot'],
+        showHeaders: false,
+        runCloaking: true,
+      },
+    };
+    const resp = await fetch(`${V2_API}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.jobId) {
+      throw new Error(data?.detail?.message || data?.detail || `HTTP ${resp.status}`);
+    }
+    window.location.href = `/llm-crawler/results/${encodeURIComponent(data.jobId)}`;
+  } catch (err) {
+    alert(`Failed to start cloaking check: ${err?.message || err}`);
+  }
 }
 
 function _renderPending(status, progress, message) {

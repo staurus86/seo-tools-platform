@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlparse, urlunparse
+from collections import Counter
 
 import requests
 import re
@@ -23,6 +24,16 @@ REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 UA_NOJS = "Mozilla/5.0 (compatible; LLMCrawlerNoJS/1.0; +https://example.com/bot)"
 UA_RENDER = "Mozilla/5.0 (compatible; LLMCrawlerRendered/1.0; +https://example.com/bot)"
 MAX_BROWSER_AGE_SEC = 300
+BOT_USER_AGENTS = {
+    "gptbot": "Mozilla/5.0 (compatible; GPTBot/1.0; +https://openai.com/gptbot)",
+    "googlebot": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+}
+STOPWORDS = {
+    "the", "and", "for", "with", "that", "this", "from", "your", "you", "are", "was", "were", "into",
+    "about", "have", "has", "will", "can", "not", "but", "our", "their", "also", "http", "https", "www",
+    "как", "что", "это", "для", "или", "если", "без", "при", "под", "над", "быть", "есть", "так", "как",
+    "они", "она", "его", "ее", "это", "the", "page", "home", "menu", "navigation", "read", "more",
+}
 
 
 def _utc_now() -> str:
@@ -257,6 +268,39 @@ def _rendered_fetch(
                 pass
 
 
+def _fetch_profile_snapshot(
+    *,
+    profile: str,
+    url: str,
+    timeout_ms: int,
+    max_redirect_hops: int,
+    max_html_bytes: int,
+    show_headers: bool,
+) -> Optional[Dict[str, Any]]:
+    user_agent = BOT_USER_AGENTS.get(profile)
+    if not user_agent:
+        return None
+    payload = _fetch_http(
+        url=url,
+        user_agent=user_agent,
+        timeout_ms=timeout_ms,
+        max_redirect_hops=max_redirect_hops,
+        max_html_bytes=max_html_bytes,
+    )
+    return build_snapshot(
+        html=str(payload.get("body_text") or ""),
+        final_url=str(payload.get("final_url") or url),
+        status_code=payload.get("status_code"),
+        headers=payload.get("headers") or {},
+        timing_ms=int(payload.get("timing_ms") or 0),
+        redirect_chain=list(payload.get("redirect_chain") or []),
+        show_headers=show_headers,
+        content_type=str(payload.get("content_type") or ""),
+        size_bytes=int(payload.get("size_bytes") or 0),
+        truncated=bool(payload.get("truncated")),
+    )
+
+
 def _build_diff(nojs: Dict[str, Any], rendered: Optional[Dict[str, Any]], render_error: Optional[str] = None) -> Dict[str, Any]:
     if not rendered:
         return {
@@ -322,6 +366,248 @@ def _text_cosine(a: str, b: str) -> float:
     if na == 0 or nb == 0:
         return 0.0
     return round(dot / (na * nb), 4)
+
+
+def _tokens(text: str) -> List[str]:
+    words = re.findall(r"[A-Za-zА-Яа-я0-9]{3,}", str(text or "").lower())
+    return [w for w in words if w not in STOPWORDS]
+
+
+def _top_keywords(text: str, limit: int = 6) -> List[str]:
+    toks = _tokens(text)
+    if not toks:
+        return []
+    freq = Counter(toks)
+    return [w for w, _ in freq.most_common(limit)]
+
+
+def _tfidf_cosine(question: str, text: str, corpus: List[str]) -> float:
+    q_tokens = _tokens(question)
+    t_tokens = _tokens(text)
+    if not q_tokens or not t_tokens:
+        return 0.0
+    docs = [set(_tokens(doc)) for doc in corpus if doc]
+    if not docs:
+        docs = [set(t_tokens)]
+    n = len(docs)
+
+    def idf(token: str) -> float:
+        df = sum(1 for d in docs if token in d)
+        return math.log((n + 1) / (df + 1)) + 1.0
+
+    tf_q = Counter(q_tokens)
+    tf_t = Counter(t_tokens)
+    keys = set(tf_q.keys()) | set(tf_t.keys())
+    if not keys:
+        return 0.0
+    dot = 0.0
+    nq = 0.0
+    nt = 0.0
+    for k in keys:
+        w = idf(k)
+        vq = tf_q.get(k, 0) * w
+        vt = tf_t.get(k, 0) * w
+        dot += vq * vt
+        nq += vq * vq
+        nt += vt * vt
+    if nq <= 0 or nt <= 0:
+        return 0.0
+    return float(dot / math.sqrt(nq * nt))
+
+
+def _chunk_entity_density(text: str) -> float:
+    words = re.findall(r"[A-Za-zА-Яа-я0-9]+", str(text or ""))
+    if not words:
+        return 0.0
+    entities = re.findall(r"\b[A-ZА-Я][A-Za-zА-Яа-я0-9]{2,}\b", str(text or ""))
+    return min(1.0, len(entities) / max(1, len(words)))
+
+
+def _chunk_content_ratio(text: str) -> float:
+    raw = str(text or "")
+    if not raw:
+        return 0.0
+    alpha = len(re.findall(r"[A-Za-zА-Яа-я0-9]", raw))
+    return min(1.0, alpha / max(1, len(raw)))
+
+
+def _rank_chunks_for_question(snapshot: Dict[str, Any], question: str, limit: int = 3) -> List[Dict[str, Any]]:
+    chunks = ((snapshot.get("content") or {}).get("chunks") or [])
+    if not chunks:
+        return []
+    corpus = [str(c.get("text") or "") for c in chunks]
+    ranked: List[Dict[str, Any]] = []
+    for c in chunks:
+        text = str(c.get("text") or "")
+        rel = _tfidf_cosine(question, text, corpus)
+        ent = _chunk_entity_density(text)
+        ratio = _chunk_content_ratio(text)
+        score = (rel * 0.65) + (ent * 0.2) + (ratio * 0.15)
+        ranked.append(
+            {
+                "idx": int(c.get("idx") or 0),
+                "score": round(score, 4),
+                "relevance": round(rel, 4),
+                "entity_density": round(ent, 4),
+                "content_ratio": round(ratio, 4),
+                "preview": text[:240],
+                "text": text,
+            }
+        )
+    ranked.sort(key=lambda x: x.get("score", 0), reverse=True)
+    return ranked[: max(1, int(limit))]
+
+
+def _sentences(text: str) -> List[str]:
+    return [s.strip() for s in re.split(r"[.!?]+", str(text or "")) if s.strip()]
+
+
+def _build_extractive_preview(chunks: List[Dict[str, Any]], bullets: int = 3) -> List[str]:
+    lines: List[str] = []
+    for item in chunks:
+        sents = _sentences(item.get("text") or "")
+        for s in sents[:2]:
+            clean = s.strip()
+            if len(clean) < 40:
+                continue
+            if clean in lines:
+                continue
+            lines.append(clean)
+            if len(lines) >= bullets:
+                return lines
+    return lines
+
+
+def _module_status(evaluated: bool, reason: str = "", score: Optional[float] = None, factors: Optional[List[str]] = None) -> Dict[str, Any]:
+    return {
+        "status": "evaluated" if evaluated else "not_evaluated",
+        "reason": reason or ("ok" if evaluated else "not_evaluated"),
+        "score": score if evaluated else None,
+        "factors": factors or [],
+    }
+
+
+def _content_clarity(snapshot: Dict[str, Any], entity_graph: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    content = snapshot.get("content") or {}
+    headings = snapshot.get("headings") or {}
+    text_len = int(content.get("main_text_length") or 0)
+    if text_len < 120:
+        return _module_status(False, "insufficient_content", None, ["Extracted text is too short for reliable clarity scoring"])
+
+    h1_count = int(headings.get("h1") or 0)
+    h2_count = int(headings.get("h2") or 0)
+    heading_integrity = 100.0 if h1_count >= 1 else 45.0
+    heading_integrity = min(100.0, heading_integrity + (min(6, h2_count) * 6))
+
+    main_preview = str(content.get("main_text_preview") or "")
+    words = _tokens(main_preview)
+    unique_ratio = (len(set(words)) / max(1, len(words))) if words else 0.0
+    entity_count = 0
+    if entity_graph:
+        entity_count = sum(len(v or []) for v in entity_graph.values())
+    if entity_count == 0:
+        entity_count = len(re.findall(r"\b[A-ZА-Я][A-Za-zА-Яа-я0-9]{2,}\b", main_preview))
+    entity_density = min(1.0, entity_count / max(1, len(words)))
+
+    readability = float(content.get("readability_score") or 0.0)
+    readability_norm = max(0.0, min(1.0, readability / 100.0))
+    boilerplate = float(content.get("boilerplate_ratio") or 0.0)
+    boilerplate_score = max(0.0, min(1.0, 1.0 - boilerplate))
+
+    score = (
+        (heading_integrity * 0.28)
+        + (max(0.0, min(1.0, unique_ratio * 2.0)) * 100 * 0.22)
+        + (entity_density * 100 * 0.2)
+        + (readability_norm * 100 * 0.2)
+        + (boilerplate_score * 100 * 0.1)
+    )
+    factors = [
+        f"Heading integrity: {round(heading_integrity, 2)}",
+        f"Unique word ratio: {round(unique_ratio, 3)}",
+        f"Entity density: {round(entity_density, 3)}",
+        f"Readability normalized: {round(readability_norm, 3)}",
+        f"Boilerplate ratio: {round(boilerplate, 3)}",
+    ]
+    return _module_status(True, "ok", round(max(0.0, min(100.0, score)), 2), factors)
+
+
+def _detect_topic(snapshot: Dict[str, Any], llm_sim: Dict[str, Any] | None) -> Dict[str, Any]:
+    meta = snapshot.get("meta") or {}
+    headings = snapshot.get("headings") or {}
+    content = snapshot.get("content") or {}
+
+    llm_topic = str((llm_sim or {}).get("summary") or "").strip()
+    title = str(meta.get("title") or "").strip()
+    h1_texts = headings.get("h1_texts") or []
+    h1_text = str(h1_texts[0] if h1_texts else "").strip()
+    text = " ".join(
+        [
+            str(content.get("main_text_preview") or ""),
+            str(content.get("readability_text") or ""),
+            str(content.get("trafilatura_text") or ""),
+            str(meta.get("description") or ""),
+        ]
+    )
+
+    fallback_used = False
+    topic = llm_topic[:220]
+    if not topic:
+        fallback_used = True
+        if h1_text:
+            topic = h1_text[:220]
+        elif title:
+            topic = title[:220]
+        else:
+            keywords = _top_keywords(text, limit=5)
+            topic = " / ".join(keywords) if keywords else "Topic not detected"
+
+    words = _tokens(text)
+    key = _tokens(topic)
+    density = 0.0
+    if key and words:
+        density = sum(1 for w in words if w in key) / max(1, len(words))
+    confidence = 35.0
+    if title:
+        confidence += 18
+    if h1_text:
+        confidence += 22
+    if int(content.get("main_text_length") or 0) >= 800:
+        confidence += 12
+    confidence += min(13.0, density * 100)
+    confidence = max(5.0, min(100.0, confidence))
+    return {
+        "topic": topic,
+        "confidence": round(confidence, 2),
+        "topic_fallback_used": bool(fallback_used),
+        "keyword_density": round(density, 4),
+    }
+
+
+def _metrics_bytes(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    http = snapshot.get("http") or {}
+    content = snapshot.get("content") or {}
+    html_bytes = int(http.get("size_bytes") or 0)
+    text_bytes = int(content.get("main_text_length") or 0)
+    ratio = round((text_bytes / max(1, html_bytes)), 4) if html_bytes else None
+    return {
+        "html_bytes": html_bytes,
+        "text_bytes": text_bytes,
+        "text_html_ratio": ratio,
+        "main_content_ratio": round(float(content.get("main_content_ratio") or 0.0), 4),
+        "boilerplate_ratio": round(float(content.get("boilerplate_ratio") or 0.0), 4),
+        "formula": "text_html_ratio = text_bytes / html_bytes",
+    }
+
+
+def _snippet_library() -> Dict[str, str]:
+    return {
+        "jsonld_organization": """<script type=\"application/ld+json\">{\"@context\":\"https://schema.org\",\"@type\":\"Organization\",\"name\":\"Your Company\",\"url\":\"https://example.com\",\"logo\":\"https://example.com/logo.png\"}</script>""",
+        "jsonld_article": """<script type=\"application/ld+json\">{\"@context\":\"https://schema.org\",\"@type\":\"Article\",\"headline\":\"Article title\",\"author\":{\"@type\":\"Person\",\"name\":\"Author Name\"},\"datePublished\":\"2026-01-01\"}</script>""",
+        "jsonld_product": """<script type=\"application/ld+json\">{\"@context\":\"https://schema.org\",\"@type\":\"Product\",\"name\":\"Product name\",\"brand\":{\"@type\":\"Brand\",\"name\":\"Brand\"}}</script>""",
+        "jsonld_breadcrumb": """<script type=\"application/ld+json\">{\"@context\":\"https://schema.org\",\"@type\":\"BreadcrumbList\",\"itemListElement\":[{\"@type\":\"ListItem\",\"position\":1,\"name\":\"Home\",\"item\":\"https://example.com\"}]}</script>""",
+        "author_block_html": """<section class=\"author-box\"><p>By <strong>Author Name</strong></p><time datetime=\"2026-01-01\">January 1, 2026</time></section>""",
+        "robots_ai_allow": """User-agent: GPTBot\nAllow: /\n\nUser-agent: Google-Extended\nAllow: /\n""",
+    }
 
 
 def _policies_from_robots(
@@ -441,6 +727,11 @@ def run_llm_crawler_simulation(
     render_js = bool(options.get("renderJs", False))
     show_headers = bool(options.get("showHeaders", False))
     profiles = list(options.get("profile") or ["generic-bot", "search-bot", "ai-bot", "gptbot", "google-extended"])
+    profile_set = {str(p).lower().strip() for p in profiles if str(p).strip()}
+    run_cloaking_requested = bool(options.get("runCloaking", False))
+    report_v3_enabled = bool(getattr(settings, "LLM_REPORT_V3_ENABLED", False))
+    ui_wow_enabled = bool(getattr(settings, "LLM_UI_WOW_ENABLED", False))
+    quality_mode = report_v3_enabled or ui_wow_enabled
 
     timings: Dict[str, Any] = {}
 
@@ -496,6 +787,8 @@ def run_llm_crawler_simulation(
 
     rendered_snapshot: Optional[Dict[str, Any]] = None
     render_error: Optional[str] = None
+    gpt_snapshot: Optional[Dict[str, Any]] = None
+    gbot_snapshot: Optional[Dict[str, Any]] = None
     if render_js:
         notify(62, "Rendered fetch (Playwright)")
         t2 = time.perf_counter()
@@ -532,6 +825,41 @@ def run_llm_crawler_simulation(
     else:
         timings["rendered_ms"] = 0
 
+    cloaking_result: Dict[str, Any] = _cloaking_not_executed("not_requested", can_run=True)
+    cloaking_enabled = bool(getattr(settings, "LLM_CRAWLER_CLOAKING_ENABLED", False))
+    should_try_cloaking = bool(run_cloaking_requested or {"gptbot", "google-extended"}.issubset(profile_set))
+    if not cloaking_enabled:
+        cloaking_result = _cloaking_not_executed("feature_disabled", can_run=False)
+    elif not render_js or not rendered_snapshot:
+        cloaking_result = _cloaking_not_executed("render_required", can_run=True)
+    elif should_try_cloaking:
+        try:
+            target_for_bots = str(rendered_snapshot.get("final_url") or nojs_snapshot.get("final_url") or normalized_url)
+            gpt_snapshot = _fetch_profile_snapshot(
+                profile="gptbot",
+                url=target_for_bots,
+                timeout_ms=timeout_ms,
+                max_redirect_hops=max_redirect_hops,
+                max_html_bytes=max_html_bytes,
+                show_headers=show_headers,
+            )
+            gbot_snapshot = _fetch_profile_snapshot(
+                profile="googlebot",
+                url=target_for_bots,
+                timeout_ms=timeout_ms,
+                max_redirect_hops=max_redirect_hops,
+                max_html_bytes=max_html_bytes,
+                show_headers=show_headers,
+            )
+            if gpt_snapshot and gbot_snapshot:
+                cloaking_result = _cloaking_analysis(rendered_snapshot, gpt_snapshot, gbot_snapshot)
+            else:
+                cloaking_result = _cloaking_not_executed("bot_snapshots_missing", can_run=True)
+        except Exception as exc:
+            cloaking_result = _cloaking_not_executed(f"fetch_failed: {exc}", can_run=True)
+    else:
+        cloaking_result = _cloaking_not_executed("profiles_missing_for_cloaking", can_run=True)
+
     notify(84, "Diff and scoring")
     t3 = time.perf_counter()
     diff = _build_diff(nojs_snapshot, rendered_snapshot, render_error=render_error)
@@ -547,23 +875,36 @@ def run_llm_crawler_simulation(
         llm_sim = _run_llm_simulation(nojs_snapshot)
     js_dep = _js_dependency_score(rendered_snapshot, diff)
     score["js_dependency_score"] = js_dep.get("score")
-    cloaking_result = None
-    if bool(getattr(settings, "LLM_CRAWLER_CLOAKING_ENABLED", False)) and gpt_snapshot and gbot_snapshot and rendered_snapshot:
-        cloaking_result = _cloaking_analysis(rendered_snapshot, gpt_snapshot, gbot_snapshot)
     citation_prob = _compute_citation_probability(nojs_snapshot, score)
     entity_graph = _build_entity_graph(nojs_snapshot) if bool(getattr(settings, "LLM_CRAWLER_ENTITY_GRAPH_ENABLED", False)) else None
     if entity_graph:
         nojs_snapshot["entity_graph"] = entity_graph
-    eeat = _compute_eeat(nojs_snapshot, score) if bool(getattr(settings, "LLM_CRAWLER_EEAT_ENABLED", False)) else None
+    eeat = (
+        _compute_eeat(nojs_snapshot, score)
+        if bool(getattr(settings, "LLM_CRAWLER_EEAT_ENABLED", False))
+        else _module_status(False, "feature_disabled", None, ["Enable LLM_CRAWLER_EEAT_ENABLED"])
+    )
     vector_score = _vector_quality_score(nojs_snapshot, entity_graph) if bool(getattr(settings, "LLM_CRAWLER_VECTOR_SCORE_ENABLED", False)) else None
-    ingestion = _llm_ingestion(nojs_snapshot, diff) if bool(getattr(settings, "LLM_SIMULATION_ENABLED", False)) else None
+    ingestion = (
+        _llm_ingestion(nojs_snapshot, diff)
+        if bool(getattr(settings, "LLM_SIMULATION_ENABLED", False))
+        else _module_status(False, "feature_disabled", None, ["Enable LLM_SIMULATION_ENABLED"])
+    )
     discoverability = _crawler_path_sim(nojs_snapshot)
     ai_understanding = _ai_understanding(nojs_snapshot, llm_sim)
     trust_signal_score = _trust_score(nojs_snapshot)
     content_loss_percent = _content_loss(diff, nojs_snapshot)
     citation_breakdown = _citation_breakdown(nojs_snapshot)
     projected_score = _projected_score(score, citation_breakdown)
+    projected_waterfall = _projected_score_waterfall(score, citation_breakdown, trust_signal_score)
     answer_preview = _ai_answer_preview(nojs_snapshot, llm_sim)
+    metrics_bytes = _metrics_bytes(nojs_snapshot)
+    if rendered_snapshot:
+        rendered_metrics = _metrics_bytes(rendered_snapshot)
+        metrics_bytes["rendered_html_bytes"] = rendered_metrics.get("html_bytes")
+        metrics_bytes["rendered_text_bytes"] = rendered_metrics.get("text_bytes")
+        metrics_bytes["rendered_text_html_ratio"] = rendered_metrics.get("text_html_ratio")
+    snippet_library = _snippet_library() if quality_mode else {}
     timings["analysis_ms"] = int((time.perf_counter() - t3) * 1000)
     timings["total_ms"] = int((time.perf_counter() - started_at) * 1000)
 
@@ -596,59 +937,186 @@ def run_llm_crawler_simulation(
         "discoverability": discoverability,
         "ai_understanding_score": ai_understanding.get("score"),
         "ai_understanding": ai_understanding,
+        "topic_fallback_used": bool(ai_understanding.get("topic_fallback_used")),
         "trust_signal_score": trust_signal_score,
         "content_loss_percent": content_loss_percent,
         "citation_breakdown": citation_breakdown,
         "projected_score_after_fixes": projected_score,
+        "projected_score_waterfall": projected_waterfall,
         "ai_answer_preview": answer_preview,
+        "preview_mode": answer_preview.get("preview_mode"),
+        "chunk_ranking_debug": answer_preview.get("chunk_ranking_debug") or ((llm_sim or {}).get("chunk_ranking_debug") if isinstance(llm_sim, dict) else []),
+        "metrics_bytes": metrics_bytes,
+        "snippet_library": snippet_library,
+        "ui_wow_enabled": quality_mode,
         "engine": "llm_crawler_mvp_v1",
     }
 
 
-def _build_recommendations(nojs: Dict[str, Any], rendered: Optional[Dict[str, Any]], policies: Dict[str, Any], score: Dict[str, Any]) -> List[Dict[str, str]]:
-    recs: List[Dict[str, str]] = []
+def _build_recommendations(nojs: Dict[str, Any], rendered: Optional[Dict[str, Any]], policies: Dict[str, Any], score: Dict[str, Any]) -> List[Dict[str, Any]]:
+    recs: List[Dict[str, Any]] = []
+    snippets = _snippet_library()
     meta = (nojs.get("meta") or {})
     social = (nojs.get("social") or {})
     resources = (nojs.get("resources") or {})
-    if "noindex" in str(meta.get("meta_robots") or "").lower():
-        recs.append({"priority": "P0", "area": "crawlability", "title": "Уберите noindex для страниц, которые должны индексироваться ботами/LLM"})
-    challenge = (nojs.get("challenge") or {})
-    if challenge.get("is_challenge"):
-        recs.append({"priority": "P0", "area": "access", "title": "WAF/челлендж блокирует ботов — ослабьте правила для известных AI-ботов"})
-    if resources.get("cookie_wall"):
-        recs.append({"priority": "P0", "area": "access", "title": "Cookie/consent wall перекрывает контент — добавьте бот-байпас или серверный рендер"})
-    if resources.get("paywall") or resources.get("login_wall"):
-        recs.append({"priority": "P0", "area": "access", "title": "Paywall/Login wall скрывает текст — предусмотрите публичный пререндер или открытый виджет"})
-    if resources.get("csp_strict"):
-        recs.append({"priority": "P1", "area": "access", "title": "Слишком строгий CSP (script-src 'none') может ломать JS — ослабьте для нужных скриптов"})
-    if int(resources.get("mixed_content_count") or 0) > 0:
-        recs.append({"priority": "P1", "area": "resources", "title": "Исправьте mixed content (http ресурсы на https странице)"})
     schema = (nojs.get("schema") or {})
-    if not schema.get("jsonld_types"):
-        recs.append({"priority": "P1", "area": "schema", "title": "Добавьте JSON-LD (Organization/Article/Product) для доверия и извлечения"})
-    if float(schema.get("coverage_score") or 0) < 50:
-        recs.append({"priority": "P1", "area": "schema", "title": "Увеличьте покрытие schema.org (Organization/Person/Article/Product)"})
     signals = (nojs.get("signals") or {})
-    if not signals.get("author_present") or not signals.get("date_present"):
-        recs.append({"priority": "P1", "area": "trust", "title": "Укажите автора/дату публикации — повышает понятность и доверие"})
-    if not social.get("og_present") or not social.get("twitter_present"):
-        recs.append({"priority": "P2", "area": "social", "title": "Добавьте OpenGraph/Twitter метатеги для консистентных сниппетов и LLM-карточек"})
     links = (nojs.get("links") or {})
-    if int(links.get("js_only_count") or 0) > 0:
-        recs.append({"priority": "P1", "area": "links", "title": "Избегайте JS-only ссылок — используйте href для навигации ботов"})
-    if float(links.get("anchor_quality_score") or 0) < 50:
-        recs.append({"priority": "P2", "area": "links", "title": "Улучшите анкоры ссылок — больше смысловых текстов вместо 'здесь/читать'"})
     content = (nojs.get("content") or {})
+    challenge = (nojs.get("challenge") or {})
+
+    def add_rec(priority: str, area: str, title: str, expected_lift: str, evidence: List[str], source: List[str], snippet_key: str | None = None) -> None:
+        rec: Dict[str, Any] = {
+            "priority": priority,
+            "area": area,
+            "title": title,
+            "expected_lift": expected_lift,
+            "evidence": evidence[:3],
+            "source": source[:3],
+        }
+        if snippet_key and snippets.get(snippet_key):
+            rec["snippet_key"] = snippet_key
+            rec["snippet"] = snippets[snippet_key]
+        recs.append(rec)
+
+    if "noindex" in str(meta.get("meta_robots") or "").lower():
+        add_rec(
+            "P0",
+            "crawlability",
+            "Уберите noindex для страниц, которые должны индексироваться ботами/LLM",
+            "+10..15",
+            [f"meta robots: {meta.get('meta_robots')}", f"x-robots-tag: {meta.get('x_robots_tag', '')}".strip()],
+            ["head", "http_headers"],
+            "robots_ai_allow",
+        )
+    if challenge.get("is_challenge"):
+        add_rec(
+            "P0",
+            "access",
+            "WAF/челлендж блокирует ботов — ослабьте правила для известных AI-ботов",
+            "+8..14",
+            [f"Challenge reasons: {', '.join(challenge.get('reasons') or []) or '-'}"],
+            ["network", "body"],
+        )
+    if resources.get("cookie_wall"):
+        add_rec(
+            "P0",
+            "access",
+            "Cookie/consent wall перекрывает контент — добавьте бот-байпас или серверный рендер",
+            "+7..12",
+            ["Cookie/consent markers detected in HTML body"],
+            ["body"],
+        )
+    if resources.get("paywall") or resources.get("login_wall"):
+        add_rec(
+            "P0",
+            "access",
+            "Paywall/Login wall скрывает текст — предусмотрите публичный пререндер или открытый виджет",
+            "+7..12",
+            [f"paywall={resources.get('paywall')}", f"login_wall={resources.get('login_wall')}"],
+            ["body"],
+        )
+    if resources.get("csp_strict"):
+        add_rec(
+            "P1",
+            "access",
+            "Слишком строгий CSP (script-src 'none') может ломать JS — ослабьте для нужных скриптов",
+            "+4..7",
+            ["CSP policy indicates blocked script execution"],
+            ["http_headers"],
+        )
+    if int(resources.get("mixed_content_count") or 0) > 0:
+        add_rec(
+            "P1",
+            "resources",
+            "Исправьте mixed content (http ресурсы на https странице)",
+            "+3..5",
+            [f"Mixed content count: {resources.get('mixed_content_count')}"],
+            ["network", "body"],
+        )
+    if not schema.get("jsonld_types"):
+        add_rec(
+            "P1",
+            "schema",
+            "Добавьте JSON-LD (Organization/Article/Product) для доверия и извлечения",
+            "+8..12",
+            ["No JSON-LD types found on page"],
+            ["head", "body"],
+            "jsonld_organization",
+        )
+    if float(schema.get("coverage_score") or 0) < 50:
+        add_rec(
+            "P1",
+            "schema",
+            "Увеличьте покрытие schema.org (Organization/Person/Article/Product)",
+            "+6..10",
+            [f"Schema coverage score: {schema.get('coverage_score', 0)}%"],
+            ["head", "body"],
+            "jsonld_article",
+        )
+    if not signals.get("author_present") or not signals.get("date_present"):
+        add_rec(
+            "P1",
+            "trust",
+            "Укажите автора/дату публикации — повышает понятность и доверие",
+            "+5..8",
+            [f"author_present={signals.get('author_present')}", f"date_present={signals.get('date_present')}"],
+            ["head", "body"],
+            "author_block_html",
+        )
+    if not social.get("og_present") or not social.get("twitter_present"):
+        add_rec(
+            "P2",
+            "social",
+            "Добавьте OpenGraph/Twitter метатеги для консистентных сниппетов и LLM-карточек",
+            "+2..4",
+            [f"OG present={social.get('og_present')}", f"Twitter present={social.get('twitter_present')}"],
+            ["head"],
+        )
+    if int(links.get("js_only_count") or 0) > 0:
+        add_rec(
+            "P1",
+            "links",
+            "Избегайте JS-only ссылок — используйте href для навигации ботов",
+            "+4..7",
+            [f"JS-only links count: {links.get('js_only_count', 0)}"],
+            ["body"],
+        )
+    if float(links.get("anchor_quality_score") or 0) < 50:
+        add_rec(
+            "P2",
+            "links",
+            "Улучшите анкоры ссылок — больше смысловых текстов вместо 'здесь/читать'",
+            "+2..4",
+            [f"Anchor quality score: {links.get('anchor_quality_score', 0)}"],
+            ["body"],
+        )
     if int(content.get("main_text_length") or 0) < 500:
-        recs.append({"priority": "P2", "area": "content", "title": "Увеличьте основной текст/контент — сейчас он слишком короткий для извлечения"})
+        add_rec(
+            "P2",
+            "content",
+            "Увеличьте основной текст/контент — сейчас он слишком короткий для извлечения",
+            "+3..6",
+            [f"main_text_length={content.get('main_text_length', 0)}"],
+            ["body"],
+        )
     if float(score.get("js_dependency_score", 0)) > 70:
-        recs.append({"priority": "P1", "area": "js_dependency", "title": "Высокая зависимость от JS — обеспечьте SSR или пререндер"})
+        add_rec(
+            "P1",
+            "js_dependency",
+            "Высокая зависимость от JS — обеспечьте SSR или пререндер",
+            "+5..9",
+            [f"js_dependency_score={score.get('js_dependency_score', 0)}"],
+            ["network", "render"],
+        )
     return recs[:10]
 
 
 def _run_llm_simulation(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     content = snapshot.get("content") or {}
-    text = content.get("main_text_preview") or content.get("readability_text") or ""
+    ranked = _rank_chunks_for_question(snapshot, "What is this page about?", limit=3)
+    ranked_text = " ".join([str(x.get("text") or "") for x in ranked])
+    text = ranked_text or content.get("main_text_preview") or content.get("readability_text") or ""
     text = str(text or "")
     if not text:
         return {"enabled": False, "summary": "", "key_facts": [], "entities": [], "scores": {}}
@@ -674,6 +1142,7 @@ def _run_llm_simulation(snapshot: Dict[str, Any]) -> Dict[str, Any]:
         "key_facts": key_facts,
         "entities": entities,
         "citation_spans": citation_spans,
+        "chunk_ranking_debug": [{"idx": r.get("idx"), "score": r.get("score")} for r in ranked],
         "scores": scores,
     }
 
@@ -733,21 +1202,37 @@ def _compute_eeat(snapshot: Dict[str, Any], score: Dict[str, Any]) -> Dict[str, 
     signals = snapshot.get("signals") or {}
     schema = snapshot.get("schema") or {}
     meta = snapshot.get("meta") or {}
+    content = snapshot.get("content") or {}
+    if int(content.get("main_text_length") or 0) < 120:
+        return _module_status(False, "insufficient_content", None, ["Not enough extracted text for EEAT evaluation"])
     total = 50
+    factors: List[str] = []
     if signals.get("author_present"):
         total += 10
+        factors.append("Author signal present")
+    else:
+        factors.append("Author signal missing")
     if signals.get("date_present"):
         total += 5
+        factors.append("Publish date present")
+    else:
+        factors.append("Publish date missing")
     if schema.get("coverage_score", 0) >= 50:
         total += 10
+        factors.append("Schema coverage >= 50%")
     if schema.get("coverage_score", 0) >= 75:
         total += 5
+        factors.append("Schema coverage >= 75%")
     if meta.get("canonical"):
         total += 3
+        factors.append("Canonical URL present")
     if signals.get("author_samples"):
         total += 2
+        factors.append("Author samples in metadata")
     total = max(0, min(100, total))
-    return {"score": total}
+    payload = _module_status(True, "ok", float(total), factors)
+    payload["score"] = float(total)
+    return payload
 
 
 def _vector_quality_score(snapshot: Dict[str, Any], entity_graph: Dict[str, Any] | None) -> float:
@@ -770,6 +1255,17 @@ def _llm_ingestion(snapshot: Dict[str, Any], diff: Dict[str, Any]) -> Dict[str, 
     content = snapshot.get("content") or {}
     chunks = content.get("chunks") or []
     chunks_count = len(chunks)
+    if chunks_count == 0:
+        payload = _module_status(False, "no_chunks_available", None, ["Chunking produced no usable chunks"])
+        payload.update(
+            {
+                "chunks_count": 0,
+                "avg_chunk_quality": None,
+                "lost_content_percent": None,
+                "ingestion_risk": "unknown",
+            }
+        )
+        return payload
     avg_len = sum(len(c.get("text") or "") for c in chunks) / max(1, chunks_count)
     readability = float(content.get("readability_score") or 0)
     avg_quality = round(min(100, (readability / 100) * 40 + min(60, avg_len / 40)), 2)
@@ -784,12 +1280,25 @@ def _llm_ingestion(snapshot: Dict[str, Any], diff: Dict[str, Any]) -> Dict[str, 
         ingestion_risk = "high"
     elif lost > 0.3:
         ingestion_risk = "medium"
-    return {
+    payload = _module_status(
+        True,
+        "ok",
+        float(avg_quality),
+        [
+            f"Average chunk length: {round(avg_len, 2)}",
+            f"Readability score: {round(readability, 2)}",
+            f"Lost content percent: {round(lost * 100, 2)}",
+        ],
+    )
+    payload.update(
+        {
         "chunks_count": chunks_count,
         "avg_chunk_quality": avg_quality,
         "lost_content_percent": round(lost * 100, 2),
         "ingestion_risk": ingestion_risk,
-    }
+        }
+    )
+    return payload
 
 
 def _crawler_path_sim(snapshot: Dict[str, Any]) -> Dict[str, Any]:
@@ -809,8 +1318,17 @@ def _crawler_path_sim(snapshot: Dict[str, Any]) -> Dict[str, Any]:
 def _ai_understanding(snapshot: Dict[str, Any], llm_sim: Dict[str, Any] | None) -> Dict[str, Any]:
     content = snapshot.get("content") or {}
     signals = snapshot.get("signals") or {}
-    topic = (llm_sim or {}).get("summary") or ""
+    entity_graph = snapshot.get("entity_graph") or {}
+    topic_info = _detect_topic(snapshot, llm_sim)
+    topic = topic_info.get("topic") or ""
     entities = (llm_sim or {}).get("entities") or []
+    if not entities:
+        entities = (
+            (entity_graph.get("organizations") or [])
+            + (entity_graph.get("persons") or [])
+            + (entity_graph.get("products") or [])
+        )[:10]
+    clarity = _content_clarity(snapshot, entity_graph)
     score = 50
     if topic:
         score += 20
@@ -818,13 +1336,24 @@ def _ai_understanding(snapshot: Dict[str, Any], llm_sim: Dict[str, Any] | None) 
         score += 5
     if len(entities) > 3:
         score += 10
-    clarity = float(content.get("readability_score") or 0)
-    score += min(15, clarity / 3)
+    clarity_score = clarity.get("score")
+    readability = float(content.get("readability_score") or 0)
+    if clarity_score is not None:
+        score += min(15, float(clarity_score) / 6)
+    else:
+        score += min(10, readability / 6)
+    confidence = float(topic_info.get("confidence") or 0)
+    score = (score * 0.7) + (confidence * 0.3)
     return {
         "score": max(0, min(100, round(score, 2))),
         "topic": topic[:200],
+        "topic_confidence": round(confidence, 2),
+        "topic_fallback_used": bool(topic_info.get("topic_fallback_used")),
         "entities": entities[:10],
-        "content_clarity": round(clarity, 2),
+        "content_clarity": clarity.get("score"),
+        "content_clarity_status": clarity.get("status"),
+        "content_clarity_reason": clarity.get("reason"),
+        "content_clarity_factors": clarity.get("factors") or [],
         "intent": "informational",
     }
 
@@ -876,10 +1405,52 @@ def _projected_score(score: Dict[str, Any], citation_breakdown: Dict[str, Any]) 
     return float(max(base, min(100, base + gain)))
 
 
+def _projected_score_waterfall(score: Dict[str, Any], citation_breakdown: Dict[str, Any], trust_signal_score: float) -> Dict[str, Any]:
+    base = float(score.get("total", 0))
+    steps: List[Dict[str, Any]] = []
+    running = base
+    if citation_breakdown.get("schema", 0) < 50:
+        delta = 12.0
+        running += delta
+        steps.append({"label": "Schema coverage", "delta": delta, "value": round(min(100, running), 2)})
+    if citation_breakdown.get("author", 0) == 0:
+        delta = 8.0
+        running += delta
+        steps.append({"label": "Author/date trust", "delta": delta, "value": round(min(100, running), 2)})
+    if trust_signal_score < 50:
+        delta = 5.0
+        running += delta
+        steps.append({"label": "Trust signals", "delta": delta, "value": round(min(100, running), 2)})
+    target = max(base, min(100, running))
+    return {"baseline": round(base, 2), "target": round(target, 2), "steps": steps}
+
+
 def _ai_answer_preview(snapshot: Dict[str, Any], llm_sim: Dict[str, Any] | None) -> Dict[str, Any]:
     question = "What is this page about?"
-    answer = (llm_sim or {}).get("summary") or (snapshot.get("content") or {}).get("main_text_preview", "")[:240]
-    return {"question": question, "answer": answer or "Not enough content", "confidence": (llm_sim or {}).get("scores", {}).get("answer_quality_score", None)}
+    ranked = _rank_chunks_for_question(snapshot, question, limit=3)
+    bullets = _build_extractive_preview(ranked, bullets=3)
+    mode = "llm" if bool((llm_sim or {}).get("enabled")) else "extractive"
+    answer = ""
+    if ranked:
+        # Use only top-ranked chunks for grounded preview.
+        ranked_text = " ".join([str(x.get("text") or "") for x in ranked[:2]])
+        answer = " ".join(_sentences(ranked_text)[:2]).strip()
+    if not answer:
+        answer = (snapshot.get("content") or {}).get("main_text_preview", "")[:280]
+    confidence = (llm_sim or {}).get("scores", {}).get("answer_quality_score", None)
+    if confidence is None and ranked:
+        confidence = round(min(100, (sum(float(x.get("score") or 0) for x in ranked) / max(1, len(ranked))) * 100), 2)
+    return {
+        "question": question,
+        "answer": answer or "Not enough content",
+        "confidence": confidence,
+        "preview_mode": mode,
+        "bullets": bullets,
+        "chunk_ranking_debug": [
+            {"idx": int(x.get("idx") or 0), "score": x.get("score"), "relevance": x.get("relevance")}
+            for x in ranked
+        ],
+    }
 
 
 def _js_dependency_score(rendered_snapshot: Dict[str, Any] | None, diff: Dict[str, Any]) -> Dict[str, Any]:
@@ -936,10 +1507,28 @@ def _cloaking_analysis(browser_snap: Dict[str, Any], gpt_snap: Dict[str, Any], g
         risk = "medium"
     return {
         "risk": risk,
+        "status": "executed",
         "similarity_scores": {
             "browser_vs_gptbot": sim_bg,
             "browser_vs_googlebot": sim_bb,
         },
         "length_delta": round(len_delta, 3),
         "missing_sections": missing[:20],
+        "evidence": [
+            f"Cosine(browser,gptbot)={sim_bg}",
+            f"Cosine(browser,googlebot)={sim_bb}",
+            f"Length delta={round(len_delta, 3)}",
+        ],
+    }
+
+
+def _cloaking_not_executed(reason: str, can_run: bool = True) -> Dict[str, Any]:
+    return {
+        "status": "not_executed",
+        "reason": reason,
+        "risk": "unknown",
+        "similarity_scores": {},
+        "missing_sections": [],
+        "can_run": can_run,
+        "evidence": [],
     }
