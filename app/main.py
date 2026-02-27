@@ -200,6 +200,11 @@ async def results_page(request: Request, task_id: str):
 async def llm_crawler_results_page(request: Request, job_id: str):
     """LLM crawler dedicated results page."""
     if templates:
+        if getattr(settings, "LLM_REPORT_V2_ENABLED", False):
+            return templates.TemplateResponse(
+                "llm_crawler_result_v2.html",
+                {"request": request, "job_id": job_id, "app_version": settings.APP_VERSION},
+            )
         return templates.TemplateResponse(
             "llm_crawler_result.html",
             {"request": request, "job_id": job_id},
