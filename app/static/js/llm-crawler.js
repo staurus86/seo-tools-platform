@@ -137,6 +137,9 @@ function initLlmCrawlerResult(jobId) {
         const topIssues = Array.isArray(score?.top_issues) ? score.top_issues : [];
         const botMatrix = Array.isArray(result?.bot_matrix) ? result.bot_matrix : [];
         const recs = Array.isArray(result?.recommendations) ? result.recommendations : [];
+        const nojs = result?.nojs || {};
+        const signals = nojs.signals || {};
+        const schema = nojs.schema || {};
         return `
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="bg-slate-50 border border-slate-200 rounded-lg p-4">
@@ -150,6 +153,14 @@ function initLlmCrawlerResult(jobId) {
                         <div>Content: <span class="font-semibold">${_safeNum(breakdown.content, 0)}</span></div>
                         <div>Structure: <span class="font-semibold">${_safeNum(breakdown.structure, 0)}</span></div>
                         <div>Signals: <span class="font-semibold">${_safeNum(breakdown.signals, 0)}</span></div>
+                    </div>
+                </div>
+                <div class="bg-white border rounded-lg p-3">
+                    <h4 class="font-semibold text-slate-800 mb-2">Trust & schema</h4>
+                    <div class="text-sm text-slate-700 space-y-1">
+                        <div>Author: <span class="font-semibold">${signals.author_present ? 'yes' : 'no'}</span></div>
+                        <div>Date: <span class="font-semibold">${signals.date_present ? 'yes' : 'no'}</span></div>
+                        <div>Schema types: <span class="font-semibold">${_safeNum(schema.count, 0)}</span></div>
                     </div>
                 </div>
             </div>
@@ -174,7 +185,21 @@ function initLlmCrawlerResult(jobId) {
                 </div>
                 <div class="bg-white border rounded-lg p-3">
                     <h4 class="font-semibold text-slate-800 mb-2">Recommended fixes</h4>
-                    ${recs.length ? `<ul class="list-disc pl-5 text-sm text-slate-700 space-y-1">${recs.map((r) => `<li><span class="font-semibold">${_escapeHtml(r.priority || 'P2')}</span> — ${_escapeHtml(r.title || '')}</li>`).join('')}</ul>` : '<p class="text-sm text-slate-500">No high-priority issues.</p>'}
+                    ${recs.length ? `
+                        <div class="overflow-auto border rounded-lg">
+                            <table class="min-w-full text-sm">
+                                <thead class="bg-slate-50"><tr><th class="text-left p-2">Pri</th><th class="text-left p-2">Area</th><th class="text-left p-2">Fix</th></tr></thead>
+                                <tbody>
+                                    ${recs.map((r) => `
+                                        <tr class="border-t">
+                                            <td class="p-2 font-semibold">${_escapeHtml(r.priority || 'P2')}</td>
+                                            <td class="p-2 text-slate-600">${_escapeHtml(r.area || '-')}</td>
+                                            <td class="p-2">${_escapeHtml(r.title || '')}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>` : '<p class="text-sm text-slate-500">No high-priority issues.</p>'}
                 </div>
             </div>
             <div class="mt-4">
