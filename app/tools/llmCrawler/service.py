@@ -258,7 +258,7 @@ def _build_diff(nojs: Dict[str, Any], rendered: Optional[Dict[str, Any]]) -> Dic
     missing: List[str] = []
     if text_coverage is not None and text_coverage < 0.7:
         missing.append("Основной текст появляется только после JS (coverage < 0.7)")
-    if linksDiff["added"] > 0:
+    if len(added_links) > 0:
         missing.append("Часть ссылок доступна только с JS (добавленные в rendered)")
     if int(r_h.get("h1") or 0) > int(nojs_h.get("h1") or 0):
         missing.append("Заголовки H1/H2/H3 появляются только в rendered версии")
