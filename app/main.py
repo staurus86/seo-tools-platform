@@ -153,18 +153,13 @@ if templates is None:
 # API routes
 app.include_router(api_router)
 
-# LLM crawler isolated router (safe behind feature gate).
-try:
-    from app.tools.llmCrawler.router import router as llm_crawler_router
+# LLM crawler router is always included.
+# Feature availability is enforced inside router via feature gate (403),
+# so route registration must not be optional to avoid hidden 404 regressions.
+from app.tools.llmCrawler.router import router as llm_crawler_router
 
-    app.include_router(llm_crawler_router)
-    logger.info("[OK] LLM crawler routes included")
-except Exception as e:
-    # Fail fast when feature is enabled: otherwise web starts without LLM routes and UI gets confusing 404.
-    if bool(getattr(settings, "FEATURE_LLM_CRAWLER", False)):
-        logger.error(f"LLM crawler routes include failed while feature is enabled: {e}")
-        raise
-    logger.warning(f"LLM crawler routes not included (feature disabled): {e}")
+app.include_router(llm_crawler_router)
+logger.info("[OK] LLM crawler routes included")
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):

@@ -338,7 +338,7 @@ async def llm_crawler_report(job_id: str, request: Request) -> HTMLResponse:
     <div class="card"><h3>Quality Gates</h3>
       <p>Status: <b>{quality_gates.get("status","not_evaluated")}</b> | Passed: {quality_gates.get("passed","-")} / {quality_gates.get("total","-")}</p>
       <table><thead><tr><th>Metric</th><th>Value</th><th>Threshold</th><th>Pass</th></tr></thead><tbody>
-        {''.join([f"<tr><td>{c.get('metric','-')}</td><td>{c.get('value','-')}</td><td>{c.get('threshold','-')}</td><td>{'✅' if c.get('pass') else '❌'}</td></tr>" for c in quality_checks]) or '<tr><td colspan=\"4\">No checks</td></tr>'}
+        {''.join([f"<tr><td>{c.get('metric','-')}</td><td>{c.get('value','-')}</td><td>{c.get('threshold','-')}</td><td>{'✅' if c.get('pass') else '❌'}</td></tr>" for c in quality_checks]) or '<tr><td colspan="4">No checks</td></tr>'}
       </tbody></table>
     </div>
     <div class="card"><h3>Detection Issues</h3><ul>
