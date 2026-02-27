@@ -296,9 +296,6 @@ async function initV2(jobId) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  if (window.Chart && window.Chart.defaults) {
-    window.Chart.defaults.color = '#94a3b8';
-  }
   if (window.llmJobId) {
     initV2(window.llmJobId);
   }

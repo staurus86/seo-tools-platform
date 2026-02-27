@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}LLM Crawler Simulation v2{% endblock %}
 {% block content %}
-<div class="llm-v2 max-w-6xl mx-auto py-6 space-y-6 text-slate-900 dark:text-slate-100">
+<div class="llm-v2 max-w-6xl mx-auto py-6 space-y-6 text-slate-900">
   <div class="flex items-center justify-between">
     <div>
       <a href="/" class="text-blue-500 hover:text-blue-700 text-sm"><i class="fas fa-arrow-left mr-1"></i>Назад</a>
@@ -19,36 +19,35 @@
 
   <div id="v2-critical" class="grid grid-cols-1 md:grid-cols-3 gap-3"></div>
 
-  <div id="v2-bot-matrix" class="bg-white dark:bg-slate-900 rounded-xl shadow border border-slate-200 dark:border-slate-700 p-4"></div>
+  <div id="v2-bot-matrix" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div id="v2-content-vis" class="bg-white dark:bg-slate-900 rounded-xl shadow border border-slate-200 dark:border-slate-700 p-4"></div>
-    <div id="v2-llm-sim" class="bg-white dark:bg-slate-900 rounded-xl shadow border border-slate-200 dark:border-slate-700 p-4"></div>
+    <div id="v2-content-vis" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
+    <div id="v2-llm-sim" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
   </div>
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div id="v2-cloaking" class="bg-white dark:bg-slate-900 rounded-xl shadow border border-slate-200 dark:border-slate-700 p-4"></div>
-    <div id="v2-entity-eeat" class="bg-white dark:bg-slate-900 rounded-xl shadow border border-slate-200 dark:border-slate-700 p-4"></div>
+    <div id="v2-cloaking" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
+    <div id="v2-entity-eeat" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
   </div>
 
-  <div id="v2-schema" class="bg-white dark:bg-slate-900 rounded-xl shadow border border-slate-200 dark:border-slate-700 p-4"></div>
+  <div id="v2-schema" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div id="v2-links" class="bg-white dark:bg-slate-900 rounded-xl shadow border border-slate-200 dark:border-slate-700 p-4"></div>
-    <div id="v2-access" class="bg-white dark:bg-slate-900 rounded-xl shadow border border-slate-200 dark:border-slate-700 p-4"></div>
+    <div id="v2-links" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
+    <div id="v2-access" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
   </div>
 
-  <div id="v2-tech" class="bg-white dark:bg-slate-900 rounded-xl shadow border border-slate-200 dark:border-slate-700 p-4"></div>
+  <div id="v2-tech" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
 
-  <div id="v2-chunks" class="bg-white dark:bg-slate-900 rounded-xl shadow border border-slate-200 dark:border-slate-700 p-4"></div>
+  <div id="v2-chunks" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
 
-  <div id="v2-recs" class="bg-white dark:bg-slate-900 rounded-xl shadow border border-slate-200 dark:border-slate-700 p-4"></div>
+  <div id="v2-recs" class="bg-white rounded-xl shadow border border-slate-200 p-4"></div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<link rel="stylesheet" href="/static/css/llm-crawler-v2.css">
 <script>
   window.llmJobId = "{{ job_id }}";
 </script>
