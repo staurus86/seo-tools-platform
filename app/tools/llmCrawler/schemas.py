@@ -33,6 +33,8 @@ class LlmCrawlerOptions(BaseModel):
         ]
     )
     showHeaders: bool = False
+    include_raw_html: bool = False
+    include_rendered_html: bool = False
 
     @field_validator("timeoutMs", mode="before")
     @classmethod
@@ -89,3 +91,10 @@ class LlmCrawlerJobStatusResponse(BaseModel):
     requestId: str | None = None
     jobId: str | None = None
     status_message: str | None = None
+    cloaking: Dict[str, Any] | None = None
+    eeat_score: Dict[str, Any] | None = None
+    entity_graph: Dict[str, Any] | None = None
+    citation_probability: float | None = None
+    js_dependency_score: float | None = None
+    llm_ingestion: Dict[str, Any] | None = None
+    vector_quality_score: float | None = None

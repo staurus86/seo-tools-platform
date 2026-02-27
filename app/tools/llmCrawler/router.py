@@ -20,6 +20,7 @@ from .queue import (
     new_job_id,
     queue_depth,
     update_job_record,
+    inc_subject,
 )
 from .schemas import LlmCrawlerJobStatusResponse, LlmCrawlerRunRequest
 from .service import run_llm_crawler_simulation
@@ -169,6 +170,7 @@ async def run_llm_crawler(payload: LlmCrawlerRunRequest, request: Request) -> Di
                     request_id=request_id,
                     requested_url=target_url,
                     options=options,
+                    subject=subject,
                 )
                 job = update_job_record(
                     inline_job_id,
@@ -211,11 +213,20 @@ async def run_llm_crawler(payload: LlmCrawlerRunRequest, request: Request) -> Di
 
         job_id = new_job_id()
         try:
+            if limits_enabled:
+                concurrent = inc_subject(subject)
+                if concurrent > int(getattr(settings, "MAX_CONCURRENT_JOBS", 2) or 2):
+                    dec_subject(subject)
+                    raise HTTPException(
+                        status_code=429,
+                        detail={"message": "Too many concurrent jobs for subject"},
+                    )
             job = create_job_record(
                 job_id=job_id,
                 request_id=request_id,
                 requested_url=target_url,
                 options=options,
+                subject=subject,
                 status_message="Queued",
             )
             enqueue_job(job)

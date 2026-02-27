@@ -8,6 +8,7 @@ from urllib.parse import urlparse, urlunparse
 
 import requests
 import re
+import math
 
 from app.config import settings
 from app.tools.http_text import decode_response_text
@@ -304,6 +305,25 @@ def _build_diff(nojs: Dict[str, Any], rendered: Optional[Dict[str, Any]], render
     }
 
 
+def _text_cosine(a: str, b: str) -> float:
+    def vec(text: str) -> Dict[str, int]:
+        words = re.findall(r"[A-Za-zА-Яа-я0-9]{3,}", text.lower())
+        v: Dict[str, int] = {}
+        for w in words:
+            v[w] = v.get(w, 0) + 1
+        return v
+    va = vec(a)
+    vb = vec(b)
+    if not va or not vb:
+        return 0.0
+    dot = sum(va.get(k, 0) * vb.get(k, 0) for k in va)
+    na = math.sqrt(sum(v * v for v in va.values()))
+    nb = math.sqrt(sum(v * v for v in vb.values()))
+    if na == 0 or nb == 0:
+        return 0.0
+    return round(dot / (na * nb), 4)
+
+
 def _policies_from_robots(
     *,
     final_url: str,
@@ -445,6 +465,8 @@ def run_llm_crawler_simulation(
         size_bytes=int(nojs_http.get("size_bytes") or 0),
         truncated=bool(nojs_http.get("truncated")),
     )
+    if bool(options.get("include_raw_html")):
+        nojs_snapshot["raw_html"] = str(nojs_http.get("body_text") or "")[:200000]
     timings["nojs_ms"] = int((time.perf_counter() - t0) * 1000)
 
     notify(40, "Robots and policy checks")
@@ -500,6 +522,8 @@ def run_llm_crawler_simulation(
                 "failed_requests": rendered_http.get("failed_requests") or [],
             }
             rendered_snapshot["render_debug"] = render_debug
+            if bool(options.get("include_rendered_html")):
+                rendered_snapshot["rendered_html"] = str(rendered_http.get("body_text") or "")[:200000]
         except Exception as exc:
             render_error = f"Rendered fetch failed: {exc}"
             notify(70, render_error)
@@ -521,6 +545,19 @@ def run_llm_crawler_simulation(
     llm_sim = None
     if bool(getattr(settings, "LLM_SIMULATION_ENABLED", False)):
         llm_sim = _run_llm_simulation(nojs_snapshot)
+    js_dep = _js_dependency_score(rendered_snapshot, diff)
+    score["js_dependency_score"] = js_dep.get("score")
+    cloaking_result = None
+    if bool(getattr(settings, "LLM_CRAWLER_CLOAKING_ENABLED", False)) and gpt_snapshot and gbot_snapshot and rendered_snapshot:
+        cloaking_result = _cloaking_analysis(rendered_snapshot, gpt_snapshot, gbot_snapshot)
+    citation_prob = _compute_citation_probability(nojs_snapshot, score)
+    entity_graph = _build_entity_graph(nojs_snapshot) if bool(getattr(settings, "LLM_CRAWLER_ENTITY_GRAPH_ENABLED", False)) else None
+    if entity_graph:
+        nojs_snapshot["entity_graph"] = entity_graph
+    eeat = _compute_eeat(nojs_snapshot, score) if bool(getattr(settings, "LLM_CRAWLER_EEAT_ENABLED", False)) else None
+    vector_score = _vector_quality_score(nojs_snapshot, entity_graph) if bool(getattr(settings, "LLM_CRAWLER_VECTOR_SCORE_ENABLED", False)) else None
+    ingestion = _llm_ingestion(nojs_snapshot, diff) if bool(getattr(settings, "LLM_SIMULATION_ENABLED", False)) else None
+    discoverability = _crawler_path_sim(nojs_snapshot)
     timings["analysis_ms"] = int((time.perf_counter() - t3) * 1000)
     timings["total_ms"] = int((time.perf_counter() - started_at) * 1000)
 
@@ -543,6 +580,14 @@ def run_llm_crawler_simulation(
         "bot_matrix": bot_matrix,
         "recommendations": recommendations,
         "llm": llm_sim,
+        "js_dependency": js_dep,
+        "cloaking": cloaking_result,
+        "citation_probability": citation_prob,
+        "entity_graph": entity_graph,
+        "eeat_score": eeat,
+        "vector_quality_score": vector_score,
+        "llm_ingestion": ingestion,
+        "discoverability": discoverability,
         "engine": "llm_crawler_mvp_v1",
     }
 
@@ -583,6 +628,8 @@ def _build_recommendations(nojs: Dict[str, Any], rendered: Optional[Dict[str, An
     content = (nojs.get("content") or {})
     if int(content.get("main_text_length") or 0) < 500:
         recs.append({"priority": "P2", "area": "content", "title": "Увеличьте основной текст/контент — сейчас он слишком короткий для извлечения"})
+    if float(score.get("js_dependency_score", 0)) > 70:
+        recs.append({"priority": "P1", "area": "js_dependency", "title": "Высокая зависимость от JS — обеспечьте SSR или пререндер"})
     return recs[:10]
 
 
@@ -606,6 +653,7 @@ def _run_llm_simulation(snapshot: Dict[str, Any]) -> Dict[str, Any]:
         "citation_likelihood": 70 if citation_spans else 40,
         "recommendation_likelihood": 60 if len(text) > 800 else 30,
         "hallucination_risk": 20 if citation_spans else 40,
+        "answer_quality_score": 60 if len(text) > 800 else 40,
     }
     return {
         "enabled": True,
@@ -614,4 +662,195 @@ def _run_llm_simulation(snapshot: Dict[str, Any]) -> Dict[str, Any]:
         "entities": entities,
         "citation_spans": citation_spans,
         "scores": scores,
+    }
+
+
+def _compute_citation_probability(snapshot: Dict[str, Any], score: Dict[str, Any]) -> float:
+    schema = (snapshot.get("schema") or {})
+    signals = (snapshot.get("signals") or {})
+    headings = (snapshot.get("headings") or {})
+    content = (snapshot.get("content") or {})
+    base = 40
+    if schema.get("coverage_score", 0) >= 50:
+        base += 15
+    if signals.get("author_present"):
+        base += 10
+    if signals.get("date_present"):
+        base += 5
+    if int(headings.get("h1") or 0) >= 1 and int(headings.get("h2") or 0) >= 2:
+        base += 10
+    ratio = float(content.get("main_content_ratio") or 0)
+    if ratio >= 0.5:
+        base += 10
+    elif ratio < 0.25:
+        base -= 10
+    return float(max(0, min(100, base)))
+
+
+def _build_entity_graph(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    schema = snapshot.get("schema") or {}
+    text = ((snapshot.get("content") or {}).get("main_text_preview") or "") + " " + ((snapshot.get("meta") or {}).get("title") or "")
+    orgs = set()
+    persons = set()
+    products = set()
+    locations = set()
+    for t in schema.get("jsonld_types", []):
+        if "Organization" in t:
+            orgs.add("schema:Organization")
+        if "Person" in t:
+            persons.add("schema:Person")
+        if "Product" in t:
+            products.add("schema:Product")
+    for token in re.findall(r"\b[A-Z][A-Za-z]{2,}(?:\s+[A-Z][A-Za-z]{2,})+\b", text):
+        if "inc" in token.lower() or "llc" in token.lower() or "ltd" in token.lower():
+            orgs.add(token[:100])
+        else:
+            persons.add(token[:100])
+    for token in re.findall(r"\b[A-Z][A-Za-z]{2,}\s+(Street|St\.|Ave|Road|City)\b", text):
+        locations.add(token[:100])
+    return {
+        "organizations": sorted(orgs)[:20],
+        "persons": sorted(persons)[:20],
+        "products": sorted(products)[:20],
+        "locations": sorted(locations)[:20],
+    }
+
+
+def _compute_eeat(snapshot: Dict[str, Any], score: Dict[str, Any]) -> Dict[str, Any]:
+    signals = snapshot.get("signals") or {}
+    schema = snapshot.get("schema") or {}
+    meta = snapshot.get("meta") or {}
+    total = 50
+    if signals.get("author_present"):
+        total += 10
+    if signals.get("date_present"):
+        total += 5
+    if schema.get("coverage_score", 0) >= 50:
+        total += 10
+    if schema.get("coverage_score", 0) >= 75:
+        total += 5
+    if meta.get("canonical"):
+        total += 3
+    if signals.get("author_samples"):
+        total += 2
+    total = max(0, min(100, total))
+    return {"score": total}
+
+
+def _vector_quality_score(snapshot: Dict[str, Any], entity_graph: Dict[str, Any] | None) -> float:
+    content = snapshot.get("content") or {}
+    text = content.get("main_text_preview") or ""
+    words = re.findall(r"[A-Za-zА-Яа-я0-9]+", text)
+    unique = len(set(words))
+    density = unique / max(1, len(words))
+    entities = sum(len(v or []) for v in (entity_graph or {}).values()) if entity_graph else 0
+    score = 50
+    score += min(20, entities * 2)
+    if density < 0.2:
+        score -= 15
+    elif density > 0.5:
+        score += 10
+    return float(max(0, min(100, round(score, 2))))
+
+
+def _llm_ingestion(snapshot: Dict[str, Any], diff: Dict[str, Any]) -> Dict[str, Any]:
+    content = snapshot.get("content") or {}
+    chunks = content.get("chunks") or []
+    chunks_count = len(chunks)
+    avg_len = sum(len(c.get("text") or "") for c in chunks) / max(1, chunks_count)
+    readability = float(content.get("readability_score") or 0)
+    avg_quality = round(min(100, (readability / 100) * 40 + min(60, avg_len / 40)), 2)
+    lost = 0.0
+    if diff.get("textCoverage") is not None:
+        try:
+            lost = max(0.0, 1 - float(diff.get("textCoverage")))
+        except Exception:
+            lost = 0.0
+    ingestion_risk = "low"
+    if lost > 0.5 or avg_quality < 40:
+        ingestion_risk = "high"
+    elif lost > 0.3:
+        ingestion_risk = "medium"
+    return {
+        "chunks_count": chunks_count,
+        "avg_chunk_quality": avg_quality,
+        "lost_content_percent": round(lost * 100, 2),
+        "ingestion_risk": ingestion_risk,
+    }
+
+
+def _crawler_path_sim(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    links = snapshot.get("links") or {}
+    internal_links = int(links.get("count") or 0)
+    anchor_quality = float(links.get("anchor_quality_score") or 0)
+    discoverability_score = min(100, internal_links) * 0.3 + anchor_quality * 0.4
+    click_depth_estimate = 2 if internal_links > 20 else 3
+    crawl_priority = "high" if discoverability_score >= 70 else "medium" if discoverability_score >= 40 else "low"
+    return {
+        "discoverability_score": round(min(100, discoverability_score), 2),
+        "click_depth_estimate": click_depth_estimate,
+        "crawl_priority": crawl_priority,
+    }
+
+
+def _js_dependency_score(rendered_snapshot: Dict[str, Any] | None, diff: Dict[str, Any]) -> Dict[str, Any]:
+    if not rendered_snapshot:
+        return {"score": 0, "failures": 0, "blocked": 0, "content_loaded_by_js_ratio": None}
+    render_debug = rendered_snapshot.get("render_debug") or {}
+    failed = len(render_debug.get("failed_requests") or [])
+    blocked = len([x for x in (render_debug.get("failed_requests") or []) if str(x.get("resource_type") or "") in {"script", "stylesheet"}])
+    text_coverage = diff.get("textCoverage")
+    try:
+        ratio = 1 - float(text_coverage or 0)
+    except Exception:
+        ratio = None
+    score = 0
+    if ratio is not None:
+        score += min(70, ratio * 100)
+    score += min(30, (failed + blocked) * 2)
+    return {
+        "score": round(min(100, score), 2),
+        "failures": failed,
+        "blocked": blocked,
+        "content_loaded_by_js_ratio": ratio,
+    }
+
+
+def _cloaking_analysis(browser_snap: Dict[str, Any], gpt_snap: Dict[str, Any], gbot_snap: Dict[str, Any]) -> Dict[str, Any]:
+    def text(s):
+        return ((s or {}).get("content") or {}).get("main_text_preview") or ""
+    sim_bg = _text_cosine(text(browser_snap), text(gpt_snap))
+    sim_bb = _text_cosine(text(browser_snap), text(gbot_snap))
+    len_b = len(text(browser_snap))
+    len_gpt = len(text(gpt_snap))
+    len_gb = len(text(gbot_snap))
+    len_delta = max(abs(len_b - len_gpt) / max(1, len_b), abs(len_b - len_gb) / max(1, len_b))
+    missing = []
+    bh = (browser_snap.get("headings") or {})
+    gh = (gpt_snap.get("headings") or {})
+    ggh = (gbot_snap.get("headings") or {})
+    if int(bh.get("h1") or 0) > int(gh.get("h1") or 0):
+        missing.append("GPTBot missing H1/H2/H3 found in browser render")
+    if int(bh.get("h1") or 0) > int(ggh.get("h1") or 0):
+        missing.append("Googlebot missing H1/H2/H3 found in browser render")
+    br_links = set(((browser_snap.get("links") or {}).get("all_urls") or [])[:200])
+    gpt_links = set(((gpt_snap.get("links") or {}).get("all_urls") or [])[:200])
+    gg_links = set(((gbot_snap.get("links") or {}).get("all_urls") or [])[:200])
+    if len(br_links - gpt_links) > 10:
+        missing.append("GPTBot missing significant set of links")
+    if len(br_links - gg_links) > 10:
+        missing.append("Googlebot missing significant set of links")
+    risk = "low"
+    if sim_bg < 0.6 or sim_bb < 0.6 or len_delta > 0.4:
+        risk = "high"
+    elif sim_bg < 0.75 or sim_bb < 0.75:
+        risk = "medium"
+    return {
+        "risk": risk,
+        "similarity_scores": {
+            "browser_vs_gptbot": sim_bg,
+            "browser_vs_googlebot": sim_bb,
+        },
+        "length_delta": round(len_delta, 3),
+        "missing_sections": missing[:20],
     }

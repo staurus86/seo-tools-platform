@@ -82,6 +82,15 @@ class Settings(BaseSettings):
     LLM_CRAWLER_REQUIRE_HEALTHY_WORKER: bool = os.getenv("LLM_CRAWLER_REQUIRE_HEALTHY_WORKER", "true").lower() == "true"
     LLM_CRAWLER_STUCK_JOB_TIMEOUT_SEC: int = int(os.getenv("LLM_CRAWLER_STUCK_JOB_TIMEOUT_SEC", "300"))
     LLM_CRAWLER_INLINE_FALLBACK: bool = os.getenv("LLM_CRAWLER_INLINE_FALLBACK", "false").lower() == "true"
+    LLM_CRAWLER_JOB_TTL_SECONDS: int = int(os.getenv("LLM_CRAWLER_JOB_TTL_SECONDS", str(86400)))
+    LLM_CRAWLER_MAX_JOB_BYTES: int = int(os.getenv("LLM_CRAWLER_MAX_JOB_BYTES", str(1_500_000)))
+    LLM_CRAWLER_COMPRESS_RESULTS: bool = os.getenv("LLM_CRAWLER_COMPRESS_RESULTS", "true").lower() == "true"
+    LLM_CRAWLER_CLOAKING_ENABLED: bool = os.getenv("LLM_CRAWLER_CLOAKING_ENABLED", "false").lower() == "true"
+    LLM_CRAWLER_EEAT_ENABLED: bool = os.getenv("LLM_CRAWLER_EEAT_ENABLED", "false").lower() == "true"
+    LLM_CRAWLER_ENTITY_GRAPH_ENABLED: bool = os.getenv("LLM_CRAWLER_ENTITY_GRAPH_ENABLED", "false").lower() == "true"
+    LLM_CRAWLER_VECTOR_SCORE_ENABLED: bool = os.getenv("LLM_CRAWLER_VECTOR_SCORE_ENABLED", "false").lower() == "true"
+    MAX_JOBS_PER_MINUTE: int = int(os.getenv("MAX_JOBS_PER_MINUTE", "10"))
+    MAX_CONCURRENT_JOBS: int = int(os.getenv("MAX_CONCURRENT_JOBS", "2"))
     LLM_CRAWLER_LIMITS_ENABLED: bool = os.getenv("LLM_CRAWLER_LIMITS_ENABLED", "false").lower() == "true"
     LLM_SIMULATION_ENABLED: bool = os.getenv("LLM_SIMULATION_ENABLED", "false").lower() == "true"
     LLM_REPORT_HTML_ENABLED: bool = os.getenv("LLM_REPORT_HTML_ENABLED", "false").lower() == "true"

@@ -184,6 +184,12 @@ function initLlmCrawlerResult(jobId) {
         const nojs = result?.nojs || {};
         const signals = nojs.signals || {};
         const schema = nojs.schema || {};
+        const cloaking = result?.cloaking || {};
+        const jsDep = result?.js_dependency || {};
+        const eeat = result?.eeat_score || {};
+        const citationProb = result?.citation_probability;
+        const ingestion = result?.llm_ingestion || {};
+        const vectorScore = result?.vector_quality_score;
         return `
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="bg-slate-50 border border-slate-200 rounded-lg p-4">
@@ -205,6 +211,31 @@ function initLlmCrawlerResult(jobId) {
                         <div>Author: <span class="font-semibold">${signals.author_present ? 'yes' : 'no'}</span></div>
                         <div>Date: <span class="font-semibold">${signals.date_present ? 'yes' : 'no'}</span></div>
                         <div>Schema types: <span class="font-semibold">${_safeNum(schema.count, 0)}</span></div>
+                        <div>Schema coverage: <span class="font-semibold">${_safeNum(schema.coverage_score, 0)}%</span></div>
+                        <div>EEAT score: <span class="font-semibold">${_safeNum(eeat.score, '-')}</span></div>
+                        <div>Citation probability: <span class="font-semibold">${_safeNum(citationProb, '-')}%</span></div>
+                        <div>Vector clarity: <span class="font-semibold">${_safeNum(vectorScore, '-')}</span></div>
+                        <div>JS dependency: <span class="font-semibold">${_safeNum(jsDep.score, '-')}</span></div>
+                        <div>Cloaking risk: <span class="font-semibold">${_escapeHtml(cloaking.risk || 'n/a')}</span></div>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-white border rounded-lg p-3">
+                    <h4 class="font-semibold text-slate-800 mb-2">LLM ingestion</h4>
+                    <div class="text-sm text-slate-700 space-y-1">
+                        <div>Chunks: <span class="font-semibold">${_safeNum(ingestion.chunks_count, '-')}</span></div>
+                        <div>Avg quality: <span class="font-semibold">${_safeNum(ingestion.avg_chunk_quality, '-')}</span></div>
+                        <div>Lost content: <span class="font-semibold">${_safeNum(ingestion.lost_content_percent, '-')}%</span></div>
+                        <div>Risk: <span class="font-semibold">${_escapeHtml(ingestion.ingestion_risk || '-')}</span></div>
+                    </div>
+                </div>
+                <div class="bg-white border rounded-lg p-3">
+                    <h4 class="font-semibold text-slate-800 mb-2">Cloaking</h4>
+                    <div class="text-sm text-slate-700 space-y-1">
+                        <div>Risk: <span class="font-semibold">${_escapeHtml(cloaking.risk || 'n/a')}</span></div>
+                        <div>Browser vs GPTBot: <span class="font-semibold">${_safeNum((cloaking.similarity_scores||{}).browser_vs_gptbot, '-')}</span></div>
+                        <div>Browser vs Googlebot: <span class="font-semibold">${_safeNum((cloaking.similarity_scores||{}).browser_vs_googlebot, '-')}</span></div>
                     </div>
                 </div>
             </div>
@@ -265,6 +296,7 @@ function initLlmCrawlerResult(jobId) {
         const social = snapshot.social || {};
         const renderDebug = snapshot.render_debug || {};
         const resources = snapshot.resources || {};
+        const entityGraph = snapshot.entity_graph || {};
         return `
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                 <div class="bg-white border rounded-lg p-3"><span class="text-slate-500">Final URL:</span><div class="font-medium break-all">${_escapeHtml(snapshot.final_url || '-')}</div></div>
@@ -288,6 +320,16 @@ function initLlmCrawlerResult(jobId) {
                 <h4 class="font-semibold text-slate-800 mb-2">Top links (20)</h4>
                 ${(links.top || []).length ? `<div class="overflow-auto border rounded-lg"><table class="min-w-full text-sm"><thead class="bg-slate-50"><tr><th class="text-left p-2">Anchor</th><th class="text-left p-2">URL</th></tr></thead><tbody>${(links.top || []).map((row) => `<tr class="border-t"><td class="p-2">${_escapeHtml(row.anchor || '-')}</td><td class="p-2 break-all">${_escapeHtml(row.url || '-')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="text-sm text-slate-500">No links found.</p>'}
             </div>
+            ${(entityGraph.organizations || entityGraph.persons || entityGraph.products) ? `
+            <div class="mt-4">
+                <h4 class="font-semibold text-slate-800 mb-2">Entity graph</h4>
+                <div class="text-xs bg-slate-50 border rounded-lg p-3 max-h-48 overflow-auto">
+                    <div><strong>Organizations:</strong> ${(entityGraph.organizations || []).slice(0,10).join(', ') || '—'}</div>
+                    <div><strong>Persons:</strong> ${(entityGraph.persons || []).slice(0,10).join(', ') || '—'}</div>
+                    <div><strong>Products:</strong> ${(entityGraph.products || []).slice(0,10).join(', ') || '—'}</div>
+                    <div><strong>Locations:</strong> ${(entityGraph.locations || []).slice(0,10).join(', ') || '—'}</div>
+                </div>
+            </div>` : ''}
             ${(resources && (resources.cookie_wall || resources.paywall || resources.login_wall || resources.csp_strict || resources.mixed_content_count > 0)) ? `
             <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                 <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">

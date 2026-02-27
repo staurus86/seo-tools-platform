@@ -14,6 +14,8 @@ from .queue import (
     queue_depth,
     set_worker_heartbeat,
     update_job_record,
+    cleanup_expired_jobs,
+    dec_subject,
 )
 from .service import run_llm_crawler_simulation
 
@@ -33,6 +35,7 @@ def _process_job(job_id: str) -> None:
     options = dict(record.get("options") or {})
     started = time.perf_counter()
     _log({"event": "job_started", "jobId": job_id, "requestId": request_id, "url": requested_url})
+    subject = str(record.get("subject") or "")
     try:
         update_job_record(job_id, status="running", progress=5, error=None)
 
@@ -47,6 +50,8 @@ def _process_job(job_id: str) -> None:
         )
         duration = int((time.perf_counter() - started) * 1000)
         update_job_record(job_id, status="done", progress=100, result=result, error=None, duration_ms=duration)
+        if subject:
+            dec_subject(subject)
         _log(
             {
                 "event": "job_done",
@@ -65,6 +70,8 @@ def _process_job(job_id: str) -> None:
             error=str(exc),
             duration_ms=duration,
         )
+        if subject:
+            dec_subject(subject)
         _log(
             {
                 "event": "job_error",
@@ -78,9 +85,14 @@ def _process_job(job_id: str) -> None:
 
 def _worker_loop(worker_id: int) -> None:
     _log({"event": "worker_thread_started", "worker": worker_id})
+    last_cleanup = time.time()
     while True:
         message = pop_job(timeout_sec=5)
         set_worker_heartbeat({"queue_depth": queue_depth(), "worker": worker_id})
+        now = time.time()
+        if now - last_cleanup > 60:
+            cleanup_expired_jobs()
+            last_cleanup = now
         if not message:
             continue
         job_id = str(message.get("jobId") or "").strip()
@@ -107,4 +119,3 @@ def run_worker() -> None:
 
 if __name__ == "__main__":
     run_worker()
-

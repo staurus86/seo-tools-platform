@@ -6,6 +6,8 @@ import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
+import gzip
+import base64
 
 try:
     import redis  # type: ignore
@@ -59,7 +61,76 @@ def job_key(job_id: str) -> str:
 
 
 def _job_ttl() -> int:
-    return max(3600, int(getattr(settings, "LLM_CRAWLER_JOB_TTL_SEC", 72 * 3600) or (72 * 3600)))
+    return max(3600, int(getattr(settings, "LLM_CRAWLER_JOB_TTL_SECONDS", getattr(settings, "LLM_CRAWLER_JOB_TTL_SEC", 72 * 3600)) or (72 * 3600)))
+
+
+def _max_job_bytes() -> int:
+    return int(getattr(settings, "LLM_CRAWLER_MAX_JOB_BYTES", 1_500_000) or 1_500_000)
+
+
+def _compress_enabled() -> bool:
+    return bool(getattr(settings, "LLM_CRAWLER_COMPRESS_RESULTS", True))
+
+
+def _maybe_compress_result(job: Dict[str, Any]) -> Dict[str, Any]:
+    if not _compress_enabled():
+        return job
+    result = job.get("result")
+    if not result:
+        return job
+    try:
+        payload = json.dumps(result).encode("utf-8")
+        if len(payload) < 50_000:
+            return job
+        gz = gzip.compress(payload, compresslevel=5)
+        job = dict(job)
+        job["result"] = {
+            "__compressed": True,
+            "encoding": "gzip+base64",
+            "data": base64.b64encode(gz).decode("ascii"),
+        }
+    except Exception:
+        return job
+    return job
+
+
+def _maybe_decompress_result(job: Dict[str, Any]) -> Dict[str, Any]:
+    result = job.get("result")
+    if not isinstance(result, dict):
+        return job
+    if not result.get("__compressed"):
+        return job
+    try:
+        data_b64 = result.get("data") or ""
+        raw = gzip.decompress(base64.b64decode(data_b64))
+        job = dict(job)
+        job["result"] = json.loads(raw.decode("utf-8"))
+    except Exception:
+        return job
+    return job
+
+
+def _truncate_heavy_fields(job: Dict[str, Any]) -> Dict[str, Any]:
+    # remove overly large text blobs to respect max size
+    result = job.get("result")
+    if not isinstance(result, dict):
+        return job
+    snapshots = []
+    for key in ("nojs", "rendered"):
+        snap = result.get(key)
+        if isinstance(snap, dict):
+            snapshots.append(snap)
+    for snap in snapshots:
+        content = snap.get("content") or {}
+        for field in ("readability_text", "trafilatura_text", "main_text_preview"):
+            if field in content and isinstance(content[field], str) and len(content[field]) > 200_000:
+                content[field] = content[field][:200_000]
+        if not bool((result.get("options") or {}).get("include_raw_html", False)):
+            snap.pop("raw_html", None)
+        if not bool((result.get("options") or {}).get("include_rendered_html", False)):
+            snap.pop("rendered_html", None)
+    job["result"] = result
+    return job
 
 
 def new_job_id() -> str:
@@ -73,6 +144,7 @@ def create_job_record(
     requested_url: str,
     options: Dict[str, Any],
     status_message: str = "Queued",
+    subject: str = "",
 ) -> Dict[str, Any]:
     return {
         "jobId": job_id,
@@ -82,6 +154,7 @@ def create_job_record(
         "status_message": status_message,
         "requested_url": requested_url,
         "options": options,
+        "subject": subject,
         "result": None,
         "error": None,
         "createdAt": _utc_now(),
@@ -93,10 +166,21 @@ def save_job_record(job: Dict[str, Any]) -> None:
     client = get_redis_client()
     payload = dict(job)
     payload["updatedAt"] = _utc_now()
+    payload = _truncate_heavy_fields(payload)
+    payload = _maybe_compress_result(payload)
+    try:
+        raw = json.dumps(payload)
+        if len(raw.encode("utf-8")) > _max_job_bytes():
+            # last resort: drop result completely
+            payload = dict(payload)
+            payload["result"] = None
+            raw = json.dumps(payload)
+    except Exception:
+        raw = json.dumps(payload)
     if not client:
         _mem_jobs[str(job.get("jobId") or "")] = payload
         return
-    client.setex(job_key(str(job.get("jobId") or "")), _job_ttl(), json.dumps(payload))
+    client.setex(job_key(str(job.get("jobId") or "")), _job_ttl(), raw)
 
 
 def get_job_record(job_id: str) -> Optional[Dict[str, Any]]:
@@ -107,7 +191,9 @@ def get_job_record(job_id: str) -> Optional[Dict[str, Any]]:
         raw = client.get(job_key(job_id))
         if not raw:
             return _mem_jobs.get(job_id)
-        return json.loads(raw)
+        job = json.loads(raw)
+        job = _maybe_decompress_result(job)
+        return job
     except Exception:
         return _mem_jobs.get(job_id)
 
@@ -153,6 +239,25 @@ def pop_job(timeout_sec: int = 5) -> Optional[Dict[str, Any]]:
         return None
 
 
+def cleanup_expired_jobs() -> None:
+    client = get_redis_client()
+    if not client:
+        return
+    try:
+        cursor = 0
+        pattern = job_key("*")
+        while True:
+            cursor, keys = client.scan(cursor=cursor, match=pattern, count=200)
+            for k in keys:
+                ttl = client.ttl(k)
+                if ttl is not None and ttl <= 0:
+                    client.delete(k)
+            if cursor == 0:
+                break
+    except Exception:
+        return
+
+
 def queue_depth() -> int:
     client = get_redis_client()
     if not client:
@@ -161,6 +266,31 @@ def queue_depth() -> int:
         return int(client.llen(queue_key()) or 0)
     except Exception:
         return len(_mem_queue)
+
+
+def inc_subject(subject: str) -> int:
+    client = get_redis_client()
+    if not client:
+        return 0
+    key = f"llmCrawler:concurrent:{subject}"
+    try:
+        val = client.incr(key)
+        client.expire(key, 600)
+        return int(val)
+    except Exception:
+        return 0
+
+
+def dec_subject(subject: str) -> None:
+    client = get_redis_client()
+    if not client:
+        return
+    key = f"llmCrawler:concurrent:{subject}"
+    try:
+        client.decr(key)
+        client.expire(key, 600)
+    except Exception:
+        return
 
 
 def check_rate_limit(subject: str, bucket: str, limit: int, window_sec: int) -> Dict[str, Any]:
