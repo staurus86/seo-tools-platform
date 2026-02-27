@@ -108,11 +108,11 @@ def compute_score(
         top_issues.append("No list/table structures detected")
     structure = _clamp(structure, 0.0, 20.0)
 
-    # Signals (0-15)
+    # Signals (0-30)
     signals_score = 0.0
     schema = (source.get("schema") or {})
     schema_types = schema.get("jsonld_types") or []
-    schema_bonus = min(8.0, float(len(schema_types) * 2))
+    schema_bonus = min(10.0, float(len(schema_types) * 2))
     signals_score += schema_bonus
     signals = (source.get("signals") or {})
     if bool(signals.get("author_present")):
@@ -121,7 +121,36 @@ def compute_score(
         signals_score += 3
     if not bool(signals.get("author_present")) and not bool(signals.get("date_present")):
         top_issues.append("No author/date trust signals detected")
-    signals_score = _clamp(signals_score, 0.0, 15.0)
+    # Core Web Vitals signals (from policies["cwv"] if present)
+    cwv = (policies.get("cwv") or {}).get("summary") or {}
+    lcp = cwv.get("lcp_ms")
+    cls = cwv.get("cls")
+    inp = cwv.get("inp_ms")
+    if lcp is not None:
+        lcp_val = float(lcp)
+        if lcp_val <= 2500:
+            signals_score += 5
+        elif lcp_val <= 4000:
+            signals_score += 2
+        else:
+            top_issues.append(f"High LCP ({int(lcp_val)} ms)")
+    if cls is not None:
+        cls_val = float(cls)
+        if cls_val <= 0.1:
+            signals_score += 3
+        elif cls_val <= 0.25:
+            signals_score += 1
+        else:
+            top_issues.append(f"High CLS ({cls_val:.2f})")
+    if inp is not None:
+        inp_val = float(inp)
+        if inp_val <= 200:
+            signals_score += 2
+        elif inp_val <= 500:
+            signals_score += 1
+        else:
+            top_issues.append(f"High INP ({int(inp_val)} ms)")
+    signals_score = _clamp(signals_score, 0.0, 30.0)
 
     total = int(round(_clamp(access + content + structure + signals_score, 0.0, 100.0)))
     top_issues = list(dict.fromkeys(top_issues))[:10]
@@ -136,4 +165,3 @@ def compute_score(
         },
         "top_issues": top_issues,
     }
-
