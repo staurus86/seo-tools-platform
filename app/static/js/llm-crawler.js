@@ -395,6 +395,7 @@ function initLlmCrawlerResult(jobId) {
                 <button class="px-3 py-2 rounded-lg text-sm bg-slate-100 text-slate-700" data-llm-tab="rendered">Rendered snapshot</button>
                 <button class="px-3 py-2 rounded-lg text-sm bg-slate-100 text-slate-700" data-llm-tab="diff">Diff</button>
                 <button class="px-3 py-2 rounded-lg text-sm bg-slate-100 text-slate-700" data-llm-tab="policies">Policies</button>
+                ${result?.llm ? '<button class="px-3 py-2 rounded-lg text-sm bg-slate-100 text-slate-700" data-llm-tab="llm">LLM Simulation</button>' : ''}
                 <button class="px-3 py-2 rounded-lg text-sm bg-slate-100 text-slate-700" data-llm-tab="export">Export JSON</button>
             </div>
             <div data-llm-panel="summary">${renderSummary(result)}</div>
@@ -402,6 +403,14 @@ function initLlmCrawlerResult(jobId) {
             <div class="hidden" data-llm-panel="rendered">${renderSnapshot(result?.rendered, 'Rendered snapshot')}</div>
             <div class="hidden" data-llm-panel="diff">${renderDiff(result)}</div>
             <div class="hidden" data-llm-panel="policies">${renderPolicies(result)}</div>
+            ${result?.llm ? `<div class="hidden" data-llm-panel="llm">
+                <div class="bg-white border rounded-lg p-4 text-sm space-y-2">
+                    <div><span class="text-slate-500">Summary:</span> <div class="font-medium text-slate-800">${_escapeHtml(result.llm.summary || '-')}</div></div>
+                    <div><span class="text-slate-500">Key facts:</span> ${(result.llm.key_facts || []).length ? `<ul class="list-disc pl-4">${result.llm.key_facts.map((x)=>`<li>${_escapeHtml(x)}</li>`).join('')}</ul>` : '<span class="text-slate-500">None</span>'}</div>
+                    <div><span class="text-slate-500">Entities:</span> ${(result.llm.entities || []).join(', ') || '—'}</div>
+                    <div><span class="text-slate-500">Scores:</span> citation ${_safeNum((result.llm.scores||{}).citation_likelihood,'-')} / reco ${_safeNum((result.llm.scores||{}).recommendation_likelihood,'-')} / hallucination ${_safeNum((result.llm.scores||{}).hallucination_risk,'-')}</div>
+                </div>
+            </div>` : ''}
             <div class="hidden" data-llm-panel="export">
                 <p class="text-sm text-slate-600 mb-3">Скачать полный JSON payload результата.</p>
                 <button id="llm-inline-download" class="bg-slate-700 text-white px-4 py-2 rounded-lg hover:bg-slate-800">Download JSON</button>

@@ -112,7 +112,12 @@ def compute_score(
     signals_score = 0.0
     schema = (source.get("schema") or {})
     schema_types = schema.get("jsonld_types") or []
+    coverage_score = float(schema.get("coverage_score") or 0.0)
     schema_bonus = min(10.0, float(len(schema_types) * 2))
+    if coverage_score >= 75:
+        schema_bonus += 5
+    elif coverage_score < 25:
+        top_issues.append("Schema coverage below 25% of required types")
     signals_score += schema_bonus
     signals = (source.get("signals") or {})
     if bool(signals.get("author_present")):
@@ -131,6 +136,11 @@ def compute_score(
             signals_score += 5
         elif ratio < 0.05:
             top_issues.append("Low text-to-HTML ratio (<5%) may hinder LLM extraction")
+    main_content_ratio = float((source.get("content") or {}).get("main_content_ratio") or 0.0)
+    if main_content_ratio >= 0.5:
+        signals_score += 3
+    elif main_content_ratio < 0.25:
+        top_issues.append("Main content ratio <25% (too much boilerplate)")
     readability = float((source.get("content") or {}).get("readability_score") or 0)
     if readability >= 55:
         signals_score += 4

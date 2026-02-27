@@ -15,6 +15,10 @@ try:  # optional dependency
     from readability import Document  # type: ignore
 except Exception:  # pragma: no cover
     Document = None
+try:  # optional dependency
+    import extruct  # type: ignore
+except Exception:  # pragma: no cover
+    extruct = None
 
 
 def _safe_text(value: Any) -> str:
@@ -259,6 +263,25 @@ def build_snapshot(
     }
 
     main_text = _extract_main_text(soup)
+    full_text = _safe_text(" ".join(soup.stripped_strings))
+    main_content_ratio = len(main_text) / max(1, len(full_text))
+    boilerplate_ratio = max(0.0, 1.0 - main_content_ratio)
+
+    # Chunking (simple fixed-size by characters)
+    chunks: List[Dict[str, Any]] = []
+    chunk_src = main_text or readability_text or trafilatura_text
+    if chunk_src:
+        step = 1200
+        overlap = 100
+        start = 0
+        idx = 1
+        while start < len(chunk_src) and len(chunks) < 10:
+            end = min(len(chunk_src), start + step)
+            chunk_text = chunk_src[start:end]
+            chunks.append({"idx": idx, "text": chunk_text})
+            idx += 1
+            start = end - overlap
+
     words = re.findall(r"[A-Za-zА-Яа-я0-9]+", main_text)
     # Reader-mode variants
     readability_text = ""
@@ -275,6 +298,30 @@ def build_snapshot(
             trafilatura_text = ""
     links = _extract_links(soup, final_url, limit=20)
     schema_types = _extract_jsonld_types(soup)
+    microdata_types: List[str] = []
+    rdfa_types: List[str] = []
+    if extruct:
+        try:
+            data = extruct.extract(html, base_url=final_url, syntaxes=["microdata", "rdfa"], errors="log")
+            microdata_items = data.get("microdata") or []
+            rdfa_items = data.get("rdfa") or []
+            for item in microdata_items:
+                t = item.get("type") or item.get("@type")
+                if isinstance(t, list):
+                    microdata_types.extend([_safe_text(x) for x in t if _safe_text(x)])
+                elif isinstance(t, str):
+                    microdata_types.append(_safe_text(t))
+            for item in rdfa_items:
+                t = item.get("type") or item.get("@type")
+                if isinstance(t, list):
+                    rdfa_types.extend([_safe_text(x) for x in t if _safe_text(x)])
+                elif isinstance(t, str):
+                    rdfa_types.append(_safe_text(t))
+        except Exception:
+            pass
+    required_schema = {"Organization", "Person", "Article", "Product"}
+    coverage_found = len((set(schema_types) | set(microdata_types) | set(rdfa_types)) & required_schema)
+    coverage_score = round((coverage_found / max(1, len(required_schema))) * 100, 2)
     x_robots_tag = _safe_text((headers or {}).get("X-Robots-Tag") or (headers or {}).get("x-robots-tag"))
     signals = _extract_author_date_signals(soup)
     social = _extract_social_meta(soup)
@@ -305,6 +352,9 @@ def build_snapshot(
             "main_text_preview": main_text[:2000],
             "readability_text": readability_text,
             "trafilatura_text": trafilatura_text,
+            "main_content_ratio": round(main_content_ratio, 4),
+            "boilerplate_ratio": round(boilerplate_ratio, 4),
+            "chunks": chunks,
         },
         "headings": headings,
         "links": {
@@ -317,6 +367,9 @@ def build_snapshot(
         },
         "schema": {
             "jsonld_types": schema_types,
+            "microdata_types": microdata_types[:50],
+            "rdfa_types": rdfa_types[:50],
+            "coverage_score": coverage_score,
             "count": len(schema_types),
         },
         "social": social,

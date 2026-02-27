@@ -23,6 +23,7 @@ from .queue import (
 )
 from .schemas import LlmCrawlerJobStatusResponse, LlmCrawlerRunRequest
 from .service import run_llm_crawler_simulation
+from fastapi.responses import HTMLResponse
 
 
 router = APIRouter(prefix="/api/tools/llm-crawler", tags=["LLM Crawler Simulation"])
@@ -268,3 +269,34 @@ async def llm_worker_health(request: Request) -> Dict[str, Any]:
         "worker_heartbeat_age_sec": age_sec,
         "status": "healthy" if _worker_is_healthy() else "unknown",
     }
+
+
+@router.get("/jobs/{job_id}/report", response_class=HTMLResponse)
+async def llm_crawler_report(job_id: str, request: Request) -> HTMLResponse:
+    _ensure_feature_enabled(request)
+    if not bool(getattr(settings, "LLM_REPORT_HTML_ENABLED", False)):
+        raise HTTPException(status_code=404, detail="HTML report disabled")
+    job = get_job_record(job_id)
+    if not job or not job.get("result"):
+        raise HTTPException(status_code=404, detail="Job not found")
+    result = job.get("result") or {}
+    title = f"LLM Crawler Report — {result.get('final_url') or result.get('requested_url') or job_id}"
+    score = (result.get("score") or {}).get("total", "-")
+    summary = (result.get("llm") or {}).get("summary") or ""
+    recs = result.get("recommendations") or []
+    body = f"""
+    <html><head><meta charset="utf-8"><title>{title}</title>
+    <style>body{{font-family:Arial,sans-serif;max-width:960px;margin:32px auto;padding:0 12px;}}h1{{margin-bottom:4px;}}.card{{border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin:12px 0;}}</style>
+    </head><body>
+    <h1>{title}</h1>
+    <p>Score: <strong>{score}</strong></p>
+    <div class="card"><h3>Summary</h3><p>{summary or '—'}</p></div>
+    <div class="card"><h3>Recommendations</h3><ul>
+    {''.join([f"<li><strong>{r.get('priority','')}</strong> {r.get('area','')}: {r.get('title','')}</li>" for r in recs]) or '<li>None</li>'}
+    </ul></div>
+    <div class="card"><h3>What bots miss</h3><ul>
+    {''.join([f"<li>{x}</li>" for x in (result.get('diff') or {}).get('missing', [])]) or '<li>None</li>'}
+    </ul></div>
+    </body></html>
+    """
+    return HTMLResponse(content=body)

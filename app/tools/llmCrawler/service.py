@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlparse, urlunparse
 
 import requests
+import re
 
 from app.config import settings
 from app.tools.http_text import decode_response_text
@@ -517,6 +518,9 @@ def run_llm_crawler_simulation(
         policies=policies,
     )
     recommendations = _build_recommendations(nojs_snapshot, rendered_snapshot, policies, score)
+    llm_sim = None
+    if bool(getattr(settings, "LLM_SIMULATION_ENABLED", False)):
+        llm_sim = _run_llm_simulation(nojs_snapshot)
     timings["analysis_ms"] = int((time.perf_counter() - t3) * 1000)
     timings["total_ms"] = int((time.perf_counter() - started_at) * 1000)
 
@@ -538,6 +542,7 @@ def run_llm_crawler_simulation(
         "score": score,
         "bot_matrix": bot_matrix,
         "recommendations": recommendations,
+        "llm": llm_sim,
         "engine": "llm_crawler_mvp_v1",
     }
 
@@ -563,6 +568,8 @@ def _build_recommendations(nojs: Dict[str, Any], rendered: Optional[Dict[str, An
     schema = (nojs.get("schema") or {})
     if not schema.get("jsonld_types"):
         recs.append({"priority": "P1", "area": "schema", "title": "Добавьте JSON-LD (Organization/Article/Product) для доверия и извлечения"})
+    if float(schema.get("coverage_score") or 0) < 50:
+        recs.append({"priority": "P1", "area": "schema", "title": "Увеличьте покрытие schema.org (Organization/Person/Article/Product)"})
     signals = (nojs.get("signals") or {})
     if not signals.get("author_present") or not signals.get("date_present"):
         recs.append({"priority": "P1", "area": "trust", "title": "Укажите автора/дату публикации — повышает понятность и доверие"})
@@ -577,3 +584,34 @@ def _build_recommendations(nojs: Dict[str, Any], rendered: Optional[Dict[str, An
     if int(content.get("main_text_length") or 0) < 500:
         recs.append({"priority": "P2", "area": "content", "title": "Увеличьте основной текст/контент — сейчас он слишком короткий для извлечения"})
     return recs[:10]
+
+
+def _run_llm_simulation(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    content = snapshot.get("content") or {}
+    text = content.get("main_text_preview") or content.get("readability_text") or ""
+    text = str(text or "")
+    if not text:
+        return {"enabled": False, "summary": "", "key_facts": [], "entities": [], "scores": {}}
+    sentences = [s.strip() for s in re.split(r"[.!?]+", text) if s.strip()]
+    summary = " ".join(sentences[:2])[:400]
+    key_facts = sentences[:5]
+    words = re.findall(r"\b[A-ZА-Я][A-Za-zА-Яа-я0-9]+\b", text)
+    entities = list(dict.fromkeys(words))[:10]
+    citation_spans = []
+    for fact in key_facts[:3]:
+        start = text.find(fact)
+        if start != -1:
+            citation_spans.append({"text": fact[:120], "start": start, "end": start + len(fact)})
+    scores = {
+        "citation_likelihood": 70 if citation_spans else 40,
+        "recommendation_likelihood": 60 if len(text) > 800 else 30,
+        "hallucination_risk": 20 if citation_spans else 40,
+    }
+    return {
+        "enabled": True,
+        "summary": summary,
+        "key_facts": key_facts,
+        "entities": entities,
+        "citation_spans": citation_spans,
+        "scores": scores,
+    }

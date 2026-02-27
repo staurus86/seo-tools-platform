@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     LLM_CRAWLER_REQUIRE_HEALTHY_WORKER: bool = os.getenv("LLM_CRAWLER_REQUIRE_HEALTHY_WORKER", "true").lower() == "true"
     LLM_CRAWLER_STUCK_JOB_TIMEOUT_SEC: int = int(os.getenv("LLM_CRAWLER_STUCK_JOB_TIMEOUT_SEC", "300"))
     LLM_CRAWLER_INLINE_FALLBACK: bool = os.getenv("LLM_CRAWLER_INLINE_FALLBACK", "false").lower() == "true"
+    LLM_CRAWLER_LIMITS_ENABLED: bool = os.getenv("LLM_CRAWLER_LIMITS_ENABLED", "false").lower() == "true"
+    LLM_SIMULATION_ENABLED: bool = os.getenv("LLM_SIMULATION_ENABLED", "false").lower() == "true"
+    LLM_REPORT_HTML_ENABLED: bool = os.getenv("LLM_REPORT_HTML_ENABLED", "false").lower() == "true"
 
     # Bot check v2
     BOT_CHECK_ENGINE: str = os.getenv("BOT_CHECK_ENGINE", "legacy")
