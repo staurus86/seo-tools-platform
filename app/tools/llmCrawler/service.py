@@ -183,6 +183,25 @@ def _rendered_fetch(
         try:
             context = browser.new_context(user_agent=UA_RENDER)
             page = context.new_page()
+            console_errors: list[str] = []
+            failed_requests: list[dict[str, str | int | None]] = []
+            try:
+                page.on(
+                    "console",
+                    lambda msg: console_errors.append(f"{msg.type}: {msg.text}") if msg.type in {"error", "warning"} else None,
+                )
+                page.on(
+                    "requestfailed",
+                    lambda req: failed_requests.append(
+                        {
+                            "url": req.url[:500],
+                            "resource_type": req.resource_type,
+                            "failure_text": getattr(req, "failure", lambda: {})().get("errorText") if hasattr(req, "failure") else None,
+                        }
+                    ),
+                )
+            except Exception:
+                pass
             response = page.goto(url, wait_until="domcontentloaded", timeout=timeout)
             try:
                 page.wait_for_load_state("networkidle", timeout=min(timeout, 12000))
@@ -226,6 +245,8 @@ def _rendered_fetch(
                 "timing_ms": int((time.perf_counter() - started_at) * 1000),
                 "total_timing_ms": int((time.perf_counter() - started_at) * 1000),
                 "redirect_chain": chain,
+                "console_errors": console_errors[:50],
+                "failed_requests": failed_requests[:50],
             }
         finally:
             try:
@@ -473,6 +494,11 @@ def run_llm_crawler_simulation(
                 size_bytes=int(rendered_http.get("size_bytes") or 0),
                 truncated=bool(rendered_http.get("truncated")),
             )
+            render_debug = {
+                "console_errors": rendered_http.get("console_errors") or [],
+                "failed_requests": rendered_http.get("failed_requests") or [],
+            }
+            rendered_snapshot["render_debug"] = render_debug
         except Exception as exc:
             render_error = f"Rendered fetch failed: {exc}"
             notify(70, render_error)

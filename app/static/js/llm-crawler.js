@@ -263,6 +263,7 @@ function initLlmCrawlerResult(jobId) {
         const links = snapshot.links || {};
         const schema = snapshot.schema || {};
         const social = snapshot.social || {};
+        const renderDebug = snapshot.render_debug || {};
         return `
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                 <div class="bg-white border rounded-lg p-3"><span class="text-slate-500">Final URL:</span><div class="font-medium break-all">${_escapeHtml(snapshot.final_url || '-')}</div></div>
@@ -286,6 +287,16 @@ function initLlmCrawlerResult(jobId) {
                 <h4 class="font-semibold text-slate-800 mb-2">Top links (20)</h4>
                 ${(links.top || []).length ? `<div class="overflow-auto border rounded-lg"><table class="min-w-full text-sm"><thead class="bg-slate-50"><tr><th class="text-left p-2">Anchor</th><th class="text-left p-2">URL</th></tr></thead><tbody>${(links.top || []).map((row) => `<tr class="border-t"><td class="p-2">${_escapeHtml(row.anchor || '-')}</td><td class="p-2 break-all">${_escapeHtml(row.url || '-')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="text-sm text-slate-500">No links found.</p>'}
             </div>
+            ${renderDebug.console_errors && renderDebug.console_errors.length ? `
+            <div class="mt-4">
+                <h4 class="font-semibold text-slate-800 mb-2">Console errors/warnings</h4>
+                <div class="text-xs bg-slate-50 border rounded-lg p-3 max-h-48 overflow-auto">${renderDebug.console_errors.map((x) => `<div class="py-0.5 break-words">${_escapeHtml(x)}</div>`).join('')}</div>
+            </div>` : ''}
+            ${renderDebug.failed_requests && renderDebug.failed_requests.length ? `
+            <div class="mt-4">
+                <h4 class="font-semibold text-slate-800 mb-2">Failed requests</h4>
+                <div class="text-xs bg-slate-50 border rounded-lg p-3 max-h-48 overflow-auto">${renderDebug.failed_requests.map((x) => `<div class="py-0.5 break-words">[${_escapeHtml(String(x.resource_type || '-'))}] ${_escapeHtml(String(x.url || '-'))} ${_escapeHtml(String(x.failure_text || ''))}</div>`).join('')}</div>
+            </div>` : ''}
         `;
     }
 
