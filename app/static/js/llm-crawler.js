@@ -297,6 +297,7 @@ function initLlmCrawlerResult(jobId) {
         const renderDebug = snapshot.render_debug || {};
         const resources = snapshot.resources || {};
         const entityGraph = snapshot.entity_graph || {};
+        const jsDep = snapshot.js_dependency || {};
         return `
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                 <div class="bg-white border rounded-lg p-3"><span class="text-slate-500">Final URL:</span><div class="font-medium break-all">${_escapeHtml(snapshot.final_url || '-')}</div></div>
@@ -320,6 +321,15 @@ function initLlmCrawlerResult(jobId) {
                 <h4 class="font-semibold text-slate-800 mb-2">Top links (20)</h4>
                 ${(links.top || []).length ? `<div class="overflow-auto border rounded-lg"><table class="min-w-full text-sm"><thead class="bg-slate-50"><tr><th class="text-left p-2">Anchor</th><th class="text-left p-2">URL</th></tr></thead><tbody>${(links.top || []).map((row) => `<tr class="border-t"><td class="p-2">${_escapeHtml(row.anchor || '-')}</td><td class="p-2 break-all">${_escapeHtml(row.url || '-')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="text-sm text-slate-500">No links found.</p>'}
             </div>
+            ${(jsDep.score || jsDep.failures || jsDep.blocked) ? `
+            <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                <div class="bg-white border rounded-lg p-3">
+                    <h4 class="font-semibold text-slate-800 mb-2">JS dependency</h4>
+                    <div>Score: <span class="font-semibold">${_safeNum(jsDep.score, '-')}</span></div>
+                    <div>Failed: <span class="font-semibold">${_safeNum(jsDep.failures, '-')}</span></div>
+                    <div>Blocked scripts/css: <span class="font-semibold">${_safeNum(jsDep.blocked, '-')}</span></div>
+                </div>
+            </div>` : ''}
             ${(entityGraph.organizations || entityGraph.persons || entityGraph.products) ? `
             <div class="mt-4">
                 <h4 class="font-semibold text-slate-800 mb-2">Entity graph</h4>
@@ -450,7 +460,7 @@ function initLlmCrawlerResult(jobId) {
                     <div><span class="text-slate-500">Summary:</span> <div class="font-medium text-slate-800">${_escapeHtml(result.llm.summary || '-')}</div></div>
                     <div><span class="text-slate-500">Key facts:</span> ${(result.llm.key_facts || []).length ? `<ul class="list-disc pl-4">${result.llm.key_facts.map((x)=>`<li>${_escapeHtml(x)}</li>`).join('')}</ul>` : '<span class="text-slate-500">None</span>'}</div>
                     <div><span class="text-slate-500">Entities:</span> ${(result.llm.entities || []).join(', ') || '—'}</div>
-                    <div><span class="text-slate-500">Scores:</span> citation ${_safeNum((result.llm.scores||{}).citation_likelihood,'-')} / reco ${_safeNum((result.llm.scores||{}).recommendation_likelihood,'-')} / hallucination ${_safeNum((result.llm.scores||{}).hallucination_risk,'-')}</div>
+                    <div><span class="text-slate-500">Scores:</span> citation ${_safeNum((result.llm.scores||{}).citation_likelihood,'-')} / reco ${_safeNum((result.llm.scores||{}).recommendation_likelihood,'-')} / hallucination ${_safeNum((result.llm.scores||{}).hallucination_risk,'-')} / answer quality ${_safeNum((result.llm.scores||{}).answer_quality_score,'-')}</div>
                 </div>
             </div>` : ''}
             <div class="hidden" data-llm-panel="export">

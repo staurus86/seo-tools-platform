@@ -122,8 +122,8 @@ async def run_llm_crawler(payload: LlmCrawlerRunRequest, request: Request) -> Di
     subject = request_subject(request)
     options = payload.options.model_dump()
     if limits_enabled:
-        tool_limit = max(1, int(getattr(settings, "LLM_CRAWLER_RATE_LIMIT_PER_MINUTE", 999) or 999))
-        tool_rate = check_rate_limit(subject, "tool-minute", tool_limit, 60)
+    tool_limit = max(1, int(getattr(settings, "LLM_CRAWLER_RATE_LIMIT_PER_MINUTE", 999) or 999))
+    tool_rate = check_rate_limit(subject, "tool-minute", tool_limit, 60)
         if not tool_rate.get("allowed", True):
             raise HTTPException(
                 status_code=429,
@@ -159,6 +159,16 @@ async def run_llm_crawler(payload: LlmCrawlerRunRequest, request: Request) -> Di
         targets = targets[:hard_cap]
 
     job_ids: list[str] = []
+
+    # Enforce per-subject rate limits when enabled
+    if limits_enabled:
+        per_minute_limit = max(1, int(getattr(settings, "MAX_JOBS_PER_MINUTE", 10) or 10))
+        per_minute_rate = check_rate_limit(subject, "subject-minute", per_minute_limit, 60)
+        if not per_minute_rate.get("allowed", True):
+            raise HTTPException(
+                status_code=429,
+                detail={"message": "Too many jobs per minute for this subject", "retry_after": per_minute_rate.get("reset_in")},
+            )
 
     for idx, target_url in enumerate(targets):
         # Inline fallback only for first when worker dead and allowed.
@@ -209,6 +219,12 @@ async def run_llm_crawler(payload: LlmCrawlerRunRequest, request: Request) -> Di
                     detail={"message": "LLM crawler failed inline", "error": str(exc)},
                 ) from exc
 
+        if not worker_ok:
+            # Worker unavailable; fail fast (no inline Playwright fallback)
+            raise HTTPException(
+                status_code=503,
+                detail="LLM worker unavailable; please retry when worker is healthy",
+            )
         _ensure_worker_available()
 
         job_id = new_job_id()
