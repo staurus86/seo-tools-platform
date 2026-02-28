@@ -41,6 +41,13 @@ function _qualityBadge(status) {
   return { cls: 'risk-mid', label: 'Unknown' };
 }
 
+function _evalBadge(status) {
+  const s = String(status || 'not_evaluated').toLowerCase();
+  if (s === 'evaluated' || s === 'executed' || s === 'ok') return { cls: 'risk-low', label: s };
+  if (s === 'partial' || s === 'warning' || s === 'warn') return { cls: 'risk-mid', label: s };
+  return { cls: 'risk-high', label: s || 'not_evaluated' };
+}
+
 function _meter(value) {
   const val = Math.max(0, Math.min(100, _num(value, 0)));
   const color = val >= 80 ? '#16a34a' : val >= 50 ? '#d97706' : '#dc2626';
@@ -814,6 +821,111 @@ function _renderQualityProfile(result) {
   `);
 }
 
+function _renderV3Metrics(result) {
+  const llmSim = result?.llm_simulation || {};
+  const contentSeg = result?.content_segmentation || {};
+  const jsDetailed = result?.js_dependency_detailed || {};
+  const ingestion = result?.ai_ingestion_score || {};
+  const breakdown = result?.score_breakdown || {};
+  const analysis = result?.analysis_quality || {};
+  const botSim = Array.isArray(result?.bot_simulation) ? result.bot_simulation : [];
+  const trust = result?.trust_detailed || {};
+  const readability = result?.llm_readability_score;
+
+  const llmBadge = _evalBadge(llmSim.status || result?.summary_status);
+  const analysisBadge = _evalBadge(analysis.status || 'not_evaluated');
+  const ingestionBadge = _evalBadge(ingestion.level || 'not_evaluated');
+  const segBadge = _evalBadge(Object.keys(contentSeg).length ? 'evaluated' : 'not_evaluated');
+  const jsBadge = _evalBadge(Object.keys(jsDetailed).length ? 'evaluated' : 'not_evaluated');
+  const trustBadge = _evalBadge(Object.keys(trust).length ? 'evaluated' : 'not_evaluated');
+
+  const botRows = botSim.slice(0, 8).map((b) => `
+    <tr>
+      <td>${_esc(b.bot_name || '-')}</td>
+      <td>${_pct(b.content_visibility, '-')}%</td>
+      <td>${_pct(b.entity_visibility, '-')}%</td>
+      <td>${_pct(b.citation_probability, '-')}%</td>
+    </tr>
+  `).join('');
+
+  _setHTML('v2-v3-metrics', `
+    <div class="section-title flex items-center gap-2"><i data-lucide="layers-2" class="w-4 h-4"></i>V3 Metrics & Explainability</div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div class="card p-3 bg-slate-50 border-slate-200">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold">LLM simulation</div>
+          <span class="risk-pill ${llmBadge.cls}">${_esc(llmBadge.label)}</span>
+        </div>
+        <div class="text-xs subtle mt-1">Reason: ${_esc(llmSim.reason || result?.summary_reason || 'unknown')}</div>
+        <div class="text-xs subtle mt-1">Mode: ${_esc(llmSim.mode || '-')} | Version: ${_esc(llmSim.version || '-')}</div>
+        <div class="text-xs mt-2">Summary: ${_esc(String(llmSim.summary || '').slice(0, 220) || '—')}</div>
+        <div class="grid grid-cols-2 gap-2 text-xs mt-2">
+          <div class="card p-2 bg-white border-slate-200"><div class="subtle">Citation</div><div class="font-semibold">${_pct(llmSim.citation_probability, '-')}%</div></div>
+          <div class="card p-2 bg-white border-slate-200"><div class="subtle">Hallucination risk</div><div class="font-semibold">${_pct(llmSim.hallucination_risk, '-')}%</div></div>
+        </div>
+      </div>
+
+      <div class="card p-3 bg-slate-50 border-slate-200">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold">Content segmentation + JS details</div>
+          <div class="flex items-center gap-1">
+            <span class="risk-pill ${segBadge.cls}">${_esc(segBadge.label)}</span>
+            <span class="risk-pill ${jsBadge.cls}">${_esc(jsDetailed.level || jsBadge.label)}</span>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2 text-xs mt-2">
+          <div class="card p-2 bg-white border-slate-200"><div class="subtle">Main blocks</div><div class="font-semibold">${_num((contentSeg.main_blocks || []).length, 0)}</div></div>
+          <div class="card p-2 bg-white border-slate-200"><div class="subtle">Segmentation confidence</div><div class="font-semibold">${_pct(_num(contentSeg.confidence_score, 0) * 100, 0)}%</div></div>
+          <div class="card p-2 bg-white border-slate-200"><div class="subtle">JS content ratio</div><div class="font-semibold">${_pct(_num(jsDetailed.js_content_ratio, 0) * 100, 0)}%</div></div>
+          <div class="card p-2 bg-white border-slate-200"><div class="subtle">JS loss (text)</div><div class="font-semibold">${_num(jsDetailed?.lost_elements?.text, 0)}</div></div>
+        </div>
+      </div>
+
+      <div class="card p-3 bg-slate-50 border-slate-200">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold">AI ingestion + score breakdown</div>
+          <span class="risk-pill ${ingestionBadge.cls}">${_esc(ingestion.level || ingestionBadge.label)}</span>
+        </div>
+        <div class="text-xs subtle mt-1">Ingestion score: <span class="font-semibold">${_pct(ingestion.score, '-')}%</span></div>
+        <div class="text-xs subtle mt-1">Reasons: ${_esc((ingestion.reasons || []).join(' | ') || '—')}</div>
+        <div class="grid grid-cols-2 gap-2 text-xs mt-2">
+          <div class="card p-2 bg-white border-slate-200"><div class="subtle">Content score</div><div class="font-semibold">${_pct(breakdown.content_score, '-')}%</div></div>
+          <div class="card p-2 bg-white border-slate-200"><div class="subtle">Entity score</div><div class="font-semibold">${_pct(breakdown.entity_score, '-')}%</div></div>
+          <div class="card p-2 bg-white border-slate-200"><div class="subtle">Citation score</div><div class="font-semibold">${_pct(breakdown.citation_score, '-')}%</div></div>
+          <div class="card p-2 bg-white border-slate-200"><div class="subtle">JS resilience</div><div class="font-semibold">${_pct(breakdown.js_resilience_score, '-')}%</div></div>
+        </div>
+      </div>
+
+      <div class="card p-3 bg-slate-50 border-slate-200">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold">Analysis quality + trust</div>
+          <div class="flex items-center gap-1">
+            <span class="risk-pill ${analysisBadge.cls}">${_esc(analysis.status || analysisBadge.label)}</span>
+            <span class="risk-pill ${trustBadge.cls}">${_esc(trustBadge.label)}</span>
+          </div>
+        </div>
+        <div class="text-xs subtle mt-1">Analysis score: <span class="font-semibold">${_pct(analysis.analysis_quality_score, '-')}%</span></div>
+        <div class="text-xs subtle mt-1">Warnings: ${_esc((analysis.warnings || []).join(' | ') || 'none')}</div>
+        <div class="grid grid-cols-2 gap-2 text-xs mt-2">
+          <div class="card p-2 bg-white border-slate-200"><div class="subtle">LLM readability</div><div class="font-semibold">${_pct(readability, '-')}%</div></div>
+          <div class="card p-2 bg-white border-slate-200"><div class="subtle">Trust score</div><div class="font-semibold">${_pct(trust.trust_score, '-')}%</div></div>
+          <div class="card p-2 bg-white border-slate-200"><div class="subtle">Author present</div><div class="font-semibold">${trust.author_present ? '✅' : '❌'}</div></div>
+          <div class="card p-2 bg-white border-slate-200"><div class="subtle">Publish date</div><div class="font-semibold">${trust.publish_date_present ? '✅' : '❌'}</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card p-3 bg-slate-50 border-slate-200 mt-3">
+      <div class="text-sm font-semibold mb-2">Bot simulation scenarios</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Bot</th><th>Content visibility</th><th>Entity visibility</th><th>Citation probability</th></tr></thead>
+          <tbody>${botRows || '<tr><td colspan="4">No bot simulation data</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+  `);
+}
+
 function _renderChunks(result) {
   const chunks = Array.isArray(result?.nojs?.content?.chunks) ? result.nojs.content.chunks : [];
   const dedupe = result?.chunk_dedupe || result?.nojs?.content?.chunk_dedupe || {};
@@ -991,6 +1103,7 @@ async function initV2(jobId) {
     _renderTech(result);
     _renderDetectors(result);
     _renderQualityProfile(result);
+    _renderV3Metrics(result);
     _renderChunks(result);
     _renderRecs(result);
     _wireExports(jobId, result);

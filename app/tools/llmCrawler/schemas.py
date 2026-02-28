@@ -121,6 +121,16 @@ class LlmCrawlerJobStatusResponse(BaseModel):
     ai_answer_preview: Dict[str, Any] | None = None
     llm_simulation: Dict[str, Any] | None = None
     topic_fallback_used: bool | None = None
+    topic_status: str | None = None
+    topic_reason: str | None = None
+    summary_status: str | None = None
+    summary_reason: str | None = None
+    citation_status: str | None = None
+    citation_reason: str | None = None
+    preview_status: str | None = None
+    preview_reason: str | None = None
+    content_clarity_status: str | None = None
+    content_clarity_reason: str | None = None
     preview_mode: str | None = None
     chunk_ranking_debug: List[Dict[str, Any]] | None = None
     metrics_bytes: Dict[str, Any] | None = None

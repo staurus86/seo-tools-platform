@@ -841,6 +841,9 @@ def _build_detector_layer(
 
     ingestion_status = str(llm_ingestion.get("status") or "not_evaluated")
     retrieval_status = str(retrieval.get("status") or "not_evaluated")
+    citation_status = str(citation_model.get("status") or "").strip()
+    if citation_status not in {"evaluated", "not_evaluated", "partial"}:
+        citation_status = "evaluated" if citation_model.get("citation_probability") is not None else "not_evaluated"
 
     detectors = {
         "content_extraction": _detector_entry(
@@ -919,12 +922,13 @@ def _build_detector_layer(
             ],
         ),
         "citation_model": _detector_entry(
-            status="evaluated" if citation_model.get("citation_probability") is not None else "not_evaluated",
+            status=citation_status,
             confidence=citation_model.get("confidence"),
             version=str(citation_model.get("version") or "v3"),
             evidence=[
                 f"citation_probability={citation_model.get('citation_probability')}",
                 f"components={len(citation_model.get('components') or {})}",
+                f"reason={citation_model.get('reason')}",
             ],
         ),
         "validation": _detector_entry(
@@ -1020,23 +1024,32 @@ def _quality_gates(
 def _content_clarity(snapshot: Dict[str, Any], entity_graph: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     content = snapshot.get("content") or {}
     headings = snapshot.get("headings") or {}
+    main_preview = str(content.get("main_text_preview") or "")
+    readability_text = str(content.get("readability_text") or "")
     text_len = int(content.get("main_text_length") or 0)
+    if text_len <= 0:
+        text_len = len((main_preview or readability_text).strip())
     if text_len < 120:
-        return _module_status(False, "insufficient_content", None, ["Extracted text is too short for reliable clarity scoring"])
+        return _module_status(
+            False,
+            "insufficient_content",
+            None,
+            [f"Extracted text is too short for reliable clarity scoring ({text_len} chars, minimum 120)"],
+        )
 
     h1_count = int(headings.get("h1") or 0)
     h2_count = int(headings.get("h2") or 0)
     heading_integrity = 100.0 if h1_count >= 1 else 45.0
     heading_integrity = min(100.0, heading_integrity + (min(6, h2_count) * 6))
 
-    main_preview = str(content.get("main_text_preview") or "")
-    words = _tokens(main_preview)
+    analysis_text = main_preview or readability_text
+    words = _tokens(analysis_text)
     unique_ratio = (len(set(words)) / max(1, len(words))) if words else 0.0
     entity_count = 0
     if entity_graph:
         entity_count = sum(len(v or []) for v in entity_graph.values() if isinstance(v, list))
     if entity_count == 0:
-        entity_count = len(re.findall(r"\b[A-ZА-Я][A-Za-zА-Яа-я0-9]{2,}\b", main_preview))
+        entity_count = len(re.findall(r"\b[A-ZА-Я][A-Za-zА-Яа-я0-9]{2,}\b", analysis_text))
     entity_density = min(1.0, entity_count / max(1, len(words)))
 
     readability = float(content.get("readability_score") or 0.0)
@@ -1080,16 +1093,32 @@ def _detect_topic(snapshot: Dict[str, Any], llm_sim: Dict[str, Any] | None) -> D
     )
 
     fallback_used = False
-    topic = llm_topic[:220]
-    if not topic:
+    status = "not_evaluated"
+    reason = "insufficient_signals"
+    topic = ""
+    if llm_topic:
+        topic = llm_topic[:220]
+        status = "evaluated"
+        reason = "llm_summary"
+    elif h1_text:
         fallback_used = True
-        if h1_text:
-            topic = h1_text[:220]
-        elif title:
-            topic = title[:220]
+        topic = h1_text[:220]
+        status = "evaluated"
+        reason = "h1_fallback"
+    elif title:
+        fallback_used = True
+        topic = title[:220]
+        status = "evaluated"
+        reason = "title_fallback"
+    else:
+        fallback_used = True
+        keywords = _top_keywords(text, limit=5)
+        if keywords:
+            topic = " / ".join(keywords)
+            status = "evaluated"
+            reason = "keyword_fallback"
         else:
-            keywords = _top_keywords(text, limit=5)
-            topic = " / ".join(keywords) if keywords else "Topic not detected"
+            topic = "Topic not detected"
 
     words = _tokens(text)
     key = _tokens(topic)
@@ -1105,9 +1134,13 @@ def _detect_topic(snapshot: Dict[str, Any], llm_sim: Dict[str, Any] | None) -> D
         confidence += 12
     confidence += min(13.0, density * 100)
     confidence = max(5.0, min(100.0, confidence))
+    if status == "not_evaluated":
+        confidence = 0.0
     return {
         "topic": topic,
         "confidence": round(confidence, 2),
+        "status": status,
+        "reason": reason,
         "topic_fallback_used": bool(fallback_used),
         "keyword_density": round(density, 4),
     }
@@ -1796,14 +1829,17 @@ def _citation_model_v2(
         entity_density = semantic_density * 0.4
     entity_score = min(1.0, max(0.0, entity_density * 80.0))
 
-    if str((ingestion or {}).get("status") or "").lower() == "evaluated":
+    ingestion_evaluated = str((ingestion or {}).get("status") or "").lower() == "evaluated"
+    retrieval_evaluated = str((retrieval or {}).get("status") or "").lower() == "evaluated"
+
+    if ingestion_evaluated:
         ingestion_score = min(1.0, max(0.0, _safe_float((ingestion or {}).get("ingestion_score"), _safe_float((ingestion or {}).get("score"), 0.0) / 100.0)))
         ingestion_confidence = min(1.0, max(0.0, _safe_float((ingestion or {}).get("ingestion_confidence"), 0.55)))
     else:
         ingestion_score = 0.25
         ingestion_confidence = 0.35
 
-    if str((retrieval or {}).get("status") or "").lower() == "evaluated":
+    if retrieval_evaluated:
         retrieval_score = min(1.0, max(0.0, _safe_float((retrieval or {}).get("avg_score"), 0.0)))
         retrieval_conf = min(1.0, max(0.0, _safe_float((retrieval or {}).get("retrieval_confidence"), 0.55)))
         retrieval_variance = _safe_float((retrieval or {}).get("retrieval_variance"), 0.0)
@@ -1853,7 +1889,23 @@ def _citation_model_v2(
     band_half = max(0.04, min(0.22, (1.0 - confidence) * 0.3 + (uncertainty * 0.18)))
     ci_low = max(0.0, calibrated_probability - band_half)
     ci_high = min(1.0, calibrated_probability + band_half)
+    status = "evaluated"
+    reason = "ok"
+    fallback_used = False
+    if support < 0.35:
+        reason = "low_signal_heuristic_fallback"
+        fallback_used = True
+    elif not ingestion_evaluated or not retrieval_evaluated:
+        reason = "partial_signal_fallback"
+        fallback_used = True
+    if support <= 0.0 and calibrated_probability <= 0.0:
+        status = "not_evaluated"
+        reason = "insufficient_signals"
+        fallback_used = True
     return {
+        "status": status,
+        "reason": reason,
+        "fallback_used": fallback_used,
         "citation_probability": round(float(calibrated_probability), 4),
         "confidence": round(float(max(0.0, min(1.0, confidence))), 4),
         "version": "v4" if calibration_v2 else "v3",
@@ -2968,6 +3020,16 @@ def run_llm_crawler_simulation(
         "discoverability": discoverability,
         "ai_understanding_score": ai_understanding.get("score"),
         "ai_understanding": ai_understanding,
+        "topic_status": ai_understanding.get("topic_status"),
+        "topic_reason": ai_understanding.get("topic_reason"),
+        "content_clarity_status": ai_understanding.get("content_clarity_status"),
+        "content_clarity_reason": ai_understanding.get("content_clarity_reason"),
+        "summary_status": llm_simulation.get("status"),
+        "summary_reason": llm_simulation.get("reason"),
+        "citation_status": citation_model.get("status"),
+        "citation_reason": citation_model.get("reason"),
+        "preview_status": answer_preview.get("status"),
+        "preview_reason": answer_preview.get("reason"),
         "topic_fallback_used": bool(ai_understanding.get("topic_fallback_used")),
         "trust_signal_score": trust_signal_score,
         "content_loss_percent": content_loss_percent,
@@ -3333,7 +3395,9 @@ def _run_llm_simulation(snapshot: Dict[str, Any], enabled: bool = True) -> Dict[
         text = " ".join(_main_segment_snippets(snapshot, limit=3)).strip()
     if not text:
         topic_info = _detect_topic(snapshot, None)
-        text = str(topic_info.get("topic") or "").strip()
+        topic_guess = str(topic_info.get("topic") or "").strip()
+        if topic_guess and topic_guess != "Topic not detected":
+            text = topic_guess
     if not text:
         meta = snapshot.get("meta") or {}
         headings = snapshot.get("headings") or {}
@@ -3780,11 +3844,19 @@ def _ai_understanding(snapshot: Dict[str, Any], llm_sim: Dict[str, Any] | None) 
     else:
         score += min(10, readability / 6)
     confidence = float(topic_info.get("confidence") or 0)
+    topic_status = str(topic_info.get("status") or ("evaluated" if topic else "not_evaluated"))
+    topic_reason = str(topic_info.get("reason") or ("ok" if topic_status == "evaluated" else "insufficient_signals"))
+    understanding_status = "evaluated" if (topic_status == "evaluated" or bool(entities) or str(clarity.get("status") or "") == "evaluated") else "not_evaluated"
+    understanding_reason = "ok" if understanding_status == "evaluated" else "insufficient_content"
     score = (score * 0.7) + (confidence * 0.3)
     return {
+        "status": understanding_status,
+        "reason": understanding_reason,
         "score": max(0, min(100, round(score, 2))),
         "topic": topic[:200],
         "topic_confidence": round(confidence, 2),
+        "topic_status": topic_status,
+        "topic_reason": topic_reason,
         "topic_fallback_used": bool(topic_info.get("topic_fallback_used")),
         "entities": entities[:10],
         "content_clarity": clarity.get("score"),
@@ -4118,8 +4190,38 @@ def _llm_simulation_payload(
     llm_scores = (llm_sim or {}).get("scores") or {}
     citation_probability = _safe_float(llm_scores.get("citation_likelihood"), _safe_float(citation_model.get("citation_probability"), 0.0) * 100.0)
     hallucination_risk = _safe_float(llm_scores.get("hallucination_risk"), max(0.0, 100.0 - _safe_float(answer_preview.get("confidence"), 0.0)))
+    llm_summary = str((llm_sim or {}).get("summary") or "").strip()
+    preview_answer = str(answer_preview.get("answer") or "").strip()
+    summary = llm_summary
+    summary_source = "llm_summary"
+    if not summary and preview_answer and preview_answer not in {"Not enough content", "Page not reliably summarizable"}:
+        summary = preview_answer
+        summary_source = "answer_preview_fallback"
+    if not summary:
+        topic_info = _detect_topic(snapshot, llm_sim)
+        topic_hint = str(topic_info.get("topic") or "").strip()
+        if topic_hint and topic_hint != "Topic not detected":
+            summary = f"Page topic: {topic_hint[:220]}"
+            summary_source = "topic_fallback"
+    if not summary:
+        summary = "Summary unavailable due to insufficient content."
+        summary_source = "insufficient_content"
+
+    llm_status = str((llm_sim or {}).get("status") or "").lower()
+    status = llm_status if llm_status in {"evaluated", "not_evaluated"} else ("evaluated" if summary_source != "insufficient_content" else "not_evaluated")
+    reason = str((llm_sim or {}).get("reason") or "").strip()
+    if status == "evaluated":
+        if summary_source in {"answer_preview_fallback", "topic_fallback"}:
+            reason = summary_source
+        elif not reason:
+            reason = "ok"
+    else:
+        reason = "insufficient_content"
     return {
-        "summary": str((llm_sim or {}).get("summary") or answer_preview.get("answer") or "").strip(),
+        "status": status,
+        "reason": reason,
+        "summary_source": summary_source,
+        "summary": summary,
         "answer": str(answer_preview.get("answer") or "").strip(),
         "citation_probability": round(max(0.0, min(100.0, citation_probability)), 2),
         "hallucination_risk": round(max(0.0, min(100.0, hallucination_risk)), 2),
@@ -4302,7 +4404,10 @@ def _analysis_quality_summary(
         entity_cov *= 100.0
     if entity_cov < 20.0:
         warnings.append("low_entity_coverage")
-    if not str(llm_simulation.get("summary") or "").strip():
+    summary_text = str(llm_simulation.get("summary") or "").strip()
+    summary_status = str(llm_simulation.get("status") or "").lower()
+    summary_reason = str(llm_simulation.get("reason") or "").lower()
+    if summary_status == "not_evaluated" or not summary_text or summary_reason == "insufficient_content":
         warnings.append("missing_summary")
     if not (content_segmentation.get("main_blocks") or []):
         warnings.append("invalid_segmentation_main_blocks_empty")
@@ -4330,9 +4435,13 @@ def _ai_answer_preview(
     seg = snapshot.get("segmentation") or {}
     seg_conf_payload = seg.get("main_content_confidence") or {}
     seg_conf = str(seg_conf_payload.get("level") or "").lower()
-    main_pct = float((seg.get("noise_breakdown") or {}).get("main_pct") or 0.0)
+    main_pct_raw = (seg.get("noise_breakdown") or {}).get("main_pct")
+    main_pct = _safe_float(main_pct_raw, -1.0)
     page_type = str((page_type_info or {}).get("page_type") or "")
-    low_reliability = seg_conf == "low" or main_pct < 20.0
+    low_reliability = seg_conf == "low" or (main_pct >= 0.0 and main_pct < 20.0)
+    preview_status = "evaluated"
+    preview_reason = "ok"
+    fallback_used = False
 
     if not low_reliability and ranked:
         # Use only top-ranked chunks for grounded preview.
@@ -4340,6 +4449,9 @@ def _ai_answer_preview(
         answer = " ".join(_sentences(ranked_text)[:2]).strip()
     if not low_reliability and not answer:
         answer = (snapshot.get("content") or {}).get("main_text_preview", "")[:280]
+        if answer:
+            fallback_used = True
+            preview_reason = "main_text_preview_fallback"
     if not low_reliability and not bullets and answer:
         bullets = [s.strip() for s in _sentences(answer)[:3] if len(s.strip()) >= 35]
 
@@ -4353,18 +4465,41 @@ def _ai_answer_preview(
             "Reduce ads/live/navigation noise in the rendered DOM.",
             "Add a stable semantic <main>/<article> block with primary content.",
         ]
+        preview_status = "not_evaluated"
+        preview_reason = "low_content_reliability"
+        fallback_used = True
+
+    if not answer:
+        topic_hint = str((_detect_topic(snapshot, llm_sim).get("topic") or "")).strip()
+        if topic_hint and topic_hint != "Topic not detected":
+            answer = f"Likely topic: {topic_hint[:220]}"
+            if preview_status == "evaluated":
+                preview_reason = "topic_fallback"
+            fallback_used = True
+        else:
+            answer = "Not enough content"
+    if answer == "Not enough content":
+        preview_status = "not_evaluated"
+        preview_reason = "insufficient_content"
+    if not bullets and preview_status == "evaluated" and answer:
+        bullets = [answer[:220]]
 
     confidence = (llm_sim or {}).get("scores", {}).get("answer_quality_score", None)
     if low_reliability:
         confidence = 15
     elif confidence is None and ranked:
         confidence = round(min(100, (sum(float(x.get("score") or 0) for x in ranked) / max(1, len(ranked))) * 100), 2)
+    if confidence is None:
+        confidence = 0 if preview_status == "not_evaluated" else 35
     warning = None
     if low_reliability or page_type in {"listing", "mixed"}:
         warning = "Page looks like a feed/mixed content; AI citations may be unstable."
     return {
+        "status": preview_status,
+        "reason": preview_reason,
+        "fallback_used": fallback_used,
         "question": question,
-        "answer": answer or "Not enough content",
+        "answer": answer,
         "confidence": confidence,
         "preview_mode": mode,
         "bullets": bullets,

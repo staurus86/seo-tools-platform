@@ -64,12 +64,16 @@ class LlmCrawlerServiceQualityTests(unittest.TestCase):
         snapshot = self._snapshot()
         ai = _ai_understanding(snapshot, llm_sim=None)
         self.assertTrue(ai.get("topic"))
+        self.assertEqual(ai.get("topic_status"), "evaluated")
+        self.assertIn(ai.get("topic_reason"), {"h1_fallback", "title_fallback", "keyword_fallback", "llm_summary"})
         self.assertTrue(ai.get("topic_fallback_used"))
         self.assertGreater(float(ai.get("topic_confidence") or 0), 0)
 
     def test_preview_uses_ranked_chunks(self):
         snapshot = self._snapshot()
         preview = _ai_answer_preview(snapshot, llm_sim=None)
+        self.assertEqual(preview.get("status"), "evaluated")
+        self.assertIn(preview.get("reason"), {"ok", "main_text_preview_fallback", "topic_fallback"})
         self.assertEqual(preview.get("preview_mode"), "extractive")
         self.assertTrue(preview.get("answer"))
         self.assertTrue(preview.get("chunk_ranking_debug"))
@@ -78,6 +82,8 @@ class LlmCrawlerServiceQualityTests(unittest.TestCase):
         snapshot = self._snapshot()
         snapshot["segmentation"] = {"main_content_confidence": {"level": "low", "reasons": ["feed layout"]}}
         preview = _ai_answer_preview(snapshot, llm_sim=None, page_type_info={"page_type": "listing"})
+        self.assertEqual(preview.get("status"), "not_evaluated")
+        self.assertEqual(preview.get("reason"), "low_content_reliability")
         self.assertTrue(preview.get("warning"))
         self.assertEqual(preview.get("answer"), "Page not reliably summarizable")
         self.assertEqual(len(preview.get("fix_steps") or []), 2)
@@ -302,6 +308,8 @@ class LlmCrawlerServiceQualityTests(unittest.TestCase):
         self.assertIn("components", citation)
         self.assertIn("retrieval_score", citation["components"])
         self.assertIn("entity_score", citation["components"])
+        self.assertIn(citation.get("status"), {"evaluated", "not_evaluated"})
+        self.assertTrue(str(citation.get("reason") or "").strip())
         self.assertIn(citation.get("version"), {"v2", "v3", "v4"})
         self.assertIn("calibration_error_estimate", citation)
         self.assertIn("support_signals", citation)
@@ -468,12 +476,24 @@ class LlmCrawlerServiceQualityTests(unittest.TestCase):
         llm = _run_llm_simulation(snapshot, enabled=False)
         preview = _ai_answer_preview(snapshot, llm_sim=llm)
         payload = _llm_simulation_payload(snapshot, llm, preview, {"citation_probability": 0.62})
+        self.assertIn(payload.get("status"), {"evaluated", "not_evaluated"})
+        self.assertTrue(str(payload.get("reason") or "").strip())
         self.assertIn("summary", payload)
+        self.assertIn("summary_source", payload)
         self.assertIn("answer", payload)
         self.assertIn("citation_probability", payload)
         self.assertIn("hallucination_risk", payload)
         self.assertIn("source_chunks", payload)
         self.assertIn(payload.get("mode"), {"llm", "heuristic_fallback", "extractive"})
+
+    def test_simulation_payload_marks_insufficient_content(self):
+        snapshot = {"content": {"main_text_length": 0, "main_text_preview": "", "chunks": []}, "meta": {}, "headings": {}}
+        llm = _run_llm_simulation(snapshot, enabled=False)
+        preview = _ai_answer_preview(snapshot, llm_sim=llm)
+        payload = _llm_simulation_payload(snapshot, llm, preview, {"citation_probability": 0.0})
+        self.assertEqual(payload.get("status"), "not_evaluated")
+        self.assertEqual(payload.get("reason"), "insufficient_content")
+        self.assertTrue(str(payload.get("summary") or "").strip())
 
     def test_new_segmentation_and_quality_summary_contract(self):
         segmentation = {

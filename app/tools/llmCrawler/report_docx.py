@@ -210,6 +210,15 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
     quality_profile = result.get("quality_profile") or {}
     quality_gates = result.get("quality_gates") or {}
     detector_calibration = result.get("detector_calibration") or {}
+    llm_simulation = result.get("llm_simulation") or {}
+    content_segmentation = result.get("content_segmentation") or {}
+    js_dependency_detailed = result.get("js_dependency_detailed") or {}
+    ai_ingestion_score = result.get("ai_ingestion_score") or {}
+    score_breakdown = result.get("score_breakdown") or {}
+    analysis_quality = result.get("analysis_quality") or {}
+    bot_simulation = result.get("bot_simulation") or []
+    trust_detailed = result.get("trust_detailed") or {}
+    llm_readability_score = result.get("llm_readability_score")
     content_loss = _num(result.get("content_loss_percent"), 0)
     main_text_len = int(_num(nojs_content.get("main_text_length"), 0))
     rendered_text_len = int(_num(rendered_content.get("main_text_length"), main_text_len))
@@ -515,7 +524,61 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
         )
     doc.add_page_break()
 
-    # PAGE 12: ACCESS BARRIERS
+    # PAGE 12: ADVANCED V3 METRICS
+    add_heading("🧪 Advanced V3 Metrics", 1, color="0B3B63")
+    llm_sim_status = str(llm_simulation.get("status") or result.get("summary_status") or "not_evaluated")
+    llm_sim_reason = str(llm_simulation.get("reason") or result.get("summary_reason") or "unknown")
+    add_kv("LLM simulation status", f"{llm_sim_status} ({llm_sim_reason})")
+    add_kv("LLM simulation mode", llm_simulation.get("mode", "-"))
+    add_kv("LLM simulation summary", _words(llm_simulation.get("summary"), 45) or "Not available")
+    add_kv("LLM simulation citation probability", _pct(llm_simulation.get("citation_probability"), "-"))
+    add_kv("LLM simulation hallucination risk", _pct(llm_simulation.get("hallucination_risk"), "-"))
+    add_kv("LLM readability score", _pct(llm_readability_score, "-"))
+    add_kv("Content segmentation confidence", _pct(_num(content_segmentation.get("confidence_score"), 0) * 100, "-"))
+    add_kv("Main blocks", len(content_segmentation.get("main_blocks") or []))
+    add_kv("Supporting blocks", len(content_segmentation.get("support_blocks") or []))
+    add_kv("Navigation blocks", len(content_segmentation.get("navigation_blocks") or []))
+    add_kv("Utility blocks", len(content_segmentation.get("utility_blocks") or []))
+    add_kv("JS dependency detailed level", js_dependency_detailed.get("level", "not_evaluated"))
+    add_kv("JS content ratio", _pct(_num(js_dependency_detailed.get("js_content_ratio"), 0) * 100, "-"))
+    js_lost = js_dependency_detailed.get("lost_elements") or {}
+    add_kv("JS lost links", js_lost.get("links", 0))
+    add_kv("JS lost text", js_lost.get("text", 0))
+    add_kv("AI ingestion score", _pct(ai_ingestion_score.get("score"), "-"))
+    add_kv("AI ingestion level", ai_ingestion_score.get("level", "not_evaluated"))
+    add_kv("AI ingestion reasons", ", ".join([str(x) for x in (ai_ingestion_score.get("reasons") or [])[:6]]) or "-")
+    add_kv("Score breakdown content score", _pct(score_breakdown.get("content_score"), "-"))
+    add_kv("Score breakdown entity score", _pct(score_breakdown.get("entity_score"), "-"))
+    add_kv("Score breakdown citation score", _pct(score_breakdown.get("citation_score"), "-"))
+    add_kv("Score breakdown ingestion score", _pct(score_breakdown.get("ingestion_score"), "-"))
+    add_kv("Score breakdown JS resilience", _pct(score_breakdown.get("js_resilience_score"), "-"))
+    add_kv("Score breakdown reasons", ", ".join([str(x) for x in (score_breakdown.get("reasons") or [])[:6]]) or "-")
+    add_kv("Analysis quality score", _pct(analysis_quality.get("analysis_quality_score"), "-"))
+    add_kv("Analysis quality status", analysis_quality.get("status", "not_evaluated"))
+    add_kv("Analysis quality warnings", ", ".join([str(x) for x in (analysis_quality.get("warnings") or [])[:8]]) or "none")
+    add_kv("Trust detailed score", _pct(trust_detailed.get("trust_score"), "-"))
+    add_kv("Trust detailed author confidence", _pct(_num(trust_detailed.get("author_confidence"), 0) * 100, "-"))
+    add_kv("Trust detailed author present", _yesno(trust_detailed.get("author_present")))
+    add_kv("Trust detailed publish date", _yesno(trust_detailed.get("publish_date_present")))
+    if bot_simulation:
+        add_heading("Bot simulation scenarios", 2, color="0E7490")
+        add_table(
+            ["Bot", "Content visibility", "Entity visibility", "Citation probability"],
+            [
+                [
+                    row.get("bot_name", "-"),
+                    _pct(row.get("content_visibility"), "-"),
+                    _pct(row.get("entity_visibility"), "-"),
+                    _pct(row.get("citation_probability"), "-"),
+                ]
+                for row in bot_simulation[:12]
+            ],
+        )
+    else:
+        add_kv("Bot simulation", "No simulation data")
+    doc.add_page_break()
+
+    # PAGE 13: ACCESS BARRIERS
     add_heading("🔒 Access Barriers", 1, color="0B3B63")
     add_kv("Cookie wall", _yesno(resources.get("cookie_wall")))
     add_kv("Paywall", _yesno(resources.get("paywall")))
@@ -527,7 +590,7 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
         add_page.runs[0].font.size = Pt(1)
     doc.add_page_break()
 
-    # PAGE 13: ENTITY + RECOMMENDATIONS
+    # PAGE 14: ENTITY + RECOMMENDATIONS
     add_heading("🧭 Entity Graph & Recommendations", 1, color="0B3B63")
     add_kv("Organizations", ", ".join((entity_graph.get("organizations") or [])[:12]) or "-")
     add_kv("Persons", ", ".join((entity_graph.get("persons") or [])[:12]) or "-")
