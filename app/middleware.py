@@ -6,8 +6,8 @@ Applies to POST requests on /api/ paths (tool endpoints).
 Degrades gracefully — passes requests through when Redis is unavailable.
 
 Config (env vars, see app/config.py):
-    RATE_LIMIT_PER_HOUR  — max POST requests per IP per hour (default 10)
-    RATE_LIMIT_WINDOW    — window size in seconds (default 3600)
+    RATE_LIMIT_PER_HOUR  — max POST requests per IP in window (default 999)
+    RATE_LIMIT_WINDOW    — window size in seconds (default 10)
 """
 from __future__ import annotations
 
@@ -116,7 +116,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         from app.config import settings  # late import to avoid circular deps
 
         limit = max(1, int(settings.RATE_LIMIT_PER_HOUR))
-        window = max(60, int(settings.RATE_LIMIT_WINDOW))
+        window = max(1, int(settings.RATE_LIMIT_WINDOW))
 
         ip = _get_client_ip(request)
         allowed, remaining, reset_in = _check_rate_limit(ip, limit, window)
