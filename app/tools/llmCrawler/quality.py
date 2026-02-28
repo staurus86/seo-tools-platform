@@ -13,6 +13,10 @@ DEFAULT_QUALITY_THRESHOLDS: Dict[str, float] = {
     "schema_recall_rate": 0.80,
     "citation_pass_rate": 0.75,
     "gate_pass_rate": 0.70,
+    "fallback_contract_pass_rate": 0.85,
+    "detector_coverage_pass_rate": 0.70,
+    "analysis_quality_pass_rate": 0.70,
+    "challenge_eval_pass_rate": 0.80,
 }
 
 
@@ -179,6 +183,61 @@ def _schema_type_count(result: Dict[str, Any]) -> int:
     return len(set([str(x).strip() for x in raw_t + rendered_t if str(x).strip()]))
 
 
+def _coalesce_str(values: List[Any]) -> str:
+    for value in values:
+        txt = str(value or "").strip()
+        if txt:
+            return txt
+    return ""
+
+
+def _validate_status_contract(result: Dict[str, Any]) -> tuple[bool, List[str]]:
+    ai_understanding = result.get("ai_understanding") or {}
+    llm_sim = result.get("llm_simulation") or {}
+    citation_model = result.get("citation_model") or {}
+    preview = result.get("ai_answer_preview") or {}
+    checks = [
+        (
+            "topic",
+            _coalesce_str([result.get("topic_status"), ai_understanding.get("topic_status")]).lower(),
+            _coalesce_str([result.get("topic_reason"), ai_understanding.get("topic_reason")]),
+        ),
+        (
+            "summary",
+            _coalesce_str([result.get("summary_status"), llm_sim.get("status")]).lower(),
+            _coalesce_str([result.get("summary_reason"), llm_sim.get("reason")]),
+        ),
+        (
+            "citation",
+            _coalesce_str([result.get("citation_status"), citation_model.get("status")]).lower(),
+            _coalesce_str([result.get("citation_reason"), citation_model.get("reason")]),
+        ),
+        (
+            "preview",
+            _coalesce_str([result.get("preview_status"), preview.get("status")]).lower(),
+            _coalesce_str([result.get("preview_reason"), preview.get("reason")]),
+        ),
+        (
+            "content_clarity",
+            _coalesce_str([result.get("content_clarity_status"), ai_understanding.get("content_clarity_status")]).lower(),
+            _coalesce_str([result.get("content_clarity_reason"), ai_understanding.get("content_clarity_reason")]),
+        ),
+    ]
+    issues: List[str] = []
+    allowed_status = {"evaluated", "not_evaluated", "partial"}
+    for module, status, reason in checks:
+        if not status:
+            issues.append(f"{module}:missing_status")
+            continue
+        if status not in allowed_status:
+            issues.append(f"{module}:invalid_status={status}")
+        if not reason:
+            issues.append(f"{module}:missing_reason")
+        if status == "not_evaluated" and reason.lower() in {"", "unknown", "not_evaluated"}:
+            issues.append(f"{module}:non_explanatory_reason")
+    return (len(issues) == 0), issues[:10]
+
+
 def evaluate_benchmark_cases(cases: List[Dict[str, Any]]) -> Dict[str, Any]:
     total = len(cases or [])
     if total == 0:
@@ -197,6 +256,22 @@ def evaluate_benchmark_cases(cases: List[Dict[str, Any]]) -> Dict[str, Any]:
         "schema_pass": 0,
         "citation_pass": 0,
         "gate_pass": 0,
+        "fallback_contract_pass": 0,
+        "detector_coverage_pass": 0,
+        "analysis_quality_pass": 0,
+        "challenge_eval_pass": 0,
+    }
+    applicable = {
+        "page_type": 0,
+        "segmentation": 0,
+        "retrieval": 0,
+        "schema": 0,
+        "citation": 0,
+        "gate": 0,
+        "fallback_contract": 0,
+        "detector_coverage": 0,
+        "analysis_quality": 0,
+        "challenge_eval": 0,
     }
     failed_cases: List[Dict[str, Any]] = []
 
@@ -212,60 +287,110 @@ def evaluate_benchmark_cases(cases: List[Dict[str, Any]]) -> Dict[str, Any]:
             or ((result.get("page_classification") or {}).get("type"))
             or "unknown"
         ).strip().lower()
-        if expected_type and actual_type == expected_type:
-            counters["page_type_correct"] += 1
-        elif expected_type:
-            local_failures.append(f"page_type expected={expected_type} actual={actual_type}")
+        if expected_type:
+            applicable["page_type"] += 1
+            if actual_type == expected_type:
+                counters["page_type_correct"] += 1
+            else:
+                local_failures.append(f"page_type expected={expected_type} actual={actual_type}")
 
         seg_conf = _normalize_conf((result.get("segmentation") or {}).get("segmentation_confidence"))
-        seg_min = _safe_float(expected.get("min_seg_conf"), 0.0)
-        if seg_conf is not None and seg_conf >= seg_min:
-            counters["segmentation_pass"] += 1
-        else:
-            local_failures.append(f"segmentation_conf expected>={seg_min} actual={seg_conf}")
+        if expected.get("min_seg_conf") is not None:
+            seg_min = _safe_float(expected.get("min_seg_conf"), 0.0)
+            applicable["segmentation"] += 1
+            if seg_conf is not None and seg_conf >= seg_min:
+                counters["segmentation_pass"] += 1
+            else:
+                local_failures.append(f"segmentation_conf expected>={seg_min} actual={seg_conf}")
 
         retrieval_avg = _normalize_conf((result.get("retrieval") or {}).get("avg_score"))
-        retrieval_min = _safe_float(expected.get("min_retrieval"), 0.0)
-        if retrieval_avg is not None and retrieval_avg >= retrieval_min:
-            counters["retrieval_pass"] += 1
-        else:
-            local_failures.append(f"retrieval_avg expected>={retrieval_min} actual={retrieval_avg}")
+        if expected.get("min_retrieval") is not None:
+            retrieval_min = _safe_float(expected.get("min_retrieval"), 0.0)
+            applicable["retrieval"] += 1
+            if retrieval_avg is not None and retrieval_avg >= retrieval_min:
+                counters["retrieval_pass"] += 1
+            else:
+                local_failures.append(f"retrieval_avg expected>={retrieval_min} actual={retrieval_avg}")
 
-        schema_min = int(expected.get("min_schema_types") or 0)
-        schema_count = _schema_type_count(result)
-        if schema_count >= schema_min:
-            counters["schema_pass"] += 1
-        else:
-            local_failures.append(f"schema_types expected>={schema_min} actual={schema_count}")
+        if expected.get("min_schema_types") is not None:
+            schema_min = int(expected.get("min_schema_types") or 0)
+            schema_count = _schema_type_count(result)
+            applicable["schema"] += 1
+            if schema_count >= schema_min:
+                counters["schema_pass"] += 1
+            else:
+                local_failures.append(f"schema_types expected>={schema_min} actual={schema_count}")
 
         citation_prob = _normalize_conf((result.get("citation_model") or {}).get("citation_probability"))
-        citation_min = _safe_float(expected.get("min_citation"), 0.0)
-        if citation_prob is not None and citation_prob >= citation_min:
-            counters["citation_pass"] += 1
-        else:
-            local_failures.append(f"citation_probability expected>={citation_min} actual={citation_prob}")
+        if expected.get("min_citation") is not None:
+            citation_min = _safe_float(expected.get("min_citation"), 0.0)
+            applicable["citation"] += 1
+            if citation_prob is not None and citation_prob >= citation_min:
+                counters["citation_pass"] += 1
+            else:
+                local_failures.append(f"citation_probability expected>={citation_min} actual={citation_prob}")
 
         gate_status = str((result.get("quality_gates") or {}).get("status") or "")
+        applicable["gate"] += 1
         if gate_status in {"pass", "warn"}:
             counters["gate_pass"] += 1
         else:
             local_failures.append(f"quality_gates.status invalid={gate_status or 'missing'}")
 
+        if bool(expected.get("require_status_contract", False)):
+            applicable["fallback_contract"] += 1
+            contract_ok, contract_issues = _validate_status_contract(result)
+            if contract_ok:
+                counters["fallback_contract_pass"] += 1
+            else:
+                local_failures.append(f"status_contract {', '.join(contract_issues[:4])}")
+
+        if expected.get("min_detector_coverage") is not None:
+            min_cov = _safe_float(expected.get("min_detector_coverage"), 0.0)
+            det_cov = _safe_float(((result.get("detectors") or {}).get("summary") or {}).get("coverage_ratio"), -1.0)
+            applicable["detector_coverage"] += 1
+            if det_cov >= min_cov:
+                counters["detector_coverage_pass"] += 1
+            else:
+                local_failures.append(f"detector_coverage expected>={min_cov} actual={det_cov}")
+
+        if expected.get("min_analysis_quality") is not None:
+            min_analysis = _safe_float(expected.get("min_analysis_quality"), 0.0)
+            analysis_score = _safe_float((result.get("analysis_quality") or {}).get("analysis_quality_score"), -1.0)
+            applicable["analysis_quality"] += 1
+            if analysis_score >= min_analysis:
+                counters["analysis_quality_pass"] += 1
+            else:
+                local_failures.append(f"analysis_quality expected>={min_analysis} actual={analysis_score}")
+
+        if bool(expected.get("require_challenge_evaluated", False)):
+            challenge_status = str((result.get("challenge") or {}).get("status") or "").strip().lower()
+            applicable["challenge_eval"] += 1
+            if challenge_status in {"none", "suspected", "detected"}:
+                counters["challenge_eval_pass"] += 1
+            else:
+                local_failures.append(f"challenge_status invalid={challenge_status or 'missing'}")
+
         if local_failures:
             failed_cases.append({"id": case_id, "failures": local_failures[:8]})
 
     metrics = {
-        "page_type_accuracy": round(counters["page_type_correct"] / total, 4),
-        "segmentation_pass_rate": round(counters["segmentation_pass"] / total, 4),
-        "retrieval_pass_rate": round(counters["retrieval_pass"] / total, 4),
-        "schema_recall_rate": round(counters["schema_pass"] / total, 4),
-        "citation_pass_rate": round(counters["citation_pass"] / total, 4),
-        "gate_pass_rate": round(counters["gate_pass"] / total, 4),
+        "page_type_accuracy": round(counters["page_type_correct"] / max(1, applicable["page_type"]), 4),
+        "segmentation_pass_rate": round(counters["segmentation_pass"] / max(1, applicable["segmentation"]), 4),
+        "retrieval_pass_rate": round(counters["retrieval_pass"] / max(1, applicable["retrieval"]), 4),
+        "schema_recall_rate": round(counters["schema_pass"] / max(1, applicable["schema"]), 4),
+        "citation_pass_rate": round(counters["citation_pass"] / max(1, applicable["citation"]), 4),
+        "gate_pass_rate": round(counters["gate_pass"] / max(1, applicable["gate"]), 4),
+        "fallback_contract_pass_rate": round(counters["fallback_contract_pass"] / max(1, applicable["fallback_contract"]), 4),
+        "detector_coverage_pass_rate": round(counters["detector_coverage_pass"] / max(1, applicable["detector_coverage"]), 4),
+        "analysis_quality_pass_rate": round(counters["analysis_quality_pass"] / max(1, applicable["analysis_quality"]), 4),
+        "challenge_eval_pass_rate": round(counters["challenge_eval_pass"] / max(1, applicable["challenge_eval"]), 4),
     }
     return {
         "status": "evaluated",
         "reason": "ok",
         "total_cases": total,
+        "applicable_cases": applicable,
         "metrics": metrics,
         "failed_cases": failed_cases[:20],
         "version": "benchmark-v1",

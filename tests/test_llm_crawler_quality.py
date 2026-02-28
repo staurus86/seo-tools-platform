@@ -16,8 +16,17 @@ class LlmCrawlerQualityTests(unittest.TestCase):
         report = evaluate_benchmark_cases(cases)
         self.assertEqual(report.get("status"), "evaluated")
         metrics = report.get("metrics") or {}
+        applicable = report.get("applicable_cases") or {}
         self.assertGreaterEqual(float(metrics.get("page_type_accuracy") or 0), 0.80)
         self.assertGreaterEqual(float(metrics.get("segmentation_pass_rate") or 0), 0.80)
+        self.assertGreaterEqual(float(metrics.get("fallback_contract_pass_rate") or 0), 0.80)
+        self.assertGreaterEqual(float(metrics.get("detector_coverage_pass_rate") or 0), 0.70)
+        self.assertGreaterEqual(float(metrics.get("analysis_quality_pass_rate") or 0), 0.70)
+        self.assertGreaterEqual(float(metrics.get("challenge_eval_pass_rate") or 0), 0.80)
+        self.assertGreaterEqual(int(applicable.get("fallback_contract") or 0), 1)
+        self.assertGreaterEqual(int(applicable.get("detector_coverage") or 0), 1)
+        self.assertGreaterEqual(int(applicable.get("analysis_quality") or 0), 1)
+        self.assertGreaterEqual(int(applicable.get("challenge_eval") or 0), 1)
         gate = evaluate_quality_gate(report)
         self.assertIn(gate.get("status"), {"pass", "warn"})
 

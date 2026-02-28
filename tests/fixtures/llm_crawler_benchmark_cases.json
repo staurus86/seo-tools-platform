@@ -6,7 +6,11 @@
       "min_seg_conf": 0.65,
       "min_retrieval": 0.50,
       "min_schema_types": 2,
-      "min_citation": 0.55
+      "min_citation": 0.55,
+      "require_status_contract": true,
+      "min_detector_coverage": 0.75,
+      "min_analysis_quality": 0.74,
+      "require_challenge_evaluated": true
     },
     "result": {
       "page_type": "article",
@@ -14,7 +18,20 @@
       "retrieval": {"avg_score": 0.73},
       "structured_data": {"raw_types": ["Organization", "Article"], "rendered_types": []},
       "citation_model": {"citation_probability": 0.72},
-      "quality_gates": {"status": "pass"}
+      "quality_gates": {"status": "pass"},
+      "detectors": {"summary": {"coverage_ratio": 0.88}},
+      "analysis_quality": {"analysis_quality_score": 0.84},
+      "challenge": {"status": "none", "risk": "low"},
+      "topic_status": "evaluated",
+      "topic_reason": "primary_heading_present",
+      "summary_status": "evaluated",
+      "summary_reason": "retrieval_grounded",
+      "citation_status": "evaluated",
+      "citation_reason": "citation_probability_ok",
+      "preview_status": "evaluated",
+      "preview_reason": "preview_generated",
+      "content_clarity_status": "evaluated",
+      "content_clarity_reason": "score_above_threshold"
     }
   },
   {
@@ -24,7 +41,11 @@
       "min_seg_conf": 0.45,
       "min_retrieval": 0.35,
       "min_schema_types": 1,
-      "min_citation": 0.45
+      "min_citation": 0.45,
+      "require_status_contract": true,
+      "min_detector_coverage": 0.70,
+      "min_analysis_quality": 0.68,
+      "require_challenge_evaluated": true
     },
     "result": {
       "page_type": "homepage",
@@ -32,7 +53,20 @@
       "retrieval": {"avg_score": 0.51},
       "structured_data": {"raw_types": ["Organization", "WebSite"], "rendered_types": []},
       "citation_model": {"citation_probability": 0.59},
-      "quality_gates": {"status": "pass"}
+      "quality_gates": {"status": "pass"},
+      "detectors": {"summary": {"coverage_ratio": 0.81}},
+      "analysis_quality": {"analysis_quality_score": 0.79},
+      "challenge": {"status": "suspected", "risk": "medium"},
+      "topic_status": "evaluated",
+      "topic_reason": "title_and_h1_present",
+      "summary_status": "evaluated",
+      "summary_reason": "home_section_summary",
+      "citation_status": "evaluated",
+      "citation_reason": "sources_detected",
+      "preview_status": "evaluated",
+      "preview_reason": "answer_draft_ready",
+      "content_clarity_status": "evaluated",
+      "content_clarity_reason": "structure_clear"
     }
   },
   {
@@ -42,7 +76,11 @@
       "min_seg_conf": 0.55,
       "min_retrieval": 0.45,
       "min_schema_types": 1,
-      "min_citation": 0.50
+      "min_citation": 0.50,
+      "require_status_contract": true,
+      "min_detector_coverage": 0.72,
+      "min_analysis_quality": 0.72,
+      "require_challenge_evaluated": true
     },
     "result": {
       "page_type": "product",
@@ -50,7 +88,20 @@
       "retrieval": {"avg_score": 0.66},
       "structured_data": {"raw_types": ["Product", "Offer"], "rendered_types": []},
       "citation_model": {"citation_probability": 0.67},
-      "quality_gates": {"status": "pass"}
+      "quality_gates": {"status": "pass"},
+      "detectors": {"summary": {"coverage_ratio": 0.84}},
+      "analysis_quality": {"analysis_quality_score": 0.82},
+      "challenge": {"status": "none", "risk": "low"},
+      "topic_status": "evaluated",
+      "topic_reason": "product_signal_detected",
+      "summary_status": "evaluated",
+      "summary_reason": "specs_and_benefits_summarized",
+      "citation_status": "evaluated",
+      "citation_reason": "spec_sources_present",
+      "preview_status": "evaluated",
+      "preview_reason": "preview_generated",
+      "content_clarity_status": "evaluated",
+      "content_clarity_reason": "product_copy_readable"
     }
   },
   {
@@ -60,7 +111,11 @@
       "min_seg_conf": 0.60,
       "min_retrieval": 0.50,
       "min_schema_types": 1,
-      "min_citation": 0.50
+      "min_citation": 0.50,
+      "require_status_contract": true,
+      "min_detector_coverage": 0.74,
+      "min_analysis_quality": 0.74,
+      "require_challenge_evaluated": true
     },
     "result": {
       "page_type": "docs",
@@ -68,7 +123,20 @@
       "retrieval": {"avg_score": 0.74},
       "structured_data": {"raw_types": ["TechArticle"], "rendered_types": []},
       "citation_model": {"citation_probability": 0.71},
-      "quality_gates": {"status": "pass"}
+      "quality_gates": {"status": "pass"},
+      "detectors": {"summary": {"coverage_ratio": 0.86}},
+      "analysis_quality": {"analysis_quality_score": 0.83},
+      "challenge": {"status": "none", "risk": "low"},
+      "topic_status": "evaluated",
+      "topic_reason": "doc_hierarchy_detected",
+      "summary_status": "evaluated",
+      "summary_reason": "technical_sections_summarized",
+      "citation_status": "evaluated",
+      "citation_reason": "reference_links_found",
+      "preview_status": "evaluated",
+      "preview_reason": "preview_generated",
+      "content_clarity_status": "evaluated",
+      "content_clarity_reason": "steps_well_structured"
     }
   },
   {
@@ -78,7 +146,11 @@
       "min_seg_conf": 0.40,
       "min_retrieval": 0.35,
       "min_schema_types": 1,
-      "min_citation": 0.40
+      "min_citation": 0.40,
+      "require_status_contract": true,
+      "min_detector_coverage": 0.68,
+      "min_analysis_quality": 0.66,
+      "require_challenge_evaluated": true
     },
     "result": {
       "page_type": "listing",
@@ -86,7 +158,20 @@
       "retrieval": {"avg_score": 0.47},
       "structured_data": {"raw_types": ["ItemList"], "rendered_types": []},
       "citation_model": {"citation_probability": 0.52},
-      "quality_gates": {"status": "warn"}
+      "quality_gates": {"status": "warn"},
+      "detectors": {"summary": {"coverage_ratio": 0.74}},
+      "analysis_quality": {"analysis_quality_score": 0.72},
+      "challenge": {"status": "suspected", "risk": "medium"},
+      "topic_status": "evaluated",
+      "topic_reason": "catalog_topic_detected",
+      "summary_status": "evaluated",
+      "summary_reason": "listing_summary_generated",
+      "citation_status": "evaluated",
+      "citation_reason": "listing_signals_available",
+      "preview_status": "evaluated",
+      "preview_reason": "preview_generated",
+      "content_clarity_status": "evaluated",
+      "content_clarity_reason": "sections_partially_clear"
     }
   },
   {
@@ -96,7 +181,11 @@
       "min_seg_conf": 0.35,
       "min_retrieval": 0.30,
       "min_schema_types": 1,
-      "min_citation": 0.35
+      "min_citation": 0.35,
+      "require_status_contract": true,
+      "min_detector_coverage": 0.66,
+      "min_analysis_quality": 0.64,
+      "require_challenge_evaluated": true
     },
     "result": {
       "page_type": "mixed",
@@ -104,7 +193,20 @@
       "retrieval": {"avg_score": 0.44},
       "structured_data": {"raw_types": [], "rendered_types": ["Organization", "FAQPage"]},
       "citation_model": {"citation_probability": 0.48},
-      "quality_gates": {"status": "warn"}
+      "quality_gates": {"status": "warn"},
+      "detectors": {"summary": {"coverage_ratio": 0.72}},
+      "analysis_quality": {"analysis_quality_score": 0.71},
+      "challenge": {"status": "detected", "risk": "high"},
+      "topic_status": "evaluated",
+      "topic_reason": "mixed_layout_topic_detected",
+      "summary_status": "evaluated",
+      "summary_reason": "rendered_content_summarized",
+      "citation_status": "evaluated",
+      "citation_reason": "rendered_schema_used",
+      "preview_status": "evaluated",
+      "preview_reason": "preview_generated",
+      "content_clarity_status": "evaluated",
+      "content_clarity_reason": "js_content_resolved"
     }
   }
 ]
