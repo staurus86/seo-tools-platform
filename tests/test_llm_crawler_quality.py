@@ -32,6 +32,34 @@ class LlmCrawlerQualityTests(unittest.TestCase):
         self.assertEqual(str(calibrated["segmentation"]["status"]), "partial")
         self.assertLess(float(calibrated["segmentation"]["confidence"]), 0.5)
 
+    def test_calibration_uses_detector_evidence_adjustments(self):
+        detectors = {
+            "page_classification": {
+                "status": "evaluated",
+                "confidence": 0.81,
+                "version": "v1",
+                "evidence": ["signals=0", "type=unknown"],
+            },
+            "structured_data": {
+                "status": "evaluated",
+                "confidence": 0.74,
+                "version": "v1",
+                "evidence": ["raw_count=0", "rendered_count=2"],
+            },
+            "challenge_waf": {
+                "status": "evaluated",
+                "confidence": 0.66,
+                "version": "v1",
+                "evidence": ["status=suspected", "risk=low", "reasons=0"],
+            },
+            "summary": {"avg_confidence": 0.74},
+        }
+        calibrated, _ = calibrate_detector_layer(detectors, page_type="unknown")
+        self.assertLess(float(calibrated["page_classification"]["confidence"]), 0.81)
+        self.assertLess(float(calibrated["structured_data"]["confidence"]), 0.74)
+        self.assertLess(float(calibrated["challenge_waf"]["confidence"]), 0.66)
+        self.assertTrue(any("calibration_note=" in str(x) for x in (calibrated["page_classification"].get("evidence") or [])))
+
     def test_run_quality_gate_from_file(self):
         payload = run_quality_gate_from_file()
         self.assertIn("benchmark", payload)

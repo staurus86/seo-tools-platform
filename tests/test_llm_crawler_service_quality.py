@@ -350,11 +350,14 @@ class LlmCrawlerServiceQualityTests(unittest.TestCase):
             retrieval={"status": "evaluated", "avg_score": 0.62, "best_score": 0.78, "retrieval_confidence": 0.71, "queries": ["query"]},
             citation_model={"citation_probability": 0.68, "confidence": 0.81, "version": "v3", "components": {"a": 1}},
             validation={"content_sufficient": True, "warnings": []},
+            challenge={"status": "suspected", "risk": "medium", "confidence": 0.58, "reasons": ["waf_headers"]},
         )
         self.assertIn("summary", detectors)
         self.assertIn("content_extraction", detectors)
+        self.assertIn("challenge_waf", detectors)
         self.assertEqual(detectors["content_extraction"]["status"], "evaluated")
         self.assertEqual(detectors["page_classification"]["status"], "evaluated")
+        self.assertEqual(detectors["challenge_waf"]["status"], "evaluated")
 
     def test_quality_gates_contract(self):
         detectors = {

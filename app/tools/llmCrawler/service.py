@@ -803,6 +803,7 @@ def _build_detector_layer(
     retrieval: Dict[str, Any],
     citation_model: Dict[str, Any],
     validation: Dict[str, Any],
+    challenge: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     seg_conf = _normalize_confidence(segmentation.get("segmentation_confidence") or segmentation.get("confidence"))
     seg_status = "evaluated" if (seg_conf is not None and int(len(segmentation.get("content_segments") or [])) > 0) else "not_evaluated"
@@ -831,7 +832,20 @@ def _build_detector_layer(
     page_status = "evaluated" if page_type not in {"", "unknown"} else "not_evaluated"
 
     js_status = str(js_dependency.get("status") or "not_evaluated")
-    js_conf = _normalize_confidence(js_dependency.get("coverage_ratio"))
+    js_cov = js_dependency.get("coverage_ratio")
+    if js_cov is None:
+        content_delta = js_dependency.get("content_delta_ratio")
+        if content_delta is not None:
+            try:
+                js_cov = max(0.0, min(1.0, 1.0 - float(content_delta)))
+            except Exception:
+                js_cov = None
+    if js_cov is None and js_dependency.get("score") is not None:
+        try:
+            js_cov = max(0.0, min(1.0, 1.0 - (float(js_dependency.get("score")) / 100.0)))
+        except Exception:
+            js_cov = None
+    js_conf = _normalize_confidence(js_cov)
     if js_status == "executed":
         js_status_norm = "evaluated"
     elif js_status == "not_executed":
@@ -844,6 +858,17 @@ def _build_detector_layer(
     citation_status = str(citation_model.get("status") or "").strip()
     if citation_status not in {"evaluated", "not_evaluated", "partial"}:
         citation_status = "evaluated" if citation_model.get("citation_probability") is not None else "not_evaluated"
+    challenge_payload = challenge or {}
+    challenge_status_raw = str(challenge_payload.get("status") or "").lower()
+    challenge_status = "evaluated" if challenge_status_raw in {"none", "suspected", "detected"} else "not_evaluated"
+    challenge_conf = challenge_payload.get("confidence")
+    if challenge_conf is None and challenge_status == "evaluated":
+        if challenge_status_raw == "detected":
+            challenge_conf = 0.78
+        elif challenge_status_raw == "suspected":
+            challenge_conf = 0.56
+        else:
+            challenge_conf = 0.64
 
     detectors = {
         "content_extraction": _detector_entry(
@@ -899,7 +924,18 @@ def _build_detector_layer(
             version="js-dependency-v2",
             evidence=[
                 f"risk={js_dependency.get('risk')}",
-                f"coverage_ratio={js_dependency.get('coverage_ratio')}",
+                f"coverage_ratio={js_cov}",
+                f"status={js_status}",
+            ],
+        ),
+        "challenge_waf": _detector_entry(
+            status=challenge_status,
+            confidence=challenge_conf,
+            version="challenge-v2",
+            evidence=[
+                f"status={challenge_status_raw or 'unknown'}",
+                f"risk={challenge_payload.get('risk')}",
+                f"reasons={len(challenge_payload.get('reasons') or [])}",
             ],
         ),
         "llm_ingestion": _detector_entry(
@@ -2889,6 +2925,7 @@ def run_llm_crawler_simulation(
         retrieval=retrieval,
         citation_model=citation_model,
         validation=validation,
+        challenge=nojs_snapshot.get("challenge") or {},
     )
     detectors, detector_calibration = calibrate_detector_layer(
         detectors,

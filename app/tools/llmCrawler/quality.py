@@ -33,12 +33,49 @@ PAGE_TYPE_CALIBRATION_PROFILES: Dict[str, Dict[str, Any]] = {
     "unknown": {"id": "unknown-v1", "multiplier": 0.85, "default_floor": 0.30},
 }
 
+DETECTOR_CALIBRATION_BASE: Dict[str, Dict[str, float]] = {
+    "page_classification": {"multiplier": 1.0, "floor": 0.42},
+    "structured_data": {"multiplier": 1.0, "floor": 0.35},
+    "entities": {"multiplier": 1.0, "floor": 0.34},
+    "challenge_waf": {"multiplier": 1.0, "floor": 0.34},
+    "js_dependency": {"multiplier": 1.0, "floor": 0.30},
+}
+
+PAGE_TYPE_DETECTOR_OVERRIDES: Dict[str, Dict[str, Dict[str, float]]] = {
+    "listing": {
+        "page_classification": {"multiplier": 0.92, "floor": 0.36},
+        "js_dependency": {"multiplier": 0.94, "floor": 0.28},
+    },
+    "marketplace": {
+        "page_classification": {"multiplier": 0.93, "floor": 0.38},
+        "structured_data": {"multiplier": 0.95, "floor": 0.34},
+        "js_dependency": {"multiplier": 0.95, "floor": 0.29},
+    },
+    "homepage": {
+        "page_classification": {"multiplier": 0.94, "floor": 0.36},
+    },
+    "docs": {
+        "entities": {"multiplier": 0.95, "floor": 0.30},
+    },
+    "unknown": {
+        "page_classification": {"multiplier": 0.90, "floor": 0.30},
+        "challenge_waf": {"multiplier": 0.95, "floor": 0.30},
+    },
+}
+
 
 def _safe_float(value: Any, fallback: float = 0.0) -> float:
     try:
         return float(value)
     except Exception:
         return float(fallback)
+
+
+def _safe_int(value: Any, fallback: int = 0) -> int:
+    try:
+        return int(float(value))
+    except Exception:
+        return int(fallback)
 
 
 def _normalize_conf(value: Any) -> float | None:
@@ -50,6 +87,83 @@ def _normalize_conf(value: Any) -> float | None:
     if raw > 1.0:
         raw = raw / 100.0
     return max(0.0, min(1.0, raw))
+
+
+def _evidence_kv(evidence: List[str] | None) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    for item in (evidence or []):
+        raw = str(item or "").strip()
+        if "=" not in raw:
+            continue
+        key, value = raw.split("=", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if not key:
+            continue
+        out[key] = value
+    return out
+
+
+def _detector_profile(page_type: str, detector_key: str) -> Dict[str, float]:
+    base = dict(DETECTOR_CALIBRATION_BASE.get(detector_key, {"multiplier": 1.0, "floor": 0.0}))
+    override = (PAGE_TYPE_DETECTOR_OVERRIDES.get(page_type, {}) or {}).get(detector_key, {})
+    if override:
+        base.update({k: float(v) for k, v in override.items() if isinstance(v, (int, float))})
+    return {
+        "multiplier": float(base.get("multiplier", 1.0)),
+        "floor": float(base.get("floor", 0.0)),
+    }
+
+
+def _apply_detector_signal_adjustments(
+    detector_key: str,
+    adjusted: float,
+    status: str,
+    evidence: Dict[str, str],
+) -> tuple[float, List[str]]:
+    notes: List[str] = []
+    out = float(adjusted)
+    if detector_key == "page_classification":
+        signals = _safe_int(evidence.get("signals"), -1)
+        if signals == 0:
+            out *= 0.78
+            notes.append("signals=0")
+        elif signals == 1:
+            out *= 0.90
+            notes.append("signals=1")
+    elif detector_key == "structured_data":
+        raw_count = _safe_int(evidence.get("raw_count"), 0)
+        rendered_count = _safe_int(evidence.get("rendered_count"), 0)
+        if raw_count == 0 and rendered_count > 0:
+            out *= 0.86
+            notes.append("rendered_only_schema")
+    elif detector_key == "entities":
+        entity_total = _safe_int(evidence.get("entity_total"), 0)
+        if entity_total == 0:
+            out *= 0.72
+            notes.append("entity_total=0")
+        elif entity_total < 2:
+            out *= 0.88
+            notes.append("entity_total<2")
+    elif detector_key == "js_dependency":
+        coverage = _safe_float(evidence.get("coverage_ratio"), -1.0)
+        if 0.0 <= coverage <= 1.0:
+            out = (out * 0.65) + (coverage * 0.35)
+            notes.append("coverage_blend")
+        risk = str(evidence.get("risk") or "").lower()
+        if risk in {"high", "critical"}:
+            out *= 0.90
+            notes.append(f"risk={risk}")
+    elif detector_key == "challenge_waf":
+        risk = str(evidence.get("risk") or "").lower()
+        reasons = _safe_int(evidence.get("reasons"), 0)
+        if status == "evaluated" and risk == "low" and reasons == 0:
+            out = min(out, 0.65)
+            notes.append("low_risk_no_evidence_cap")
+        if status == "evaluated" and str(evidence.get("status") or "").lower() == "suspected":
+            out *= 0.90
+            notes.append("suspected_downgrade")
+    return max(0.0, min(1.0, out)), notes
 
 
 def _schema_type_count(result: Dict[str, Any]) -> int:
@@ -199,7 +313,8 @@ def calibrate_detector_layer(
     page_type: str,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     calibrated = json.loads(json.dumps(detectors or {}))
-    profile = calibration_profile_for_page_type(page_type)
+    page_type_key = str(page_type or "unknown").strip().lower()
+    profile = calibration_profile_for_page_type(page_type_key)
     multiplier = _safe_float(profile.get("multiplier"), 1.0)
     floor = _safe_float(profile.get("default_floor"), 0.3)
 
@@ -211,17 +326,33 @@ def calibrate_detector_layer(
         conf = _normalize_conf(payload.get("confidence"))
         if conf is None:
             continue
-        adjusted = max(0.0, min(1.0, conf * multiplier))
+        detector_cfg = _detector_profile(page_type_key, key)
+        detector_mult = _safe_float(detector_cfg.get("multiplier"), 1.0)
+        detector_floor = _safe_float(detector_cfg.get("floor"), floor)
+        if detector_floor <= 0.0:
+            detector_floor = floor
+        evidence_map = _evidence_kv(payload.get("evidence") or [])
+        adjusted = max(0.0, min(1.0, conf * multiplier * detector_mult))
+        adjusted, signal_notes = _apply_detector_signal_adjustments(
+            key,
+            adjusted,
+            str(payload.get("status") or ""),
+            evidence_map,
+        )
         payload["confidence_raw"] = round(conf, 4)
         payload["confidence"] = round(adjusted, 4)
         adjusted_count += 1
         status = str(payload.get("status") or "")
-        if status == "evaluated" and adjusted < floor:
+        if status == "evaluated" and adjusted < detector_floor:
             payload["status"] = "partial"
             evidence = payload.get("evidence") or []
-            evidence.append(f"confidence<{floor} after calibration")
+            evidence.append(f"confidence<{detector_floor} after calibration")
             payload["evidence"] = evidence[:8]
             downgraded_count += 1
+        if signal_notes:
+            evidence = payload.get("evidence") or []
+            evidence.extend([f"calibration_note={note}" for note in signal_notes[:3]])
+            payload["evidence"] = evidence[:8]
         calibrated[key] = payload
 
     confidence_values = [
@@ -240,7 +371,7 @@ def calibrate_detector_layer(
 
     calibration = {
         "profile_id": str(profile.get("id") or "unknown"),
-        "page_type": str(page_type or "unknown"),
+        "page_type": page_type_key,
         "multiplier": round(multiplier, 4),
         "default_floor": round(floor, 4),
         "adjusted_count": adjusted_count,
