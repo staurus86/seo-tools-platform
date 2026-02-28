@@ -1,11 +1,18 @@
 import unittest
 from datetime import datetime, timezone
+from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import HTTPException
 
-from app.tools.llmCrawler.router import get_llm_crawler_job, llm_crawler_quality_gate, run_llm_crawler
+from app.tools.llmCrawler.router import (
+    get_llm_crawler_job,
+    llm_crawler_quality_gate,
+    llm_crawler_report,
+    llm_crawler_report_docx,
+    run_llm_crawler,
+)
 from app.tools.llmCrawler.schemas import LlmCrawlerRunRequest
 
 
@@ -91,6 +98,32 @@ class LlmCrawlerRouteTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(HTTPException) as ctx:
                 await llm_crawler_quality_gate(req)
         self.assertEqual(ctx.exception.status_code, 500)
+
+    async def test_docx_report_respects_v3_flag(self):
+        req = _FakeRequest(headers={"x-role": "admin"})
+        fake_job = {"jobId": "llmcrawler-test-1", "result": {"score": {"total": 70}}}
+        with patch("app.tools.llmCrawler.router.settings.FEATURE_LLM_CRAWLER", True), patch(
+            "app.tools.llmCrawler.router.settings.LLM_REPORT_V3_ENABLED", False
+        ), patch(
+            "app.tools.llmCrawler.router.get_job_record", return_value=fake_job
+        ), patch(
+            "app.tools.llmCrawler.report_docx.build_docx_v2", return_value=BytesIO(b"docx-bytes")
+        ) as mock_build:
+            response = await llm_crawler_report_docx("llmcrawler-test-1", req)
+        self.assertEqual(response.status_code, 200)
+        mock_build.assert_called_once_with(fake_job, "llmcrawler-test-1", wow_enabled=False)
+
+    async def test_html_report_shows_v3_flag_message_when_disabled(self):
+        req = _FakeRequest(headers={"x-role": "admin"})
+        fake_job = {"jobId": "llmcrawler-test-1", "result": {"score": {"total": 70}, "ai_understanding": {}, "ai_answer_preview": {}}}
+        with patch("app.tools.llmCrawler.router.settings.FEATURE_LLM_CRAWLER", True), patch(
+            "app.tools.llmCrawler.router.settings.LLM_REPORT_V3_ENABLED", False
+        ), patch(
+            "app.tools.llmCrawler.router.get_job_record", return_value=fake_job
+        ):
+            response = await llm_crawler_report("llmcrawler-test-1", req)
+        body = response.body.decode("utf-8", errors="ignore")
+        self.assertIn("LLM_REPORT_V3_ENABLED=false", body)
 
 
 if __name__ == "__main__":

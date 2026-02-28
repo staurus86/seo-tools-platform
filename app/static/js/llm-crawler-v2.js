@@ -73,7 +73,7 @@ async function _fetchJob(jobId) {
 }
 
 function _wowEnabled() {
-  return true;
+  return Boolean(window.llmUiWowEnabled);
 }
 
 function _isNotEvaluated(module) {
@@ -822,6 +822,13 @@ function _renderQualityProfile(result) {
 }
 
 function _renderV3Metrics(result) {
+  if (!_wowEnabled()) {
+    _setHTML('v2-v3-metrics', `
+      <div class="section-title flex items-center gap-2"><i data-lucide="layers-2" class="w-4 h-4"></i>V3 Metrics & Explainability</div>
+      <div class="text-sm subtle">Disabled by feature flag <code>LLM_UI_WOW_ENABLED=false</code>.</div>
+    `);
+    return;
+  }
   const llmSim = result?.llm_simulation || {};
   const contentSeg = result?.content_segmentation || {};
   const jsDetailed = result?.js_dependency_detailed || {};
