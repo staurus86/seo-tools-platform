@@ -23,6 +23,53 @@ from .schema import (
     SiteAuditProSummary,
 )
 
+from .constants import FILLER_WORDS, WEAK_ANCHORS
+from .text_analysis import (
+    _avg_sentence_length,
+    _avg_word_length,
+    _calc_filler_ratio,
+    _calc_toxicity,
+    _complex_words_percent,
+    _extract_top_keywords,
+    _keyword_density_profile,
+    _keyword_stuffing_score,
+    _readability_score,
+    _tokenize,
+)
+from .content_checks import (
+    _boilerplate_percent,
+    _content_density,
+    _content_freshness_days,
+    _cta_text_quality,
+    _detect_author_info,
+    _detect_breadcrumbs,
+    _detect_cloaking,
+    _detect_contact_info,
+    _detect_legal_docs,
+    _detect_reviews,
+    _detect_structured_data,
+    _detect_trust_badges,
+    _extract_hidden_content_signals,
+    _h_hierarchy_summary,
+    _hamming64,
+    _heading_distribution,
+    _semantic_tags_count,
+    _simhash64,
+    _unique_percent,
+    _validate_structured_common,
+)
+from .ai_detection import (
+    _ai_marker_sample,
+    _classify_page_type,
+    _detect_ai_markers,
+)
+from .graph_algorithms import (
+    _apply_linking_scores,
+    _build_semantic_linking_map,
+    _compute_pagerank,
+    _compute_tfidf_scores,
+)
+
 
 class SiteAuditProAdapter:
     """
@@ -31,169 +78,16 @@ class SiteAuditProAdapter:
     can be shipped before full seopro function-level porting.
     """
 
-    TOKEN_RE = re.compile(r"[a-zA-Z\u0400-\u04FF0-9]{3,}")
-    TOKEN_LONG_RE = re.compile(r"\b[a-zA-Z\u0400-\u04FF0-9]+\b")
-    STOP_WORDS = {
-        "the", "and", "for", "that", "this", "with", "from", "your", "you", "are", "was", "were",
-        "about", "into", "http", "https", "www", "com", "site", "page", "seo",
-        "\u043a\u0430\u043a", "\u044d\u0442\u043e", "\u0434\u043b\u044f", "\u0447\u0442\u043e", "\u0438\u043b\u0438", "\u043f\u0440\u0438",
-    }
-    WEAK_ANCHORS = {
-        "click here", "here", "read more", "more", "link",
-        "\u043f\u043e\u0434\u0440\u043e\u0431\u043d\u0435\u0435", "\u0442\u0443\u0442",
-    }
-    FILLER_WORDS = {
-        "very", "really", "basically", "actually", "simply", "just", "literally", "maybe", "perhaps",
-        "\u043f\u0440\u043e\u0441\u0442\u043e", "\u043e\u0447\u0435\u043d\u044c", "\u043a\u0430\u043a \u0431\u044b",
-        "\u043d\u0430\u0432\u0435\u0440\u043d\u043e\u0435", "\u0432\u043e\u0437\u043c\u043e\u0436\u043d\u043e",
-    }
-    TOXIC_WORDS = {
-        "hate", "stupid", "idiot", "trash", "scam",
-        "\u043d\u0435\u043d\u0430\u0432\u0438\u0436\u0443", "\u0442\u0443\u043f\u043e\u0439", "\u043c\u0443\u0441\u043e\u0440",
-    }
-    BOILERPLATE_PATTERNS = (
-        r"\u00a9",
-        r"privacy",
-        r"terms",
-        r"contacts?",
-        r"subscribe",
-        r"read also",
-        r"\u00a9\s*\d{4}",
-        r"\u043f\u043e\u043b\u0438\u0442\u0438\u043a\u0430",
-        r"\u0443\u0441\u043b\u043e\u0432\u0438\u044f",
-        r"\u043a\u043e\u043d\u0442\u0430\u043a\u0442\u044b",
-        r"\u043f\u043e\u0434\u043f\u0438\u0441\u0430\u0442\u044c\u0441\u044f",
-    )
-    AI_TECH_MARKERS = (
-        "ai",
-        "chatgpt",
-        "generated",
-        "llm",
-        "neural",
-    )
-    # Additional modern LLM-style phrases (RU/EN) frequently seen in generated text.
-    AI_LLM_STYLE_MARKERS = (
-        "as an ai language model",
-        "as an ai assistant",
-        "i can't browse the internet",
-        "i hope this helps",
-        "feel free to ask",
-        "it is important to note that",
-        "it's important to note that",
-        "it is worth noting that",
-        "in today's fast-paced world",
-        "in this comprehensive guide",
-        "let's dive into",
-        "delve into",
-        "overall, it can be said that",
-        "when it comes to",
-        "one of the key aspects",
-        "to sum up",
-        "in summary",
-        "step-by-step guide",
-        "here are some",
-        "here's a concise",
-        "unlock the potential of",
-        "state-of-the-art",
-        "robust and scalable",
-        "seamlessly",
-        "tailored to your needs",
-        "\u0432 \u044d\u0442\u043e\u0439 \u0441\u0442\u0430\u0442\u044c\u0435 \u043c\u044b \u0440\u0430\u0441\u0441\u043c\u043e\u0442\u0440\u0438\u043c",
-        "\u0434\u0430\u0432\u0430\u0439\u0442\u0435 \u0440\u0430\u0437\u0431\u0435\u0440\u0435\u043c",
-        "\u043d\u0438\u0436\u0435 \u043f\u0440\u0438\u0432\u0435\u0434\u0435\u043d\u044b",
-        "\u0432\u043e\u0442 \u043d\u0435\u0441\u043a\u043e\u043b\u044c\u043a\u043e",
-        "\u0441 \u0443\u0447\u0435\u0442\u043e\u043c \u0432\u044b\u0448\u0435\u0438\u0437\u043b\u043e\u0436\u0435\u043d\u043d\u043e\u0433\u043e",
-        "\u0438\u0441\u0445\u043e\u0434\u044f \u0438\u0437 \u044d\u0442\u043e\u0433\u043e",
-        "\u043c\u043e\u0436\u043d\u043e \u0432\u044b\u0434\u0435\u043b\u0438\u0442\u044c \u0441\u043b\u0435\u0434\u0443\u044e\u0449\u0438\u0435",
-        "\u043f\u0440\u0435\u0434\u043b\u0430\u0433\u0430\u044e \u0440\u0430\u0441\u0441\u043c\u043e\u0442\u0440\u0435\u0442\u044c",
-        "\u043a\u0430\u043a \u044f\u0437\u044b\u043a\u043e\u0432\u0430\u044f \u043c\u043e\u0434\u0435\u043b\u044c",
-        "\u043a\u0430\u043a \u0438\u0438 \u043c\u043e\u0434\u0435\u043b\u044c",
-        "\u043d\u0430\u0434\u0435\u044e\u0441\u044c, \u044d\u0442\u043e \u043f\u043e\u043c\u043e\u0436\u0435\u0442",
-        "\u0435\u0441\u043b\u0438 \u0445\u043e\u0442\u0438\u0442\u0435, \u043c\u043e\u0433\u0443",
-    )
-    # Parity set from seopro.py detect_ai_markers (phrase-level markers).
-    AI_PHRASE_MARKERS = (
-        "\u043a\u0430\u043a \u0438\u0437\u0432\u0435\u0441\u0442\u043d\u043e",
-        "\u043d\u0435\u043e\u0431\u0445\u043e\u0434\u0438\u043c\u043e \u043e\u0442\u043c\u0435\u0442\u0438\u0442\u044c",
-        "\u0432\u0430\u0436\u043d\u043e \u043f\u043e\u0434\u0447\u0435\u0440\u043a\u043d\u0443\u0442\u044c",
-        "\u0441\u043b\u0435\u0434\u0443\u0435\u0442 \u043e\u0442\u043c\u0435\u0442\u0438\u0442\u044c",
-        "\u043d\u0435 \u0441\u043b\u0435\u0434\u0443\u0435\u0442 \u0437\u0430\u0431\u044b\u0432\u0430\u0442\u044c",
-        "\u0441\u0442\u043e\u0438\u0442 \u0437\u0430\u043c\u0435\u0442\u0438\u0442\u044c",
-        "\u0432 \u0446\u0435\u043b\u043e\u043c \u043c\u043e\u0436\u043d\u043e \u0441\u043a\u0430\u0437\u0430\u0442\u044c",
-        "\u043c\u043e\u0436\u043d\u043e \u043e\u0442\u043c\u0435\u0442\u0438\u0442\u044c, \u0447\u0442\u043e",
-        "\u0441\u043b\u0435\u0434\u0443\u0435\u0442 \u043f\u043e\u0434\u0447\u0435\u0440\u043a\u043d\u0443\u0442\u044c",
-        "\u0434\u043e\u043b\u0436\u043d\u043e \u0431\u044b\u0442\u044c \u043e\u0442\u043c\u0435\u0447\u0435\u043d\u043e",
-        "\u0432\u0430\u0436\u043d\u043e \u043e\u0442\u043c\u0435\u0442\u0438\u0442\u044c",
-        "\u043a\u0430\u043a \u043c\u044b \u0432\u0438\u0434\u0438\u043c",
-        "\u0432 \u0441\u043e\u0432\u0440\u0435\u043c\u0435\u043d\u043d\u043e\u043c \u043c\u0438\u0440\u0435",
-        "\u043d\u0430 \u0441\u0435\u0433\u043e\u0434\u043d\u044f\u0448\u043d\u0438\u0439 \u0434\u0435\u043d\u044c",
-        "\u0432 \u043d\u0430\u0441\u0442\u043e\u044f\u0449\u0435\u0435 \u0432\u0440\u0435\u043c\u044f",
-        "\u0441\u043b\u0435\u0434\u0443\u0435\u0442 \u043f\u043e\u0434\u0447\u0435\u0440\u043a\u043d\u0443\u0442\u044c",
-        "\u043d\u0443\u0436\u043d\u043e \u043e\u0442\u043c\u0435\u0442\u0438\u0442\u044c",
-        "\u043f\u043e\u0434\u0432\u043e\u0434\u044f \u0438\u0442\u043e\u0433",
-        "\u0438\u0442\u0430\u043a,",
-        "\u0432 \u0437\u0430\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435",
-        "\u0432\u0430\u0436\u043d\u043e\u0435 \u0437\u0430\u043c\u0435\u0447\u0430\u043d\u0438\u0435",
-        "\u0441\u0442\u043e\u0438\u0442 \u043e\u0431\u0440\u0430\u0442\u0438\u0442\u044c \u0432\u043d\u0438\u043c\u0430\u043d\u0438\u0435",
-        "\u0431\u0435\u0441\u0441\u043f\u043e\u0440\u043d\u043e",
-        "\u043a\u0430\u043a \u043f\u0440\u0430\u0432\u0438\u043b\u043e",
-        "\u0432 \u0431\u043e\u043b\u044c\u0448\u0438\u043d\u0441\u0442\u0432\u0435 \u0441\u043b\u0443\u0447\u0430\u0435\u0432",
-        "\u0441\u043b\u0435\u0434\u0443\u0435\u0442 \u043e\u0442\u043c\u0435\u0442\u0438\u0442\u044c \u0442\u0430\u043a\u0436\u0435",
-        "\u043d\u0435\u043e\u0431\u0445\u043e\u0434\u0438\u043c\u043e \u043f\u043e\u0434\u0447\u0435\u0440\u043a\u043d\u0443\u0442\u044c",
-        "\u043c\u043e\u0436\u043d\u043e \u0441\u0434\u0435\u043b\u0430\u0442\u044c \u0432\u044b\u0432\u043e\u0434",
-        "\u043e\u0447\u0435\u0432\u0438\u0434\u043d\u043e, \u0447\u0442\u043e",
-        "\u044d\u0442\u043e \u043e\u0431\u044a\u044f\u0441\u043d\u044f\u0435\u0442\u0441\u044f \u0442\u0435\u043c",
-        "\u0441\u043b\u0435\u0434\u0443\u0435\u0442 \u0438\u043c\u0435\u0442\u044c \u0432 \u0432\u0438\u0434\u0443",
-        "\u043e\u0442\u043c\u0435\u0442\u0438\u043c, \u0447\u0442\u043e",
-        "\u043a\u0430\u043a \u0431\u044b\u043b\u043e \u0441\u043a\u0430\u0437\u0430\u043d\u043e",
-        "\u0442\u0430\u043a\u0438\u043c \u043e\u0431\u0440\u0430\u0437\u043e\u043c",
-        "\u0441\u043b\u0435\u0434\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u043d\u043e",
-        "\u0432 \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442\u0435",
-        "\u0432 \u043a\u043e\u043d\u0435\u0447\u043d\u043e\u043c \u0441\u0447\u0435\u0442\u0435",
-        "\u0432 \u0441\u0432\u044f\u0437\u0438 \u0441 \u044d\u0442\u0438\u043c",
-        "\u043d\u0430 \u043e\u0441\u043d\u043e\u0432\u0430\u043d\u0438\u0438 \u0432\u044b\u0448\u0435\u0441\u043a\u0430\u0437\u0430\u043d\u043d\u043e\u0433\u043e",
-        "\u0432 \u0441\u0432\u0435\u0442\u0435 \u0432\u044b\u0448\u0435\u0441\u043a\u0430\u0437\u0430\u043d\u043d\u043e\u0433\u043e",
-        "\u0440\u0435\u0437\u044e\u043c\u0438\u0440\u0443\u044f",
-        "\u0432\u043a\u0440\u0430\u0442\u0446\u0435",
-        "\u0432 \u0434\u0432\u0443\u0445 \u0441\u043b\u043e\u0432\u0430\u0445",
-        "\u043f\u043e \u0441\u0443\u0442\u0438",
-        "\u043f\u043e \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443",
-        "\u0432 \u043f\u0440\u0438\u043d\u0446\u0438\u043f\u0435",
-        "\u0432 \u043e\u0431\u0449\u0435\u043c \u0438 \u0446\u0435\u043b\u043e\u043c",
-        "\u0432 \u0446\u0435\u043b\u043e\u043c",
-        "\u0432 \u043e\u0431\u0449\u0435\u0439 \u0441\u043b\u043e\u0436\u043d\u043e\u0441\u0442\u0438",
-        "\u043d\u0435 \u0441\u0435\u043a\u0440\u0435\u0442, \u0447\u0442\u043e",
-        "\u043e\u0431\u0449\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u043e, \u0447\u0442\u043e",
-        "\u0445\u043e\u0440\u043e\u0448\u043e \u0438\u0437\u0432\u0435\u0441\u0442\u043d\u043e, \u0447\u0442\u043e",
-        "\u0441\u0442\u043e\u0438\u0442 \u0443\u043f\u043e\u043c\u044f\u043d\u0443\u0442\u044c",
-        "\u0441\u043b\u0435\u0434\u0443\u0435\u0442 \u0443\u043f\u043e\u043c\u044f\u043d\u0443\u0442\u044c",
-        "\u043d\u0435\u043b\u044c\u0437\u044f \u043d\u0435 \u0443\u043f\u043e\u043c\u044f\u043d\u0443\u0442\u044c",
-        "\u043f\u0440\u0438\u043c\u0435\u0447\u0430\u0442\u0435\u043b\u044c\u043d\u043e, \u0447\u0442\u043e",
-        "\u0438\u043d\u0442\u0435\u0440\u0435\u0441\u043d\u043e \u043e\u0442\u043c\u0435\u0442\u0438\u0442\u044c",
-        "\u043b\u044e\u0431\u043e\u043f\u044b\u0442\u043d\u043e, \u0447\u0442\u043e",
-        "\u0432\u0430\u0436\u043d\u043e \u043f\u043e\u043d\u0438\u043c\u0430\u0442\u044c",
-        "\u0441\u043b\u0435\u0434\u0443\u0435\u0442 \u043f\u043e\u043d\u0438\u043c\u0430\u0442\u044c",
-        "\u043d\u0435\u043e\u0431\u0445\u043e\u0434\u0438\u043c\u043e \u043f\u043e\u043d\u0438\u043c\u0430\u0442\u044c",
-        "\u0441\u0442\u043e\u0438\u0442 \u043f\u043e\u0434\u0447\u0435\u0440\u043a\u043d\u0443\u0442\u044c",
-        "\u0445\u043e\u0442\u0435\u043b\u043e\u0441\u044c \u0431\u044b \u043f\u043e\u0434\u0447\u0435\u0440\u043a\u043d\u0443\u0442\u044c",
-        "\u043e\u0441\u043e\u0431\u043e \u043f\u043e\u0434\u0447\u0435\u0440\u043a\u043d\u0435\u043c",
-        "\u043e\u0431\u0440\u0430\u0442\u0438\u043c \u0432\u043d\u0438\u043c\u0430\u043d\u0438\u0435",
-        "\u0441\u0442\u043e\u0438\u0442 \u043e\u0431\u0440\u0430\u0442\u0438\u0442\u044c \u0432\u043d\u0438\u043c\u0430\u043d\u0438\u0435",
-        "\u043e\u0431\u0440\u0430\u0449\u0430\u0435\u043c \u0432\u043d\u0438\u043c\u0430\u043d\u0438\u0435",
-        "\u043a\u0430\u043a \u0432\u0438\u0434\u043d\u043e",
-        "\u043a\u0430\u043a \u043c\u043e\u0436\u043d\u043e \u0432\u0438\u0434\u0435\u0442\u044c",
-        "\u043a\u0430\u043a \u043d\u0435\u0442\u0440\u0443\u0434\u043d\u043e \u0437\u0430\u043c\u0435\u0442\u0438\u0442\u044c",
-        "\u043d\u0430 \u0441\u0430\u043c\u043e\u043c \u0434\u0435\u043b\u0435",
-        "\u043f\u043e \u043f\u0440\u0430\u0432\u0434\u0435 \u0433\u043e\u0432\u043e\u0440\u044f",
-        "\u0447\u0435\u0441\u0442\u043d\u043e \u0433\u043e\u0432\u043e\u0440\u044f",
-        "\u0431\u0435\u0437 \u0441\u043e\u043c\u043d\u0435\u043d\u0438\u044f",
-        "\u043d\u0435\u0441\u043e\u043c\u043d\u0435\u043d\u043d\u043e",
-        "\u0431\u0435\u0437\u0443\u0441\u043b\u043e\u0432\u043d\u043e",
-        "\u043e\u0447\u0435\u0432\u0438\u0434\u043d\u043e",
-        "\u043a\u043e\u043d\u0435\u0447\u043d\u043e",
-        "\u0440\u0430\u0437\u0443\u043c\u0435\u0435\u0442\u0441\u044f",
-        "\u0435\u0441\u0442\u0435\u0441\u0442\u0432\u0435\u043d\u043d\u043e",
-    )
+    # Backward-compatible thin wrappers kept intentionally: tests and utility code
+    # still call legacy private methods directly on the adapter.
+    def _detect_ai_markers(self, text: str) -> Tuple[int, List[str]]:
+        return _detect_ai_markers(text)
+
+    def _ai_marker_sample(self, text: str, markers: List[str]) -> List[str]:
+        return _ai_marker_sample(text, markers)
+
+    def _content_freshness_days(self, last_modified: str) -> Optional[int]:
+        return _content_freshness_days(last_modified)
 
     def _is_internal_url(self, candidate: str, base_host: str) -> bool:
         parsed = urlparse(candidate)
@@ -217,269 +111,6 @@ class SiteAuditProAdapter:
             if self._is_internal_url(candidate, base_host):
                 links.append(candidate)
         return links
-
-    def _tokenize(self, text: str) -> List[str]:
-        tokens = self.TOKEN_RE.findall((text or "").lower())
-        return [t for t in tokens if t not in self.STOP_WORDS]
-
-    def _tokenize_long(self, text: str, min_len: int = 4) -> List[str]:
-        return [
-            token
-            for token in self.TOKEN_LONG_RE.findall((text or "").lower())
-            if len(token) >= min_len
-        ]
-
-    def _readability_score(self, text: str) -> float:
-        # Lightweight readability heuristic: shorter sentences and moderate word length score higher.
-        raw = (text or "").strip()
-        if not raw:
-            return 0.0
-        sentences = [s for s in re.split(r"[.!?]+", raw) if s.strip()]
-        words = self.TOKEN_LONG_RE.findall(raw)
-        if not words:
-            return 0.0
-        avg_sentence_len = len(words) / max(1, len(sentences))
-        avg_word_len = sum(len(w) for w in words) / max(1, len(words))
-        score = 100.0 - max(0.0, (avg_sentence_len - 14.0) * 2.2) - max(0.0, (avg_word_len - 5.5) * 8.0)
-        return round(max(0.0, min(100.0, score)), 1)
-
-    def _calc_toxicity(self, tokens: List[str]) -> float:
-        if not tokens:
-            return 0.0
-        toxic = sum(1 for t in tokens if t in self.TOXIC_WORDS)
-        return round((toxic / max(1, len(tokens))) * 100.0, 2)
-
-    def _calc_filler_ratio(self, text: str) -> float:
-        raw = self.TOKEN_LONG_RE.findall((text or "").lower())
-        if not raw:
-            return 0.0
-        filler = sum(1 for t in raw if t in self.FILLER_WORDS)
-        return round(filler / len(raw), 4)
-
-    def _avg_sentence_length(self, text: str) -> float:
-        raw = (text or "").strip()
-        if not raw:
-            return 0.0
-        words = self.TOKEN_LONG_RE.findall(raw)
-        sentences = [s for s in re.split(r"[.!?]+", raw) if s.strip()]
-        if not words:
-            return 0.0
-        return round(len(words) / max(1, len(sentences)), 2)
-
-    def _avg_word_length(self, text: str) -> float:
-        words = self.TOKEN_LONG_RE.findall((text or ""))
-        if not words:
-            return 0.0
-        return round(sum(len(w) for w in words) / len(words), 2)
-
-    def _complex_words_percent(self, text: str) -> float:
-        words = self.TOKEN_LONG_RE.findall((text or ""))
-        if not words:
-            return 0.0
-        complex_words = [w for w in words if len(w) >= 8]
-        return round((len(complex_words) / len(words)) * 100.0, 2)
-
-    def _extract_top_keywords(self, tokens: List[str], top_n: int = 10) -> List[str]:
-        if not tokens:
-            return []
-        tf = Counter(tokens)
-        return [t for t, _ in tf.most_common(top_n)]
-
-    def _keyword_density_profile(self, tokens: List[str], top_n: int = 10) -> Dict[str, float]:
-        if not tokens:
-            return {}
-        total = len(tokens)
-        tf = Counter(tokens)
-        profile: Dict[str, float] = {}
-        for term, count in tf.most_common(top_n):
-            profile[term] = round((count / total) * 100.0, 3)
-        return profile
-
-    def _keyword_stuffing_score(self, text: str) -> float:
-        words = (text or "").lower().split()
-        if len(words) < 50:
-            return 0.0
-        filtered = [word for word in words if word.isalpha() and len(word) > 3 and word not in self.STOP_WORDS]
-        if not filtered:
-            return 0.0
-        max_percentage = 0.0
-        for _, count in Counter(filtered).most_common(5):
-            pct = (count / len(filtered)) * 100.0
-            if pct > 3.0:
-                max_percentage = max(max_percentage, pct)
-        return round(max_percentage, 2)
-
-    def _heading_distribution(self, soup: BeautifulSoup) -> Dict[str, int]:
-        return {f"h{i}": len(soup.find_all(f"h{i}")) for i in range(1, 7)}
-
-    def _semantic_tags_count(self, soup: BeautifulSoup) -> int:
-        return len(soup.find_all(["main", "article", "section", "aside", "nav", "header", "footer"]))
-
-    def _content_density(self, soup: BeautifulSoup, text: str) -> float:
-        text_words = len((text or "").split())
-        total_words = len(soup.get_text(" ", strip=True).split())
-        if total_words <= 0:
-            return 0.0
-        return round((text_words / total_words) * 100.0, 2)
-
-    def _boilerplate_percent(self, text: str) -> float:
-        raw = text or ""
-        if not raw:
-            return 0.0
-        total = len(raw.split())
-        if total <= 0:
-            return 0.0
-        matches = sum(len(re.findall(pattern, raw, flags=re.I)) for pattern in self.BOILERPLATE_PATTERNS)
-        score = min(100.0, (matches * 5.0) / (total / 100.0)) if total > 0 else 0.0
-        return round(score, 1)
-
-    def _unique_percent(self, text: str) -> float:
-        if not text:
-            return 0.0
-        words = [word.lower() for word in self.TOKEN_LONG_RE.findall(text) if len(word) > 2]
-        if not words:
-            return 0.0
-        filtered = [word for word in words if word not in self.STOP_WORDS]
-        if not filtered:
-            return 0.0
-        return round(min(100.0, max(0.0, (len(set(filtered)) / len(filtered)) * 100.0)), 1)
-
-
-    def _detect_structured_data(self, soup: BeautifulSoup) -> Tuple[int, Dict[str, int], List[str]]:
-        json_ld_tags = soup.find_all("script", attrs={"type": lambda v: str(v).lower().strip() == "application/ld+json"})
-        microdata_items = soup.find_all(attrs={"itemtype": True})
-        rdfa_items = soup.find_all(attrs={"typeof": True})
-        detail = {
-            "json_ld": len(json_ld_tags),
-            "microdata": len(microdata_items),
-            "rdfa": len(rdfa_items),
-        }
-        types: Set[str] = set()
-        for item in microdata_items:
-            itemtype = str(item.get("itemtype") or "").strip()
-            if itemtype:
-                types.add(itemtype[:120])
-        return detail["json_ld"] + detail["microdata"] + detail["rdfa"], detail, sorted(types)[:15]
-
-    def _extract_jsonld_objects(self, soup: BeautifulSoup) -> List[Dict[str, Any]]:
-        objects: List[Dict[str, Any]] = []
-        tags = soup.find_all("script", attrs={"type": lambda v: str(v).lower().strip() == "application/ld+json"})
-        for tag in tags:
-            raw = (tag.string or tag.get_text() or "").strip()
-            if not raw:
-                continue
-            try:
-                payload = json.loads(raw)
-            except Exception:
-                continue
-            stack: List[Any] = [payload]
-            while stack:
-                current = stack.pop()
-                if isinstance(current, list):
-                    stack.extend(current)
-                    continue
-                if not isinstance(current, dict):
-                    continue
-                objects.append(current)
-                graph = current.get("@graph")
-                if isinstance(graph, list):
-                    stack.extend(graph)
-        return objects
-
-    @staticmethod
-    def _jsonld_types(obj: Dict[str, Any]) -> Set[str]:
-        raw = obj.get("@type")
-        if isinstance(raw, list):
-            return {str(x).strip().lower() for x in raw if str(x).strip()}
-        if isinstance(raw, str):
-            val = raw.strip().lower()
-            return {val} if val else set()
-        return set()
-
-    def _validate_structured_common(self, soup: BeautifulSoup) -> List[str]:
-        codes: List[str] = []
-        objects = self._extract_jsonld_objects(soup)
-        for obj in objects:
-            types = self._jsonld_types(obj)
-            if not types:
-                continue
-
-            if "product" in types:
-                if not str(obj.get("name") or "").strip():
-                    codes.append("product_missing_name")
-                offers = obj.get("offers")
-                offer_items = offers if isinstance(offers, list) else ([offers] if isinstance(offers, dict) else [])
-                if not offer_items:
-                    codes.append("product_missing_offers")
-                else:
-                    has_price = any(str((item or {}).get("price") or "").strip() for item in offer_items if isinstance(item, dict))
-                    has_currency = any(
-                        str((item or {}).get("priceCurrency") or "").strip()
-                        for item in offer_items
-                        if isinstance(item, dict)
-                    )
-                    if not has_price:
-                        codes.append("product_missing_price")
-                    if not has_currency:
-                        codes.append("product_missing_price_currency")
-
-            if types.intersection({"article", "newsarticle", "blogposting"}):
-                if not str(obj.get("headline") or "").strip():
-                    codes.append("article_missing_headline")
-                if not str(obj.get("datePublished") or "").strip():
-                    codes.append("article_missing_date_published")
-                if not obj.get("author"):
-                    codes.append("article_missing_author")
-
-            if types.intersection({"organization", "localbusiness"}):
-                if not str(obj.get("name") or "").strip():
-                    codes.append("organization_missing_name")
-                if not str(obj.get("url") or "").strip():
-                    codes.append("organization_missing_url")
-
-            if "breadcrumblist" in types:
-                item_list = obj.get("itemListElement")
-                if not item_list or (isinstance(item_list, list) and len(item_list) == 0):
-                    codes.append("breadcrumb_missing_item_list")
-
-            if "faqpage" in types:
-                main_entity = obj.get("mainEntity")
-                if not main_entity or (isinstance(main_entity, list) and len(main_entity) == 0):
-                    codes.append("faq_missing_main_entity")
-
-        return sorted(set(codes))
-
-    def _simhash64(self, text: str) -> int:
-        tokens = [t for t in self._tokenize_long(text, min_len=3) if t not in self.STOP_WORDS]
-        if not tokens:
-            return 0
-        tf = Counter(tokens)
-        vector = [0] * 64
-        for token, weight in tf.items():
-            h = int(hashlib.md5(token.encode("utf-8", errors="ignore")).hexdigest()[:16], 16)
-            for i in range(64):
-                if (h >> i) & 1:
-                    vector[i] += weight
-                else:
-                    vector[i] -= weight
-        value = 0
-        for i, score in enumerate(vector):
-            if score >= 0:
-                value |= (1 << i)
-        return value
-
-    @staticmethod
-    def _hamming64(a: int, b: int) -> int:
-        return int((a ^ b).bit_count())
-
-    def _detect_breadcrumbs(self, soup: BeautifulSoup) -> bool:
-        if soup.find(attrs={"itemtype": re.compile("BreadcrumbList", re.I)}):
-            return True
-        for nav in soup.find_all("nav"):
-            aria = (nav.get("aria-label") or "").lower()
-            if "breadcrumb" in aria:
-                return True
-        return False
 
     def _classify_canonical(self, canonical: str, page_url: str, base_host: str) -> str:
         if not canonical:
@@ -518,190 +149,6 @@ class SiteAuditProAdapter:
             if lang_lower == "x-default":
                 has_x_default = True
         return langs, targets, has_x_default
-
-    def _content_freshness_days(self, last_modified: str) -> int | None:
-        value = (last_modified or "").strip()
-        if not value:
-            return None
-        try:
-            dt = parsedate_to_datetime(value)
-            if not dt.tzinfo:
-                dt = dt.replace(tzinfo=timezone.utc)
-            delta = datetime.now(timezone.utc) - dt.astimezone(timezone.utc)
-            return max(0, int(delta.total_seconds() // 86400))
-        except Exception:
-            return None
-
-    def _detect_contact_info(self, text: str) -> bool:
-        raw = (text or "").lower()
-        if re.search(r"(\+?\d[\d\s\-\(\)]{7,}\d)|([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})", raw):
-            return True
-        contact_tokens = (
-            "contact", "contacts", "phone", "call us", "support", "help center",
-            "контакт", "контакты", "телефон", "связаться", "обратная связь", "поддержка",
-            "горячая линия", "адрес", "email", "e-mail",
-        )
-        return any(token in raw for token in contact_tokens)
-
-    def _detect_legal_docs(self, text: str) -> bool:
-        raw = (text or "").lower()
-        legal_tokens = (
-            "privacy", "privacy policy", "terms", "terms of use", "terms and conditions", "policy", "cookies", "gdpr",
-            "ccpa", "refund policy", "shipping policy", "returns policy", "disclaimer", "public offer",
-            "политика конфиденциальности", "политика обработки персональных данных", "условия использования",
-            "пользовательское соглашение", "оферта", "публичная оферта", "согласие на обработку",
-            "cookie", "куки", "возврат", "доставка", "отказ от ответственности",
-        )
-        return any(token in raw for token in legal_tokens)
-
-    def _detect_author_info(self, soup: BeautifulSoup, text: str) -> bool:
-        raw = (text or "").lower()
-        if soup.find(attrs={"rel": re.compile("author", re.I)}):
-            return True
-        if soup.find(attrs={"itemprop": re.compile("author", re.I)}):
-            return True
-        if soup.find(attrs={"class": re.compile(r"author|byline|editor|reviewed|эксперт|автор", re.I)}):
-            return True
-        author_tokens = (
-            "author", "written by", "editor", "reviewed by", "fact checked",
-            "автор", "редактор", "проверено", "эксперт", "материал подготовил",
-        )
-        return any(token in raw for token in author_tokens)
-
-    def _detect_reviews(self, soup: BeautifulSoup, text: str) -> bool:
-        raw = (text or "").lower()
-        if soup.find(attrs={"itemprop": re.compile("review|rating", re.I)}):
-            return True
-        if soup.find(attrs={"class": re.compile(r"review|rating|testimonial|otzyv|отзыв", re.I)}):
-            return True
-        review_tokens = (
-            "review", "rating", "testimonial", "stars", "score", "customer stories",
-            "отзыв", "отзывы", "рейтинг", "оценка", "нам доверяют", "кейсы клиентов",
-        )
-        return any(token in raw for token in review_tokens)
-
-    def _detect_trust_badges(self, text: str) -> bool:
-        raw = (text or "").lower()
-        badge_tokens = (
-            "secure", "verified", "ssl", "tls", "https", "guarantee", "trusted",
-            "certified", "official partner", "money-back", "warranty", "iso", "pci dss",
-            "безопасно", "защищено", "проверено", "гарантия", "официальный партнер",
-            "сертифицировано", "сертификат", "лицензия",
-        )
-        return any(token in raw for token in badge_tokens)
-
-    def _cta_text_quality(self, soup: BeautifulSoup) -> float:
-        buttons = soup.find_all(["a", "button"])
-        if not buttons:
-            return 0.0
-        good = 0
-        for tag in buttons:
-            txt = (tag.get_text(" ", strip=True) or "").lower()
-            if any(token in txt for token in ("buy", "start", "contact", "book", "sign", "register", "learn more")):
-                good += 1
-        return round((good / len(buttons)) * 100.0, 1)
-
-    def _h_hierarchy_summary(self, soup: BeautifulSoup, heading_distribution: Dict[str, int]) -> Tuple[str, List[str], Dict[str, Any]]:
-        h1_count = int(heading_distribution.get("h1", 0))
-        errors: List[str] = []
-        heading_sequence = [int(tag.name[1]) for tag in soup.find_all(re.compile(r"^h[1-6]$", re.I))]
-        heading_outline = [
-            {
-                "level": int(tag.name[1]),
-                "text": (tag.get_text(" ", strip=True) or "")[:120],
-            }
-            for tag in soup.find_all(re.compile(r"^h[1-6]$", re.I))[:20]
-        ]
-        if h1_count == 0:
-            errors.append("missing_h1")
-        elif h1_count > 1:
-            errors.append("multiple_h1")
-        if heading_sequence and heading_sequence[0] != 1:
-            errors.append("wrong_start")
-        for prev, current in zip(heading_sequence, heading_sequence[1:]):
-            if (current - prev) > 1:
-                errors.append("heading_level_skip")
-                break
-        if not errors:
-            status = "Good"
-        elif "wrong_start" in errors:
-            status = "Bad (wrong start)"
-        elif "missing_h1" in errors:
-            status = "Bad (missing h1)"
-        elif "multiple_h1" in errors:
-            status = "Bad (multiple h1)"
-        elif "heading_level_skip" in errors:
-            status = "Bad (level skip)"
-        else:
-            status = "Bad"
-        details = {
-            "total_headers": int(sum(heading_distribution.values())),
-            "h1_count": h1_count,
-            "heading_sequence_preview": heading_sequence[:20],
-            "heading_outline": heading_outline,
-        }
-        return status, errors, details
-
-    def _ai_marker_sample(self, text: str, markers: List[str]) -> str:
-        raw = text or ""
-        if not raw or not markers:
-            return ""
-        marker = str(markers[0]).strip()
-        if not marker:
-            return ""
-        snippets: List[str] = []
-        if re.fullmatch(r"[a-zA-Z0-9\u0400-\u04FF_-]+", marker):
-            marker_pattern = rf"\b{re.escape(marker)}\b"
-        else:
-            marker_pattern = re.escape(marker)
-        for m in re.finditer(marker_pattern, raw, flags=re.I):
-            start = max(0, m.start() - 70)
-            end = min(len(raw), m.end() + 70)
-            snippet = re.sub(r"\s+", " ", raw[start:end].strip())
-            if snippet:
-                snippets.append(snippet)
-            if len(snippets) >= 2:
-                break
-        return " ... ".join(snippets)
-
-    def _detect_ai_markers(self, text: str) -> Tuple[int, List[str]]:
-        text_lower = (text or "").lower()
-        if not text_lower:
-            return 0, []
-        found_markers: List[str] = []
-
-        for phrase in self.AI_PHRASE_MARKERS:
-            if phrase and phrase in text_lower:
-                found_markers.append(phrase)
-
-        for phrase in self.AI_LLM_STYLE_MARKERS:
-            if phrase and phrase in text_lower:
-                found_markers.append(phrase)
-
-        for marker in self.AI_TECH_MARKERS:
-            if re.search(rf"\b{re.escape(marker)}\b", text_lower):
-                found_markers.append(marker)
-
-        return len(found_markers), found_markers[:10]
-
-    def _classify_page_type(self, url: str, structured_types: List[str], title: str, body_text: str) -> str:
-        parsed = urlparse(url or "")
-        path = (parsed.path or "").lower().strip("/")
-        stypes = {str(x).lower() for x in (structured_types or [])}
-        text = f"{(title or '').lower()} {(body_text or '').lower()}"
-        if path in ("",):
-            return "home"
-        if "product" in stypes or any(x in path for x in ("product", "shop", "catalog", "товар")):
-            return "product"
-        if "article" in stypes or any(x in path for x in ("blog", "news", "article", "post", "статья", "новост")):
-            return "article"
-        if any(x in path for x in ("category", "catalog", "collection", "категор")):
-            return "category"
-        if any(x in text for x in ("privacy policy", "terms", "cookie", "политика", "условия", "согласие")):
-            return "legal"
-        if any(x in path for x in ("contact", "about", "company", "контакт", "о-компании")):
-            return "service"
-        return "other"
 
     def _apply_canonical_and_hreflang_checks(
         self,
@@ -813,84 +260,6 @@ class SiteAuditProAdapter:
                     )
                 )
 
-    def _extract_hidden_content_signals(self, soup: BeautifulSoup) -> Tuple[bool, int, int]:
-        hidden_nodes: List[Any] = []
-        selectors = [
-            "[hidden]",
-            '[style*="display:none"]',
-            '[style*="display: none"]',
-            '[style*="visibility:hidden"]',
-            '[style*="visibility: hidden"]',
-            '[style*="opacity:0"]',
-            '[style*="opacity: 0"]',
-            '[style*="text-indent:-"]',
-            '[style*="left:-9999"]',
-            '[style*="left: -9999"]',
-            '[style*="clip:rect(0"]',
-            '[style*="height:0"]',
-            '[style*="height: 0"]',
-            '[style*="width:0"]',
-            '[style*="width: 0"]',
-        ]
-        seen_ids: Set[int] = set()
-        for sel in selectors:
-            for node in soup.select(sel):
-                node_id = id(node)
-                if node_id in seen_ids:
-                    continue
-                seen_ids.add(node_id)
-                hidden_nodes.append(node)
-        for node in soup.find_all(attrs={"aria-hidden": "true"}):
-            text_len = len(re.sub(r"\s+", " ", node.get_text(" ", strip=True)))
-            if text_len > 0:
-                node_id = id(node)
-                if node_id not in seen_ids:
-                    seen_ids.add(node_id)
-                    hidden_nodes.append(node)
-
-        small_font_nodes = []
-        for node in soup.find_all(style=True):
-            style = str(node.get("style") or "").lower()
-            m = re.search(r"font-size\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*px", style)
-            if m:
-                try:
-                    if float(m.group(1)) < 5.0:
-                        small_font_nodes.append(node)
-                except Exception:
-                    pass
-        for node in small_font_nodes:
-            node_id = id(node)
-            if node_id not in seen_ids:
-                seen_ids.add(node_id)
-                hidden_nodes.append(node)
-
-        hidden_nodes_count = len(hidden_nodes)
-        hidden_text_chars = 0
-        for node in hidden_nodes:
-            hidden_text_chars += len(re.sub(r"\s+", " ", node.get_text(" ", strip=True)))
-        return (hidden_nodes_count > 0), hidden_nodes_count, hidden_text_chars
-
-    def _detect_cloaking(
-        self,
-        body_text: str,
-        hidden_content: bool,
-        hidden_nodes_count: int,
-        hidden_text_chars: int,
-    ) -> bool:
-        if not hidden_content:
-            return False
-        total_chars = len((body_text or "").strip())
-        if total_chars <= 0:
-            return False
-        hidden_ratio = float(hidden_text_chars) / float(max(1, total_chars))
-        if hidden_nodes_count >= 10:
-            return True
-        if hidden_ratio >= 0.20 and hidden_text_chars >= 120:
-            return True
-        if hidden_nodes_count >= 4 and hidden_text_chars >= 80:
-            return True
-        return hidden_nodes_count >= 4 and total_chars < 300
-
     def _extract_anchor_data(
         self, page_url: str, soup: BeautifulSoup, base_host: str
     ) -> Tuple[List[str], int, int, int, int, int]:
@@ -910,7 +279,7 @@ class SiteAuditProAdapter:
             if not parsed.scheme.startswith("http"):
                 continue
             total += 1
-            if text in self.WEAK_ANCHORS:
+            if text in WEAK_ANCHORS:
                 weak_count += 1
             if parsed.netloc == base_host:
                 internal_links.append(candidate)
@@ -956,7 +325,7 @@ class SiteAuditProAdapter:
         canonical_tag = soup.find("link", attrs={"rel": lambda x: x and "canonical" in str(x).lower()})
         canonical = (canonical_tag.get("href") if canonical_tag else "") or ""
         canonical_status = self._classify_canonical(canonical=canonical, page_url=final_url, base_host=base_host)
-        breadcrumbs = self._detect_breadcrumbs(soup)
+        breadcrumbs = _detect_breadcrumbs(soup)
         schema_count = len(
             [
                 tag
@@ -964,8 +333,8 @@ class SiteAuditProAdapter:
                 if ((tag.get("type") or "").lower().strip() == "application/ld+json")
             ]
         )
-        structured_data_total, structured_data_detail, structured_types = self._detect_structured_data(soup)
-        structured_error_codes = self._validate_structured_common(soup)
+        structured_data_total, structured_data_detail, structured_types = _detect_structured_data(soup)
+        structured_error_codes = _validate_structured_common(soup)
         hreflang_langs, hreflang_targets, hreflang_has_x_default = self._extract_hreflang_data(soup=soup, page_url=final_url)
         hreflang_count = len(hreflang_langs)
         dom_nodes_count = len(soup.find_all(True))
@@ -1014,31 +383,31 @@ class SiteAuditProAdapter:
                 if any(word in (tag.get_text(" ", strip=True).lower()) for word in ("buy", "order", "contact", "sign", "register"))
             ]
         )
-        hidden_content, hidden_nodes_count, hidden_text_chars = self._extract_hidden_content_signals(soup)
+        hidden_content, hidden_nodes_count, hidden_text_chars = _extract_hidden_content_signals(soup)
         deprecated_tags = sorted({t.name for t in soup.find_all(["font", "center", "marquee", "blink"])})
-        semantic_tags_count = self._semantic_tags_count(soup)
-        heading_distribution = self._heading_distribution(soup)
-        h_hierarchy, h_errors, h_details = self._h_hierarchy_summary(soup=soup, heading_distribution=heading_distribution)
-        words = self._tokenize(body_text)
-        ai_markers_count, ai_markers_list = self._detect_ai_markers(body_text)
-        ai_marker_sample = self._ai_marker_sample(body_text, ai_markers_list)
+        semantic_tags_count = _semantic_tags_count(soup)
+        heading_distribution = _heading_distribution(soup)
+        h_hierarchy, h_errors, h_details = _h_hierarchy_summary(soup=soup, heading_distribution=heading_distribution)
+        words = _tokenize(body_text)
+        ai_markers_count, ai_markers_list = _detect_ai_markers(body_text)
+        ai_marker_sample = _ai_marker_sample(body_text, ai_markers_list)
         word_count_est = len(words)
         ai_markers_density_1k = round((ai_markers_count / max(1, word_count_est)) * 1000.0, 2) if word_count_est else 0.0
-        filler_phrases = [w for w in self.FILLER_WORDS if re.search(rf"\\b{re.escape(w)}\\b", body_text.lower())][:20]
+        filler_phrases = [w for w in FILLER_WORDS if re.search(rf"\\b{re.escape(w)}\\b", body_text.lower())][:20]
         unique_word_count = len(set(words))
-        top_keywords = self._extract_top_keywords(words, top_n=10)
-        keyword_density_profile = self._keyword_density_profile(words, top_n=10)
-        keyword_stuffing_score = self._keyword_stuffing_score(body_text)
+        top_keywords = _extract_top_keywords(words, top_n=10)
+        keyword_density_profile = _keyword_density_profile(words, top_n=10)
+        keyword_stuffing_score = _keyword_stuffing_score(body_text)
         lexical_diversity = round(unique_word_count / max(1, len(words)), 3) if words else 0.0
-        readability_score = self._readability_score(body_text)
-        avg_sentence_length = self._avg_sentence_length(body_text)
-        avg_word_length = self._avg_word_length(body_text)
-        complex_words_percent = self._complex_words_percent(body_text)
-        content_density = self._content_density(soup=soup, text=body_text)
-        boilerplate_percent = self._boilerplate_percent(text=body_text)
-        toxicity_score = self._calc_toxicity(words)
-        filler_ratio = self._calc_filler_ratio(body_text)
-        page_type = self._classify_page_type(final_url, structured_types, title, body_text)
+        readability_score = _readability_score(body_text)
+        avg_sentence_length = _avg_sentence_length(body_text)
+        avg_word_length = _avg_word_length(body_text)
+        complex_words_percent = _complex_words_percent(body_text)
+        content_density = _content_density(soup=soup, text=body_text)
+        boilerplate_percent = _boilerplate_percent(text=body_text)
+        toxicity_score = _calc_toxicity(words)
+        filler_ratio = _calc_filler_ratio(body_text)
+        page_type = _classify_page_type(final_url, structured_types, title, body_text)
         # Guard against false positives on legal/policy pages with formal language patterns.
         ai_false_positive_guard = page_type in {"legal"} or bool(re.search(r"\b(api|sdk|json|http|ssl|tls|csp)\b", body_text.lower()))
         ai_risk_raw = (
@@ -1111,18 +480,18 @@ class SiteAuditProAdapter:
         )
         js_dependence = js_count >= 8
         has_main_tag = bool(soup.find("main"))
-        cloaking_detected = self._detect_cloaking(
+        cloaking_detected = _detect_cloaking(
             body_text=body_text,
             hidden_content=hidden_content,
             hidden_nodes_count=hidden_nodes_count,
             hidden_text_chars=hidden_text_chars,
         )
-        has_contact_info = self._detect_contact_info(body_text)
-        has_legal_docs = self._detect_legal_docs(body_text)
-        has_author_info = self._detect_author_info(soup, body_text)
-        has_reviews = self._detect_reviews(soup, body_text)
-        trust_badges = self._detect_trust_badges(body_text)
-        cta_text_quality = self._cta_text_quality(soup)
+        has_contact_info = _detect_contact_info(body_text)
+        has_legal_docs = _detect_legal_docs(body_text)
+        has_author_info = _detect_author_info(soup, body_text)
+        has_reviews = _detect_reviews(soup, body_text)
+        trust_badges = _detect_trust_badges(body_text)
+        cta_text_quality = _cta_text_quality(soup)
         total_links = anchor_total
         follow_links_total = 0
         nofollow_links_total = 0
@@ -1537,7 +906,7 @@ class SiteAuditProAdapter:
             top_keywords=top_keywords,
             keyword_density_profile=keyword_density_profile,
             lexical_diversity=lexical_diversity,
-            unique_percent=self._unique_percent(body_text),
+            unique_percent=_unique_percent(body_text),
             readability_score=readability_score,
             avg_sentence_length=avg_sentence_length,
             avg_word_length=avg_word_length,
@@ -1625,129 +994,6 @@ class SiteAuditProAdapter:
             issues=issues,
         )
         return row, internal_links, body_text, weak_anchor_count, anchor_total
-
-    def _compute_pagerank(self, graph: Dict[str, Set[str]]) -> Dict[str, float]:
-        nodes = list(graph.keys())
-        n = len(nodes)
-        if n == 0:
-            return {}
-        damping = 0.85
-        scores = {u: 1.0 / n for u in nodes}
-        for _ in range(20):
-            new_scores = {u: (1.0 - damping) / n for u in nodes}
-            for u in nodes:
-                outgoing = graph[u]
-                if outgoing:
-                    share = scores[u] / len(outgoing)
-                    for v in outgoing:
-                        new_scores[v] += damping * share
-                else:
-                    share = scores[u] / n
-                    for v in nodes:
-                        new_scores[v] += damping * share
-            scores = new_scores
-        max_score = max(scores.values()) if scores else 1.0
-        return {u: round((s / max_score) * 100.0, 2) for u, s in scores.items()}
-
-    def _compute_tfidf_scores(self, page_texts: Dict[str, str], top_n: int = 10) -> Dict[str, Dict[str, float]]:
-        if not page_texts:
-            return {}
-        word_doc_count: Counter = Counter()
-        for text in page_texts.values():
-            words = set(self._tokenize_long(text, min_len=4))
-            word_doc_count.update(words)
-
-        total_docs = len(page_texts)
-        result: Dict[str, Dict[str, float]] = {}
-        for page_url, text in page_texts.items():
-            words = self._tokenize_long(text, min_len=4)
-            if not words:
-                result[page_url] = {}
-                continue
-            word_counts = Counter(words)
-            tf_idf: Dict[str, float] = {}
-            for word, freq in word_counts.most_common(50):
-                tf = freq / len(words) if words else 0.0
-                doc_freq = word_doc_count.get(word, 0)
-                idf = math.log(total_docs / max(1, doc_freq)) if total_docs > 0 else 0.0
-                score = tf * idf
-                if score > 0.0001:
-                    tf_idf[word] = round(score, 6)
-            sorted_terms = dict(sorted(tf_idf.items(), key=lambda x: x[1], reverse=True)[:top_n])
-            result[page_url] = sorted_terms
-        return result
-
-    def _build_semantic_linking_map(
-        self, rows: List[NormalizedSiteAuditRow]
-    ) -> Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, List[str]]]:
-        if not rows:
-            return {}, {}
-        keyword_map: Dict[str, Set[str]] = {}
-        for row in rows:
-            if row.tf_idf_keywords:
-                keyword_map[row.url] = set(row.tf_idf_keywords.keys())
-            else:
-                keyword_map[row.url] = set(row.top_keywords or [])
-
-        topic_clusters: Dict[str, List[str]] = defaultdict(list)
-        semantic_by_url: Dict[str, List[Dict[str, Any]]] = {}
-        for src in rows:
-            src_keywords = keyword_map.get(src.url, set())
-            semantic: List[Dict[str, Any]] = []
-            for tgt in rows:
-                if tgt.url == src.url:
-                    continue
-                common = src_keywords & keyword_map.get(tgt.url, set())
-                if common:
-                    common_sorted = sorted(common)
-                    semantic.append(
-                        {
-                            "target_url": tgt.url,
-                            "target_title": tgt.title or "",
-                            "matching_keywords": common_sorted,
-                            "relevance_score": len(common_sorted),
-                            "suggested_anchor": common_sorted[0] if common_sorted else "",
-                        }
-                    )
-            semantic_sorted = sorted(semantic, key=lambda x: x["relevance_score"], reverse=True)
-            semantic_by_url[src.url] = semantic_sorted
-            src.topic_hub = len(semantic_sorted) >= 3
-            if semantic_sorted:
-                cluster = (semantic_sorted[0].get("matching_keywords") or ["misc"])[0]
-            elif src.tf_idf_keywords:
-                cluster = next(iter(src.tf_idf_keywords.keys()), "misc")
-            else:
-                cluster = src.top_keywords[0] if src.top_keywords else "misc"
-            src.topic_label = cluster
-            topic_clusters[cluster].append(src.url)
-        return semantic_by_url, topic_clusters
-
-    def _apply_linking_scores(
-        self,
-        rows: List[NormalizedSiteAuditRow],
-        incoming_counts: Counter,
-    ) -> None:
-        if not rows:
-            return
-        for row in rows:
-            row.orphan_page = int(incoming_counts.get(row.url, 0)) == 0
-            pa = float(row.pagerank or 0.0)
-            sem_count = len(row.semantic_links or [])
-            incoming = int(incoming_counts.get(row.url, 0))
-            anchor_quality = int(min(100, pa * 20 + sem_count * 10 + min(50, incoming * 2)))
-            row.anchor_text_quality_score = anchor_quality
-
-            outgoing_internal = int(row.outgoing_internal_links or 0)
-            score = 0.0
-            score += min(45.0, pa * 45.0)
-            score += min(25.0, anchor_quality * 0.25)
-            score += min(15.0, incoming * 2.0)
-            score += min(10.0, sem_count * 2.0)
-            if row.orphan_page:
-                score -= 10.0
-            if outgoing_internal == 0:
-                score -= 5.0
-            row.link_quality_score = float(int(max(0.0, min(100.0, score))))
 
     def _calculate_site_health_scores(self, rows: List[NormalizedSiteAuditRow], incoming_counts: Counter) -> None:
         if not rows:
@@ -2065,7 +1311,7 @@ class SiteAuditProAdapter:
             text = page_texts.get(row.url, "")
             if int(row.word_count or 0) < 80:
                 continue
-            simhash_by_url[row.url] = self._simhash64(text)
+            simhash_by_url[row.url] = _simhash64(text)
 
         near_dup_map: Dict[str, Set[str]] = defaultdict(set)
         candidate_urls = list(simhash_by_url.keys())
@@ -2075,7 +1321,7 @@ class SiteAuditProAdapter:
             for j in range(i + 1, len(candidate_urls)):
                 u2 = candidate_urls[j]
                 h2 = simhash_by_url[u2]
-                if self._hamming64(h1, h2) <= 6:
+                if _hamming64(h1, h2) <= 6:
                     near_dup_map[u1].add(u2)
                     near_dup_map[u2].add(u1)
 
@@ -2100,8 +1346,8 @@ class SiteAuditProAdapter:
         for u in all_urls:
             normalized_graph[u] = {v for v in link_graph.get(u, set()) if v in allowed}
 
-        pagerank_scores = self._compute_pagerank(normalized_graph)
-        tfidf_scores = self._compute_tfidf_scores(page_texts, top_n=10)
+        pagerank_scores = _compute_pagerank(normalized_graph)
+        tfidf_scores = _compute_tfidf_scores(page_texts, top_n=10)
 
         for row in rows:
             row.incoming_internal_links = int(incoming_counts.get(row.url, 0))
@@ -2111,11 +1357,11 @@ class SiteAuditProAdapter:
             row.topic_label = row.top_terms[0] if row.top_terms else (row.top_keywords[0] if row.top_keywords else "misc")
             weak_count, anchor_total = anchor_quality_raw.get(row.url, (0, 0))
             row.weak_anchor_ratio = round((weak_count / anchor_total), 3) if anchor_total else 0.0
-        semantic_by_source, topic_clusters = self._build_semantic_linking_map(rows)
+        semantic_by_source, topic_clusters = _build_semantic_linking_map(rows)
         for row in rows:
             row.semantic_links = semantic_by_source.get(row.url, [])
 
-        self._apply_linking_scores(rows=rows, incoming_counts=incoming_counts)
+        _apply_linking_scores(rows=rows, incoming_counts=incoming_counts)
         self._calculate_site_health_scores(rows=rows, incoming_counts=incoming_counts)
 
         for row in rows:
