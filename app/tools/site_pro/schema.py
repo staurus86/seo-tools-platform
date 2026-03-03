@@ -111,6 +111,7 @@ class NormalizedSiteAuditRow(BaseModel):
     hidden_content: Optional[bool] = None
     hidden_nodes_count: Optional[int] = None
     hidden_text_chars: Optional[int] = None
+    hidden_text_snippets: List[str] = Field(default_factory=list)
     cta_count: Optional[int] = None
     lists_count: Optional[int] = None
     tables_count: Optional[int] = None

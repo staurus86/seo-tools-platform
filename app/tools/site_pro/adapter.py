@@ -383,7 +383,7 @@ class SiteAuditProAdapter:
                 if any(word in (tag.get_text(" ", strip=True).lower()) for word in ("buy", "order", "contact", "sign", "register"))
             ]
         )
-        hidden_content, hidden_nodes_count, hidden_text_chars = _extract_hidden_content_signals(soup)
+        hidden_content, hidden_nodes_count, hidden_text_chars, hidden_text_snippets = _extract_hidden_content_signals(soup)
         deprecated_tags = sorted({t.name for t in soup.find_all(["font", "center", "marquee", "blink"])})
         semantic_tags_count = _semantic_tags_count(soup)
         heading_distribution = _heading_distribution(soup)
@@ -780,7 +780,8 @@ class SiteAuditProAdapter:
                     severity="warning",
                     code="hidden_content_css",
                     title="Hidden content detected (CSS/ARIA/small font)",
-                    details=f"nodes={hidden_nodes_count}, hidden_text_chars={hidden_text_chars}",
+                    details=f"nodes={hidden_nodes_count}, hidden_text_chars={hidden_text_chars}"
+                    + ("\n" + "\n".join(hidden_text_snippets[:5]) if hidden_text_snippets else ""),
                 )
             )
             penalty += min(10, max(2, hidden_nodes_count // 2))
@@ -790,7 +791,8 @@ class SiteAuditProAdapter:
                     severity="critical",
                     code="cloaking_detected",
                     title="Potential cloaking risk detected",
-                    details=f"nodes={hidden_nodes_count}, hidden_text_chars={hidden_text_chars}",
+                    details=f"nodes={hidden_nodes_count}, hidden_text_chars={hidden_text_chars}"
+                    + ("\n" + "\n".join(hidden_text_snippets[:5]) if hidden_text_snippets else ""),
                 )
             )
             penalty += 20
@@ -928,6 +930,7 @@ class SiteAuditProAdapter:
             hidden_content=hidden_content,
             hidden_nodes_count=hidden_nodes_count,
             hidden_text_chars=hidden_text_chars,
+            hidden_text_snippets=hidden_text_snippets,
             cta_count=cta_count,
             cta_text_quality=cta_text_quality,
             lists_count=lists_count,

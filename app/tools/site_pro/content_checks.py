@@ -327,62 +327,94 @@ def _h_hierarchy_summary(soup: BeautifulSoup, heading_distribution: Dict[str, in
     return status, errors, details
 
 
-def _extract_hidden_content_signals(soup: BeautifulSoup) -> Tuple[bool, int, int]:
-    hidden_nodes: List[Any] = []
-    selectors = [
-        "[hidden]",
-        '[style*="display:none"]',
-        '[style*="display: none"]',
-        '[style*="visibility:hidden"]',
-        '[style*="visibility: hidden"]',
-        '[style*="opacity:0"]',
-        '[style*="opacity: 0"]',
-        '[style*="text-indent:-"]',
-        '[style*="left:-9999"]',
-        '[style*="left: -9999"]',
-        '[style*="clip:rect(0"]',
-        '[style*="height:0"]',
-        '[style*="height: 0"]',
-        '[style*="width:0"]',
-        '[style*="width: 0"]',
-    ]
+_SKIP_HIDDEN_TAGS = frozenset({"script", "style", "noscript", "template", "svg", "code", "pre"})
+_ICON_CLASS_RE = re.compile(r"icon|fa-|bi-|material", re.I)
+
+_HIDDEN_SELECTORS: List[Tuple[str, str]] = [
+    ("[hidden]", "[hidden]"),
+    ('[style*="display:none"]', "display:none"),
+    ('[style*="display: none"]', "display:none"),
+    ('[style*="visibility:hidden"]', "visibility:hidden"),
+    ('[style*="visibility: hidden"]', "visibility:hidden"),
+    ('[style*="opacity:0"]', "opacity:0"),
+    ('[style*="opacity: 0"]', "opacity:0"),
+    ('[style*="text-indent:-"]', "text-indent"),
+    ('[style*="left:-9999"]', "off-screen"),
+    ('[style*="left: -9999"]', "off-screen"),
+    ('[style*="clip:rect(0"]', "clip"),
+    ('[style*="height:0"]', "zero-size"),
+    ('[style*="height: 0"]', "zero-size"),
+    ('[style*="width:0"]', "zero-size"),
+    ('[style*="width: 0"]', "zero-size"),
+]
+
+_MAX_SNIPPETS = 10
+
+
+def _extract_hidden_content_signals(soup: BeautifulSoup) -> Tuple[bool, int, int, List[str]]:
+    hidden_nodes: List[Tuple[Any, str]] = []  # (node, method)
     seen_ids: Set[int] = set()
-    for sel in selectors:
+
+    for sel, method in _HIDDEN_SELECTORS:
         for node in soup.select(sel):
             node_id = id(node)
             if node_id in seen_ids:
                 continue
             seen_ids.add(node_id)
-            hidden_nodes.append(node)
+            hidden_nodes.append((node, method))
+
     for node in soup.find_all(attrs={"aria-hidden": "true"}):
+        node_id = id(node)
+        if node_id in seen_ids:
+            continue
         text_len = len(re.sub(r"\s+", " ", node.get_text(" ", strip=True)))
         if text_len > 0:
-            node_id = id(node)
-            if node_id not in seen_ids:
-                seen_ids.add(node_id)
-                hidden_nodes.append(node)
+            seen_ids.add(node_id)
+            hidden_nodes.append((node, "aria-hidden"))
 
-    small_font_nodes = []
     for node in soup.find_all(style=True):
         style = str(node.get("style") or "").lower()
         m = re.search(r"font-size\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*px", style)
         if m:
             try:
                 if float(m.group(1)) < 5.0:
-                    small_font_nodes.append(node)
+                    node_id = id(node)
+                    if node_id not in seen_ids:
+                        seen_ids.add(node_id)
+                        hidden_nodes.append((node, "small-font"))
             except Exception:
                 pass
-    for node in small_font_nodes:
-        node_id = id(node)
-        if node_id not in seen_ids:
-            seen_ids.add(node_id)
-            hidden_nodes.append(node)
 
-    hidden_nodes_count = len(hidden_nodes)
+    # --- Filter false positives and collect snippets ---
+    hidden_nodes_count = 0
     hidden_text_chars = 0
-    for node in hidden_nodes:
-        hidden_text_chars += len(re.sub(r"\s+", " ", node.get_text(" ", strip=True)))
-    return (hidden_nodes_count > 0), hidden_nodes_count, hidden_text_chars
+    snippets: List[str] = []
+
+    for node, method in hidden_nodes:
+        tag_name = getattr(node, "name", None) or ""
+        if tag_name.lower() in _SKIP_HIDDEN_TAGS:
+            continue
+
+        raw_text = re.sub(r"\s+", " ", node.get_text(" ", strip=True))
+        if len(raw_text) < 4:
+            continue
+
+        # Skip icon elements for aria-hidden
+        if method == "aria-hidden" and tag_name.lower() in ("i", "span"):
+            cls = " ".join(node.get("class", []))
+            if _ICON_CLASS_RE.search(cls):
+                continue
+
+        hidden_nodes_count += 1
+        hidden_text_chars += len(raw_text)
+
+        if len(snippets) < _MAX_SNIPPETS:
+            snippet_text = raw_text[:150]
+            if len(raw_text) > 150:
+                snippet_text += "..."
+            snippets.append(f"[{method}] {snippet_text}")
+
+    return (hidden_nodes_count > 0), hidden_nodes_count, hidden_text_chars, snippets
 
 
 def _detect_cloaking(

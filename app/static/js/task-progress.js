@@ -898,7 +898,7 @@ function renderSiteAuditProIssuesExplorer() {
                     <span class="font-semibold">${escapeHtml(issue.code || 'issue')}</span>
                 </div>
                 <div class="mt-1">${escapeHtml(issue.title || '')}</div>
-                ${issue.details ? `<div class="text-gray-700 mt-1">${escapeHtml(issue.details)}</div>` : ''}
+                ${issue.details ? `<div class="text-gray-700 mt-1">${escapeHtml(issue.details).replace(/\n/g, '<br>')}</div>` : ''}
                 ${issue.url ? `<div class="text-gray-600 mt-1 break-all">${escapeHtml(issue.url)}</div>` : ''}
             </div>
         `;
@@ -5664,7 +5664,7 @@ function generateMobileCheckHTML(result) {
                 ${(i.severity || 'info').toUpperCase()} | ${i.device || 'Устройство'}
             </div>
             <div class="text-gray-700">${i.title || ''}</div>
-            <div class="text-gray-500">${i.details || ''}</div>
+            <div class="text-gray-500">${(i.details || '').replace(/\n/g, '<br>')}</div>
         </div>
     `).join('');
 
