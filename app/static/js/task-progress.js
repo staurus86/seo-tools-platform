@@ -511,27 +511,38 @@ function initChartsForTool(taskType, result) {
         const r = result.results || result.result || result;
 
         if (taskType === 'robots_check') {
-            const score = Number(r.score ?? r.summary?.score ?? 0);
+            const score = Number(r.quality_score ?? 0);
             createScoreGauge('ds-chart-robots-score', score, 'Robots Score');
-            const findings = r.findings || r.issues || {};
-            const crit = Array.isArray(findings.critical) ? findings.critical.length : 0;
-            const warn = Array.isArray(findings.warning) ? findings.warning.length : 0;
-            const info = Array.isArray(findings.info) ? findings.info.length : 0;
-            if (crit + warn + info > 0) {
+            const crit = Array.isArray(r.critical_issues) ? r.critical_issues.length : 0;
+            const warn = Array.isArray(r.warning_issues || r.warnings) ? (r.warning_issues || r.warnings).length : 0;
+            const info = Array.isArray(r.info_issues) ? r.info_issues.length : 0;
+            const sc = r.severity_counts || {};
+            const critN = sc.critical ?? crit;
+            const warnN = sc.warning ?? warn;
+            const infoN = sc.info ?? info;
+            if (critN + warnN + infoN > 0) {
                 createBarChart('ds-chart-robots-severity', ['Critical', 'Warning', 'Info'],
-                    [{data: [crit, warn, info], label: 'Issues', color: ['#ef4444','#f59e0b','#3b82f6']}]);
+                    [{data: [critN, warnN, infoN], label: 'Issues', color: ['#ef4444','#f59e0b','#3b82f6']}]);
             }
         }
 
         if (taskType === 'sitemap_validate') {
-            const score = Number(r.score ?? r.summary?.score ?? 0);
+            const score = Number(r.quality_score ?? 0);
             createScoreGauge('ds-chart-sitemap-score', score, 'Sitemap Score');
-            const summary = r.summary || {};
-            const totalUrls = Number(summary.total_urls || summary.urls_count || 0);
-            const validUrls = Number(summary.valid_urls || totalUrls);
-            const invalidUrls = totalUrls - validUrls;
+            const totalUrls = Number(r.urls_count || 0);
+            const uniqueUrls = Number(r.unique_urls_count || 0);
+            const duplicates = totalUrls - uniqueUrls;
             if (totalUrls > 0) {
-                createBarChart('ds-chart-sitemap-dist', ['Valid', 'Invalid'], [validUrls, invalidUrls]);
+                createBarChart('ds-chart-sitemap-dist', ['Уникальные', 'Дубли'], [uniqueUrls, duplicates]);
+            }
+            const issues = r.issues || [];
+            const sevCounts = r.severity_counts || {};
+            const critI = sevCounts.critical ?? issues.filter(i => i.severity === 'critical').length;
+            const warnI = sevCounts.warning ?? issues.filter(i => i.severity === 'warning').length;
+            const infoI = sevCounts.info ?? issues.filter(i => i.severity === 'info').length;
+            if (critI + warnI + infoI > 0) {
+                createBarChart('ds-chart-sitemap-severity', ['Critical', 'Warning', 'Info'],
+                    [{data: [critI, warnI, infoI], label: 'Issues', color: ['#ef4444','#f59e0b','#3b82f6']}]);
             }
         }
 
@@ -551,33 +562,46 @@ function initChartsForTool(taskType, result) {
         }
 
         if (taskType === 'render_audit') {
-            const rawScore = Number(r.raw_score ?? r.raw?.score ?? 0);
-            const renderedScore = Number(r.rendered_score ?? r.rendered?.score ?? 0);
-            createScoreGauge('ds-chart-render-raw', rawScore, 'Raw HTML');
-            createScoreGauge('ds-chart-render-rendered', renderedScore, 'Rendered');
+            const overallScore = Number(r.summary?.score ?? 0);
+            createScoreGauge('ds-chart-render-raw', overallScore, 'Overall');
+            const variants = Array.isArray(r.variants) ? r.variants : [];
+            if (variants.length > 0) {
+                const labels = variants.map(v => v.variant_label || v.variant_id || 'Variant');
+                const scores = variants.map(v => Number(v.metrics?.score ?? 0));
+                createBarChart('ds-chart-render-rendered', labels,
+                    [{data: scores, label: 'Score', color: '#3b82f6'}]);
+            }
         }
 
         if (taskType === 'mobile_check') {
-            const devices = r.devices || r.results || [];
+            const devices = r.device_results || [];
             if (Array.isArray(devices) && devices.length > 0) {
-                const labels = devices.map(d => d.device || d.name || 'Device');
-                const scores = devices.map(d => Number(d.score || d.overall_score || 0));
-                createRadarChart('ds-chart-mobile-radar', labels, scores, 'Mobile Score');
+                const labels = devices.map(d => d.device_name || 'Device');
+                const loadTimes = devices.map(d => Number(d.load_time_ms || 0));
+                createBarChart('ds-chart-mobile-radar', labels,
+                    [{data: loadTimes, label: 'Загрузка (мс)', color: '#0e7490'}]);
+                const friendly = devices.filter(d => d.mobile_friendly).length;
+                const notFriendly = devices.length - friendly;
+                createPieChart('ds-chart-mobile-compat', ['Mobile-Friendly', 'Проблемы'], [friendly, notFriendly], true);
             }
         }
 
         if (taskType === 'onpage_audit') {
-            const metrics = r.metrics || r.keyword_metrics || {};
-            const labels = ['Плотность', 'Title', 'Description', 'H1', 'Ссылки'];
-            const values = [
-                Number(metrics.density_score || metrics.keyword_density_score || 0),
-                Number(metrics.title_score || 0),
-                Number(metrics.description_score || 0),
-                Number(metrics.h1_score || 0),
-                Number(metrics.links_score || 0)
-            ];
-            if (values.some(v => v > 0)) {
-                createRadarChart('ds-chart-onpage-radar', labels, values, 'OnPage');
+            const heatmap = r.heatmap || {};
+            const heatLabels = Object.keys(heatmap);
+            const heatValues = heatLabels.map(k => Number(heatmap[k]?.score ?? 0));
+            if (heatLabels.length > 0) {
+                createRadarChart('ds-chart-onpage-radar', heatLabels, heatValues, 'Quality');
+            }
+            const overallScore = Number(r.score ?? r.summary?.score ?? 0);
+            createScoreGauge('ds-chart-onpage-score', overallScore, 'OnPage Score');
+            const keywords = r.keywords || [];
+            if (keywords.length > 0) {
+                const topKw = keywords.slice(0, 8);
+                const kwLabels = topKw.map(k => k.keyword || '');
+                const kwValues = topKw.map(k => Number(k.density_pct ?? 0));
+                createBarChart('ds-chart-onpage-density', kwLabels,
+                    [{data: kwValues, label: 'Плотность %', color: '#3b82f6'}]);
             }
         }
 
@@ -585,9 +609,15 @@ function initChartsForTool(taskType, result) {
             const clusters = r.clusters || [];
             if (Array.isArray(clusters) && clusters.length > 0) {
                 const top = clusters.slice(0, 20);
-                const labels = top.map((c, i) => c.label || c.name || `Cluster ${i+1}`);
-                const values = top.map(c => Number(c.size || c.count || c.keywords?.length || 0));
+                const labels = top.map((c, i) => c.cluster_label || c.representative || `Cluster ${i+1}`);
+                const values = top.map(c => Number(c.size || c.keywords?.length || 0));
                 createHorizontalBar('ds-chart-cluster-bar', labels, values, '#06b6d4');
+            }
+            const intentDist = r.intent_distribution || {};
+            const intentLabels = Object.keys(intentDist);
+            const intentValues = intentLabels.map(k => Number(intentDist[k] || 0));
+            if (intentLabels.length > 0) {
+                createPieChart('ds-chart-cluster-intent', intentLabels, intentValues, true);
             }
         }
 
@@ -655,13 +685,17 @@ function initChartsForTool(taskType, result) {
         }
 
         if (taskType === 'core_web_vitals') {
-            const metrics = r.metrics || r.lighthouseResult?.audits || {};
-            const lcp = Number(metrics.lcp?.value || metrics.LCP || metrics['largest-contentful-paint']?.numericValue || 0);
-            const inp = Number(metrics.inp?.value || metrics.INP || 0);
-            const cls = Number(metrics.cls?.value || metrics.CLS || metrics['cumulative-layout-shift']?.numericValue || 0);
+            const metrics = r.metrics || {};
+            const lcp = Number(metrics.lcp?.field_value_ms ?? metrics.lcp?.lab_value_ms ?? 0);
+            const inp = Number(metrics.inp?.field_value_ms ?? metrics.inp?.lab_value_ms ?? 0);
+            const cls = Number(metrics.cls?.field_value ?? metrics.cls?.lab_value ?? 0);
             if (lcp > 0 || cls > 0) {
-                createBarChart('ds-chart-cwv-metrics', ['LCP (ms)', 'INP (ms)', 'CLS (x100)'],
+                createBarChart('ds-chart-cwv-metrics', ['LCP (ms)', 'INP (ms)', 'CLS (×100)'],
                     [{data: [Math.round(lcp), Math.round(inp), Math.round(cls * 100)], label: 'CWV', color: ['#0ea5e9','#8b5cf6','#f59e0b']}]);
+            }
+            const perfScore = Number(r.summary?.performance_score ?? 0);
+            if (perfScore > 0) {
+                createScoreGauge('ds-chart-cwv-score', perfScore, 'Performance');
             }
         }
 
@@ -3601,6 +3635,10 @@ function generateCoreWebVitalsHTML(result) {
                     <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Метрики CWV</h4>
                     <div style="height:200px;"><canvas id="ds-chart-cwv-metrics"></canvas></div>
                 </div>
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Performance Score</h4>
+                    <div style="height:200px;"><canvas id="ds-chart-cwv-score"></canvas></div>
+                </div>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
@@ -4422,6 +4460,10 @@ function generateSitemapHTMLV2(result) {
                 <div class="ds-card" style="padding:1rem;">
                     <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Распределение URL</h4>
                     <div style="height:200px;"><canvas id="ds-chart-sitemap-dist"></canvas></div>
+                </div>
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Проблемы по severity</h4>
+                    <div style="height:200px;"><canvas id="ds-chart-sitemap-severity"></canvas></div>
                 </div>
             </div>
 
@@ -5716,11 +5758,11 @@ function generateRenderAuditHTML(result) {
             <!-- Charts -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="ds-card" style="padding:1rem;">
-                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Raw HTML</h4>
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Общий балл</h4>
                     <div style="height:200px;"><canvas id="ds-chart-render-raw"></canvas></div>
                 </div>
                 <div class="ds-card" style="padding:1rem;">
-                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Rendered HTML</h4>
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">По вариантам</h4>
                     <div style="height:200px;"><canvas id="ds-chart-render-rendered"></canvas></div>
                 </div>
             </div>
@@ -5956,8 +5998,12 @@ function generateMobileCheckHTML(result) {
             <!-- Charts -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="ds-card" style="padding:1rem;">
-                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Мобильная совместимость</h4>
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Время загрузки</h4>
                     <div style="height:200px;"><canvas id="ds-chart-mobile-radar"></canvas></div>
+                </div>
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Mobile-Friendly</h4>
+                    <div style="height:200px;"><canvas id="ds-chart-mobile-compat"></canvas></div>
                 </div>
             </div>
 
@@ -6169,6 +6215,14 @@ function generateOnPageAuditHTML(result) {
                 <div class="ds-card" style="padding:1rem;">
                     <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">OnPage профиль</h4>
                     <div style="height:200px;"><canvas id="ds-chart-onpage-radar"></canvas></div>
+                </div>
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">OnPage Score</h4>
+                    <div style="height:200px;"><canvas id="ds-chart-onpage-score"></canvas></div>
+                </div>
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Плотность ключей</h4>
+                    <div style="height:200px;"><canvas id="ds-chart-onpage-density"></canvas></div>
                 </div>
             </div>
 
@@ -6410,6 +6464,10 @@ function generateClusterizerHTML(result) {
                 <div class="ds-card" style="padding:1rem;">
                     <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Распределение кластеров</h4>
                     <div style="height:200px;"><canvas id="ds-chart-cluster-bar"></canvas></div>
+                </div>
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Intent-распределение</h4>
+                    <div style="height:200px;"><canvas id="ds-chart-cluster-intent"></canvas></div>
                 </div>
             </div>
 
