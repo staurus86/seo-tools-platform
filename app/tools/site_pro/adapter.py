@@ -816,7 +816,7 @@ class SiteAuditProAdapter:
             )
             penalty += 1
 
-        indexable = ("noindex" not in robots and status_code < 400 and canonical_status != "external")
+        indexable = ("noindex" not in robots and status_code < 400)
         if status_code >= 400:
             indexability_reason = "http_error"
         elif "noindex" in robots:
@@ -1037,24 +1037,23 @@ class SiteAuditProAdapter:
             elif tox <= 60:
                 score += 1.0
             freshness = row.content_freshness_days
-            if freshness is None:
-                score += 1.0
-            elif freshness <= 180:
-                score += 3.0
-            elif freshness <= 365:
-                score += 2.0
-            elif freshness <= 730:
-                score += 1.0
+            if freshness is not None:
+                if freshness <= 180:
+                    score += 3.0
+                elif freshness <= 365:
+                    score += 2.0
+                elif freshness <= 730:
+                    score += 1.0
 
             title_len = int(row.title_len or 0)
-            if 30 <= title_len <= 60:
+            if 40 <= title_len <= 65:
                 score += 5.0
-            elif 20 <= title_len <= 70:
+            elif 25 <= title_len <= 75:
                 score += 3.0
             desc_len = int(row.description_len or 0)
-            if 50 <= desc_len <= 160:
+            if 80 <= desc_len <= 160:
                 score += 3.0
-            elif 30 <= desc_len <= 170:
+            elif 50 <= desc_len <= 200:
                 score += 1.0
             if int(row.h1_count or 0) == 1:
                 score += 2.0

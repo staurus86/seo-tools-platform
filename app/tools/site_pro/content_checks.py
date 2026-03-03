@@ -429,10 +429,10 @@ def _detect_cloaking(
     if total_chars <= 0:
         return False
     hidden_ratio = float(hidden_text_chars) / float(max(1, total_chars))
-    if hidden_nodes_count >= 10:
+    if hidden_nodes_count >= 20:
         return True
-    if hidden_ratio >= 0.20 and hidden_text_chars >= 120:
+    if hidden_ratio >= 0.30 and hidden_text_chars >= 200:
         return True
-    if hidden_nodes_count >= 4 and hidden_text_chars >= 80:
+    if hidden_nodes_count >= 8 and hidden_text_chars >= 200:
         return True
-    return hidden_nodes_count >= 4 and total_chars < 300
+    return hidden_nodes_count >= 6 and total_chars < 200

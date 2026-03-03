@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     # Rate Limiting (test-friendly defaults: effectively disabled)
     RATE_LIMIT_PER_HOUR: int = int(os.getenv("RATE_LIMIT_PER_HOUR", "999"))
     RATE_LIMIT_WINDOW: int = int(os.getenv("RATE_LIMIT_WINDOW", "10"))
+    RATE_LIMIT_EXPORT: int = int(os.getenv("RATE_LIMIT_EXPORT", "10"))
+    RATE_LIMIT_EXPORT_WINDOW: int = int(os.getenv("RATE_LIMIT_EXPORT_WINDOW", "60"))
     
     # Reports
     REPORTS_DIR: str = "reports_output"

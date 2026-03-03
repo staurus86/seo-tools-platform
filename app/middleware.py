@@ -68,7 +68,7 @@ def _get_client_ip(request: Request) -> str:
     return str(getattr(request.client, "host", "unknown") or "unknown")
 
 
-def _check_rate_limit(ip: str, limit: int, window_sec: int) -> tuple[bool, int, int]:
+def _check_rate_limit(ip: str, limit: int, window_sec: int, bucket: str = "api") -> tuple[bool, int, int]:
     """
     Increment the request counter for ``ip`` in the current window.
 
@@ -80,7 +80,7 @@ def _check_rate_limit(ip: str, limit: int, window_sec: int) -> tuple[bool, int, 
         return True, limit, window_sec
 
     window_id = math.floor(time.time() / window_sec)
-    key = f"ratelimit:api:{ip}:{window_id}"
+    key = f"ratelimit:{bucket}:{ip}:{window_id}"
     try:
         count = int(client.incr(key))  # type: ignore[attr-defined]
         if count == 1:
@@ -115,11 +115,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         from app.config import settings  # late import to avoid circular deps
 
-        limit = max(1, int(settings.RATE_LIMIT_PER_HOUR))
-        window = max(1, int(settings.RATE_LIMIT_WINDOW))
-
         ip = _get_client_ip(request)
-        allowed, remaining, reset_in = _check_rate_limit(ip, limit, window)
+
+        # Stricter limit for export endpoints (file generation is expensive)
+        if path.startswith("/api/export/"):
+            limit = max(1, int(getattr(settings, "RATE_LIMIT_EXPORT", 10)))
+            window = max(1, int(getattr(settings, "RATE_LIMIT_EXPORT_WINDOW", 60)))
+            allowed, remaining, reset_in = _check_rate_limit(ip, limit, window, bucket="export")
+        else:
+            limit = max(1, int(settings.RATE_LIMIT_PER_HOUR))
+            window = max(1, int(settings.RATE_LIMIT_WINDOW))
+            allowed, remaining, reset_in = _check_rate_limit(ip, limit, window)
 
         if not allowed:
             logger.warning("Rate limit exceeded for IP %s on %s", ip, path)
