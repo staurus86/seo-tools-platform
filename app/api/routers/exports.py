@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, Request
 from fastapi.responses import Response, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.api.routers._task_store import append_task_artifact, get_task_result
 
@@ -19,7 +19,7 @@ router = APIRouter(tags=["Exports"])
 
 
 class ExportRequest(BaseModel):
-    task_id: str
+    task_id: str = Field(..., min_length=1, max_length=256, pattern=r"^[a-zA-Z0-9_\-\.]+$")
 
 
 # ─── helpers ───────────────────────────────────────────────────────────────

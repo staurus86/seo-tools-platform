@@ -8,7 +8,7 @@ from typing import Optional, List, Dict, Any
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from app.validators import URLModel
 from app.api.routers._task_store import (
@@ -49,9 +49,9 @@ def check_site_audit_pro(
 class SiteAuditProRequest(URLModel):
     url: Optional[str] = None
     mode: Optional[str] = "quick"
-    max_pages: int = 5
+    max_pages: int = Field(default=5, ge=1, le=500)
     batch_mode: bool = False
-    batch_urls: Optional[List[str]] = None
+    batch_urls: Optional[List[str]] = Field(default=None, max_length=500)
     extended_hreflang_checks: bool = False
 
     @field_validator("batch_urls", mode="before")

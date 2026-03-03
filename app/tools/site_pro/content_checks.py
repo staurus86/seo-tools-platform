@@ -39,7 +39,7 @@ def _boilerplate_percent(text: str) -> float:
     if total <= 0:
         return 0.0
     matches = sum(len(re.findall(pattern, raw, flags=re.I)) for pattern in BOILERPLATE_PATTERNS)
-    score = min(100.0, (matches * 5.0) / (total / 100.0)) if total > 0 else 0.0
+    score = min(100.0, (matches / total) * 100.0) if total > 0 else 0.0
     return round(score, 1)
 
 

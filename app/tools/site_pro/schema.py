@@ -150,6 +150,7 @@ class NormalizedSiteAuditRow(BaseModel):
     near_duplicate_urls: List[str] = Field(default_factory=list)
     weak_anchor_ratio: Optional[float] = None
     anchor_text_quality_score: Optional[float] = None
+    link_authority_score: Optional[float] = None
     link_quality_score: Optional[float] = None
     ai_markers_count: int = 0
     ai_markers_list: List[str] = Field(default_factory=list)

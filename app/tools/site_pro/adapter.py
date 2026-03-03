@@ -393,7 +393,7 @@ class SiteAuditProAdapter:
         ai_marker_sample = _ai_marker_sample(body_text, ai_markers_list)
         word_count_est = len(words)
         ai_markers_density_1k = round((ai_markers_count / max(1, word_count_est)) * 1000.0, 2) if word_count_est else 0.0
-        filler_phrases = [w for w in FILLER_WORDS if re.search(rf"\\b{re.escape(w)}\\b", body_text.lower())][:20]
+        filler_phrases = [w for w in FILLER_WORDS if re.search(rf"\b{re.escape(w)}\b", body_text.lower())][:20]
         unique_word_count = len(set(words))
         top_keywords = _extract_top_keywords(words, top_n=10)
         keyword_density_profile = _keyword_density_profile(words, top_n=10)
@@ -923,7 +923,7 @@ class SiteAuditProAdapter:
             h_details=h_details,
             semantic_tags_count=semantic_tags_count,
             html_quality_score=round(
-                max(0.0, min(100.0, 50.0 + min(30.0, semantic_tags_count * 2.5) + min(20.0, content_density * 10.0))),
+                max(0.0, min(100.0, 50.0 + min(30.0, semantic_tags_count * 2.5) + min(20.0, content_density * 0.2))),
                 1,
             ),
             deprecated_tags=deprecated_tags,
@@ -1009,7 +1009,7 @@ class SiteAuditProAdapter:
             score += 5.0 if row.is_https else 0.0
             score += 5.0 if row.mobile_friendly_hint else 0.0
             score += 4.0 if row.compression_enabled else 0.0
-            score += 4.0 if (row.cache_control and row.cache_control != "not set") else 0.0
+            score += 4.0 if row.cache_control else 0.0
             if row.canonical_status == "self":
                 score += 4.0
             elif row.canonical_status == "other":
@@ -1017,9 +1017,7 @@ class SiteAuditProAdapter:
             elif row.canonical_status == "external":
                 score += 1.0
             score += min(6.0, float(row.html_quality_score or 0.0) / 100.0 * 6.0)
-            if row.response_time_ms is None:
-                score += 1.0
-            elif row.response_time_ms <= 800:
+            if row.response_time_ms is not None and row.response_time_ms <= 800:
                 score += 4.0
             elif row.response_time_ms <= 1500:
                 score += 2.0
@@ -1062,7 +1060,7 @@ class SiteAuditProAdapter:
                 score += 2.0
 
             no_alt = int(row.images_no_alt or 0)
-            score += max(0.0, 2.0 - min(2.0, float(no_alt)))
+            score += max(0.0, 2.0 - no_alt * 0.4)
 
             incoming = int(incoming_counts.get(row.url, 0))
             score += min(6.0, incoming * 1.5)
@@ -1358,8 +1356,6 @@ class SiteAuditProAdapter:
             row.tf_idf_keywords = tfidf_scores.get(row.url, {})
             row.top_terms = list(row.tf_idf_keywords.keys())[:10]
             row.topic_label = row.top_terms[0] if row.top_terms else (row.top_keywords[0] if row.top_keywords else "misc")
-            weak_count, anchor_total = anchor_quality_raw.get(row.url, (0, 0))
-            row.weak_anchor_ratio = round((weak_count / anchor_total), 3) if anchor_total else 0.0
         semantic_by_source, topic_clusters = _build_semantic_linking_map(rows)
         for row in rows:
             row.semantic_links = semantic_by_source.get(row.url, [])
@@ -1368,12 +1364,12 @@ class SiteAuditProAdapter:
         self._calculate_site_health_scores(rows=rows, incoming_counts=incoming_counts)
 
         for row in rows:
-            if row.incoming_internal_links == 0 and row.outgoing_internal_links == 0:
+            if row.orphan_page:
                 row.issues.append(
                     SiteAuditProIssue(
                         severity="warning",
                         code="orphan_or_isolated_page",
-                        title="Page appears isolated in internal link graph",
+                        title="Orphan page — no incoming internal links",
                     )
                 )
             outgoing_total = (row.outgoing_internal_links or 0) + (row.outgoing_external_links or 0)

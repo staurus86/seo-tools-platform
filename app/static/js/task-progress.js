@@ -825,7 +825,7 @@ function filterSiteAuditProIssues() {
         const codeL = String(code || '').toLowerCase();
         if (/(title|meta|h1|keyword|content|ai_|duplicate_)/.test(codeL)) return 'Content+SEO';
         if (/(schema|structured|hreflang|canonical|index|http_status)/.test(codeL)) return 'SEO+Dev';
-        if (/(security|cache|compression|https|crawl_budget|redirect)/.test(codeL)) return 'Разработка/Инфра';
+        if (/(security|cache|compression|https|crawl_budget|redirect)/.test(codeL)) return 'Dev+Infra';
         return 'SEO';
     };
     return source.filter((issue) => {

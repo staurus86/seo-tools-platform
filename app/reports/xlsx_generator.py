@@ -2668,7 +2668,7 @@ class XLSXGenerator:
         # Sheet 5: Link Graph
         link_headers = [
             "URL", "Входящие внутренние", "Исходящие внутренние", "Исходящие внешние", "Страница-сирота",
-            "Тематический хаб", "Глубина клика", "PageRank", "Доля слабых анкоров", "Качество анкоров", "Качество ссылок",
+            "Тематический хаб", "Глубина клика", "PageRank", "Доля слабых анкоров", "Качество анкоров", "Авторитетность страницы", "Качество ссылок",
             "Всего follow-ссылок", "External nofollow", "Кол-во семантических ссылок", "Возможности внутренней перелинковки", "Битые внутренние цели", "Алерт переиспользования анкоров",
             "Link-скор", "Link-дельта до цели", "Решение по перелинковке", "Severity",
         ]
@@ -2693,6 +2693,7 @@ class XLSXGenerator:
                 page.get("pagerank", 0),
                 page.get("weak_anchor_ratio", 0),
                 page.get("anchor_text_quality_score", 0),
+                page.get("link_authority_score", 0),
                 page.get("link_quality_score", 0),
                 page.get("follow_links_total", 0),
                 page.get("nofollow_links_total", 0),
@@ -2705,14 +2706,14 @@ class XLSXGenerator:
                 page_solution("link_quality", page),
                 sev,
             ])
-        sort_rows(link_rows, 17, reverse=False)
+        sort_rows(link_rows, 18, reverse=False)
         fill_sheet(
             "5_LinkGraph",
             link_headers,
             link_rows,
-            severity_idx=20,
-            widths=[50, 12, 12, 12, 10, 10, 10, 10, 14, 12, 12, 14, 16, 14, 12, 12, 12, 10, 12, 46, 10],
-            score_idx=17,
+            severity_idx=21,
+            widths=[50, 12, 12, 12, 10, 10, 10, 10, 14, 12, 12, 12, 14, 16, 14, 12, 12, 12, 10, 12, 46, 10],
+            score_idx=18,
         )
 
         # Sheet 6: Images + External

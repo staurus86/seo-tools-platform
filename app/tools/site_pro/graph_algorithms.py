@@ -119,13 +119,13 @@ def _apply_linking_scores(
         pa = float(row.pagerank or 0.0)
         sem_count = len(row.semantic_links or [])
         incoming = int(incoming_counts.get(row.url, 0))
-        anchor_quality = int(min(100, pa * 20 + sem_count * 10 + min(50, incoming * 2)))
-        row.anchor_text_quality_score = anchor_quality
+        link_authority = int(min(100, pa * 20 + sem_count * 10 + min(50, incoming * 2)))
+        row.link_authority_score = link_authority
 
         outgoing_internal = int(row.outgoing_internal_links or 0)
         score = 0.0
         score += min(45.0, pa * 45.0)
-        score += min(25.0, anchor_quality * 0.25)
+        score += min(25.0, link_authority * 0.25)
         score += min(15.0, incoming * 2.0)
         score += min(10.0, sem_count * 2.0)
         if row.orphan_page:
