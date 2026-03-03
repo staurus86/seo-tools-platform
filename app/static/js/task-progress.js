@@ -592,15 +592,33 @@ function initChartsForTool(taskType, result) {
         }
 
         if (taskType === 'site_audit_pro') {
-            const scores = r.category_scores || r.scores || {};
-            const labels = ['Content', 'Technical', 'Links', 'Images', 'Keywords'];
-            const values = [
-                Number(scores.content || 0), Number(scores.technical || 0),
-                Number(scores.links || 0), Number(scores.images || 0),
-                Number(scores.keywords || 0)
-            ];
+            // Compute insight pillars from raw data (same logic as generateSiteAuditProHTML)
+            const pages = r.pages || [];
+            const issues = r.issues || [];
+            const pipeline = r.pipeline || {};
+            const metrics = pipeline.metrics || {};
+            const totalPagesBase = Math.max(1, Number((r.summary || {}).total_pages ?? pages.length ?? 0));
+
+            const highBoilerplate = pages.filter(p => Number(p.boilerplate_percent || 0) >= 45).length;
+            const keywordStuffing = pages.filter(p => Number(p.keyword_stuffing_score || 0) >= 3).length;
+            const hiddenContent = pages.filter(p => p.hidden_content === true).length;
+            const contentHygiene = Math.max(0, 100 - Math.min(100, Math.round(((highBoilerplate + keywordStuffing + hiddenContent) / totalPagesBase) * 100)));
+
+            const aiHighRisk = pages.filter(p => Number(p.ai_score || p.ai_risk_score || 0) >= 60).length;
+            const aiTrust = Math.max(0, 100 - Math.min(100, Math.round((aiHighRisk / totalPagesBase) * 100)));
+
+            const crawlRiskHigh = issues.filter(i => {
+                const c = String(i.code || '').toLowerCase();
+                return (c.includes('redirect') || c.includes('crawl_budget') || c.includes('http_status')) && String(i.severity || '').toLowerCase() === 'critical';
+            }).length;
+            const indexingStability = Math.max(0, 100 - Math.min(100, Math.round(((crawlRiskHigh + Number(metrics.non_https_pages || 0)) / totalPagesBase) * 100)));
+
+            const accessibility = Math.max(0, 100 - Math.min(100, Math.round((Number(metrics.pages_without_alt || 0) / totalPagesBase) * 100)));
+
+            const labels = ['Content Hygiene', 'AI Trust', 'Indexing', 'Accessibility'];
+            const values = [contentHygiene, aiTrust, indexingStability, accessibility];
             if (values.some(v => v > 0)) {
-                createRadarChart('ds-chart-sitepro-radar', labels, values, 'Audit Pro');
+                createRadarChart('ds-chart-sitepro-radar', labels, values, 'Quality Profile');
             }
         }
 
