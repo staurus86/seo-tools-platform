@@ -134,10 +134,10 @@ class XLSXGenerator:
         return str(engine or "legacy")
     
     def _create_header_style(self):
-        """Создает стиль заголовка."""
+        """Создает стиль заголовка (brand color #0F4C81)."""
         return {
             'font': Font(bold=True, color='FFFFFF'),
-            'fill': PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid'),
+            'fill': PatternFill(start_color='0F4C81', end_color='0F4C81', fill_type='solid'),
             'alignment': Alignment(horizontal='center', vertical='center', wrap_text=True),
             'border': Border(
                 left=Side(style='thin'),
@@ -184,25 +184,87 @@ class XLSXGenerator:
         self._sanitize_workbook_text(wb)
         wb.save(filepath)
 
+    def _add_cover_sheet(self, wb: Workbook, title: str, url: str, generated_at: str) -> None:
+        """Add a branded Cover sheet as the first worksheet."""
+        ws = wb.create_sheet("Cover", 0)
+        ws.sheet_properties.tabColor = "0F4C81"
+
+        # Column widths
+        ws.column_dimensions['A'].width = 5
+        ws.column_dimensions['B'].width = 60
+
+        # Try to add logo
+        logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'static', 'icon.png')
+        try:
+            if os.path.isfile(logo_path):
+                img = XLImage(logo_path)
+                img.width = 80
+                img.height = 80
+                ws.add_image(img, 'B2')
+        except Exception:
+            pass
+
+        # Title
+        title_cell = ws.cell(row=6, column=2, value=title)
+        title_cell.font = Font(size=28, bold=True, color='0F4C81')
+        title_cell.alignment = Alignment(horizontal='left')
+
+        # Subtitle
+        subtitle_cell = ws.cell(row=7, column=2, value="SEO Tools Platform Report")
+        subtitle_cell.font = Font(size=14, color='94A3B8')
+        subtitle_cell.alignment = Alignment(horizontal='left')
+
+        # URL
+        if url:
+            url_cell = ws.cell(row=9, column=2, value=f"URL: {url}")
+            url_cell.font = Font(size=11, color='0E7490')
+
+        # Generated at
+        gen_cell = ws.cell(row=10, column=2, value=f"Generated: {generated_at}")
+        gen_cell.font = Font(size=10, color='94A3B8')
+
+        # Brand bar at the top
+        brand_fill = PatternFill(start_color='0F4C81', end_color='0F4C81', fill_type='solid')
+        for col in range(1, 8):
+            ws.cell(row=1, column=col).fill = brand_fill
+
+        ws.sheet_view.showGridLines = False
+
+    def _apply_alternating_rows(self, ws, start_row: int, end_row: int, start_col: int = 1, end_col: int = None) -> None:
+        """Apply zebra striping to data rows (PatternFill #F8FBFF on even rows)."""
+        zebra_fill = PatternFill(start_color='F8FBFF', end_color='F8FBFF', fill_type='solid')
+        if end_col is None:
+            end_col = ws.max_column or 1
+        for row_idx in range(start_row, end_row + 1):
+            if row_idx % 2 == 0:
+                for col_idx in range(start_col, end_col + 1):
+                    cell = ws.cell(row=row_idx, column=col_idx)
+                    if cell.fill == PatternFill(fill_type=None) or cell.fill == PatternFill(fill_type='none'):
+                        cell.fill = zebra_fill
+
+    def _apply_tab_color(self, ws, color: str = "0F4C81") -> None:
+        """Set the sheet tab color."""
+        ws.sheet_properties.tabColor = color
+
     def _severity_style(self, severity: str) -> Dict[str, Any]:
-        """Return fill/font style for a severity level."""
+        """Return fill/font style for a severity level (design-system colors)."""
         sev = (severity or "info").lower()
         styles = {
             "critical": {
-                "fill": PatternFill(start_color='F8D7DA', end_color='F8D7DA', fill_type='solid'),
-                "font": Font(color='842029', bold=True),
+                "fill": PatternFill(start_color='FEF2F2', end_color='FEF2F2', fill_type='solid'),
+                "font": Font(color='B91C1C', bold=True),
             },
             "warning": {
-                "fill": PatternFill(start_color='FFF3CD', end_color='FFF3CD', fill_type='solid'),
-                "font": Font(color='664D03', bold=True),
+                "fill": PatternFill(start_color='FFFBEB', end_color='FFFBEB', fill_type='solid'),
+                "font": Font(color='C2410C', bold=True),
             },
             "info": {
-                "fill": PatternFill(start_color='D1ECF1', end_color='D1ECF1', fill_type='solid'),
-                "font": Font(color='0C5460'),
+                "fill": PatternFill(start_color='EFF6FF', end_color='EFF6FF', fill_type='solid'),
+                "font": Font(color='1D4ED8'),
             },
             "ok": {
-                "fill": PatternFill(start_color='D1E7DD', end_color='D1E7DD', fill_type='solid'),
-                "font": Font(color='0F5132', bold=True),
+                "fill": PatternFill(start_color='ECFDF3', end_color='ECFDF3', fill_type='solid'),
+                "font": Font(color='15803D', bold=True),
             },
         }
         return styles.get(sev, styles["info"])
@@ -350,14 +412,16 @@ class XLSXGenerator:
     def generate_site_analyze_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Генерирует XLSX-отчет общего анализа сайта."""
         wb = Workbook()
+        self._add_cover_sheet(wb, 'SEO Analysis Report', data.get('url', ''), datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         ws = wb.active
         ws.title = "Анализ сайта"
-        
+        self._apply_tab_color(ws)
+
         # Header
         ws['A1'] = 'Отчет по SEO-анализу сайта'
         ws['A1'].font = Font(bold=True, size=16)
         ws.merge_cells('A1:D1')
-        
+
         # Basic info
         ws['A3'] = 'URL:'
         ws['B3'] = data.get('url', 'н/д')
@@ -365,37 +429,40 @@ class XLSXGenerator:
         ws['B4'] = data.get('pages_analyzed', 0)
         ws['A5'] = 'Дата завершения:'
         ws['B5'] = data.get('completed_at', 'н/д')
-        
+
         # Results section
         ws['A7'] = 'Результаты'
         ws['A7'].font = Font(bold=True, size=14)
-        
+
         results = data.get('results', {})
         row = 8
-        
+
         # Headers
         headers = ['Показатель', 'Значение', 'Статус']
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=row, column=col, value=header)
             self._apply_style(cell, self._create_header_style())
-        
+
         # Sample data (will be replaced with real data from tools)
         sample_data = [
             ['Всего страниц', results.get('total_pages', 0), 'OK'],
             ['Статус', results.get('status', 'н/д'), 'OK'],
             ['Сводка', results.get('summary', 'н/д'), 'OK']
         ]
-        
+
         for data_row in sample_data:
             row += 1
             for col, value in enumerate(data_row, 1):
                 cell = ws.cell(row=row, column=col, value=value)
                 self._apply_style(cell, self._create_cell_style())
-        
+
+        self._apply_alternating_rows(ws, 9, ws.max_row)
+        ws.auto_filter.ref = ws.dimensions
+
         # Auto-adjust column widths
         for col in range(1, 4):
             ws.column_dimensions[get_column_letter(col)].width = 25
-        
+
         # Save
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         self._save_workbook(wb, filepath)
@@ -405,20 +472,22 @@ class XLSXGenerator:
     def generate_robots_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Генерирует краткий XLSX-отчет по robots.txt."""
         wb = Workbook()
+        self._add_cover_sheet(wb, 'Robots.txt Report', data.get('url', ''), datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         ws = wb.active
         ws.title = "Проверка Robots"
-        
+        self._apply_tab_color(ws)
+
         ws['A1'] = 'Отчет по robots.txt'
         ws['A1'].font = Font(bold=True, size=16)
         ws.merge_cells('A1:D1')
-        
+
         ws['A3'] = 'URL:'
         ws['B3'] = data.get('url', 'н/д')
-        
+
         results = data.get('results', {})
         ws['A5'] = 'Файл robots.txt найден:'
         ws['B5'] = 'Да' if results.get('robots_txt_found') else 'Нет'
-        
+
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
         self._save_workbook(wb, filepath)
         wb.close()
@@ -427,6 +496,7 @@ class XLSXGenerator:
     def generate_sitemap_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Generate a complete sitemap validation XLSX report."""
         wb = Workbook()
+        self._add_cover_sheet(wb, 'Sitemap Report', data.get('url', ''), datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         header_style = self._create_header_style()
         cell_style = self._create_cell_style()
         results = data.get('results', {}) or {}
@@ -434,6 +504,7 @@ class XLSXGenerator:
 
         ws = wb.active
         ws.title = "Сводка"
+        self._apply_tab_color(ws)
         ws['A1'] = 'Отчет по валидации Sitemap'
         ws['A1'].font = Font(bold=True, size=16)
         ws.merge_cells('A1:E1')
@@ -466,6 +537,7 @@ class XLSXGenerator:
         ws.column_dimensions['B'].width = 80
 
         files_ws = wb.create_sheet("Sitemap-файлы")
+        self._apply_tab_color(files_ws)
         files_headers = [
             "URL sitemap", "Тип", "HTTP", "OK", "URL",
             "Дубли", "Размер, байт", "Ошибки", "Предупреждения", "Критичность"
@@ -493,12 +565,14 @@ class XLSXGenerator:
                 self._apply_style(cell, cell_style)
             self._apply_row_severity_fill(files_ws, row_idx, 1, len(files_headers), severity)
             self._apply_severity_cell_style(files_ws.cell(row=row_idx, column=len(files_headers)), severity)
+        self._apply_alternating_rows(files_ws, 2, files_ws.max_row)
         files_ws.freeze_panes = "A2"
         files_ws.auto_filter.ref = f"A1:{get_column_letter(len(files_headers))}1"
         for col, width in enumerate([72, 14, 10, 8, 12, 12, 14, 60, 60, 14], 1):
             files_ws.column_dimensions[get_column_letter(col)].width = width
 
         errors_ws = wb.create_sheet("Ошибки")
+        self._apply_tab_color(errors_ws)
         errors_ws.cell(row=1, column=1, value="Ошибка")
         errors_ws.cell(row=1, column=2, value="Критичность")
         self._apply_style(errors_ws.cell(row=1, column=1), header_style)
@@ -510,12 +584,14 @@ class XLSXGenerator:
             self._apply_style(sev_cell, cell_style)
             self._apply_row_severity_fill(errors_ws, idx, 1, 2, "critical")
             self._apply_severity_cell_style(sev_cell, "critical")
+        self._apply_alternating_rows(errors_ws, 2, errors_ws.max_row)
         errors_ws.column_dimensions['A'].width = 140
         errors_ws.column_dimensions['B'].width = 14
         errors_ws.freeze_panes = "A2"
         errors_ws.auto_filter.ref = "A1:B1"
 
         warnings_ws = wb.create_sheet("Предупреждения")
+        self._apply_tab_color(warnings_ws)
         warnings_ws.cell(row=1, column=1, value="Предупреждение")
         warnings_ws.cell(row=1, column=2, value="Критичность")
         self._apply_style(warnings_ws.cell(row=1, column=1), header_style)
@@ -527,12 +603,14 @@ class XLSXGenerator:
             self._apply_style(sev_cell, cell_style)
             self._apply_row_severity_fill(warnings_ws, idx, 1, 2, "warning")
             self._apply_severity_cell_style(sev_cell, "warning")
+        self._apply_alternating_rows(warnings_ws, 2, warnings_ws.max_row)
         warnings_ws.column_dimensions['A'].width = 140
         warnings_ws.column_dimensions['B'].width = 14
         warnings_ws.freeze_panes = "A2"
         warnings_ws.auto_filter.ref = "A1:B1"
 
         dup_ws = wb.create_sheet("Дубли")
+        self._apply_tab_color(dup_ws)
         dup_headers = ["URL", "Первый sitemap", "Сitemap-дубль", "Критичность"]
         for col, header in enumerate(dup_headers, 1):
             cell = dup_ws.cell(row=1, column=col, value=header)
@@ -546,6 +624,7 @@ class XLSXGenerator:
                 self._apply_style(dup_ws.cell(row=row_idx, column=col), cell_style)
             self._apply_row_severity_fill(dup_ws, row_idx, 1, 4, "critical")
             self._apply_severity_cell_style(dup_ws.cell(row=row_idx, column=4), "critical")
+        self._apply_alternating_rows(dup_ws, 2, dup_ws.max_row)
         dup_ws.freeze_panes = "A2"
         dup_ws.auto_filter.ref = "A1:D1"
         dup_ws.column_dimensions['A'].width = 80
@@ -554,6 +633,7 @@ class XLSXGenerator:
         dup_ws.column_dimensions['D'].width = 14
 
         rec_ws = wb.create_sheet("Рекомендации")
+        self._apply_tab_color(rec_ws)
         rec_ws.cell(row=1, column=1, value="Рекомендация")
         rec_ws.cell(row=1, column=2, value="Критичность")
         self._apply_style(rec_ws.cell(row=1, column=1), header_style)
@@ -571,6 +651,7 @@ class XLSXGenerator:
         rec_ws.auto_filter.ref = "A1:B1"
 
         tool_notes_ws = wb.create_sheet("Служебные заметки")
+        self._apply_tab_color(tool_notes_ws)
         tool_notes_ws.cell(row=1, column=1, value="Заметка")
         self._apply_style(tool_notes_ws.cell(row=1, column=1), header_style)
         tool_notes = results.get("tool_notes", []) or []
@@ -585,6 +666,7 @@ class XLSXGenerator:
         tool_notes_ws.freeze_panes = "A2"
 
         insights_ws = wb.create_sheet("Инсайты")
+        self._apply_tab_color(insights_ws)
         insights_ws.cell(row=1, column=1, value="Метрика")
         insights_ws.cell(row=1, column=2, value="Значение")
         insights_ws.cell(row=1, column=3, value="Интерпретация")
@@ -631,6 +713,7 @@ class XLSXGenerator:
         insights_ws.freeze_panes = "A2"
 
         urls_ws = wb.create_sheet("Экспорт URL")
+        self._apply_tab_color(urls_ws)
         urls_ws.cell(row=1, column=1, value="URL")
         self._apply_style(urls_ws.cell(row=1, column=1), header_style)
         for idx, u in enumerate((results.get("export_urls", []) or []), start=2):
@@ -648,6 +731,7 @@ class XLSXGenerator:
     def generate_render_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Генерирует детальный XLSX-отчет по аудиту рендеринга (С„окус на проблемах)."""
         wb = Workbook()
+        self._add_cover_sheet(wb, 'Render Audit Report', data.get('url', ''), datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         header_style = self._create_header_style()
         cell_style = self._create_cell_style()
 
@@ -659,6 +743,7 @@ class XLSXGenerator:
 
         ws = wb.active
         ws.title = 'Сводка'
+        self._apply_tab_color(ws)
         ws['A1'] = 'Отчет аудита рендеринга (JS и без JS)'
         ws['A1'].font = Font(bold=True, size=16)
         ws.merge_cells('A1:E1')
@@ -684,6 +769,7 @@ class XLSXGenerator:
         ws.column_dimensions['B'].width = 80
 
         variant_ws = wb.create_sheet('Профили')
+        self._apply_tab_color(variant_ws)
         headers = ['Профиль', 'Оценка', 'Потери', 'Потери %', 'H1 без JS', 'H1 с JS', 'Ссылки без JS', 'Ссылки с JS', 'Структурированные данные без JS', 'Структурированные данные с JS']
         for col, header in enumerate(headers, 1):
             self._apply_style(variant_ws.cell(row=1, column=col, value=header), header_style)
@@ -712,12 +798,14 @@ class XLSXGenerator:
             self._apply_row_severity_fill(variant_ws, row_idx, 1, len(headers), severity)
             self._apply_severity_cell_style(variant_ws.cell(row=row_idx, column=2), severity)
 
+        self._apply_alternating_rows(variant_ws, 2, variant_ws.max_row)
         variant_ws.freeze_panes = 'A2'
         variant_ws.auto_filter.ref = f"A1:J{max(2, len(variants)+1)}"
         for col, width in enumerate([28, 12, 12, 12, 12, 10, 14, 10, 14, 10], 1):
             variant_ws.column_dimensions[get_column_letter(col)].width = width
 
         issues_ws = wb.create_sheet('Проблемы')
+        self._apply_tab_color(issues_ws)
         issue_headers = ['Критичность', 'Профиль', 'Код', 'Заголовок', 'Детали']
         for col, header in enumerate(issue_headers, 1):
             self._apply_style(issues_ws.cell(row=1, column=col, value=header), header_style)
@@ -736,20 +824,24 @@ class XLSXGenerator:
             self._apply_row_severity_fill(issues_ws, row_idx, 1, len(issue_headers), severity)
             self._apply_severity_cell_style(issues_ws.cell(row=row_idx, column=1), severity)
 
+        self._apply_alternating_rows(issues_ws, 2, issues_ws.max_row)
         issues_ws.freeze_panes = 'A2'
         issues_ws.auto_filter.ref = f"A1:E{max(2, len(issues)+1)}"
         for col, width in enumerate([12, 24, 24, 34, 96], 1):
             issues_ws.column_dimensions[get_column_letter(col)].width = width
 
         rec_ws = wb.create_sheet('Рекомендации')
+        self._apply_tab_color(rec_ws)
         self._apply_style(rec_ws.cell(row=1, column=1, value='Рекомендация'), header_style)
         for idx, text in enumerate(recommendations, start=2):
             self._apply_style(rec_ws.cell(row=idx, column=1, value=text), cell_style)
+        self._apply_alternating_rows(rec_ws, 2, rec_ws.max_row)
         rec_ws.column_dimensions['A'].width = 160
         rec_ws.freeze_panes = 'A2'
         rec_ws.auto_filter.ref = 'A1:A1'
 
         missing_ws = wb.create_sheet('Потерянные элементы')
+        self._apply_tab_color(missing_ws)
         missing_headers = ['Профиль', 'Категория', 'Элемент']
         for col, header in enumerate(missing_headers, 1):
             self._apply_style(missing_ws.cell(row=1, column=col, value=header), header_style)
@@ -769,6 +861,7 @@ class XLSXGenerator:
                     self._apply_style(missing_ws.cell(row=row_idx, column=2, value=label), cell_style)
                     self._apply_style(missing_ws.cell(row=row_idx, column=3, value=str(value)), cell_style)
                     row_idx += 1
+        self._apply_alternating_rows(missing_ws, 2, missing_ws.max_row)
         missing_ws.freeze_panes = 'A2'
         missing_ws.auto_filter.ref = f"A1:C{max(2, row_idx-1)}"
         missing_ws.column_dimensions['A'].width = 24
@@ -776,6 +869,7 @@ class XLSXGenerator:
         missing_ws.column_dimensions['C'].width = 140
 
         meta_ws = wb.create_sheet('Мета (не SEO)')
+        self._apply_tab_color(meta_ws)
         meta_headers = ['Профиль', 'Ключ', 'Без JS', 'С JS', 'Статус']
         for col, header in enumerate(meta_headers, 1):
             self._apply_style(meta_ws.cell(row=1, column=col, value=header), header_style)
@@ -799,6 +893,7 @@ class XLSXGenerator:
                     cell_style,
                 )
                 row_idx += 1
+        self._apply_alternating_rows(meta_ws, 2, meta_ws.max_row)
         meta_ws.freeze_panes = 'A2'
         meta_ws.auto_filter.ref = f"A1:E{max(2, row_idx-1)}"
         meta_ws.column_dimensions['A'].width = 24
@@ -808,6 +903,7 @@ class XLSXGenerator:
         meta_ws.column_dimensions['E'].width = 18
 
         seo_ws = wb.create_sheet('SEO обязательно')
+        self._apply_tab_color(seo_ws)
         seo_headers = ['Профиль', 'Элемент', 'Без JS', 'С JS', 'Статус', 'Исправление']
         for col, header in enumerate(seo_headers, 1):
             self._apply_style(seo_ws.cell(row=1, column=col, value=header), header_style)
@@ -826,6 +922,7 @@ class XLSXGenerator:
                 sev = 'critical' if item.get('status') == 'fail' else ('warning' if item.get('status') == 'warn' else 'ok')
                 self._apply_row_severity_fill(seo_ws, row_idx, 1, len(seo_headers), sev)
                 row_idx += 1
+        self._apply_alternating_rows(seo_ws, 2, seo_ws.max_row)
         seo_ws.freeze_panes = 'A2'
         seo_ws.auto_filter.ref = f"A1:F{max(2, row_idx-1)}"
         seo_ws.column_dimensions['A'].width = 24
@@ -841,6 +938,7 @@ class XLSXGenerator:
     def generate_mobile_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Generate detailed mobile XLSX report."""
         wb = Workbook()
+        self._add_cover_sheet(wb, 'Mobile Audit Report', data.get('url', ''), datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         header_style = self._create_header_style()
         cell_style = self._create_cell_style()
 
@@ -897,6 +995,7 @@ class XLSXGenerator:
 
         ws = wb.active
         ws.title = "Сводка"
+        self._apply_tab_color(ws)
         ws["A1"] = "Отчет по мобильной совместимости"
         ws["A1"].font = Font(bold=True, size=16)
         ws.merge_cells("A1:E1")
@@ -925,6 +1024,7 @@ class XLSXGenerator:
         ws.column_dimensions["B"].width = 80
 
         dws = wb.create_sheet("Устройства")
+        self._apply_tab_color(dws)
         headers = ["Устройство", "Категория", "HTTP", "Мобильно-дружелюбно", "Проблемы", "Время загрузки (мс)", "Скриншот", "Критичность"]
         for col, header in enumerate(headers, 1):
             self._apply_style(dws.cell(row=1, column=col, value=header), header_style)
@@ -951,12 +1051,14 @@ class XLSXGenerator:
                 self._apply_style(dws.cell(row=row_idx, column=col, value=value), cell_style)
             self._apply_row_severity_fill(dws, row_idx, 1, len(headers), severity)
             self._apply_severity_cell_style(dws.cell(row=row_idx, column=len(headers)), severity)
+        self._apply_alternating_rows(dws, 2, dws.max_row)
         dws.freeze_panes = "A2"
         dws.auto_filter.ref = "A1:H1"
         for col, width in enumerate([28, 12, 10, 14, 10, 12, 40, 12], 1):
             dws.column_dimensions[get_column_letter(col)].width = width
 
         iws = wb.create_sheet("Проблемы")
+        self._apply_tab_color(iws)
         issue_headers = ["Критичность", "Устройство", "Код", "Проблема", "Детали"]
         for col, header in enumerate(issue_headers, 1):
             self._apply_style(iws.cell(row=1, column=col, value=header), header_style)
@@ -973,19 +1075,23 @@ class XLSXGenerator:
                 self._apply_style(iws.cell(row=row_idx, column=col, value=value), cell_style)
             self._apply_row_severity_fill(iws, row_idx, 1, len(issue_headers), severity)
             self._apply_severity_cell_style(iws.cell(row=row_idx, column=1), severity)
+        self._apply_alternating_rows(iws, 2, iws.max_row)
         iws.freeze_panes = "A2"
         iws.auto_filter.ref = "A1:E1"
         for col, width in enumerate([12, 24, 20, 30, 80], 1):
             iws.column_dimensions[get_column_letter(col)].width = width
 
         rws = wb.create_sheet("Рекомендации")
+        self._apply_tab_color(rws)
         self._apply_style(rws.cell(row=1, column=1, value="Рекомендация"), header_style)
         for idx, rec in enumerate(recommendations, start=2):
             self._apply_style(rws.cell(row=idx, column=1, value=rec), cell_style)
+        self._apply_alternating_rows(rws, 2, rws.max_row)
         rws.column_dimensions["A"].width = 160
         rws.freeze_panes = "A2"
 
         sws = wb.create_sheet("Скриншоты")
+        self._apply_tab_color(sws)
         shot_headers = ["Устройство", "Имя скриншота", "Путь", "URL", "Превью"]
         for col, header in enumerate(shot_headers, 1):
             self._apply_style(sws.cell(row=1, column=col, value=header), header_style)
@@ -1023,6 +1129,7 @@ class XLSXGenerator:
     def generate_bot_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Generate detailed bot accessibility report with severity styling."""
         wb = Workbook()
+        self._add_cover_sheet(wb, 'Bot Accessibility Report', data.get('url', ''), datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         header_style = self._create_header_style()
         cell_style = self._create_cell_style()
         results = data.get("results", {}) or {}
@@ -1046,6 +1153,7 @@ class XLSXGenerator:
 
         ws = wb.active
         ws.title = "Summary"
+        self._apply_tab_color(ws)
         ws["A1"] = "Bot Access Check - Summary"
         ws["A1"].font = Font(bold=True, size=16)
         ws.merge_cells("A1:E1")
@@ -1075,6 +1183,7 @@ class XLSXGenerator:
         ws.column_dimensions["B"].width = 90
 
         exec_ws = wb.create_sheet("Executive Summary", 1)
+        self._apply_tab_color(exec_ws)
         exec_ws["A1"] = "Bot Access Check - Executive Summary"
         exec_ws["A1"].font = Font(bold=True, size=16)
         exec_ws.merge_cells("A1:G1")
@@ -1168,6 +1277,7 @@ class XLSXGenerator:
         exec_ws.auto_filter.ref = "A11:G11"
 
         results_ws = wb.create_sheet("Результаты ботов")
+        self._apply_tab_color(results_ws)
         result_headers = [
             "Бот",
             "Категория",
@@ -1236,12 +1346,14 @@ class XLSXGenerator:
             self._apply_row_severity_fill(results_ws, row_idx, 1, len(result_headers), severity)
             self._apply_severity_cell_style(results_ws.cell(row=row_idx, column=len(result_headers)), severity)
 
+        self._apply_alternating_rows(results_ws, 2, results_ws.max_row)
         results_ws.freeze_panes = "A2"
         results_ws.auto_filter.ref = f"A1:{get_column_letter(len(result_headers))}1"
         for col, width in enumerate([26, 16, 10, 10, 12, 14, 28, 16, 28, 14, 14, 40, 38, 12], 1):
             results_ws.column_dimensions[get_column_letter(col)].width = width
 
         categories_ws = wb.create_sheet("Категории")
+        self._apply_tab_color(categories_ws)
         category_headers = ["Категория", "Всего", "Доступно", "С контентом", "Ограничивающие директивы", "Критичность"]
         for col, header in enumerate(category_headers, 1):
             self._apply_style(categories_ws.cell(row=1, column=col, value=header), header_style)
@@ -1262,12 +1374,14 @@ class XLSXGenerator:
                 self._apply_style(categories_ws.cell(row=row_idx, column=col, value=value), cell_style)
             self._apply_row_severity_fill(categories_ws, row_idx, 1, len(category_headers), severity)
             self._apply_severity_cell_style(categories_ws.cell(row=row_idx, column=len(category_headers)), severity)
+        self._apply_alternating_rows(categories_ws, 2, categories_ws.max_row)
         categories_ws.freeze_panes = "A2"
         categories_ws.auto_filter.ref = "A1:F1"
         for col, width in enumerate([24, 10, 12, 14, 22, 12], 1):
             categories_ws.column_dimensions[get_column_letter(col)].width = width
 
         matrix_ws = wb.create_sheet("Матрица")
+        self._apply_tab_color(matrix_ws)
         matrix_headers = ["Категория", "Всего", "Сканируемо", "Рендерится", "Индексируемо", "Не индексируемо", "Индексируемо %", "SLA цель %", "SLA выполнен", "Оценка риска"]
         for col, header in enumerate(matrix_headers, 1):
             self._apply_style(matrix_ws.cell(row=1, column=col, value=header), header_style)
@@ -1286,12 +1400,14 @@ class XLSXGenerator:
             ]
             for col, value in enumerate(values, 1):
                 self._apply_style(matrix_ws.cell(row=row_idx, column=col, value=value), cell_style)
+        self._apply_alternating_rows(matrix_ws, 2, matrix_ws.max_row)
         matrix_ws.freeze_panes = "A2"
         matrix_ws.auto_filter.ref = "A1:J1"
         for col, width in enumerate([20, 10, 12, 12, 12, 14, 12, 12, 10, 12], 1):
             matrix_ws.column_dimensions[get_column_letter(col)].width = width
 
         blockers_ws = wb.create_sheet("Приоритетные блокеры")
+        self._apply_tab_color(blockers_ws)
         blocker_headers = ["Код", "Заголовок", "Затронуто ботов", "Взвешенное влияние", "Оценка приоритета", "Примеры ботов", "Детали"]
         for col, header in enumerate(blocker_headers, 1):
             self._apply_style(blockers_ws.cell(row=1, column=col, value=header), header_style)
@@ -1307,12 +1423,14 @@ class XLSXGenerator:
             ]
             for col, value in enumerate(values, 1):
                 self._apply_style(blockers_ws.cell(row=row_idx, column=col, value=value), cell_style)
+        self._apply_alternating_rows(blockers_ws, 2, blockers_ws.max_row)
         blockers_ws.freeze_panes = "A2"
         blockers_ws.auto_filter.ref = "A1:G1"
         for col, width in enumerate([20, 30, 14, 14, 14, 48, 62], 1):
             blockers_ws.column_dimensions[get_column_letter(col)].width = width
 
         playbooks_ws = wb.create_sheet("Playbooks")
+        self._apply_tab_color(playbooks_ws)
         playbook_headers = ["Blocker code", "Owner", "Title", "Priority score", "Actions"]
         for col, header in enumerate(playbook_headers, 1):
             self._apply_style(playbooks_ws.cell(row=1, column=col, value=header), header_style)
@@ -1326,12 +1444,14 @@ class XLSXGenerator:
             ]
             for col, value in enumerate(values, 1):
                 self._apply_style(playbooks_ws.cell(row=row_idx, column=col, value=value), cell_style)
+        self._apply_alternating_rows(playbooks_ws, 2, playbooks_ws.max_row)
         playbooks_ws.freeze_panes = "A2"
         playbooks_ws.auto_filter.ref = "A1:E1"
         for col, width in enumerate([20, 16, 32, 14, 120], 1):
             playbooks_ws.column_dimensions[get_column_letter(col)].width = width
 
         raw_ws = wb.create_sheet("Сырые строки ботов")
+        self._apply_tab_color(raw_ws)
         raw_headers = [
             "Бот", "Категория", "HTTP", "Сканируемо", "Рендерится", "Индексируемо", "Разрешен robots",
             "Совпавший UA", "Совпавшее правило", "Совпавший шаблон", "WAF обнаружен", "Провайдер WAF", "Причина WAF",
@@ -1363,12 +1483,14 @@ class XLSXGenerator:
             ]
             for col, value in enumerate(values, 1):
                 self._apply_style(raw_ws.cell(row=row_idx, column=col, value=value), cell_style)
+        self._apply_alternating_rows(raw_ws, 2, raw_ws.max_row)
         raw_ws.freeze_panes = "A2"
         raw_ws.auto_filter.ref = "A1:Q1"
         for col, width in enumerate([24, 14, 10, 10, 10, 10, 12, 16, 12, 24, 12, 14, 28, 14, 42, 34, 46], 1):
             raw_ws.column_dimensions[get_column_letter(col)].width = width
 
         diff_ws = wb.create_sheet("Сравнение с baseline")
+        self._apply_tab_color(diff_ws)
         diff_headers = ["Метрика", "Текущее", "Базовое", "Дельта"]
         for col, header in enumerate(diff_headers, 1):
             self._apply_style(diff_ws.cell(row=1, column=col, value=header), header_style)
@@ -1386,6 +1508,7 @@ class XLSXGenerator:
         diff_ws.column_dimensions["D"].width = 14
 
         trend_ws = wb.create_sheet("Trend History")
+        self._apply_tab_color(trend_ws)
         trend_headers = [
             "Run time",
             "Indexable",
@@ -1429,6 +1552,7 @@ class XLSXGenerator:
             trend_ws.column_dimensions[get_column_letter(col)].width = width
 
         alerts_ws = wb.create_sheet("Алерты")
+        self._apply_tab_color(alerts_ws)
         for col, header in enumerate(["Критичность", "Код", "Сообщение"], 1):
             self._apply_style(alerts_ws.cell(row=1, column=col, value=header), header_style)
         if alerts:
@@ -1447,6 +1571,7 @@ class XLSXGenerator:
             alerts_ws.column_dimensions[get_column_letter(col)].width = width
 
         linter_ws = wb.create_sheet("Линтер Robots")
+        self._apply_tab_color(linter_ws)
         for col, header in enumerate(["Критичность", "Код", "Сообщение"], 1):
             self._apply_style(linter_ws.cell(row=1, column=col, value=header), header_style)
         if robots_linter:
@@ -1465,6 +1590,7 @@ class XLSXGenerator:
             linter_ws.column_dimensions[get_column_letter(col)].width = width
 
         sim_ws = wb.create_sheet("Симулятор allowlist")
+        self._apply_tab_color(sim_ws)
         sim_headers = ["Сценарий", "Категория", "Затронуто", "Дельта рендеринга", "Дельта индексации", "Прогноз индексируемых", "Прогноз %"]
         for col, header in enumerate(sim_headers, 1):
             self._apply_style(sim_ws.cell(row=1, column=col, value=header), header_style)
@@ -1489,6 +1615,7 @@ class XLSXGenerator:
             sim_ws.column_dimensions[get_column_letter(col)].width = width
 
         action_ws = wb.create_sheet("Центр действий")
+        self._apply_tab_color(action_ws)
         action_headers = ["Владелец", "Заголовок", "Приоритет", "Код блокера", "Действия"]
         for col, header in enumerate(action_headers, 1):
             self._apply_style(action_ws.cell(row=1, column=col, value=header), header_style)
@@ -1507,6 +1634,7 @@ class XLSXGenerator:
             action_ws.column_dimensions[get_column_letter(col)].width = width
 
         evidence_ws = wb.create_sheet("Пакет доказательств")
+        self._apply_tab_color(evidence_ws)
         evidence_headers = ["Бот", "Категория", "HTTP", "Причина индексируемости", "WAF обнаружен", "Уверенность WAF", "Причина WAF", "Пояснение robots", "Пример ответа"]
         for col, header in enumerate(evidence_headers, 1):
             self._apply_style(evidence_ws.cell(row=1, column=col, value=header), header_style)
@@ -1534,6 +1662,7 @@ class XLSXGenerator:
 
         if batch_runs:
             batch_ws = wb.create_sheet("Пакетные прогоны")
+            self._apply_tab_color(batch_ws)
             batch_headers = ["URL", "Индексируемо", "Всего", "Сканируемо", "Рендерится", "Критично", "Предупреждения", "Средний ответ, мс"]
             for col, header in enumerate(batch_headers, 1):
                 self._apply_style(batch_ws.cell(row=1, column=col, value=header), header_style)
@@ -1556,6 +1685,7 @@ class XLSXGenerator:
                 batch_ws.column_dimensions[get_column_letter(col)].width = width
 
         issues_ws = wb.create_sheet("Проблемы")
+        self._apply_tab_color(issues_ws)
         issue_headers = ["Критичность", "Бот", "Категория", "Заголовок", "Детали"]
         for col, header in enumerate(issue_headers, 1):
             self._apply_style(issues_ws.cell(row=1, column=col, value=header), header_style)
@@ -1572,16 +1702,19 @@ class XLSXGenerator:
                 self._apply_style(issues_ws.cell(row=row_idx, column=col, value=value), cell_style)
             self._apply_row_severity_fill(issues_ws, row_idx, 1, len(issue_headers), severity)
             self._apply_severity_cell_style(issues_ws.cell(row=row_idx, column=1), severity)
+        self._apply_alternating_rows(issues_ws, 2, issues_ws.max_row)
         issues_ws.freeze_panes = "A2"
         issues_ws.auto_filter.ref = "A1:E1"
         for col, width in enumerate([12, 24, 16, 28, 80], 1):
             issues_ws.column_dimensions[get_column_letter(col)].width = width
 
         rec_ws = wb.create_sheet("Рекомендации")
+        self._apply_tab_color(rec_ws)
         self._apply_style(rec_ws.cell(row=1, column=1, value="Рекомендация"), header_style)
         for idx, text in enumerate(recommendations, start=2):
             cell = rec_ws.cell(row=idx, column=1, value=text)
             self._apply_style(cell, cell_style)
+        self._apply_alternating_rows(rec_ws, 2, rec_ws.max_row)
         rec_ws.column_dimensions["A"].width = 160
         rec_ws.freeze_panes = "A2"
         rec_ws.auto_filter.ref = "A1:A1"
@@ -3913,6 +4046,7 @@ class XLSXGenerator:
     def generate_onpage_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Generate XLSX report for onpage_audit."""
         wb = Workbook()
+        self._add_cover_sheet(wb, 'OnPage Audit Report', data.get('url', ''), datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         header_style = self._create_header_style()
         cell_style = self._create_cell_style()
 
@@ -3922,6 +4056,7 @@ class XLSXGenerator:
 
         ws = wb.active
         ws.title = "Сводка"
+        self._apply_tab_color(ws)
         ws["A1"] = "Отчет OnPage-аудита"
         ws["A1"].font = Font(bold=True, size=16)
         ws.merge_cells("A1:E1")
@@ -3950,6 +4085,7 @@ class XLSXGenerator:
         ws.column_dimensions["B"].width = 120
 
         meta_ws = wb.create_sheet("Meta")
+        self._apply_tab_color(meta_ws)
         meta_headers = ["Поле", "Значение"]
         for col, header in enumerate(meta_headers, 1):
             self._apply_style(meta_ws.cell(row=1, column=col, value=header), header_style)
@@ -3971,6 +4107,7 @@ class XLSXGenerator:
         meta_ws.column_dimensions["B"].width = 120
 
         profile_ws = wb.create_sheet("Профиль контента")
+        self._apply_tab_color(profile_ws)
         profile_headers = ["Параметр", "Значение", "Статус"]
         for col, header in enumerate(profile_headers, 1):
             self._apply_style(profile_ws.cell(row=1, column=col, value=header), header_style)
@@ -3982,6 +4119,7 @@ class XLSXGenerator:
             profile_ws.column_dimensions[get_column_letter(col)].width = width
 
         kw_ws = wb.create_sheet("Keywords")
+        self._apply_tab_color(kw_ws)
         kw_headers = ["Ключевое слово", "Частота", "Плотность %", "В title", "В description", "В H1", "Статус"]
         for col, header in enumerate(kw_headers, 1):
             self._apply_style(kw_ws.cell(row=1, column=col, value=header), header_style)
@@ -3997,12 +4135,14 @@ class XLSXGenerator:
             ]
             for col, value in enumerate(values, 1):
                 self._apply_style(kw_ws.cell(row=row_idx, column=col, value=value), cell_style)
+        self._apply_alternating_rows(kw_ws, 2, kw_ws.max_row)
         kw_ws.freeze_panes = "A2"
         kw_ws.auto_filter.ref = "A1:G1"
         for col, width in enumerate([30, 12, 12, 12, 15, 10, 12], 1):
             kw_ws.column_dimensions[get_column_letter(col)].width = width
 
         issue_ws = wb.create_sheet("Проблемы")
+        self._apply_tab_color(issue_ws)
         issue_headers = ["Критичность", "Код", "Проблема", "Детали"]
         for col, header in enumerate(issue_headers, 1):
             self._apply_style(issue_ws.cell(row=1, column=col, value=header), header_style)
@@ -4017,18 +4157,22 @@ class XLSXGenerator:
             for col, value in enumerate(values, 1):
                 self._apply_style(issue_ws.cell(row=row_idx, column=col, value=value), cell_style)
             self._apply_row_severity_fill(issue_ws, row_idx, 1, len(issue_headers), severity)
+        self._apply_alternating_rows(issue_ws, 2, issue_ws.max_row)
         issue_ws.freeze_panes = "A2"
         issue_ws.auto_filter.ref = "A1:D1"
         for col, width in enumerate([12, 24, 40, 110], 1):
             issue_ws.column_dimensions[get_column_letter(col)].width = width
 
         rec_ws = wb.create_sheet("Рекомендации")
+        self._apply_tab_color(rec_ws)
         self._apply_style(rec_ws.cell(row=1, column=1, value="Рекомендация"), header_style)
         for row_idx, rec in enumerate(results.get("recommendations", []) or [], start=2):
             self._apply_style(rec_ws.cell(row=row_idx, column=1, value=rec), cell_style)
+        self._apply_alternating_rows(rec_ws, 2, rec_ws.max_row)
         rec_ws.column_dimensions["A"].width = 150
 
         terms_ws = wb.create_sheet("Топ терминов")
+        self._apply_tab_color(terms_ws)
         term_headers = ["Термин", "Частота", "Доля %"]
         for col, header in enumerate(term_headers, 1):
             self._apply_style(terms_ws.cell(row=1, column=col, value=header), header_style)
@@ -4036,10 +4180,12 @@ class XLSXGenerator:
             vals = [item.get("term", ""), item.get("count", 0), item.get("pct", 0)]
             for col, value in enumerate(vals, 1):
                 self._apply_style(terms_ws.cell(row=row_idx, column=col, value=value), cell_style)
+        self._apply_alternating_rows(terms_ws, 2, terms_ws.max_row)
         for col, width in enumerate([32, 14, 14], 1):
             terms_ws.column_dimensions[get_column_letter(col)].width = width
 
         tech_ws = wb.create_sheet("Technical")
+        self._apply_tab_color(tech_ws)
         tech_headers = ["Сигнал", "Значение"]
         for col, header in enumerate(tech_headers, 1):
             self._apply_style(tech_ws.cell(row=1, column=col, value=header), header_style)
@@ -4062,6 +4208,7 @@ class XLSXGenerator:
         tech_ws.column_dimensions["B"].width = 120
 
         quality_ws = wb.create_sheet("Quality")
+        self._apply_tab_color(quality_ws)
         quality_headers = ["Метрика", "Значение"]
         for col, header in enumerate(quality_headers, 1):
             self._apply_style(quality_ws.cell(row=1, column=col, value=header), header_style)
@@ -4101,6 +4248,7 @@ class XLSXGenerator:
         quality_ws.column_dimensions["B"].width = 36
 
         ngram_ws = wb.create_sheet("Ngrams")
+        self._apply_tab_color(ngram_ws)
         ngram_headers = ["Тип", "Термин", "Частота", "Доля %"]
         for col, header in enumerate(ngram_headers, 1):
             self._apply_style(ngram_ws.cell(row=1, column=col, value=header), header_style)
@@ -4120,6 +4268,7 @@ class XLSXGenerator:
             ngram_ws.column_dimensions[get_column_letter(col)].width = width
 
         schema_ws = wb.create_sheet("Schema_OG")
+        self._apply_tab_color(schema_ws)
         schema_headers = ["Поле", "Значение"]
         for col, header in enumerate(schema_headers, 1):
             self._apply_style(schema_ws.cell(row=1, column=col, value=header), header_style)
@@ -4142,6 +4291,7 @@ class XLSXGenerator:
         schema_ws.column_dimensions["B"].width = 110
 
         links_terms_ws = wb.create_sheet("Термины анкоров")
+        self._apply_tab_color(links_terms_ws)
         self._apply_style(links_terms_ws.cell(row=1, column=1, value="Термин"), header_style)
         self._apply_style(links_terms_ws.cell(row=1, column=2, value="Частота"), header_style)
         for row_idx, item in enumerate(results.get("link_anchor_terms", []) or [], start=2):
@@ -4151,6 +4301,7 @@ class XLSXGenerator:
         links_terms_ws.column_dimensions["B"].width = 12
 
         ai_ws = wb.create_sheet("AI-сигналы")
+        self._apply_tab_color(ai_ws)
         ai_headers = ["Сигнал", "Значение"]
         for col, header in enumerate(ai_headers, 1):
             self._apply_style(ai_ws.cell(row=1, column=col, value=header), header_style)
@@ -4174,6 +4325,7 @@ class XLSXGenerator:
         ai_ws.column_dimensions["B"].width = 18
 
         heat_ws = wb.create_sheet("Heatmap")
+        self._apply_tab_color(heat_ws)
         heat_headers = ["Категория", "Оценка", "Проблемы", "Критично", "Предупреждение"]
         for col, h in enumerate(heat_headers, 1):
             self._apply_style(heat_ws.cell(row=1, column=col, value=h), header_style)
@@ -4185,6 +4337,7 @@ class XLSXGenerator:
             heat_ws.column_dimensions[get_column_letter(col)].width = width
 
         pq_ws = wb.create_sheet("Очередь приоритетов")
+        self._apply_tab_color(pq_ws)
         pq_headers = ["Этап", "Критичность", "Код", "Проблема", "Приоритет", "Трудозатраты"]
         for col, h in enumerate(pq_headers, 1):
             self._apply_style(pq_ws.cell(row=1, column=col, value=h), header_style)
@@ -4196,6 +4349,7 @@ class XLSXGenerator:
             pq_ws.column_dimensions[get_column_letter(col)].width = width
 
         tgt_ws = wb.create_sheet("Цели")
+        self._apply_tab_color(tgt_ws)
         tgt_headers = ["Метрика", "Текущее", "Цель", "Дельта"]
         for col, h in enumerate(tgt_headers, 1):
             self._apply_style(tgt_ws.cell(row=1, column=col, value=h), header_style)
@@ -4214,6 +4368,7 @@ class XLSXGenerator:
     def generate_clusterizer_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Generate XLSX report for keyword clusterizer."""
         wb = Workbook()
+        self._add_cover_sheet(wb, 'Clusterizer Report', data.get('url', ''), datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         header_style = self._create_header_style()
         cell_style = self._create_cell_style()
 
@@ -4226,6 +4381,7 @@ class XLSXGenerator:
 
         ws_summary = wb.active
         ws_summary.title = "Сводка"
+        self._apply_tab_color(ws_summary)
         ws_summary["A1"] = "Отчет кластеризатора ключевых слов"
         ws_summary["A1"].font = Font(bold=True, size=16)
         ws_summary.merge_cells("A1:D1")
@@ -4265,6 +4421,7 @@ class XLSXGenerator:
         ws_summary.column_dimensions["B"].width = 32
 
         ws_clusters = wb.create_sheet("Кластеры")
+        self._apply_tab_color(ws_clusters)
         cluster_headers = [
             "Cluster ID",
             "Size",
@@ -4302,12 +4459,14 @@ class XLSXGenerator:
             ]
             for col, value in enumerate(row_values, 1):
                 self._apply_style(ws_clusters.cell(row=row_idx, column=col, value=value), cell_style)
+        self._apply_alternating_rows(ws_clusters, 2, ws_clusters.max_row)
         ws_clusters.freeze_panes = "A2"
         ws_clusters.auto_filter.ref = "A1:M1"
         for col, width in enumerate([12, 10, 22, 40, 46, 48, 12, 14, 14, 14, 14, 14, 100], 1):
             ws_clusters.column_dimensions[get_column_letter(col)].width = width
 
         ws_keywords = wb.create_sheet("Ключи")
+        self._apply_tab_color(ws_keywords)
         keyword_headers = [
             "Cluster ID",
             "Cluster size",
@@ -4348,15 +4507,18 @@ class XLSXGenerator:
                     for col, value in enumerate(row_values, 1):
                         self._apply_style(ws_keywords.cell(row=row_idx, column=col, value=value), cell_style)
                     row_idx += 1
+        self._apply_alternating_rows(ws_keywords, 2, ws_keywords.max_row)
         ws_keywords.freeze_panes = "A2"
         ws_keywords.auto_filter.ref = "A1:G1"
         for col, width in enumerate([12, 12, 46, 68, 20, 16, 12], 1):
             ws_keywords.column_dimensions[get_column_letter(col)].width = width
 
         ws_unclustered = wb.create_sheet("Одиночные")
+        self._apply_tab_color(ws_unclustered)
         self._apply_style(ws_unclustered.cell(row=1, column=1, value="Keyword"), header_style)
         for row_idx, keyword in enumerate(unclustered, start=2):
             self._apply_style(ws_unclustered.cell(row=row_idx, column=1, value=keyword), cell_style)
+        self._apply_alternating_rows(ws_unclustered, 2, ws_unclustered.max_row)
         ws_unclustered.column_dimensions["A"].width = 86
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
@@ -4367,8 +4529,10 @@ class XLSXGenerator:
     def generate_link_profile_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Generate XLSX report for link_profile_audit with fixed template sheets."""
         wb = Workbook()
+        self._add_cover_sheet(wb, 'Link Profile Report', data.get('url', ''), datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         ws_ru = wb.active
         ws_ru.title = "RU"
+        self._apply_tab_color(ws_ru)
 
         header_style = self._create_header_style()
         cell_style = self._create_cell_style()
@@ -4541,6 +4705,7 @@ class XLSXGenerator:
 
         # Sheet 2: Анализ данных
         ws_analysis = wb.create_sheet("Анализ данных")
+        self._apply_tab_color(ws_analysis)
         total_analysis_cols = 500
 
         b1_headers = ["Домен", "Domain Rating", "Total Backlinks", "Referring Domains"]
@@ -4695,6 +4860,7 @@ class XLSXGenerator:
 
         # Sheet 3: Приоритетные доноры
         ws_priority = wb.create_sheet("Приоритетные доноры")
+        self._apply_tab_color(ws_priority)
         pr_headers = ["Domain", "Domain Rating", "UR", "Domain traffic", "Nofollow", "Priority Score"]
         _write_header_row(ws_priority, 1, pr_headers)
         pr_rows_src = tables.get("priority_score_domains", []) or []
@@ -4714,19 +4880,23 @@ class XLSXGenerator:
         # Sheet 4-6 common headers
         common_headers = ["Referring page URL", "Target URL", "Anchor", "Domain Rating", "UR", "Domain traffic", "Nofollow", "Lost status"]
         ws_dup = wb.create_sheet("Дубли без нашего сайта")
+        self._apply_tab_color(ws_dup)
         _write_header_row(ws_dup, 1, common_headers)
         _write_dict_rows(ws_dup, 2, common_headers, tables.get("raw_duplicates_without_our", []) or [])
 
         ws_comp = wb.create_sheet("Ссылки с конкурентов")
+        self._apply_tab_color(ws_comp)
         _write_header_row(ws_comp, 1, common_headers)
         _write_dict_rows(ws_comp, 2, common_headers, tables.get("raw_competitor_links", []) or [])
 
         ws_home = wb.create_sheet("Ссылки с главных")
+        self._apply_tab_color(ws_home)
         _write_header_row(ws_home, 1, common_headers)
         _write_dict_rows(ws_home, 2, common_headers, tables.get("raw_homepage_links", []) or [])
 
         # Sheet 7: Ссылки с редиректов
         ws_redir = wb.create_sheet("Ссылки с редиректов")
+        self._apply_tab_color(ws_redir)
         redir_headers = ["Referring page URL", "Target URL", "Anchor", "Domain Rating", "UR", "Domain traffic", "Nofollow", "Lost status"]
         _write_header_row(ws_redir, 1, redir_headers)
         redir_rows = tables.get("raw_redirect_links", []) or []
@@ -4866,6 +5036,7 @@ class XLSXGenerator:
     def generate_core_web_vitals_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Generate Core Web Vitals report to XLSX (single or batch)."""
         wb = Workbook()
+        self._add_cover_sheet(wb, 'Core Web Vitals Report', data.get('url', ''), datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         header_style = self._create_header_style()
         cell_style = self._create_cell_style()
 
@@ -4916,6 +5087,7 @@ class XLSXGenerator:
 
         ws_summary = wb.active
         ws_summary.title = "Summary"
+        self._apply_tab_color(ws_summary)
         _write_row(ws_summary, 1, ["Core Web Vitals Report"], is_header=True)
         _write_row(ws_summary, 2, ["URL", url])
         _write_row(ws_summary, 3, ["Strategy", strategy])
@@ -4946,6 +5118,7 @@ class XLSXGenerator:
             _set_widths(ws_summary, [34, 44])
 
             ws_cmp = wb.create_sheet("Comparison")
+            self._apply_tab_color(ws_cmp)
             _write_row(
                 ws_cmp,
                 1,
@@ -4993,6 +5166,7 @@ class XLSXGenerator:
             _set_widths(ws_cmp, [6, 52, 12, 20, 10, 12, 12, 10, 14, 14, 14, 14, 44, 44])
 
             ws_gap = wb.create_sheet("Gap_Analysis")
+            self._apply_tab_color(ws_gap)
             _write_row(ws_gap, 1, ["Type", "Insight"], is_header=True)
             row_idx = 2
             for item in (results.get("gaps_for_primary", []) or []):
@@ -5011,6 +5185,7 @@ class XLSXGenerator:
             _set_widths(ws_gap, [24, 130])
 
             ws_plan = wb.create_sheet("Primary_Action_Plan")
+            self._apply_tab_color(ws_plan)
             plan_rows = results.get("action_plan", []) or []
             if plan_rows and isinstance(plan_rows[0], dict) and "affected_urls" in plan_rows[0]:
                 _write_row(ws_plan, 1, ["Priority", "Action", "Affected URLs"], is_header=True)
@@ -5042,6 +5217,7 @@ class XLSXGenerator:
                 _set_widths(ws_plan, [12, 20, 22, 70, 50])
 
             ws_recs = wb.create_sheet("Recommendations")
+            self._apply_tab_color(ws_recs)
             _write_row(ws_recs, 1, ["#", "Recommendation"], is_header=True)
             row_idx = 2
             for idx, rec in enumerate((results.get("recommendations", []) or [])[:150], start=1):
@@ -5068,6 +5244,7 @@ class XLSXGenerator:
             _set_widths(ws_summary, [34, 26])
 
             ws_urls = wb.create_sheet("URLs")
+            self._apply_tab_color(ws_urls)
             _write_row(
                 ws_urls,
                 1,
@@ -5119,6 +5296,7 @@ class XLSXGenerator:
             _set_widths(ws_urls, [6, 54, 22, 10, 12, 12, 10, 44, 50])
 
             ws_common = wb.create_sheet("Common Issues")
+            self._apply_tab_color(ws_common)
             _write_row(
                 ws_common,
                 1,
@@ -5144,6 +5322,7 @@ class XLSXGenerator:
             _set_widths(ws_common, [50, 22, 12, 10, 10, 14, 14])
 
             ws_plan = wb.create_sheet("Action Plan")
+            self._apply_tab_color(ws_plan)
             _write_row(ws_plan, 1, ["Priority", "Action", "Affected URLs"], is_header=True)
             row_idx = 2
             for item in (results.get("action_plan", []) or [])[:50]:
@@ -5160,6 +5339,7 @@ class XLSXGenerator:
             _set_widths(ws_plan, [12, 90, 16])
 
             ws_recs = wb.create_sheet("Recommendations")
+            self._apply_tab_color(ws_recs)
             _write_row(ws_recs, 1, ["#", "Recommendation"], is_header=True)
             row_idx = 2
             for idx, rec in enumerate((results.get("recommendations", []) or [])[:120], start=1):
@@ -5184,6 +5364,7 @@ class XLSXGenerator:
             diagnostics = results.get("diagnostics", {}) or {}
 
             ws_metrics = wb.create_sheet("Metrics")
+            self._apply_tab_color(ws_metrics)
             _write_row(ws_metrics, 1, ["Metric", "Field", "Lab", "Status"], is_header=True)
             row_idx = 2
             for key, label, field_key, lab_key, digits in [
@@ -5213,6 +5394,7 @@ class XLSXGenerator:
             _set_widths(ws_metrics, [20, 16, 16, 22])
 
             ws_categories = wb.create_sheet("Categories")
+            self._apply_tab_color(ws_categories)
             _write_row(ws_categories, 1, ["Category", "Score"], is_header=True)
             _write_row(ws_categories, 2, ["Performance", categories.get("performance", "-")])
             _write_row(ws_categories, 3, ["Accessibility", categories.get("accessibility", "-")])
@@ -5221,6 +5403,7 @@ class XLSXGenerator:
             _set_widths(ws_categories, [28, 16])
 
             ws_diag = wb.create_sheet("Diagnostics")
+            self._apply_tab_color(ws_diag)
             _write_row(ws_diag, 1, ["Metric", "Value"], is_header=True)
             diag_rows = [
                 ["Requests", diagnostics.get("num_requests", "-")],
@@ -5236,6 +5419,7 @@ class XLSXGenerator:
             _set_widths(ws_diag, [34, 20])
 
             ws_opps = wb.create_sheet("Opportunities")
+            self._apply_tab_color(ws_opps)
             _write_row(
                 ws_opps,
                 1,
@@ -5262,6 +5446,7 @@ class XLSXGenerator:
             _set_widths(ws_opps, [12, 50, 18, 10, 10, 14, 14, 50])
 
             ws_plan = wb.create_sheet("Action Plan")
+            self._apply_tab_color(ws_plan)
             _write_row(ws_plan, 1, ["Priority", "Area", "Owner", "Action", "Expected impact"], is_header=True)
             row_idx = 2
             for item in (results.get("action_plan", []) or [])[:120]:
@@ -5280,6 +5465,7 @@ class XLSXGenerator:
             _set_widths(ws_plan, [12, 20, 22, 70, 50])
 
             ws_recs = wb.create_sheet("Recommendations")
+            self._apply_tab_color(ws_recs)
             _write_row(ws_recs, 1, ["#", "Recommendation"], is_header=True)
             row_idx = 2
             for idx, rec in enumerate((results.get("recommendations", []) or [])[:150], start=1):

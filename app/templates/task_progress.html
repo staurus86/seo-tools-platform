@@ -1,4 +1,4 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 
 {% block title %}Результаты анализа - SEO Tools{% endblock %}
 
@@ -6,66 +6,66 @@
 <div class="max-w-6xl mx-auto">
     <!-- Header -->
     <div class="mb-6">
-        <a href="/" class="text-blue-600 hover:text-blue-800 mb-2 inline-block">
+        <a href="/" class="hover:opacity-80 mb-2 inline-block" style="color:var(--ds-brand);">
             <i class="fas fa-arrow-left mr-1"></i>Назад к инструментам
         </a>
-        <h2 class="text-2xl font-bold text-gray-800">Результаты анализа</h2>
-        <p class="text-gray-600">ID задачи: <span id="task-id">{{ task_id }}</span></p>
+        <h2 class="text-2xl font-bold" style="color:var(--ds-text);">Результаты анализа</h2>
+        <p style="color:var(--ds-text-secondary);">ID задачи: <span id="task-id">{{ task_id }}</span></p>
     </div>
 
     <!-- Progress Section -->
-    <div id="progress-section" class="bg-white rounded-xl shadow-md p-6 mb-6" role="status" aria-live="polite" aria-atomic="true">
+    <div id="progress-section" class="ds-panel mb-6" role="status" aria-live="polite" aria-atomic="true">
         <div class="flex items-center justify-between mb-4">
             <div>
-                <h3 class="text-lg font-semibold" id="status-title">Выполняется...</h3>
-                <p class="text-gray-600" id="status-message">Инициализация...</p>
+                <h3 class="text-lg font-semibold" id="status-title" style="color:var(--ds-text);">Выполняется...</h3>
+                <p id="status-message" style="color:var(--ds-text-secondary);">Инициализация...</p>
             </div>
             <div id="status-icon" class="text-4xl">
-                <i class="fas fa-spinner fa-spin text-blue-500"></i>
+                <i class="fas fa-spinner fa-spin" style="color:var(--ds-brand);"></i>
             </div>
         </div>
-        
+
         <!-- Progress Bar -->
-        <div class="w-full bg-gray-200 rounded-full h-4 mb-2">
-            <div id="progress-bar" class="bg-blue-500 h-4 rounded-full progress-bar" style="width: 0%"></div>
+        <div class="ds-meter-track mb-2">
+            <div id="progress-bar" class="ds-meter-fill" style="width: 0%"></div>
         </div>
         <div id="progress-meta" class="hidden mt-3 grid grid-cols-1 md:grid-cols-4 gap-2 text-sm">
-            <div class="bg-slate-50 border border-slate-200 rounded px-3 py-2">
-                <div class="text-slate-500">Обработано</div>
-                <div id="progress-processed" class="font-semibold text-slate-800">0</div>
+            <div class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
+                <div style="color:var(--ds-text-muted);">Обработано</div>
+                <div id="progress-processed" class="font-semibold" style="color:var(--ds-text);">0</div>
             </div>
-            <div class="bg-slate-50 border border-slate-200 rounded px-3 py-2">
-                <div class="text-slate-500">Всего</div>
-                <div id="progress-total" class="font-semibold text-slate-800">0</div>
+            <div class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
+                <div style="color:var(--ds-text-muted);">Всего</div>
+                <div id="progress-total" class="font-semibold" style="color:var(--ds-text);">0</div>
             </div>
-            <div class="bg-slate-50 border border-slate-200 rounded px-3 py-2">
-                <div class="text-slate-500">Очередь</div>
-                <div id="progress-queue" class="font-semibold text-slate-800">0</div>
+            <div class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
+                <div style="color:var(--ds-text-muted);">Очередь</div>
+                <div id="progress-queue" class="font-semibold" style="color:var(--ds-text);">0</div>
             </div>
-            <div class="bg-slate-50 border border-slate-200 rounded px-3 py-2">
-                <div class="text-slate-500">Текущий URL</div>
-                <div id="progress-current-url" class="font-semibold text-slate-800 truncate">-</div>
+            <div class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
+                <div style="color:var(--ds-text-muted);">Текущий URL</div>
+                <div id="progress-current-url" class="font-semibold truncate" style="color:var(--ds-text);">-</div>
             </div>
         </div>
         <div id="progress-stages" class="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 text-xs">
-            <div data-stage="queue" class="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-600">
-                <span class="w-2.5 h-2.5 rounded-full bg-slate-300"></span>
+            <div data-stage="queue" class="ds-badge" style="justify-content:flex-start;gap:0.5rem;">
+                <span class="w-2.5 h-2.5 rounded-full" style="background:var(--ds-text-muted);"></span>
                 <span>Очередь</span>
             </div>
-            <div data-stage="fetch" class="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-600">
-                <span class="w-2.5 h-2.5 rounded-full bg-slate-300"></span>
+            <div data-stage="fetch" class="ds-badge" style="justify-content:flex-start;gap:0.5rem;">
+                <span class="w-2.5 h-2.5 rounded-full" style="background:var(--ds-text-muted);"></span>
                 <span>HTTP/Robots</span>
             </div>
-            <div data-stage="render" class="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-600">
-                <span class="w-2.5 h-2.5 rounded-full bg-slate-300"></span>
+            <div data-stage="render" class="ds-badge" style="justify-content:flex-start;gap:0.5rem;">
+                <span class="w-2.5 h-2.5 rounded-full" style="background:var(--ds-text-muted);"></span>
                 <span>Render/JS</span>
             </div>
-            <div data-stage="analyze" class="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-600">
-                <span class="w-2.5 h-2.5 rounded-full bg-slate-300"></span>
+            <div data-stage="analyze" class="ds-badge" style="justify-content:flex-start;gap:0.5rem;">
+                <span class="w-2.5 h-2.5 rounded-full" style="background:var(--ds-text-muted);"></span>
                 <span>Diff/Scoring</span>
             </div>
-            <div data-stage="done" class="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-600">
-                <span class="w-2.5 h-2.5 rounded-full bg-slate-300"></span>
+            <div data-stage="done" class="ds-badge" style="justify-content:flex-start;gap:0.5rem;">
+                <span class="w-2.5 h-2.5 rounded-full" style="background:var(--ds-text-muted);"></span>
                 <span>Готово</span>
             </div>
         </div>
@@ -80,18 +80,18 @@
     </div>
 
     <!-- Error Section (hidden initially) -->
-    <div id="error-section" class="hidden bg-red-50 border-l-4 border-red-500 p-6 rounded-r-xl">
+    <div id="error-section" class="hidden ds-panel" style="background:var(--ds-danger-bg);border-color:var(--ds-danger-border);border-left-width:4px;">
         <div class="flex items-start">
-            <i class="fas fa-exclamation-triangle text-red-500 text-xl mr-3 mt-1"></i>
+            <i class="fas fa-exclamation-triangle text-xl mr-3 mt-1" style="color:var(--ds-danger);"></i>
             <div>
-                <h3 class="text-red-800 font-semibold mb-2">Ошибка выполнения</h3>
-                <p id="error-message" class="text-red-700"></p>
+                <h3 class="font-semibold mb-2" style="color:var(--ds-danger);">Ошибка выполнения</h3>
+                <p id="error-message" style="color:var(--ds-danger);"></p>
             </div>
         </div>
     </div>
 
     <!-- Copy Notification -->
-    <div id="copy-notification" class="fixed bottom-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg transform translate-y-20 transition-transform duration-300 z-50">
+    <div id="copy-notification" class="fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg transform translate-y-20 transition-transform duration-300 z-50" style="background:var(--ds-success);color:#fff;">
         <i class="fas fa-check mr-2"></i>Скопировано в буфер обмена
     </div>
 </div>
@@ -102,6 +102,8 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="/static/js/chart-helpers.js"></script>
 <script>const taskId = "{{ task_id }}";</script>
 <script src="/static/js/task-progress.js?v={{ app_version }}-{{ task_id }}"></script>
 {% endblock %}

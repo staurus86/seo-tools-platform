@@ -1,76 +1,86 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 
 {% block title %}SEO Tools Platform - Анализ сайта{% endblock %}
 
 {% block content %}
 <!-- Hero Section -->
-<div class="text-center mb-12">
-    <h2 class="text-4xl font-bold text-gray-800 mb-4">Профессиональный SEO Toolset</h2>
-    <p class="text-xl text-gray-600 max-w-2xl mx-auto">
-        Асинхронная платформа для технических и контентных SEO-проверок.
-        Каждый инструмент запускается отдельно с отслеживанием статуса задачи.
-    </p>
+<div class="text-center mb-12 relative py-4">
+    <div class="ds-hero-pattern absolute inset-0 rounded-2xl" style="opacity:0.5;"></div>
+    <div class="relative">
+        <h2 class="text-4xl md:text-5xl font-extrabold mb-4" style="color:var(--ds-text);">
+            Профессиональный SEO Toolset
+        </h2>
+        <p class="text-lg md:text-xl max-w-2xl mx-auto mb-5" style="color:var(--ds-text-secondary);">
+            Асинхронная платформа для технических и контентных SEO-проверок.
+            Каждый инструмент запускается отдельно с отслеживанием статуса задачи.
+        </p>
+        <div class="flex flex-wrap justify-center gap-2">
+            <span class="ds-badge ds-badge-info"><i class="fas fa-tools mr-1"></i>10+ Tools</span>
+            <span class="ds-badge ds-badge-success"><i class="fas fa-bolt mr-1"></i>Async</span>
+            <span class="ds-badge"><i class="fas fa-file-export mr-1"></i>DOCX / XLSX</span>
+        </div>
+    </div>
 </div>
 
 <!-- Tools Grid -->
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
 
     <!-- Tool 1: OnPage Audit -->
-    <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-blue-500">
+    <div class="ds-card" style="border-top:3px solid #3b82f6;">
         <div class="flex items-center mb-4">
-            <div class="bg-blue-100 p-3 rounded-lg mr-4">
-                <i class="fas fa-sitemap text-blue-600 text-xl"></i>
+            <div class="p-3 rounded-lg mr-4" style="background:rgba(59,130,246,0.1);">
+                <i class="fas fa-sitemap text-xl" style="color:#3b82f6;"></i>
             </div>
             <div>
-                <h3 class="text-lg font-semibold text-gray-800">OnPage-аудит</h3>
-                <p class="text-sm text-gray-500">SEO-релевантность страницы</p>
+                <h3 class="text-lg font-semibold" style="color:var(--ds-text);">OnPage-аудит</h3>
+                <p class="text-sm" style="color:var(--ds-text-muted);">SEO-релевантность страницы</p>
             </div>
         </div>
-        <p class="text-gray-600 mb-4 text-sm">
+        <p class="mb-4 text-sm" style="color:var(--ds-text-secondary);">
             Проверка одной страницы: плотность ключей, качество title/description/H1, антиспам, ссылки, медиа и технические сигналы.
         </p>
         <form class="space-y-3" onsubmit="startTask(event, 'onpage-audit')">
             <input type="url" name="url" placeholder="https://example.com" required
-                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                   class="ds-input focus:ring-2 focus:ring-blue-500">
             <textarea name="keywords" rows="3" placeholder="ключ 1, ключ 2, ключ 3"
-                      class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"></textarea>
-            <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition">
-                <i class="fas fa-play mr-2"></i>Запустить OnPage-аудит
+                      class="ds-textarea focus:ring-2 focus:ring-blue-500"></textarea>
+            <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:#3b82f6;border-color:#3b82f6;">
+                <i class="fas fa-play"></i>Запустить OnPage-аудит
             </button>
         </form>
     </div>
 
     <!-- Tool 1b: Site Audit Pro -->
-    <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-indigo-500">
+    <div class="ds-card" style="border-top:3px solid var(--ds-brand);">
         <div class="flex items-center mb-4">
-            <div class="bg-indigo-100 p-3 rounded-lg mr-4">
-                <i class="fas fa-layer-group text-indigo-600 text-xl"></i>
+            <div class="p-3 rounded-lg mr-4" style="background:rgba(15,76,129,0.1);">
+                <i class="fas fa-layer-group text-xl" style="color:var(--ds-brand);"></i>
             </div>
             <div>
-                <h3 class="text-lg font-semibold text-gray-800">Site Audit Pro</h3>
-                <p class="text-sm text-gray-500">Расширенный изолированный аудит</p>
+                <h3 class="text-lg font-semibold" style="color:var(--ds-text);">Site Audit Pro</h3>
+                <p class="text-sm" style="color:var(--ds-text-muted);">Расширенный изолированный аудит</p>
             </div>
         </div>
-        <p class="text-gray-600 mb-4 text-sm">
+        <p class="mb-4 text-sm" style="color:var(--ds-text-secondary);">
             Выделенный движок для миграции SEOPRO с режимами quick/full и отчетами XLSX/DOCX.
         </p>
         <form class="space-y-3" onsubmit="startTask(event, 'site-audit-pro')" data-tool="site-audit-pro">
             <input type="url" name="url" placeholder="https://example.com (необязательно в batch)"
-                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent js-sitepro-root-url">
+                   class="ds-input focus:ring-2 focus:ring-indigo-500 js-sitepro-root-url">
             <div class="grid grid-cols-2 gap-2">
-                <select name="mode" class="px-3 py-2 border rounded-lg text-sm">
+                <select name="mode" class="ds-select text-sm">
                     <option value="quick" selected>quick</option>
                     <option value="full">full</option>
                 </select>
                 <input type="number" name="max_pages" value="5" min="1" max="5"
-                       class="px-3 py-2 border rounded-lg text-sm" title="Макс. страниц">
+                       class="ds-input text-sm" title="Макс. страниц">
             </div>
             <div class="grid grid-cols-1 gap-2">
-                <select name="scan_mode" class="px-3 py-2 border rounded-lg text-sm js-sitepro-scan-mode">
+                <select name="scan_mode" class="ds-select text-sm js-sitepro-scan-mode">
                     <option value="crawl" selected>обход сайта</option>
                     <option value="batch">список URL (batch)</option>
                 </select>
-                <label class="flex items-center gap-2 text-sm text-gray-700">
+                <label class="flex items-center gap-2 text-sm" style="color:var(--ds-text-secondary);">
                     <input type="checkbox" name="extended_hreflang_checks" value="true"
                            class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
                     <span>Расширенные hreflang-проверки (для всех просканированных страниц)</span>
@@ -79,108 +89,108 @@
                 <div class="hidden js-sitepro-batch-box">
                     <textarea
                         name="batch_urls_text"
-                        class="w-full px-3 py-2 border rounded-lg text-sm"
+                        class="ds-textarea text-sm"
                         rows="8"
                         placeholder="https://example.com/page-1&#10;https://example.com/page-2&#10;https://example.com/page-3"
                     ></textarea>
-                    <p class="text-xs text-gray-500 mt-1">До 500 URL, по одному URL в строке.</p>
+                    <p class="text-xs mt-1" style="color:var(--ds-text-muted);">До 500 URL, по одному URL в строке.</p>
                 </div>
             </div>
-            <button type="submit" class="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition">
-                <i class="fas fa-play mr-2"></i>Запустить Site Audit Pro
+            <button type="submit" class="w-full ds-btn ds-btn-primary">
+                <i class="fas fa-play"></i>Запустить Site Audit Pro
             </button>
         </form>
     </div>
 
     <!-- Tool 2: Проверка Robots.txt -->
-    <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-green-500">
+    <div class="ds-card" style="border-top:3px solid var(--ds-success);">
         <div class="flex items-center mb-4">
-            <div class="bg-green-100 p-3 rounded-lg mr-4">
-                <i class="fas fa-robot text-green-600 text-xl"></i>
+            <div class="p-3 rounded-lg mr-4" style="background:rgba(21,128,61,0.1);">
+                <i class="fas fa-robot text-xl" style="color:var(--ds-success);"></i>
             </div>
             <div>
-                <h3 class="text-lg font-semibold text-gray-800">Robots.txt</h3>
-                <p class="text-sm text-gray-500">Проверка доступа и синтаксиса</p>
+                <h3 class="text-lg font-semibold" style="color:var(--ds-text);">Robots.txt</h3>
+                <p class="text-sm" style="color:var(--ds-text-muted);">Проверка доступа и синтаксиса</p>
             </div>
         </div>
-        <p class="text-gray-600 mb-4 text-sm">Проверка директив, наличия sitemap и прав краулеров.</p>
+        <p class="mb-4 text-sm" style="color:var(--ds-text-secondary);">Проверка директив, наличия sitemap и прав краулеров.</p>
         <form class="space-y-3" onsubmit="startTask(event, 'robots-check')">
             <input type="url" name="url" placeholder="https://example.com" required
-                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
-            <button type="submit" class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition">
-                <i class="fas fa-play mr-2"></i>Проверить robots.txt
+                   class="ds-input focus:ring-2 focus:ring-green-500">
+            <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:var(--ds-success);border-color:var(--ds-success);">
+                <i class="fas fa-play"></i>Проверить robots.txt
             </button>
         </form>
     </div>
 
     <!-- Tool 3: Sitemap Validator -->
-    <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-purple-500">
+    <div class="ds-card" style="border-top:3px solid var(--ds-brand-2);">
         <div class="flex items-center mb-4">
-            <div class="bg-purple-100 p-3 rounded-lg mr-4">
-                <i class="fas fa-map text-purple-600 text-xl"></i>
+            <div class="p-3 rounded-lg mr-4" style="background:rgba(14,116,144,0.1);">
+                <i class="fas fa-map text-xl" style="color:var(--ds-brand-2);"></i>
             </div>
             <div>
-                <h3 class="text-lg font-semibold text-gray-800">Sitemap.xml</h3>
-                <p class="text-sm text-gray-500">Валидация XML sitemap</p>
+                <h3 class="text-lg font-semibold" style="color:var(--ds-text);">Sitemap.xml</h3>
+                <p class="text-sm" style="color:var(--ds-text-muted);">Валидация XML sitemap</p>
             </div>
         </div>
-        <p class="text-gray-600 mb-4 text-sm">Проверка структуры sitemap, URL и качества метаданных.</p>
+        <p class="mb-4 text-sm" style="color:var(--ds-text-secondary);">Проверка структуры sitemap, URL и качества метаданных.</p>
         <form class="space-y-3" onsubmit="startTask(event, 'sitemap-validate')">
             <input type="text" name="url" placeholder="example.com или https://example.com/sitemap.xml" required
-                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
-            <p class="text-xs text-gray-500">Можно ввести домен, сайт с http/https или полный URL sitemap. Сначала ищем sitemap в robots.txt.</p>
-            <button type="submit" class="w-full bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700 transition">
-                <i class="fas fa-play mr-2"></i>Проверить sitemap
+                   class="ds-input focus:ring-2 focus:ring-teal-500">
+            <p class="text-xs" style="color:var(--ds-text-muted);">Можно ввести домен, сайт с http/https или полный URL sitemap. Сначала ищем sitemap в robots.txt.</p>
+            <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:var(--ds-brand-2);border-color:var(--ds-brand-2);">
+                <i class="fas fa-play"></i>Проверить sitemap
             </button>
         </form>
     </div>
 
     <!-- Tool 4: Render Audit -->
-    <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-orange-500">
+    <div class="ds-card" style="border-top:3px solid #f97316;">
         <div class="flex items-center mb-4">
-            <div class="bg-orange-100 p-3 rounded-lg mr-4">
-                <i class="fas fa-code text-orange-600 text-xl"></i>
+            <div class="p-3 rounded-lg mr-4" style="background:rgba(249,115,22,0.1);">
+                <i class="fas fa-code text-xl" style="color:#f97316;"></i>
             </div>
             <div>
-                <h3 class="text-lg font-semibold text-gray-800">Render-аудит</h3>
-                <p class="text-sm text-gray-500">JavaScript vs no-JS</p>
+                <h3 class="text-lg font-semibold" style="color:var(--ds-text);">Render-аудит</h3>
+                <p class="text-sm" style="color:var(--ds-text-muted);">JavaScript vs no-JS</p>
             </div>
         </div>
-        <p class="text-gray-600 mb-4 text-sm">Сравнение HTML и ключевых SEO-элементов с JS и без JS.</p>
+        <p class="mb-4 text-sm" style="color:var(--ds-text-secondary);">Сравнение HTML и ключевых SEO-элементов с JS и без JS.</p>
         <form class="space-y-3" onsubmit="startTask(event, 'render-audit')">
             <input type="url" name="url" placeholder="https://example.com/page" required
-                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent">
-            <button type="submit" class="w-full bg-orange-600 text-white py-2 rounded-lg hover:bg-orange-700 transition">
-                <i class="fas fa-play mr-2"></i>Запустить render-аудит
+                   class="ds-input focus:ring-2 focus:ring-orange-500">
+            <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:#f97316;border-color:#f97316;">
+                <i class="fas fa-play"></i>Запустить render-аудит
             </button>
         </form>
     </div>
 
     <!-- Tool 5: Проверка мобильной версии -->
-    <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-pink-500">
+    <div class="ds-card" style="border-top:3px solid #ec4899;">
         <div class="flex items-center mb-4">
-            <div class="bg-pink-100 p-3 rounded-lg mr-4">
-                <i class="fas fa-mobile-alt text-pink-600 text-xl"></i>
+            <div class="p-3 rounded-lg mr-4" style="background:rgba(236,72,153,0.1);">
+                <i class="fas fa-mobile-alt text-xl" style="color:#ec4899;"></i>
             </div>
             <div>
-                <h3 class="text-lg font-semibold text-gray-800">Проверка мобильной версии</h3>
-                <p class="text-sm text-gray-500">Проверка на устройствах</p>
+                <h3 class="text-lg font-semibold" style="color:var(--ds-text);">Проверка мобильной версии</h3>
+                <p class="text-sm" style="color:var(--ds-text-muted);">Проверка на устройствах</p>
             </div>
         </div>
-        <p class="text-gray-600 mb-4 text-sm">Проверка адаптивности и удобства на популярных мобильных устройствах.</p>
+        <p class="mb-4 text-sm" style="color:var(--ds-text-secondary);">Проверка адаптивности и удобства на популярных мобильных устройствах.</p>
         <form class="space-y-3" onsubmit="startTask(event, 'mobile-check')">
             <input type="url" name="url" placeholder="https://example.com" required
-                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent">
+                   class="ds-input focus:ring-2 focus:ring-pink-500">
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Режим сканирования</label>
-                <select name="mode" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent">
+                <label class="block text-sm font-medium mb-1" style="color:var(--ds-text-secondary);">Режим сканирования</label>
+                <select name="mode" class="ds-select focus:ring-2 focus:ring-pink-500">
                     <option value="quick" selected>Быстрый (iPhone 16 Pro + Galaxy S25)</option>
                     <option value="full">Полный (стандартный набор устройств)</option>
                 </select>
             </div>
-            <details class="rounded-lg border border-pink-200 bg-pink-50/40 p-3">
-                <summary class="cursor-pointer text-sm font-medium text-pink-800">Кастомные устройства (опционально)</summary>
-                <p class="mt-2 text-xs text-gray-600">Если ничего не выбрано, используются устройства режима по умолчанию.</p>
+            <details class="rounded-lg border p-3" style="border-color:var(--ds-border);background:var(--ds-surface-soft);">
+                <summary class="cursor-pointer text-sm font-medium" style="color:#ec4899;">Кастомные устройства (опционально)</summary>
+                <p class="mt-2 text-xs" style="color:var(--ds-text-muted);">Если ничего не выбрано, используются устройства режима по умолчанию.</p>
                 <div class="mt-3 grid grid-cols-1 gap-1 text-sm">
                     <label class="flex items-center gap-2"><input type="checkbox" name="devices" value="iPhone 16 Pro" class="rounded border-gray-300 text-pink-600 focus:ring-pink-500"><span>iPhone 16 Pro</span></label>
                     <label class="flex items-center gap-2"><input type="checkbox" name="devices" value="Samsung Galaxy S25" class="rounded border-gray-300 text-pink-600 focus:ring-pink-500"><span>Samsung Galaxy S25</span></label>
@@ -191,54 +201,54 @@
                     <label class="flex items-center gap-2"><input type="checkbox" name="devices" value="Samsung Galaxy Tab S9" class="rounded border-gray-300 text-pink-600 focus:ring-pink-500"><span>Samsung Galaxy Tab S9</span></label>
                 </div>
             </details>
-            <button type="submit" class="w-full bg-pink-600 text-white py-2 rounded-lg hover:bg-pink-700 transition">
-                <i class="fas fa-play mr-2"></i>Запустить мобильную проверку
+            <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:#ec4899;border-color:#ec4899;">
+                <i class="fas fa-play"></i>Запустить мобильную проверку
             </button>
         </form>
     </div>
 
     <!-- Tool 6: Проверка доступности ботов -->
-    <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-red-500">
+    <div class="ds-card" style="border-top:3px solid var(--ds-danger);">
         <div class="flex items-center mb-4">
-            <div class="bg-red-100 p-3 rounded-lg mr-4">
-                <i class="fas fa-spider text-red-600 text-xl"></i>
+            <div class="p-3 rounded-lg mr-4" style="background:rgba(185,28,28,0.1);">
+                <i class="fas fa-spider text-xl" style="color:var(--ds-danger);"></i>
             </div>
             <div>
-                <h3 class="text-lg font-semibold text-gray-800">Проверка доступности ботов</h3>
-                <p class="text-sm text-gray-500">Видимость для поисковых и AI-краулеров</p>
+                <h3 class="text-lg font-semibold" style="color:var(--ds-text);">Проверка доступности ботов</h3>
+                <p class="text-sm" style="color:var(--ds-text-muted);">Видимость для поисковых и AI-краулеров</p>
             </div>
         </div>
-        <p class="text-gray-600 mb-4 text-sm">Проверка доступности для основных поисковых и AI-ботов по HTTP, robots и meta-правилам.</p>
+        <p class="mb-4 text-sm" style="color:var(--ds-text-secondary);">Проверка доступности для основных поисковых и AI-ботов по HTTP, robots и meta-правилам.</p>
         <form class="space-y-3" onsubmit="startTask(event, 'bot-check')">
             <input type="url" name="url" placeholder="https://example.com" required
-                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent">
+                   class="ds-input focus:ring-2 focus:ring-red-500">
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Режим сканирования</label>
-                <select name="scan_mode" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent js-bot-scan-mode">
+                <label class="block text-sm font-medium mb-1" style="color:var(--ds-text-secondary);">Режим сканирования</label>
+                <select name="scan_mode" class="ds-select focus:ring-2 focus:ring-red-500 js-bot-scan-mode">
                     <option value="single" selected>Один URL</option>
                     <option value="batch">Список URL (до 100)</option>
                 </select>
             </div>
             <div class="hidden js-bot-batch-box">
-                <label class="block text-sm font-medium text-gray-700 mb-1">Batch URL (по одному в строке)</label>
+                <label class="block text-sm font-medium mb-1" style="color:var(--ds-text-secondary);">Batch URL (по одному в строке)</label>
                 <textarea
                     name="batch_urls_text"
                     rows="5"
                     placeholder="https://example.com/&#10;https://example.com/catalog&#10;https://example.com/contact"
-                    class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent font-mono text-sm"
+                    class="ds-textarea font-mono text-sm"
                 ></textarea>
             </div>
-            <details class="rounded-lg border border-red-200 bg-red-50/40 p-3">
-                <summary class="cursor-pointer text-sm font-medium text-red-800">Выбор ботов</summary>
+            <details class="rounded-lg border p-3" style="border-color:var(--ds-border);background:var(--ds-surface-soft);">
+                <summary class="cursor-pointer text-sm font-medium" style="color:var(--ds-danger);">Выбор ботов</summary>
                 <div class="mt-3 space-y-3 text-sm">
                     <div>
-                        <div class="text-gray-700 font-medium mb-2">Группы</div>
+                        <div class="font-medium mb-2" style="color:var(--ds-text-secondary);">Группы</div>
                         <label class="flex items-center gap-2"><input type="checkbox" name="bot_groups" value="search" class="rounded border-gray-300 text-red-600 focus:ring-red-500"><span>Все поисковые боты</span></label>
                         <label class="flex items-center gap-2"><input type="checkbox" name="bot_groups" value="ai" class="rounded border-gray-300 text-red-600 focus:ring-red-500"><span>Все AI-боты</span></label>
                         <label class="flex items-center gap-2"><input type="checkbox" name="bot_groups" value="crawlers" class="rounded border-gray-300 text-red-600 focus:ring-red-500"><span>Все краулеры</span></label>
                     </div>
                     <div>
-                        <div class="text-gray-700 font-medium mb-2">Боты по умолчанию</div>
+                        <div class="font-medium mb-2" style="color:var(--ds-text-secondary);">Боты по умолчанию</div>
                         <div class="grid grid-cols-1 gap-1">
                             <label class="flex items-center gap-2"><input type="checkbox" name="selected_bots" value="YandexBot" checked class="rounded border-gray-300 text-red-600 focus:ring-red-500"><span>Yandex</span></label>
                             <label class="flex items-center gap-2"><input type="checkbox" name="selected_bots" value="Googlebot Desktop" checked class="rounded border-gray-300 text-red-600 focus:ring-red-500"><span>Google</span></label>
@@ -253,80 +263,80 @@
                     </div>
                 </div>
             </details>
-            <details class="rounded-lg border border-red-200 bg-red-50/40 p-3">
-                <summary class="cursor-pointer text-sm font-medium text-red-800">Расширенные параметры</summary>
+            <details class="rounded-lg border p-3" style="border-color:var(--ds-border);background:var(--ds-surface-soft);">
+                <summary class="cursor-pointer text-sm font-medium" style="color:var(--ds-danger);">Расширенные параметры</summary>
                 <div class="mt-3 grid grid-cols-1 gap-2 text-sm">
                     <div>
-                        <label class="block text-gray-700 mb-1">Профиль повторов</label>
-                        <select name="retry_profile" class="w-full px-3 py-2 border rounded-lg">
+                        <label class="block mb-1" style="color:var(--ds-text-secondary);">Профиль повторов</label>
+                        <select name="retry_profile" class="ds-select">
                             <option value="standard" selected>standard</option>
                             <option value="strict">strict</option>
                             <option value="aggressive">aggressive</option>
                         </select>
                     </div>
                     <div>
-                        <label class="block text-gray-700 mb-1">Профиль критичности</label>
-                        <select name="criticality_profile" class="w-full px-3 py-2 border rounded-lg">
+                        <label class="block mb-1" style="color:var(--ds-text-secondary);">Профиль критичности</label>
+                        <select name="criticality_profile" class="ds-select">
                             <option value="balanced" selected>balanced</option>
                             <option value="search_first">search_first</option>
                             <option value="ai_first">ai_first</option>
                         </select>
                     </div>
                     <div>
-                        <label class="block text-gray-700 mb-1">SLA-профиль</label>
-                        <select name="sla_profile" class="w-full px-3 py-2 border rounded-lg">
+                        <label class="block mb-1" style="color:var(--ds-text-secondary);">SLA-профиль</label>
+                        <select name="sla_profile" class="ds-select">
                             <option value="standard" selected>standard</option>
                             <option value="strict">strict</option>
                         </select>
                     </div>
-                    <label class="flex items-center gap-2 text-gray-700">
+                    <label class="flex items-center gap-2" style="color:var(--ds-text-secondary);">
                         <input type="checkbox" name="baseline_enabled" value="true" checked class="rounded border-gray-300 text-red-600 focus:ring-red-500">
                         <span>Включить baseline diff</span>
                     </label>
-                    <label class="flex items-center gap-2 text-gray-700">
+                    <label class="flex items-center gap-2" style="color:var(--ds-text-secondary);">
                         <input type="checkbox" name="ai_block_expected" value="true" class="rounded border-gray-300 text-red-600 focus:ring-red-500">
                         <span>Блокировка AI-ботов намеренная</span>
                     </label>
                 </div>
             </details>
-            <button type="submit" class="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition">
-                <i class="fas fa-play mr-2"></i>Запустить проверку ботов
+            <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:var(--ds-danger);border-color:var(--ds-danger);">
+                <i class="fas fa-play"></i>Запустить проверку ботов
             </button>
         </form>
     </div>
 
     <!-- Tool 7: Keyword Clusterizer -->
-    <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-cyan-500">
+    <div class="ds-card" style="border-top:3px solid #06b6d4;">
         <div class="flex items-center mb-4">
-            <div class="bg-cyan-100 p-3 rounded-lg mr-4">
-                <i class="fas fa-object-group text-cyan-600 text-xl"></i>
+            <div class="p-3 rounded-lg mr-4" style="background:rgba(6,182,212,0.1);">
+                <i class="fas fa-object-group text-xl" style="color:#06b6d4;"></i>
             </div>
             <div>
-                <h3 class="text-lg font-semibold text-gray-800">Кластеризатор</h3>
-                <p class="text-sm text-gray-500">Группировка по схожести ключей</p>
+                <h3 class="text-lg font-semibold" style="color:var(--ds-text);">Кластеризатор</h3>
+                <p class="text-sm" style="color:var(--ds-text-muted);">Группировка по схожести ключей</p>
             </div>
         </div>
-        <p class="text-gray-600 mb-4 text-sm">Кластеризация без SERP: до 25 000 ключей, гибридная схожесть (токены + опечатки) и режимы strict/balanced/broad.</p>
+        <p class="mb-4 text-sm" style="color:var(--ds-text-secondary);">Кластеризация без SERP: до 25 000 ключей, гибридная схожесть (токены + опечатки) и режимы strict/balanced/broad.</p>
         <form class="space-y-3" onsubmit="startTask(event, 'clusterizer')">
             <textarea
                 name="keywords_text"
                 rows="7"
                 placeholder="купить iphone 16;320&#10;iphone 16 цена;210&#10;samsung galaxy s25;180&#10;galaxy s25 купить;120"
-                class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm"
+                class="ds-textarea text-sm"
             ></textarea>
             <div>
-                <label class="text-xs text-slate-500">Или загрузите файл (CSV / XLSX, колонки: ключ, частота)</label>
+                <label class="text-xs" style="color:var(--ds-text-muted);">Или загрузите файл (CSV / XLSX, колонки: ключ, частота)</label>
                 <input type="file" name="keywords_file" accept=".csv,.xlsx"
-                       class="block w-full text-sm text-slate-600 mt-1 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-sm file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer">
+                       class="block w-full text-sm mt-1 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-sm file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer" style="color:var(--ds-text-secondary);">
             </div>
             <input type="hidden" name="url" value="Список ключей">
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <select name="method" class="px-3 py-2 border rounded-lg text-sm">
+                <select name="method" class="ds-select text-sm">
                     <option value="jaccard" selected>Jaccard</option>
                     <option value="overlap">Overlap</option>
                     <option value="dice">Dice</option>
                 </select>
-                <select name="clustering_mode" class="px-3 py-2 border rounded-lg text-sm" title="Режим кластеризации">
+                <select name="clustering_mode" class="ds-select text-sm" title="Режим кластеризации">
                     <option value="balanced" selected>balanced (Recommended)</option>
                     <option value="strict">strict</option>
                     <option value="broad">broad</option>
@@ -339,7 +349,7 @@
                     value="35"
                     min="1"
                     max="100"
-                    class="px-3 py-2 border rounded-lg text-sm"
+                    class="ds-input text-sm"
                     title="Порог схожести, %"
                 >
                 <input
@@ -348,178 +358,178 @@
                     value="2"
                     min="1"
                     max="50"
-                    class="px-3 py-2 border rounded-lg text-sm"
+                    class="ds-input text-sm"
                     title="Минимальный размер кластера"
                 >
             </div>
-            <p class="text-xs text-gray-500">Формат textarea: <code>ключ;123</code> или <code>ключ[TAB]123</code>. Файл: Semrush / Ahrefs / Google Ads / KeyCollector / plain CSV. Лимит 25 000 ключей.</p>
-            <button type="submit" class="w-full bg-cyan-600 text-white py-2 rounded-lg hover:bg-cyan-700 transition">
-                <i class="fas fa-play mr-2"></i>Запустить кластеризацию
+            <p class="text-xs" style="color:var(--ds-text-muted);">Формат textarea: <code>ключ;123</code> или <code>ключ[TAB]123</code>. Файл: Semrush / Ahrefs / Google Ads / KeyCollector / plain CSV. Лимит 25 000 ключей.</p>
+            <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:#06b6d4;border-color:#06b6d4;">
+                <i class="fas fa-play"></i>Запустить кластеризацию
             </button>
         </form>
     </div>
 
     <!-- Tool 8: Link Profile Audit -->
-    <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-amber-500">
+    <div class="ds-card" style="border-top:3px solid #f59e0b;">
         <div class="flex items-center mb-4">
-            <div class="bg-amber-100 p-3 rounded-lg mr-4">
-                <i class="fas fa-link text-amber-600 text-xl"></i>
+            <div class="p-3 rounded-lg mr-4" style="background:rgba(245,158,11,0.1);">
+                <i class="fas fa-link text-xl" style="color:#f59e0b;"></i>
             </div>
             <div>
-                <h3 class="text-lg font-semibold text-gray-800">Аудит ссылочного профиля</h3>
-                <p class="text-sm text-gray-500">Backlinks, анкоры, пересечения доноров</p>
+                <h3 class="text-lg font-semibold" style="color:var(--ds-text);">Аудит ссылочного профиля</h3>
+                <p class="text-sm" style="color:var(--ds-text-muted);">Backlinks, анкоры, пересечения доноров</p>
             </div>
         </div>
-        <p class="text-gray-600 mb-4 text-sm">Загрузка выгрузок бэклинков и batch-файла для анализа конкурентов, анкоров и дубликатов доменов.</p>
+        <p class="mb-4 text-sm" style="color:var(--ds-text-secondary);">Загрузка выгрузок бэклинков и batch-файла для анализа конкурентов, анкоров и дубликатов доменов.</p>
         <form class="space-y-3" onsubmit="startLinkProfileTask(event)" data-tool="link-profile-audit">
             <input type="text" name="our_domain" placeholder="example.com или https://example.com" required
-                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent">
+                   class="ds-input focus:ring-2 focus:ring-amber-500">
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Файлы бэклинков (CSV/XLSX, можно несколько)</label>
+                <label class="block text-sm font-medium mb-1" style="color:var(--ds-text-secondary);">Файлы бэклинков (CSV/XLSX, можно несколько)</label>
                 <input type="file" name="backlink_files" accept=".csv,.xlsx" multiple required
-                       class="w-full px-3 py-2 border rounded-lg text-sm">
+                       class="w-full px-3 py-2 border rounded-lg text-sm" style="background:var(--ds-input-bg);color:var(--ds-text);border-color:var(--ds-input-border);">
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Batch analysis файл (CSV/XLSX, опционально)</label>
+                <label class="block text-sm font-medium mb-1" style="color:var(--ds-text-secondary);">Batch analysis файл (CSV/XLSX, опционально)</label>
                 <input type="file" name="batch_file" accept=".csv,.xlsx"
-                       class="w-full px-3 py-2 border rounded-lg text-sm">
-                <p class="text-xs text-gray-500 mt-1">Если загружаете all-in-one файл вида <code>test links.xlsx</code>, batch можно не прикладывать.</p>
+                       class="w-full px-3 py-2 border rounded-lg text-sm" style="background:var(--ds-input-bg);color:var(--ds-text);border-color:var(--ds-input-border);">
+                <p class="text-xs mt-1" style="color:var(--ds-text-muted);">Если загружаете all-in-one файл вида <code>test links.xlsx</code>, batch можно не прикладывать.</p>
             </div>
-            <details class="rounded-lg border border-amber-200 bg-amber-50/40 p-3">
-                <summary class="cursor-pointer text-sm font-medium text-amber-800">Словари анкоров (опционально)</summary>
+            <details class="rounded-lg border p-3" style="border-color:var(--ds-border);background:var(--ds-surface-soft);">
+                <summary class="cursor-pointer text-sm font-medium" style="color:#f59e0b;">Словари анкоров (опционально)</summary>
                 <div class="mt-3 grid grid-cols-1 gap-2">
-                    <textarea name="commercial_keywords" rows="2" placeholder="commercial: buy, price, заказать" class="w-full px-3 py-2 border rounded-lg text-sm"></textarea>
-                    <textarea name="informational_keywords" rows="2" placeholder="informational: how, guide, обзор" class="w-full px-3 py-2 border rounded-lg text-sm"></textarea>
-                    <textarea name="spam_keywords" rows="2" placeholder="spam: casino, porn, pills" class="w-full px-3 py-2 border rounded-lg text-sm"></textarea>
-                    <textarea name="brand_keywords" rows="2" placeholder="brand: ваш бренд, домен, аббревиатуры" class="w-full px-3 py-2 border rounded-lg text-sm"></textarea>
+                    <textarea name="commercial_keywords" rows="2" placeholder="commercial: buy, price, заказать" class="ds-textarea text-sm"></textarea>
+                    <textarea name="informational_keywords" rows="2" placeholder="informational: how, guide, обзор" class="ds-textarea text-sm"></textarea>
+                    <textarea name="spam_keywords" rows="2" placeholder="spam: casino, porn, pills" class="ds-textarea text-sm"></textarea>
+                    <textarea name="brand_keywords" rows="2" placeholder="brand: ваш бренд, домен, аббревиатуры" class="ds-textarea text-sm"></textarea>
                 </div>
             </details>
-            <button type="submit" class="w-full bg-amber-600 text-white py-2 rounded-lg hover:bg-amber-700 transition">
-                <i class="fas fa-play mr-2"></i>Запустить аудит ссылочного профиля
+            <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:#f59e0b;border-color:#f59e0b;">
+                <i class="fas fa-play"></i>Запустить аудит ссылочного профиля
             </button>
         </form>
     </div>
 
     <!-- Tool 10: Redirect Checker -->
-    <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-emerald-500">
+    <div class="ds-card" style="border-top:3px solid var(--ds-success);">
         <div class="flex items-center mb-4">
-            <div class="bg-emerald-100 p-3 rounded-lg mr-4">
-                <i class="fas fa-random text-emerald-600 text-xl"></i>
+            <div class="p-3 rounded-lg mr-4" style="background:rgba(21,128,61,0.1);">
+                <i class="fas fa-random text-xl" style="color:var(--ds-success);"></i>
             </div>
             <div>
-                <h3 class="text-lg font-semibold text-gray-800">Redirect Checker</h3>
-                <p class="text-sm text-gray-500">17 SEO-сценариев + policy-проверки</p>
+                <h3 class="text-lg font-semibold" style="color:var(--ds-text);">Redirect Checker</h3>
+                <p class="text-sm" style="color:var(--ds-text-muted);">17 SEO-сценариев + policy-проверки</p>
             </div>
         </div>
-        <p class="text-gray-600 mb-4 text-sm">
+        <p class="mb-4 text-sm" style="color:var(--ds-text-secondary);">
             Автопроверка HTTPS/WWW, trailing slash, index-файлов, canonical/404, query params, cross-domain и soft-404 с рекомендациями.
         </p>
         <form class="space-y-3" onsubmit="startTask(event, 'redirect-checker')">
             <input type="text" name="url" placeholder="example.com или https://example.com" required
-                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent">
+                   class="ds-input focus:ring-2 focus:ring-emerald-500">
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">User-Agent</label>
-                <select name="user_agent" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent">
+                <label class="block text-sm font-medium mb-1" style="color:var(--ds-text-secondary);">User-Agent</label>
+                <select name="user_agent" class="ds-select focus:ring-2 focus:ring-emerald-500">
                     <option value="googlebot_desktop" selected>Googlebot Desktop</option>
                     <option value="googlebot_smartphone">Googlebot Smartphone</option>
                     <option value="yandex_bot">Yandex Bot</option>
                 </select>
             </div>
-            <details class="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3">
-                <summary class="cursor-pointer text-sm font-medium text-emerald-800">SEO policy (опционально)</summary>
+            <details class="rounded-lg border p-3" style="border-color:var(--ds-border);background:var(--ds-surface-soft);">
+                <summary class="cursor-pointer text-sm font-medium" style="color:var(--ds-success);">SEO policy (опционально)</summary>
                 <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div>
-                        <label class="block text-xs font-medium text-gray-700 mb-1">Канонический host</label>
-                        <select name="canonical_host_policy" class="w-full px-3 py-2 border rounded-lg text-sm">
+                        <label class="block text-xs font-medium mb-1" style="color:var(--ds-text-secondary);">Канонический host</label>
+                        <select name="canonical_host_policy" class="ds-select text-sm">
                             <option value="auto" selected>Auto (как на сайте)</option>
                             <option value="non-www">Без www</option>
                             <option value="www">С www</option>
                         </select>
                     </div>
                     <div>
-                        <label class="block text-xs font-medium text-gray-700 mb-1">Trailing slash policy</label>
-                        <select name="trailing_slash_policy" class="w-full px-3 py-2 border rounded-lg text-sm">
+                        <label class="block text-xs font-medium mb-1" style="color:var(--ds-text-secondary);">Trailing slash policy</label>
+                        <select name="trailing_slash_policy" class="ds-select text-sm">
                             <option value="auto" selected>Auto</option>
                             <option value="no-slash">Без / в конце</option>
                             <option value="slash">Со / в конце</option>
                         </select>
                     </div>
                     <div>
-                        <label class="block text-xs font-medium text-gray-700 mb-1">Lowercase URL</label>
-                        <select name="enforce_lowercase" class="w-full px-3 py-2 border rounded-lg text-sm">
+                        <label class="block text-xs font-medium mb-1" style="color:var(--ds-text-secondary);">Lowercase URL</label>
+                        <select name="enforce_lowercase" class="ds-select text-sm">
                             <option value="true" selected>Требовать lowercase</option>
                             <option value="false">Не проверять lowercase</option>
                         </select>
                     </div>
                     <div>
-                        <label class="block text-xs font-medium text-gray-700 mb-1">Allowed query params</label>
+                        <label class="block text-xs font-medium mb-1" style="color:var(--ds-text-secondary);">Allowed query params</label>
                         <input
                             type="text"
                             name="allowed_query_params"
                             placeholder="page,sort,lang"
-                            class="w-full px-3 py-2 border rounded-lg text-sm"
+                            class="ds-input text-sm"
                         >
                     </div>
                     <div>
-                        <label class="block text-xs font-medium text-gray-700 mb-1">Required query params</label>
+                        <label class="block text-xs font-medium mb-1" style="color:var(--ds-text-secondary);">Required query params</label>
                         <input
                             type="text"
                             name="required_query_params"
                             placeholder="page,lang"
-                            class="w-full px-3 py-2 border rounded-lg text-sm"
+                            class="ds-input text-sm"
                         >
                     </div>
                     <div>
-                        <label class="block text-xs font-medium text-gray-700 mb-1">Ignore query params</label>
+                        <label class="block text-xs font-medium mb-1" style="color:var(--ds-text-secondary);">Ignore query params</label>
                         <input
                             type="text"
                             name="ignore_query_params"
                             value="utm_source,utm_medium,utm_campaign,utm_term,utm_content,gclid,fbclid,yclid"
-                            class="w-full px-3 py-2 border rounded-lg text-sm"
+                            class="ds-input text-sm"
                         >
                     </div>
                 </div>
             </details>
-            <button type="submit" class="w-full bg-emerald-600 text-white py-2 rounded-lg hover:bg-emerald-700 transition">
-                <i class="fas fa-play mr-2"></i>Запустить Redirect Checker
+            <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:var(--ds-success);border-color:var(--ds-success);">
+                <i class="fas fa-play"></i>Запустить Redirect Checker
             </button>
         </form>
     </div>
 
     <!-- Tool 11: Core Web Vitals Scanner -->
-    <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-cyan-500">
+    <div class="ds-card" style="border-top:3px solid #0ea5e9;">
         <div class="flex items-center mb-4">
-            <div class="bg-cyan-100 p-3 rounded-lg mr-4">
-                <i class="fas fa-tachometer-alt text-cyan-600 text-xl"></i>
+            <div class="p-3 rounded-lg mr-4" style="background:rgba(14,165,233,0.1);">
+                <i class="fas fa-tachometer-alt text-xl" style="color:#0ea5e9;"></i>
             </div>
             <div>
-                <h3 class="text-lg font-semibold text-gray-800">Core Web Vitals Scanner</h3>
-                <p class="text-sm text-gray-500">LCP, INP, CLS + PageSpeed opportunities</p>
+                <h3 class="text-lg font-semibold" style="color:var(--ds-text);">Core Web Vitals Scanner</h3>
+                <p class="text-sm" style="color:var(--ds-text-muted);">LCP, INP, CLS + PageSpeed opportunities</p>
             </div>
         </div>
-        <p class="text-gray-600 mb-4 text-sm">
+        <p class="mb-4 text-sm" style="color:var(--ds-text-secondary);">
             Проверка Core Web Vitals через Google PageSpeed Insights API: single URL, batch до 10 URL и режим сравнения с конкурентами.
         </p>
         <form class="space-y-3" onsubmit="startTask(event, 'core-web-vitals')">
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Режим</label>
-                <select name="scan_mode" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent js-cwv-scan-mode">
+                <label class="block text-sm font-medium mb-1" style="color:var(--ds-text-secondary);">Режим</label>
+                <select name="scan_mode" class="ds-select focus:ring-2 focus:ring-sky-500 js-cwv-scan-mode">
                     <option value="single" selected>Single URL</option>
                     <option value="batch">Batch (до 10 URL)</option>
                 </select>
             </div>
             <input type="text" name="url" placeholder="example.com или https://example.com/page" required
-                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent js-cwv-url">
+                   class="ds-input focus:ring-2 focus:ring-sky-500 js-cwv-url">
             <div class="hidden js-cwv-batch-box">
-                <label class="block text-sm font-medium text-gray-700 mb-1">Список URL (до 10)</label>
+                <label class="block text-sm font-medium mb-1" style="color:var(--ds-text-secondary);">Список URL (до 10)</label>
                 <textarea
                     name="batch_urls_text"
                     rows="5"
                     placeholder="https://example.com/\nhttps://example.com/catalog\nhttps://example.com/cart"
-                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    class="ds-textarea"
                 ></textarea>
-                <p class="mt-1 text-xs text-gray-500">Один URL в строке.</p>
-                <label class="mt-3 inline-flex items-center gap-2 text-sm text-gray-700">
+                <p class="mt-1 text-xs" style="color:var(--ds-text-muted);">Один URL в строке.</p>
+                <label class="mt-3 inline-flex items-center gap-2 text-sm" style="color:var(--ds-text-secondary);">
                     <input
                         type="checkbox"
                         name="competitor_mode"
@@ -528,75 +538,75 @@
                     >
                     Анализ конкурентов
                 </label>
-                <p class="mt-1 text-xs text-gray-500 hidden js-cwv-competitor-hint">
+                <p class="mt-1 text-xs hidden js-cwv-competitor-hint" style="color:var(--ds-text-muted);">
                     Первый URL в batch будет считаться вашим сайтом, остальные — конкурентами.
                 </p>
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Стратегия</label>
-                <select name="strategy" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent">
+                <label class="block text-sm font-medium mb-1" style="color:var(--ds-text-secondary);">Стратегия</label>
+                <select name="strategy" class="ds-select focus:ring-2 focus:ring-sky-500">
                     <option value="desktop" selected>Desktop</option>
                     <option value="mobile">Mobile</option>
                 </select>
             </div>
-            <button type="submit" class="w-full bg-cyan-600 text-white py-2 rounded-lg hover:bg-cyan-700 transition">
-                <i class="fas fa-play mr-2"></i>Запустить Core Web Vitals Scanner
+            <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:#0ea5e9;border-color:#0ea5e9;">
+                <i class="fas fa-play"></i>Запустить Core Web Vitals Scanner
             </button>
         </form>
     </div>
 
     {% if feature_llm_crawler_enabled %}
     <!-- Tool 12: LLM Crawler Simulation -->
-    <div class="bg-white rounded-xl shadow-md card-hover p-6 border-t-4 border-slate-700">
+    <div class="ds-card" style="border-top:3px solid var(--ds-text-secondary);">
         <div class="flex items-center mb-4">
-            <div class="bg-slate-100 p-3 rounded-lg mr-4">
-                <i class="fas fa-microchip text-slate-700 text-xl"></i>
+            <div class="p-3 rounded-lg mr-4" style="background:rgba(71,85,105,0.1);">
+                <i class="fas fa-microchip text-xl" style="color:var(--ds-text-secondary);"></i>
             </div>
             <div>
-                <h3 class="text-lg font-semibold text-gray-800">LLM Crawler Simulation</h3>
-                <p class="text-sm text-gray-500">Как страницу видят AI‑боты: no-JS, Rendered, robots/policies, AI‑ready score.</p>
+                <h3 class="text-lg font-semibold" style="color:var(--ds-text);">LLM Crawler Simulation</h3>
+                <p class="text-sm" style="color:var(--ds-text-muted);">Как страницу видят AI-боты: no-JS, Rendered, robots/policies, AI-ready score.</p>
             </div>
         </div>
-        <p class="text-gray-600 mb-4 text-sm">
+        <p class="mb-4 text-sm" style="color:var(--ds-text-secondary);">
             Моделирование извлечения контента ботами (GPTBot/Googlebot): сравнение raw/rendered, diff, блокировки, сигнал готовности к LLM.
         </p>
         <form class="space-y-3" onsubmit="startLlmCrawlerTask(event)">
             <input type="text" name="url" placeholder="example.com или https://example.com/page" required
-                   class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent">
+                   class="ds-input focus:ring-2 focus:ring-slate-500">
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+                <label class="inline-flex items-center gap-2 text-sm" style="color:var(--ds-text-secondary);">
                     <input type="checkbox" name="renderJs" value="true" class="rounded border-gray-300 text-slate-700 focus:ring-slate-500">
                     Запуск JS (Playwright)
                 </label>
-                <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+                <label class="inline-flex items-center gap-2 text-sm" style="color:var(--ds-text-secondary);">
                     <input type="checkbox" name="showHeaders" value="true" class="rounded border-gray-300 text-slate-700 focus:ring-slate-500">
-                    Показать HTTP‑заголовки
+                    Показать HTTP-заголовки
                 </label>
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Профили ботов</label>
+                <label class="block text-sm font-medium mb-1" style="color:var(--ds-text-secondary);">Профили ботов</label>
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
-                    <label class="inline-flex items-center gap-2 text-gray-700">
+                    <label class="inline-flex items-center gap-2" style="color:var(--ds-text-secondary);">
                         <input type="checkbox" name="profile" value="generic-bot" checked class="rounded border-gray-300 text-slate-700 focus:ring-slate-500">
                         generic-bot
                     </label>
-                    <label class="inline-flex items-center gap-2 text-gray-700">
+                    <label class="inline-flex items-center gap-2" style="color:var(--ds-text-secondary);">
                         <input type="checkbox" name="profile" value="search-bot" checked class="rounded border-gray-300 text-slate-700 focus:ring-slate-500">
                         search-bot
                     </label>
-                    <label class="inline-flex items-center gap-2 text-gray-700">
+                    <label class="inline-flex items-center gap-2" style="color:var(--ds-text-secondary);">
                         <input type="checkbox" name="profile" value="ai-bot" checked class="rounded border-gray-300 text-slate-700 focus:ring-slate-500">
                         ai-bot
                     </label>
                 </div>
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Таймаут (ms)</label>
+                <label class="block text-sm font-medium mb-1" style="color:var(--ds-text-secondary);">Таймаут (ms)</label>
                 <input type="number" name="timeoutMs" value="20000" min="3000" max="120000"
-                       class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent">
+                       class="ds-input">
             </div>
-            <button type="submit" class="w-full bg-slate-700 text-white py-2 rounded-lg hover:bg-slate-800 transition">
-                <i class="fas fa-play mr-2"></i>Запустить LLM Crawler Simulation
+            <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:#475569;border-color:#475569;">
+                <i class="fas fa-play"></i>Запустить LLM Crawler Simulation
             </button>
         </form>
     </div>
@@ -604,31 +614,31 @@
 </div>
 
 <!-- History Section -->
-<div class="bg-white rounded-xl shadow-md p-6">
+<div class="ds-panel">
     <div class="flex items-center justify-between mb-4">
-        <h3 class="text-lg font-semibold text-gray-800">
-            <i class="fas fa-history mr-2 text-gray-500"></i>История задач
+        <h3 class="text-lg font-semibold" style="color:var(--ds-text);">
+            <i class="fas fa-history mr-2" style="color:var(--ds-text-muted);"></i>История задач
         </h3>
-        <button onclick="clearHistory()" class="text-sm text-red-500 hover:text-red-700">
-            <i class="fas fa-trash mr-1"></i>Очистить
+        <button onclick="clearHistory()" class="ds-btn ds-btn-neutral text-sm" style="color:var(--ds-danger);">
+            <i class="fas fa-trash"></i>Очистить
         </button>
     </div>
     <div id="history-container" class="space-y-2">
-        <p class="text-gray-500 text-center py-4">Задач пока нет</p>
+        <p class="text-center py-4" style="color:var(--ds-text-muted);">Задач пока нет</p>
     </div>
 </div>
 
 <!-- Модальное окно ограничения запросов -->
-<div id="rate-limit-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
-    <div class="bg-white rounded-xl p-6 max-w-md mx-4">
+<div id="rate-limit-modal" class="fixed inset-0 hidden items-center justify-center z-50" style="background:var(--ds-overlay);">
+    <div class="ds-panel max-w-md mx-4">
         <div class="text-center">
-            <i class="fas fa-clock text-yellow-500 text-4xl mb-4"></i>
-            <h3 class="text-lg font-semibold mb-2">Достигнут лимит запросов</h3>
-            <p class="text-gray-600 mb-4">
+            <i class="fas fa-clock text-4xl mb-4" style="color:var(--ds-warn);"></i>
+            <h3 class="text-lg font-semibold mb-2" style="color:var(--ds-text);">Достигнут лимит запросов</h3>
+            <p class="mb-4" style="color:var(--ds-text-secondary);">
                 Вы достигли лимита в <span id="modal-limit">999</span> запросов за текущее окно.
                 Повторите попытку примерно через <span id="modal-time">60</span> минут.
             </p>
-            <button onclick="closeRateLimitModal()" class="bg-gray-800 text-white px-6 py-2 rounded-lg hover:bg-gray-900">
+            <button onclick="closeRateLimitModal()" class="ds-btn ds-btn-primary">
                 OK
             </button>
         </div>

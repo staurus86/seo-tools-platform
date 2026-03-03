@@ -1,0 +1,520 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SEO Tools Platform — Design System
+   CSS Custom Properties + Shared Components + Dark Mode
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Light Theme (default) ─────────────────────────────────────────────── */
+:root,
+[data-theme="light"] {
+    --ds-brand: #0f4c81;
+    --ds-brand-2: #0e7490;
+    --ds-bg: #f2f6fc;
+    --ds-surface: #ffffff;
+    --ds-surface-soft: #f8fbff;
+    --ds-surface-hover: #f0f5ff;
+    --ds-text: #0f172a;
+    --ds-text-secondary: #475569;
+    --ds-text-muted: #94a3b8;
+    --ds-border: #dbe5f3;
+    --ds-border-hover: #bfdbfe;
+    --ds-shadow: 0 14px 34px rgba(15,23,42,0.08);
+    --ds-shadow-hover: 0 18px 40px rgba(15,23,42,0.12);
+    --ds-shadow-sm: 0 4px 12px rgba(15,23,42,0.05);
+    --ds-success: #15803d;
+    --ds-success-bg: #ecfdf3;
+    --ds-success-border: #86efac;
+    --ds-warn: #c2410c;
+    --ds-warn-bg: #fffbeb;
+    --ds-warn-border: #fcd34d;
+    --ds-danger: #b91c1c;
+    --ds-danger-bg: #fef2f2;
+    --ds-danger-border: #fca5a5;
+    --ds-info: #1d4ed8;
+    --ds-info-bg: #eff6ff;
+    --ds-info-border: #93c5fd;
+    --ds-radius: 12px;
+    --ds-radius-sm: 8px;
+    --ds-radius-lg: 16px;
+    --ds-transition: 150ms ease;
+    --ds-header-from: #0f4c81;
+    --ds-header-to: #0e7490;
+    --ds-input-bg: #ffffff;
+    --ds-input-border: #d1d5db;
+    --ds-input-focus: #3b82f6;
+    --ds-table-stripe: #f8fbff;
+    --ds-table-hover: #f0f5ff;
+    --ds-overlay: rgba(0,0,0,0.5);
+}
+
+/* ── Dark Theme ────────────────────────────────────────────────────────── */
+[data-theme="dark"] {
+    --ds-brand: #60a5fa;
+    --ds-brand-2: #22d3ee;
+    --ds-bg: #0f172a;
+    --ds-surface: #1e293b;
+    --ds-surface-soft: #1a2332;
+    --ds-surface-hover: #263248;
+    --ds-text: #e2e8f0;
+    --ds-text-secondary: #94a3b8;
+    --ds-text-muted: #64748b;
+    --ds-border: #334155;
+    --ds-border-hover: #475569;
+    --ds-shadow: 0 14px 34px rgba(0,0,0,0.3);
+    --ds-shadow-hover: 0 18px 40px rgba(0,0,0,0.4);
+    --ds-shadow-sm: 0 4px 12px rgba(0,0,0,0.2);
+    --ds-success: #4ade80;
+    --ds-success-bg: #052e16;
+    --ds-success-border: #166534;
+    --ds-warn: #fb923c;
+    --ds-warn-bg: #431407;
+    --ds-warn-border: #92400e;
+    --ds-danger: #f87171;
+    --ds-danger-bg: #450a0a;
+    --ds-danger-border: #991b1b;
+    --ds-info: #60a5fa;
+    --ds-info-bg: #172554;
+    --ds-info-border: #1e3a8a;
+    --ds-header-from: #0c3a5f;
+    --ds-header-to: #0a5c73;
+    --ds-input-bg: #1e293b;
+    --ds-input-border: #475569;
+    --ds-input-focus: #60a5fa;
+    --ds-table-stripe: #1a2332;
+    --ds-table-hover: #263248;
+    --ds-overlay: rgba(0,0,0,0.7);
+}
+
+/* ── Base Overrides ────────────────────────────────────────────────────── */
+[data-theme="dark"] body {
+    background: var(--ds-bg) !important;
+    color: var(--ds-text) !important;
+}
+
+[data-theme="dark"] .bg-gray-50,
+[data-theme="dark"] .bg-white,
+[data-theme="dark"] .bg-slate-50 {
+    background: var(--ds-surface) !important;
+}
+
+[data-theme="dark"] .text-gray-800,
+[data-theme="dark"] .text-slate-800 {
+    color: var(--ds-text) !important;
+}
+
+[data-theme="dark"] .text-gray-600,
+[data-theme="dark"] .text-slate-600,
+[data-theme="dark"] .text-gray-500,
+[data-theme="dark"] .text-slate-500 {
+    color: var(--ds-text-secondary) !important;
+}
+
+[data-theme="dark"] .border-slate-200,
+[data-theme="dark"] .border-gray-200,
+[data-theme="dark"] .border-gray-300 {
+    border-color: var(--ds-border) !important;
+}
+
+[data-theme="dark"] .shadow-md,
+[data-theme="dark"] .shadow-lg {
+    box-shadow: var(--ds-shadow) !important;
+}
+
+/* ── Panel ─────────────────────────────────────────────────────────────── */
+.ds-panel {
+    background: var(--ds-surface);
+    border: 1px solid var(--ds-border);
+    border-radius: var(--ds-radius);
+    box-shadow: var(--ds-shadow-sm);
+    padding: 1.5rem;
+}
+
+/* ── Card ──────────────────────────────────────────────────────────────── */
+.ds-card {
+    background: var(--ds-surface);
+    border: 1px solid var(--ds-border);
+    border-radius: var(--ds-radius);
+    box-shadow: var(--ds-shadow-sm);
+    padding: 1.5rem;
+    transition: transform var(--ds-transition), box-shadow var(--ds-transition), border-color var(--ds-transition);
+    animation: ds-fade-in 0.3s ease both;
+}
+.ds-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--ds-border-hover);
+    box-shadow: var(--ds-shadow);
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────────── */
+.ds-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1.25rem;
+    border-radius: var(--ds-radius-sm);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--ds-transition);
+    border: 1px solid transparent;
+    text-decoration: none;
+}
+.ds-btn-primary {
+    background: var(--ds-brand);
+    color: #ffffff;
+    border-color: var(--ds-brand);
+}
+.ds-btn-primary:hover {
+    filter: brightness(1.15);
+    box-shadow: 0 4px 12px rgba(15,76,129,0.3);
+}
+.ds-btn-secondary {
+    background: transparent;
+    color: var(--ds-brand);
+    border-color: var(--ds-brand);
+}
+.ds-btn-secondary:hover {
+    background: var(--ds-brand);
+    color: #ffffff;
+}
+.ds-btn-neutral {
+    background: var(--ds-surface);
+    color: var(--ds-text-secondary);
+    border-color: var(--ds-border);
+}
+.ds-btn-neutral:hover {
+    background: var(--ds-surface-hover);
+    border-color: var(--ds-border-hover);
+}
+
+/* ── Badges ─────────────────────────────────────────────────────────────── */
+.ds-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    border: 1px solid var(--ds-border);
+    background: var(--ds-surface-soft);
+    color: var(--ds-text);
+}
+.ds-badge-success { background: var(--ds-success-bg); border-color: var(--ds-success-border); color: var(--ds-success); }
+.ds-badge-warning { background: var(--ds-warn-bg); border-color: var(--ds-warn-border); color: var(--ds-warn); }
+.ds-badge-danger  { background: var(--ds-danger-bg); border-color: var(--ds-danger-border); color: var(--ds-danger); }
+.ds-badge-info    { background: var(--ds-info-bg); border-color: var(--ds-info-border); color: var(--ds-info); }
+
+/* ── Score Ring (large) ────────────────────────────────────────────────── */
+.ds-score-ring-lg {
+    position: relative;
+    width: 140px;
+    height: 140px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    /* conic-gradient set via inline style */
+}
+.ds-score-ring-lg .ds-ring-inner {
+    width: calc(100% - 16px);
+    height: calc(100% - 16px);
+    border-radius: 50%;
+    background: var(--ds-surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+}
+.ds-score-ring-lg .ds-ring-value {
+    font-size: 2rem;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--ds-text);
+}
+.ds-score-ring-lg .ds-ring-label {
+    font-size: 0.7rem;
+    color: var(--ds-text-muted);
+    margin-top: 0.2rem;
+}
+
+/* ── Meter / Progress Bar ──────────────────────────────────────────────── */
+.ds-meter-track {
+    width: 100%;
+    height: 0.75rem;
+    border-radius: 999px;
+    background: var(--ds-border);
+    overflow: hidden;
+}
+.ds-meter-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: var(--ds-brand);
+    transition: width 0.4s ease;
+}
+
+/* ── Tables ─────────────────────────────────────────────────────────────── */
+.ds-table-wrap {
+    border: 1px solid var(--ds-border);
+    border-radius: var(--ds-radius-sm);
+    overflow: auto;
+}
+.ds-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.84rem;
+    color: var(--ds-text);
+}
+.ds-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--ds-surface-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--ds-text-secondary);
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 2px solid var(--ds-border);
+}
+.ds-table tbody td {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--ds-border);
+    vertical-align: top;
+}
+.ds-table tbody tr:nth-child(even) {
+    background: var(--ds-table-stripe);
+}
+.ds-table tbody tr:hover {
+    background: var(--ds-table-hover);
+}
+
+/* ── Tabs (pill style) ─────────────────────────────────────────────────── */
+.ds-tab-group {
+    display: inline-flex;
+    gap: 0.25rem;
+    background: var(--ds-surface-soft);
+    border: 1px solid var(--ds-border);
+    border-radius: 999px;
+    padding: 0.25rem;
+}
+.ds-tab {
+    padding: 0.4rem 1rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--ds-transition);
+    color: var(--ds-text-secondary);
+    background: transparent;
+    border: none;
+}
+.ds-tab:hover {
+    background: var(--ds-surface-hover);
+    color: var(--ds-text);
+}
+.ds-tab.active {
+    background: var(--ds-brand);
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(15,76,129,0.25);
+}
+
+/* ── Export Buttons ────────────────────────────────────────────────────── */
+.ds-export-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.ds-export-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.85rem;
+    border-radius: var(--ds-radius-sm);
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--ds-transition);
+    background: var(--ds-surface);
+    color: var(--ds-text-secondary);
+    border: 1px solid var(--ds-border);
+    text-decoration: none;
+}
+.ds-export-btn:hover {
+    background: var(--ds-surface-hover);
+    border-color: var(--ds-border-hover);
+    color: var(--ds-text);
+}
+
+/* ── Forms ──────────────────────────────────────────────────────────────── */
+.ds-input,
+.ds-select,
+.ds-textarea {
+    width: 100%;
+    padding: 0.5rem 1rem;
+    background: var(--ds-input-bg);
+    color: var(--ds-text);
+    border: 1px solid var(--ds-input-border);
+    border-radius: var(--ds-radius-sm);
+    font-size: 0.875rem;
+    transition: border-color var(--ds-transition), box-shadow var(--ds-transition);
+}
+.ds-input:focus,
+.ds-select:focus,
+.ds-textarea:focus {
+    outline: none;
+    border-color: var(--ds-input-focus);
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+}
+.ds-input::placeholder,
+.ds-textarea::placeholder {
+    color: var(--ds-text-muted);
+}
+.ds-select {
+    appearance: none;
+    background-image:
+        linear-gradient(45deg, transparent 50%, var(--ds-text-muted) 50%),
+        linear-gradient(135deg, var(--ds-text-muted) 50%, transparent 50%);
+    background-position:
+        calc(100% - 18px) calc(50% - 3px),
+        calc(100% - 12px) calc(50% - 3px);
+    background-size: 6px 6px, 6px 6px;
+    background-repeat: no-repeat;
+    padding-right: 2.25rem;
+}
+
+/* ── Chip & Risk Pill ──────────────────────────────────────────────────── */
+.ds-chip {
+    border: 1px solid var(--ds-border);
+    background: var(--ds-surface-soft);
+    color: var(--ds-text);
+    border-radius: 999px;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+.ds-risk-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid var(--ds-border);
+    background: var(--ds-surface-soft);
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+.ds-risk-pill.passed  { background: var(--ds-success-bg); border-color: var(--ds-success-border); color: var(--ds-success); }
+.ds-risk-pill.warning { background: var(--ds-warn-bg); border-color: var(--ds-warn-border); color: var(--ds-warn); }
+.ds-risk-pill.error   { background: var(--ds-danger-bg); border-color: var(--ds-danger-border); color: var(--ds-danger); }
+
+/* ── Findings Card ─────────────────────────────────────────────────────── */
+.ds-findings-card {
+    border-radius: var(--ds-radius-sm);
+    border: 1px solid;
+    padding: 0.75rem;
+}
+.ds-findings-card.severity-critical { background: var(--ds-danger-bg); border-color: var(--ds-danger-border); color: var(--ds-danger); }
+.ds-findings-card.severity-warning  { background: var(--ds-warn-bg); border-color: var(--ds-warn-border); color: var(--ds-warn); }
+.ds-findings-card.severity-info     { background: var(--ds-info-bg); border-color: var(--ds-info-border); color: var(--ds-info); }
+
+/* ── Dark mode details/summary ────────────────────────────────────────── */
+[data-theme="dark"] details {
+    border-color: var(--ds-border) !important;
+    background: var(--ds-surface-soft) !important;
+}
+[data-theme="dark"] details summary {
+    color: var(--ds-text) !important;
+}
+
+/* ── Dark mode form inputs (Tailwind overrides) ───────────────────────── */
+[data-theme="dark"] input[type="url"],
+[data-theme="dark"] input[type="text"],
+[data-theme="dark"] input[type="number"],
+[data-theme="dark"] input[type="file"],
+[data-theme="dark"] textarea,
+[data-theme="dark"] select {
+    background: var(--ds-input-bg) !important;
+    color: var(--ds-text) !important;
+    border-color: var(--ds-input-border) !important;
+}
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+    color: var(--ds-text-muted) !important;
+}
+
+/* ── Dark mode modal / overlay ────────────────────────────────────────── */
+[data-theme="dark"] #rate-limit-modal > div {
+    background: var(--ds-surface) !important;
+    color: var(--ds-text) !important;
+}
+
+/* ── Dark mode checkboxes label text ──────────────────────────────────── */
+[data-theme="dark"] label span,
+[data-theme="dark"] label {
+    color: var(--ds-text-secondary) !important;
+}
+[data-theme="dark"] .text-gray-700 {
+    color: var(--ds-text-secondary) !important;
+}
+
+/* ── Fade in animation ─────────────────────────────────────────────────── */
+@keyframes ds-fade-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Dark mode toggle button ───────────────────────────────────────────── */
+.ds-theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.25);
+    cursor: pointer;
+    transition: all var(--ds-transition);
+    color: #fff;
+    font-size: 1rem;
+}
+.ds-theme-toggle:hover {
+    background: rgba(255,255,255,0.25);
+}
+
+/* ── Header gradient ───────────────────────────────────────────────────── */
+.ds-header-gradient {
+    background: linear-gradient(135deg, var(--ds-header-from) 0%, var(--ds-header-to) 100%);
+}
+
+/* ── Footer ────────────────────────────────────────────────────────────── */
+.ds-footer {
+    background: var(--ds-surface);
+    border-top: 1px solid var(--ds-border);
+    color: var(--ds-text-secondary);
+}
+
+/* ── Hero dot pattern overlay ──────────────────────────────────────────── */
+.ds-hero-pattern {
+    background-image: radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px);
+    background-size: 24px 24px;
+}
+
+/* ── Dark mode for the error section ───────────────────────────────────── */
+[data-theme="dark"] .bg-red-50 {
+    background: var(--ds-danger-bg) !important;
+}
+[data-theme="dark"] .text-red-800,
+[data-theme="dark"] .text-red-700 {
+    color: var(--ds-danger) !important;
+}
+
+/* ── Print-friendly ────────────────────────────────────────────────────── */
+@media print {
+    .ds-theme-toggle,
+    .ds-export-group { display: none !important; }
+}

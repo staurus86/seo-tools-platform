@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
@@ -7,28 +7,15 @@
     <title>{% block title %}SEO Инструменты{% endblock %}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="icon" type="image/x-icon" href="/static/icon.png">
     <link rel="shortcut icon" href="/static/icon.png">
+    <link rel="stylesheet" href="/static/css/design-system.css">
     <style>
         body { font-family: 'Inter', sans-serif; }
-        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
         .card-hover { transition: all 0.3s ease; }
-        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 40px rgba(0,0,0,0.1); }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: var(--ds-shadow); }
         .progress-bar { transition: width 0.3s ease; }
-        select {
-            -webkit-appearance: none;
-            appearance: none;
-            background-image:
-                linear-gradient(45deg, transparent 50%, #6b7280 50%),
-                linear-gradient(135deg, #6b7280 50%, transparent 50%);
-            background-position:
-                calc(100% - 18px) calc(50% - 3px),
-                calc(100% - 12px) calc(50% - 3px);
-            background-size: 6px 6px, 6px 6px;
-            background-repeat: no-repeat;
-            padding-right: 2.25rem;
-        }
         details > summary {
             list-style: none;
             user-select: none;
@@ -39,31 +26,52 @@
         details > summary::-webkit-details-marker { display: none; }
         details > summary::after {
             content: "\25BE";
-            color: #6b7280;
+            color: var(--ds-text-muted);
             font-size: 0.9rem;
             transition: transform 0.2s ease;
         }
         details[open] > summary::after { transform: rotate(180deg); }
     </style>
     {% block extra_css %}{% endblock %}
+    <script>
+        (function() {
+            var t = localStorage.getItem('ds-theme');
+            if (!t) t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', t);
+        })();
+        function toggleTheme() {
+            var html = document.documentElement;
+            var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', next);
+            localStorage.setItem('ds-theme', next);
+            var icon = document.getElementById('theme-icon');
+            if (icon) icon.className = next === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+        }
+    </script>
 </head>
-<body class="bg-gray-50 min-h-screen flex flex-col">
+<body style="background:var(--ds-bg);color:var(--ds-text);" class="min-h-screen flex flex-col">
     <!-- Header -->
-    <header class="gradient-bg text-white shadow-lg">
+    <header class="ds-header-gradient text-white shadow-lg">
         <div class="container mx-auto px-4 py-4">
             <div class="flex items-center justify-between">
-                <a href="/" class="flex items-center space-x-2">
-                    <i class="fas fa-search-plus text-2xl"></i>
-                    <h1 class="text-xl font-bold">SEO Инструменты</h1>
+                <a href="/" class="flex items-center space-x-3 group">
+                    <img src="/static/icon.png" alt="Logo" class="w-8 h-8 rounded-lg" onerror="this.style.display='none'">
+                    <div>
+                        <h1 class="text-xl font-bold tracking-tight">SEO Tools Platform</h1>
+                        <span class="text-[11px] text-white/60 font-medium tracking-wide uppercase">Professional Toolset</span>
+                    </div>
                 </a>
-                <div class="flex items-center space-x-4">
-                    <span id="rate-limit-badge" class="bg-white/20 px-3 py-1 rounded-full text-sm hidden">
-                        <i class="fas fa-clock mr-1"></i>
+                <div class="flex items-center space-x-3">
+                    <span id="rate-limit-badge" class="bg-white/15 backdrop-blur px-3 py-1 rounded-full text-sm hidden border border-white/20">
+                        <i class="fas fa-gauge-high mr-1"></i>
                         <span id="rate-limit-text">999/999</span>
                     </span>
-                    <a href="/api/docs" target="_blank" class="text-sm hover:underline">
-                        <i class="fas fa-code mr-1"></i>Документация API
+                    <a href="/api/docs" target="_blank" class="text-sm hover:text-white/90 transition text-white/70">
+                        <i class="fas fa-code mr-1"></i>API
                     </a>
+                    <button onclick="toggleTheme()" class="ds-theme-toggle" title="Toggle theme">
+                        <i id="theme-icon" class="fas fa-moon"></i>
+                    </button>
                 </div>
             </div>
         </div>
@@ -75,9 +83,35 @@
     </main>
 
     <!-- Footer -->
-    <footer class="bg-gray-800 text-gray-400 py-6 mt-auto">
-        <div class="container mx-auto px-4 text-center">
-            <p>&copy; 2024 SEO Инструменты. Все права защищены.</p>
+    <footer class="ds-footer py-8 mt-auto">
+        <div class="container mx-auto px-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
+                <div>
+                    <div class="font-semibold mb-2" style="color:var(--ds-text);">SEO Tools Platform</div>
+                    <p style="color:var(--ds-text-muted);">Профессиональная платформа для технических и контентных SEO-проверок. 10+ инструментов с асинхронным выполнением и экспортом отчётов.</p>
+                </div>
+                <div>
+                    <div class="font-semibold mb-2" style="color:var(--ds-text);">Инструменты</div>
+                    <div class="grid grid-cols-2 gap-1" style="color:var(--ds-text-muted);">
+                        <span>OnPage Audit</span>
+                        <span>Site Audit Pro</span>
+                        <span>Bot Checker</span>
+                        <span>Redirect Checker</span>
+                        <span>CWV Scanner</span>
+                        <span>Link Profile</span>
+                    </div>
+                </div>
+                <div>
+                    <div class="font-semibold mb-2" style="color:var(--ds-text);">Ссылки</div>
+                    <div class="space-y-1" style="color:var(--ds-text-muted);">
+                        <a href="/api/docs" class="block hover:underline">API Документация</a>
+                        <a href="/health" class="block hover:underline">Health Check</a>
+                    </div>
+                </div>
+            </div>
+            <div class="border-t mt-6 pt-4 text-center text-xs" style="border-color:var(--ds-border);color:var(--ds-text-muted);">
+                &copy; 2024-2026 SEO Tools Platform. All rights reserved. v2.0
+            </div>
         </div>
     </footer>
 
@@ -86,6 +120,13 @@
 
     <!-- Scripts -->
     <script src="/static/js/app.js"></script>
+    <script>
+        // Fix theme icon on load
+        (function() {
+            var icon = document.getElementById('theme-icon');
+            if (icon) icon.className = document.documentElement.getAttribute('data-theme') === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+        })();
+    </script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

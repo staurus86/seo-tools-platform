@@ -5,6 +5,7 @@ from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.oxml.ns import qn
 from typing import Dict, Any, List
 from datetime import datetime
 import os
@@ -33,24 +34,33 @@ class DOCXGenerator:
     def _add_table(self, doc, headers: List[str], rows: List[List[Any]]):
         """Добавляет таблицу."""
         table = doc.add_table(rows=1, cols=len(headers))
-        table.style = 'Light Grid Accent 1'
+        table.style = 'Table Grid'
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        
-        # Header row
+
+        # Header row with brand color background
         hdr_cells = table.rows[0].cells
         for i, header in enumerate(headers):
-            hdr_cells[i].text = self._fix_text(str(header))
-            # Make header bold
-            for paragraph in hdr_cells[i].paragraphs:
+            cell = hdr_cells[i]
+            cell.text = self._fix_text(str(header))
+            # Brand color header background
+            shading = cell._element.get_or_add_tcPr()
+            shd_el = shading.makeelement(qn('w:shd'), {
+                qn('w:val'): 'clear',
+                qn('w:color'): 'auto',
+                qn('w:fill'): '0F4C81'
+            })
+            shading.append(shd_el)
+            for paragraph in cell.paragraphs:
                 for run in paragraph.runs:
                     run.font.bold = True
-        
+                    run.font.color.rgb = RGBColor(255, 255, 255)
+
         # Data rows
         for row_data in rows:
             row_cells = table.add_row().cells
             for i, value in enumerate(row_data):
                 row_cells[i].text = self._fix_text(str(value))
-        
+
         return table
 
     def _fix_text(self, text: str) -> str:
@@ -195,13 +205,101 @@ class DOCXGenerator:
         """Normalize text and save DOCX."""
         self._normalize_document_text(doc)
         doc.save(filepath)
-    
+
+    def _add_cover_page(self, doc: Document, title: str, subtitle: str, url: str, generated_at: str) -> None:
+        """Creates a branded cover page."""
+        # Push content down
+        doc.add_paragraph()
+
+        # Title in brand color, Heading 0, center-aligned, 28pt
+        title_para = doc.add_heading(title, 0)
+        title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        for run in title_para.runs:
+            run.font.color.rgb = RGBColor(15, 76, 129)  # #0F4C81
+            run.font.size = Pt(28)
+
+        # Subtitle — smaller, gray, center-aligned
+        subtitle_para = doc.add_paragraph(subtitle)
+        subtitle_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if subtitle_para.runs:
+            subtitle_para.runs[0].font.size = Pt(14)
+            subtitle_para.runs[0].font.color.rgb = RGBColor(107, 114, 128)  # gray
+
+        # URL in brand-2 color
+        if url:
+            url_para = doc.add_paragraph(url)
+            url_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            if url_para.runs:
+                url_para.runs[0].font.color.rgb = RGBColor(14, 116, 144)  # #0E7490
+
+        # Timestamp in gray
+        ts_para = doc.add_paragraph(generated_at)
+        ts_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if ts_para.runs:
+            ts_para.runs[0].font.color.rgb = RGBColor(107, 114, 128)
+
+        # Logo image
+        logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'static', 'icon.png')
+        if os.path.exists(logo_path):
+            try:
+                logo_para = doc.add_paragraph()
+                logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = logo_para.add_run()
+                run.add_picture(logo_path, width=Inches(1))
+            except Exception:
+                pass
+
+        # Page break
+        doc.add_page_break()
+
+    def _add_header_footer(self, doc: Document, report_title: str) -> None:
+        """Add header and footer to the document."""
+        # Header
+        section = doc.sections[0]
+        header = section.header
+        if not header.paragraphs:
+            header_para = header.add_paragraph()
+        else:
+            header_para = header.paragraphs[0]
+        header_para.text = f"SEO Tools Platform | {report_title}"
+        header_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if header_para.runs:
+            header_para.runs[0].font.size = Pt(8)
+            header_para.runs[0].font.color.rgb = RGBColor(128, 128, 128)
+
+        # Footer
+        footer = section.footer
+        if not footer.paragraphs:
+            footer_para = footer.add_paragraph()
+        else:
+            footer_para = footer.paragraphs[0]
+        footer_para.text = "SEO Tools Platform"
+        footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if footer_para.runs:
+            footer_para.runs[0].font.size = Pt(8)
+            footer_para.runs[0].font.color.rgb = RGBColor(128, 128, 128)
+
+    def _add_severity_paragraph(self, doc: Document, text: str, severity: str) -> None:
+        """Add a color-coded paragraph based on severity."""
+        color_map = {
+            'critical': RGBColor(185, 28, 28),   # #B91C1C
+            'error':    RGBColor(185, 28, 28),   # #B91C1C
+            'warning':  RGBColor(194, 65, 12),   # #C2410C
+            'ok':       RGBColor(21, 128, 61),   # #15803D
+            'success':  RGBColor(21, 128, 61),   # #15803D
+            'info':     RGBColor(21, 128, 61),   # #15803D
+        }
+        color = color_map.get(str(severity).lower(), RGBColor(15, 23, 42))  # default #0F172A
+        para = doc.add_paragraph()
+        run = para.add_run(text)
+        run.font.color.rgb = color
+
     def generate_site_analyze_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Генерирует клиентский DOCX-отчет общего анализа сайта."""
         doc = Document()
+        self._add_cover_page(doc, 'SEO Analysis Report', 'Общий SEO-анализ', data.get('url', ''), datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        self._add_header_footer(doc, 'SEO Analysis Report')
 
-        title = doc.add_heading('Отчет по SEO-анализу сайта', 0)
-        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
         doc.add_paragraph(f"URL: {data.get('url', 'н/д')}")
         doc.add_paragraph(f"Проверено страниц: {data.get('pages_analyzed', 0)}")
         doc.add_paragraph(f"Завершено: {data.get('completed_at', 'н/д')}")
@@ -222,20 +320,15 @@ class DOCXGenerator:
 
         recs = results.get("recommendations", []) or data.get("recommendations", [])
         if recs:
+            doc.add_page_break()
             self._add_heading(doc, 'Рекомендации', level=1)
             for rec in recs[:30]:
                 doc.add_paragraph(str(rec), style='List Bullet')
 
-        doc.add_paragraph()
-        footer = doc.add_paragraph(f"Отчет сформирован SEO Tools Platform: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        footer.runs[0].font.size = Pt(8)
-        footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
-
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)
         return filepath
-    
+
     def generate_robots_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Generate full robots.txt DOCX report with complete result coverage."""
         doc = Document()
@@ -247,10 +340,8 @@ class DOCXGenerator:
         def yes_no(value: Any) -> str:
             return 'Да' if bool(value) else 'Нет'
 
-        title = doc.add_heading('Отчет по аудиту Robots.txt', 0)
-        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        subtitle = doc.add_paragraph('Технические директивы сканирования, профиль рисков и план исправлений')
-        subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        self._add_cover_page(doc, 'Robots.txt Report', 'Проверка Robots.txt', data.get('url', ''), generated_at)
+        self._add_header_footer(doc, 'Robots.txt Report')
 
         doc.add_paragraph(f"URL: {url}")
         doc.add_paragraph(f"Сформирован: {generated_at}")
@@ -319,6 +410,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph('Рекомендации не сформированы.')
 
+        doc.add_page_break()
         self._add_heading(doc, '7. Топ исправлений', level=1)
         top_fixes = results.get('top_fixes', []) or []
         if top_fixes:
@@ -356,6 +448,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph('Проверки sitemap недоступны.')
 
+        doc.add_page_break()
         self._add_heading(doc, '9. Детали правил групп', level=1)
         groups = results.get('groups_detail', []) or []
         if groups:
@@ -461,6 +554,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph('Key bots coverage looks complete.')
 
+        doc.add_page_break()
         self._add_heading(doc, '13. Raw robots.txt (построчный просмотр)', level=1)
         raw = str(results.get('raw_content', '') or '')
         if raw:
@@ -508,13 +602,6 @@ class DOCXGenerator:
         doc.add_paragraph('Yandex Webmaster: https://yandex.com/support/webmaster/en/robot-workings/allow-disallow')
         doc.add_paragraph('Yandex Clean-param: https://yandex.com/support/webmaster/en/robot-workings/clean-param')
 
-        doc.add_paragraph()
-        footer = doc.add_paragraph(f"Сформировано SEO Tools Platform: {generated_at}")
-        footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        if footer.runs:
-            footer.runs[0].font.size = Pt(8)
-            footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
-
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)
         return filepath
@@ -525,8 +612,8 @@ class DOCXGenerator:
         results = data.get('results', {}) or {}
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-        title = doc.add_heading('Отчет по валидации Sitemap', 0)
-        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        self._add_cover_page(doc, 'Sitemap Report', 'Проверка Sitemap', data.get('url', ''), now_str)
+        self._add_header_footer(doc, 'Sitemap Report')
         input_url = results.get("input_url") or data.get('url', 'н/д')
         resolved_url = results.get("resolved_sitemap_url") or data.get('url', 'н/д')
         discovery_source = results.get("sitemap_discovery_source", "")
@@ -644,6 +731,7 @@ class DOCXGenerator:
                 doc.add_paragraph(str(note), style='List Bullet')
 
         checks = results.get("live_indexability_checks", []) or []
+        doc.add_page_break()
         self._add_heading(doc, "8. Live-выборка индексируемости", level=1)
         if checks:
             rows = []
@@ -667,24 +755,13 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Рекомендации отсутствуют.")
 
-        doc.add_paragraph()
-        footer = doc.add_paragraph(f"Сформировано в SEO Tools Platform: {now_str}")
-        footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        footer.runs[0].font.size = Pt(8)
-        footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
-
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)
         return filepath
-    
+
     def generate_render_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Генерирует расширенный клиентский отчет аудита рендеринга."""
         doc = Document()
-
-        title = doc.add_heading('SEO-АУДИТ РЕНДЕРИНГА', 0)
-        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        subtitle = doc.add_paragraph('Анализ контента с JavaScript и без него')
-        subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         url = data.get('url', 'н/д')
         results = data.get('results', {}) or {}
@@ -693,6 +770,9 @@ class DOCXGenerator:
         issues = results.get('issues', []) or []
         recommendations = results.get('recommendations', []) or []
         generated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        self._add_cover_page(doc, 'Render Audit Report', 'Render-аудит', data.get('url', ''), generated_at)
+        self._add_header_footer(doc, 'Render Audit Report')
 
         doc.add_paragraph(f"Анализируемый URL: {url}")
         doc.add_paragraph(f"Дата аудита: {generated_at}")
@@ -769,6 +849,7 @@ class DOCXGenerator:
         doc.add_paragraph("Проверяются элементы: title, meta description, canonical, H1-H2, ссылки, изображения, schema.org, видимый текст.")
         doc.add_paragraph("Дополнительно сравниваются не-SEO meta-данные между no-JS и JS: viewport, charset, referrer, theme-color, manifest и др.")
 
+        doc.add_page_break()
         self._add_heading(doc, '5. Результаты по профилям', level=1)
         if variants:
             for variant in variants:
@@ -881,6 +962,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Данные по профилям отсутствуют.")
 
+        doc.add_page_break()
         self._add_heading(doc, '6. Общий список ошибок', level=1)
         if issues:
             for issue in issues:
@@ -899,15 +981,10 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Критичных рекомендаций по итогам проверки нет.")
 
-        doc.add_paragraph()
-        footer = doc.add_paragraph(f"Отчет сформирован SEO Инструменты: {generated_at}")
-        footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        footer.runs[0].font.size = Pt(8)
-        footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
-
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)
         return filepath
+
     def generate_mobile_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Extended mobile DOCX report with Russian content."""
         doc = Document()
@@ -1005,11 +1082,12 @@ class DOCXGenerator:
             },
         }
 
-        title = doc.add_heading("Клиентский отчет: мобильная версия сайта", 0)
-        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
         url = data.get("url", "н/д")
         generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        self._add_cover_page(doc, 'Mobile Audit Report', 'Проверка мобильной версии', data.get('url', ''), generated_at)
+        self._add_header_footer(doc, 'Mobile Audit Report')
+
         doc.add_paragraph(f"Сайт: {url}")
         doc.add_paragraph(f"Отчет сформирован: {generated_at}")
 
@@ -1139,6 +1217,7 @@ class DOCXGenerator:
         if detailed_added == 0:
             doc.add_paragraph("\u0414\u0435\u0442\u0430\u043b\u0438 \u043f\u043e \u043f\u0440\u043e\u0431\u043b\u0435\u043c\u0430\u043c \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432 \u043e\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u044e\u0442.")
 
+        doc.add_page_break()
         self._add_heading(doc, "4. Выявленные ошибки и план исправления", level=1)
         if not actionable_issues:
             doc.add_paragraph("Критические ошибки и предупреждения не обнаружены.")
@@ -1182,6 +1261,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Дополнительные информационные замечания отсутствуют.")
 
+        doc.add_page_break()
         self._add_heading(doc, "6. Скриншоты проверенных устройств", level=1)
         added = 0
         missing_files = 0
@@ -1225,12 +1305,6 @@ class DOCXGenerator:
                 "базовым требованиям удобства и технической корректности."
             )
 
-        doc.add_paragraph()
-        footer = doc.add_paragraph(f"Отчет сформирован SEO Инструменты: {generated_at}")
-        footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        footer.runs[0].font.size = Pt(8)
-        footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
-
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         try:
             self._save_document(doc, filepath)
@@ -1260,8 +1334,8 @@ class DOCXGenerator:
         evidence_pack = ((results.get("evidence_pack", {}) or {}).get("rows") or [])
         batch_runs = results.get("batch_runs", []) or []
 
-        title = doc.add_heading("Отчет по проверке доступности ботов", 0)
-        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        self._add_cover_page(doc, 'Bot Accessibility Report', 'Проверка доступности ботов', data.get('url', ''), datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        self._add_header_footer(doc, 'Bot Accessibility Report')
         doc.add_paragraph(f"URL: {data.get('url', 'н/д')}")
         doc.add_paragraph(f"Сформирован: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         doc.add_paragraph(f"Профиль ретраев: {self._format_policy_profile(results.get('retry_profile', 'standard'), 'retry')}")
@@ -1392,6 +1466,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Trend history unavailable.")
 
+        doc.add_page_break()
         self._add_heading(doc, "8. Рекомендации", level=1)
         recs = results.get("recommendations", []) or []
         if recs:
@@ -1407,6 +1482,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Активные алерты отсутствуют.")
 
+        doc.add_page_break()
         self._add_heading(doc, "10. Линтер Robots Policy", level=1)
         if robots_linter:
             rows = [[str(x.get("severity", "")).upper(), x.get("code", ""), x.get("message", "")] for x in robots_linter[:40]]
@@ -1438,6 +1514,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Группы действий по владельцам отсутствуют.")
 
+        doc.add_page_break()
         self._add_heading(doc, "13. Пакет доказательств", level=1)
         if evidence_pack:
             rows = []
@@ -1474,13 +1551,13 @@ class DOCXGenerator:
     def generate_onpage_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Generate DOCX report for onpage_audit."""
         doc = Document()
-        title = doc.add_heading("Отчет OnPage-аудита", 0)
-        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
         results = data.get("results", {}) or {}
         summary = results.get("summary", {}) or {}
         url = data.get("url", "н/д")
         generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        self._add_cover_page(doc, 'OnPage Audit Report', 'OnPage-аудит', data.get('url', ''), generated_at)
+        self._add_header_footer(doc, 'OnPage Audit Report')
 
         doc.add_paragraph(f"URL: {url}")
         doc.add_paragraph(f"Сформирован: {generated_at}")
@@ -1568,6 +1645,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Топ терминов недоступен.")
 
+        doc.add_page_break()
         self._add_heading(doc, "6. Технические сигналы", level=1)
         technical = results.get("technical", {}) or {}
         technical_rows = [
@@ -1628,6 +1706,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Триграммы недоступны.")
 
+        doc.add_page_break()
         self._add_heading(doc, "9. Schema и OpenGraph", level=1)
         schema = results.get("schema", {}) or {}
         og = results.get("opengraph", {}) or {}
@@ -1688,6 +1767,7 @@ class DOCXGenerator:
             target_rows = [[x.get("metric", ""), x.get("current", 0), x.get("target", 0), x.get("delta", 0)] for x in targets]
             self._add_table(doc, ["Метрика", "Текущее", "Цель", "Дельта"], target_rows)
 
+        doc.add_page_break()
         self._add_heading(doc, "12. Проблемы", level=1)
         issues = results.get("issues", []) or []
         if issues:
@@ -1790,9 +1870,6 @@ class DOCXGenerator:
     def generate_link_profile_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Generate DOCX report for link_profile_audit."""
         doc = Document()
-        title = doc.add_heading("Отчет: Аудит ссылочного профиля", 0)
-        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
         results = data.get("results", {}) or {}
         summary = results.get("summary", {}) or {}
         tables = results.get("tables", {}) or {}
@@ -1800,6 +1877,9 @@ class DOCXGenerator:
         warnings = results.get("warnings", []) or []
         errors = results.get("errors", []) or []
         keywords = results.get("keywords", {}) or {}
+
+        self._add_cover_page(doc, 'Link Profile Report', 'Аудит ссылочного профиля', data.get('url', ''), datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        self._add_header_footer(doc, 'Link Profile Report')
 
         doc.add_paragraph(f"Домен: {data.get('url', summary.get('our_domain', 'н/д'))}")
         doc.add_paragraph(f"Сформирован: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -1860,6 +1940,7 @@ class DOCXGenerator:
         _add_dict_table("4.3 Ready-to-buy domains", tables.get("ready_buy_domains", []) or [], level=2)
         _add_dict_table("4.4 Priority score domains", tables.get("priority_score_domains", []) or [], level=2)
 
+        doc.add_page_break()
         self._add_heading(doc, "5. Quality", level=1)
         _add_dict_table("5.1 Link attributes", tables.get("link_attributes", []) or [], level=2)
         _add_dict_table("5.2 HTTP / Type / Lang / Platform", tables.get("http_type_lang_platform", []) or [], level=2)
@@ -1872,6 +1953,7 @@ class DOCXGenerator:
         _add_dict_table("6.2 Lost status mix", tables.get("lost_status_mix", []) or [], level=2)
         _add_dict_table("6.3 Ссылки с редиректов (sample)", tables.get("raw_redirect_links", []) or [], level=2)
 
+        doc.add_page_break()
         self._add_heading(doc, "7. Anchors", level=1)
         anchor_types = results.get("anchor_breakdown", {}) or {}
         if anchor_types:
@@ -1885,6 +1967,7 @@ class DOCXGenerator:
         _add_dict_table("8.1 Risk signals", tables.get("risk_signals", []) or [], level=2)
         _add_dict_table("8.2 Дубликаты без нашего сайта", tables.get("raw_duplicates_without_our", []) or [], level=2)
 
+        doc.add_page_break()
         self._add_heading(doc, "9. Plan", level=1)
         _add_dict_table("9.1 План 30/60/90", tables.get("action_queue_90d", []) or [], level=2)
         _add_dict_table("9.2 Очередь действий", tables.get("action_queue", []) or [], level=2)
@@ -1986,14 +2069,11 @@ class DOCXGenerator:
             except Exception:
                 return raw
 
-        title = doc.add_heading("Отчет Redirect Checker", 0)
-        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        subtitle = doc.add_paragraph(
-            "Аудит 11 сценариев редиректов: статус-коды, цепочки, рекомендации, план исправлений и краткие ТЗ."
-        )
-        subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
         generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        self._add_cover_page(doc, 'Redirect Checker Report', 'Проверка редиректов', data.get('url', ''), generated_at)
+        self._add_header_footer(doc, 'Redirect Checker Report')
+
         doc.add_paragraph(f"URL: {checked_url}")
         doc.add_paragraph(f"User-Agent: {selected_ua.get('label') or selected_ua.get('key') or 'н/д'}")
         doc.add_paragraph(
@@ -2075,6 +2155,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Сценарии не получены от сервиса Redirect Checker.")
 
+        doc.add_page_break()
         self._add_heading(doc, "3. Нарушения и разбор", level=1)
         if not violations:
             doc.add_paragraph("Все сценарии в статусе Passed. Дополнительные действия не требуются.")
@@ -2113,6 +2194,7 @@ class DOCXGenerator:
                         )
                     self._add_table(doc, ["Шаг", "URL", "HTTP", "Location"], chain_rows)
 
+        doc.add_page_break()
         self._add_heading(doc, "4. План действий при нарушениях", level=1)
         if not violations:
             doc.add_paragraph("План действий не требуется: нарушений не найдено.")
@@ -2147,6 +2229,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Критических рекомендаций нет.")
 
+        doc.add_page_break()
         self._add_heading(doc, "6. Краткие ТЗ на исправление", level=1)
         tz_templates = {
             "http_to_https": {
@@ -2266,14 +2349,6 @@ class DOCXGenerator:
                 done_text = template.get("done") or "После исправления сценарий должен перейти в статус Passed."
                 doc.add_paragraph(f"Критерий приемки: {done_text}")
 
-        doc.add_paragraph()
-        footer = doc.add_paragraph(
-            f"Отчет сформирован SEO Tools Platform: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        )
-        footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        footer.runs[0].font.size = Pt(8)
-        footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
-
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)
         return filepath
@@ -2317,8 +2392,9 @@ class DOCXGenerator:
         url = str(data.get("url") or results.get("url") or "-")
         summary = results.get("summary", {}) or {}
 
-        title = doc.add_heading("Core Web Vitals Report", 0)
-        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        self._add_cover_page(doc, 'Core Web Vitals Report', 'Core Web Vitals', data.get('url', ''), datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        self._add_header_footer(doc, 'Core Web Vitals Report')
+
         doc.add_paragraph(f"URL: {url}")
         doc.add_paragraph(f"Strategy: {strategy}")
         doc.add_paragraph(f"Mode: {mode}")
@@ -2386,6 +2462,7 @@ class DOCXGenerator:
             recommendations = results.get("recommendations", []) or []
             action_plan = results.get("action_plan", []) or []
 
+            doc.add_page_break()
             self._add_heading(doc, "2. Primary Snapshot", level=1)
             lcp_primary = (primary_metrics.get("lcp") or {}).get("field_value_ms")
             if lcp_primary is None:
@@ -2453,6 +2530,7 @@ class DOCXGenerator:
             else:
                 doc.add_paragraph("Сравнение с конкурентами отсутствует.")
 
+            doc.add_page_break()
             self._add_heading(doc, "4. Gap & Strength Analysis", level=1)
             doc.add_paragraph("Primary gaps:")
             if gaps_for_primary:
@@ -2515,6 +2593,7 @@ class DOCXGenerator:
                 doc.add_paragraph("Рекомендации не сформированы.")
         elif mode == "batch" or isinstance(results.get("sites"), list):
             sites = results.get("sites", []) or []
+            doc.add_page_break()
             self._add_heading(doc, "2. URL Details", level=1)
             detail_rows: List[List[Any]] = []
             for idx, site in enumerate(sites, start=1):
@@ -2620,6 +2699,7 @@ class DOCXGenerator:
             action_plan = results.get("action_plan", []) or []
             recommendations = results.get("recommendations", []) or []
 
+            doc.add_page_break()
             self._add_heading(doc, "2. Metrics", level=1)
             metric_rows: List[List[Any]] = []
             for key, label, field_key, lab_key in [
@@ -2671,6 +2751,7 @@ class DOCXGenerator:
                 ],
             )
 
+            doc.add_page_break()
             self._add_heading(doc, "5. Top Opportunities", level=1)
             if opportunities:
                 self._add_table(
@@ -2716,14 +2797,6 @@ class DOCXGenerator:
                     doc.add_paragraph(str(rec), style="List Bullet")
             else:
                 doc.add_paragraph("Рекомендации не сформированы.")
-
-        doc.add_paragraph()
-        footer = doc.add_paragraph(
-            f"Отчет сформирован SEO Tools Platform: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        )
-        footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        footer.runs[0].font.size = Pt(8)
-        footer.runs[0].font.color.rgb = RGBColor(128, 128, 128)
 
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)

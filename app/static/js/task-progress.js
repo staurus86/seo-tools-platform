@@ -497,6 +497,159 @@ function showResults(data) {
     } else {
         resultsContent.innerHTML = generateGenericHTML(result);
     }
+
+    // Initialize Chart.js charts after HTML is rendered
+    setTimeout(() => initChartsForTool(result.task_type, result), 50);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Chart.js integration — creates charts after result HTML is injected into DOM
+// ─────────────────────────────────────────────────────────────────────────────
+function initChartsForTool(taskType, result) {
+    if (typeof Chart === 'undefined' || typeof createScoreGauge === 'undefined') return;
+    try {
+        const r = result.results || result.result || result;
+
+        if (taskType === 'robots_check') {
+            const score = Number(r.score ?? r.summary?.score ?? 0);
+            createScoreGauge('ds-chart-robots-score', score, 'Robots Score');
+            const findings = r.findings || r.issues || {};
+            const crit = Array.isArray(findings.critical) ? findings.critical.length : 0;
+            const warn = Array.isArray(findings.warning) ? findings.warning.length : 0;
+            const info = Array.isArray(findings.info) ? findings.info.length : 0;
+            if (crit + warn + info > 0) {
+                createBarChart('ds-chart-robots-severity', ['Critical', 'Warning', 'Info'],
+                    [{data: [crit, warn, info], label: 'Issues', color: ['#ef4444','#f59e0b','#3b82f6']}]);
+            }
+        }
+
+        if (taskType === 'sitemap_validate') {
+            const score = Number(r.score ?? r.summary?.score ?? 0);
+            createScoreGauge('ds-chart-sitemap-score', score, 'Sitemap Score');
+            const summary = r.summary || {};
+            const totalUrls = Number(summary.total_urls || summary.urls_count || 0);
+            const validUrls = Number(summary.valid_urls || totalUrls);
+            const invalidUrls = totalUrls - validUrls;
+            if (totalUrls > 0) {
+                createBarChart('ds-chart-sitemap-dist', ['Valid', 'Invalid'], [validUrls, invalidUrls]);
+            }
+        }
+
+        if (taskType === 'bot_check') {
+            const summary = r.summary || {};
+            const crawl = Number(summary.crawlable || 0);
+            const render = Number(summary.renderable || 0);
+            const index = Number(summary.indexable || 0);
+            const access = Number(summary.accessible || 0);
+            const total = Number(summary.total || 1);
+            if (total > 0) {
+                createRadarChart('ds-chart-bot-radar',
+                    ['Crawl', 'Render', 'Index', 'Access'],
+                    [Math.round(crawl/total*100), Math.round(render/total*100), Math.round(index/total*100), Math.round(access/total*100)],
+                    'Bot Accessibility');
+            }
+        }
+
+        if (taskType === 'render_audit') {
+            const rawScore = Number(r.raw_score ?? r.raw?.score ?? 0);
+            const renderedScore = Number(r.rendered_score ?? r.rendered?.score ?? 0);
+            createScoreGauge('ds-chart-render-raw', rawScore, 'Raw HTML');
+            createScoreGauge('ds-chart-render-rendered', renderedScore, 'Rendered');
+        }
+
+        if (taskType === 'mobile_check') {
+            const devices = r.devices || r.results || [];
+            if (Array.isArray(devices) && devices.length > 0) {
+                const labels = devices.map(d => d.device || d.name || 'Device');
+                const scores = devices.map(d => Number(d.score || d.overall_score || 0));
+                createRadarChart('ds-chart-mobile-radar', labels, scores, 'Mobile Score');
+            }
+        }
+
+        if (taskType === 'onpage_audit') {
+            const metrics = r.metrics || r.keyword_metrics || {};
+            const labels = ['Плотность', 'Title', 'Description', 'H1', 'Ссылки'];
+            const values = [
+                Number(metrics.density_score || metrics.keyword_density_score || 0),
+                Number(metrics.title_score || 0),
+                Number(metrics.description_score || 0),
+                Number(metrics.h1_score || 0),
+                Number(metrics.links_score || 0)
+            ];
+            if (values.some(v => v > 0)) {
+                createRadarChart('ds-chart-onpage-radar', labels, values, 'OnPage');
+            }
+        }
+
+        if (taskType === 'clusterizer') {
+            const clusters = r.clusters || [];
+            if (Array.isArray(clusters) && clusters.length > 0) {
+                const top = clusters.slice(0, 20);
+                const labels = top.map((c, i) => c.label || c.name || `Cluster ${i+1}`);
+                const values = top.map(c => Number(c.size || c.count || c.keywords?.length || 0));
+                createHorizontalBar('ds-chart-cluster-bar', labels, values, '#06b6d4');
+            }
+        }
+
+        if (taskType === 'site_audit_pro') {
+            const scores = r.category_scores || r.scores || {};
+            const labels = ['Content', 'Technical', 'Links', 'Images', 'Keywords'];
+            const values = [
+                Number(scores.content || 0), Number(scores.technical || 0),
+                Number(scores.links || 0), Number(scores.images || 0),
+                Number(scores.keywords || 0)
+            ];
+            if (values.some(v => v > 0)) {
+                createRadarChart('ds-chart-sitepro-radar', labels, values, 'Audit Pro');
+            }
+        }
+
+        if (taskType === 'link_profile_audit') {
+            const summary = (r.results || r).summary || {};
+            const dofollow = Number(summary.dofollow || 0);
+            const nofollow = Number(summary.nofollow || 0);
+            if (dofollow + nofollow > 0) {
+                createPieChart('ds-chart-lp-dofollow', ['Dofollow', 'Nofollow'], [dofollow, nofollow], true);
+            }
+            const anchorBreakdown = (r.results || r).anchor_breakdown || {};
+            const anchorLabels = Object.keys(anchorBreakdown).slice(0, 8);
+            const anchorValues = anchorLabels.map(k => Number(anchorBreakdown[k] || 0));
+            if (anchorLabels.length > 0) {
+                createPieChart('ds-chart-lp-anchors', anchorLabels, anchorValues, false);
+            }
+        }
+
+        if (taskType === 'redirect_checker') {
+            const scenarios = r.scenarios || r.results || [];
+            if (Array.isArray(scenarios)) {
+                let passed = 0, warn = 0, err = 0;
+                scenarios.forEach(s => {
+                    const st = String(s.status || s.result || '').toLowerCase();
+                    if (st === 'passed' || st === 'pass' || st === 'ok') passed++;
+                    else if (st === 'warning' || st === 'warn') warn++;
+                    else err++;
+                });
+                if (passed + warn + err > 0) {
+                    createBarChart('ds-chart-redirect-summary', ['Passed', 'Warning', 'Error'],
+                        [{data: [passed, warn, err], label: 'Scenarios', color: ['#10b981','#f59e0b','#ef4444']}]);
+                }
+            }
+        }
+
+        if (taskType === 'core_web_vitals') {
+            const metrics = r.metrics || r.lighthouseResult?.audits || {};
+            const lcp = Number(metrics.lcp?.value || metrics.LCP || metrics['largest-contentful-paint']?.numericValue || 0);
+            const inp = Number(metrics.inp?.value || metrics.INP || 0);
+            const cls = Number(metrics.cls?.value || metrics.CLS || metrics['cumulative-layout-shift']?.numericValue || 0);
+            if (lcp > 0 || cls > 0) {
+                createBarChart('ds-chart-cwv-metrics', ['LCP (ms)', 'INP (ms)', 'CLS (x100)'],
+                    [{data: [Math.round(lcp), Math.round(inp), Math.round(cls * 100)], label: 'CWV', color: ['#0ea5e9','#8b5cf6','#f59e0b']}]);
+            }
+        }
+
+    } catch (e) {
+        console.warn('Chart init error:', e);
+    }
 }
 
 function showError(data) {
@@ -2288,11 +2441,13 @@ function switchLinkProfileSubTab(scope, tabId) {
 function buildToolHeader({ gradient, label, title, subtitle, score, scoreLabel, scoreGrade,
                            badges, metaLines, actionButtons }) {
     const pct = Math.max(0, Math.min(100, Number(score ?? 0)));
-    const ringColor = (score === null || score === undefined) ? '#94a3b8'
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const ringColor = (score === null || score === undefined) ? 'var(--ds-text-muted)'
         : pct >= 70 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444';
-    const ringStyle = `background:conic-gradient(${ringColor} ${pct}%,#e2e8f0 ${pct}% 100%);`;
+    const ringTrack = isDark ? '#334155' : '#e2e8f0';
+    const ringStyle = `background:conic-gradient(${ringColor} ${pct}%,${ringTrack} ${pct}% 100%);`;
     return `
-<div class="rounded-2xl overflow-hidden shadow-md border border-slate-200">
+<div class="rounded-2xl overflow-hidden" style="box-shadow:var(--ds-shadow);border:1px solid var(--ds-border);">
   <div class="bg-gradient-to-r ${gradient} text-white p-6">
     <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
       <div>
@@ -2305,37 +2460,35 @@ function buildToolHeader({ gradient, label, title, subtitle, score, scoreLabel, 
       </div>
       <div class="flex items-center gap-4 flex-shrink-0">
         ${score !== null && score !== undefined ? `
-        <div class="relative w-24 h-24 rounded-full p-2" style="${ringStyle}">
-          <div class="w-full h-full rounded-full bg-slate-900/80 backdrop-blur flex items-center justify-center">
-            <div class="text-center">
-              <div class="text-xl font-bold">${Math.round(pct)}</div>
-              <div class="text-[10px] text-slate-300">${scoreLabel || 'оценка'}${scoreGrade ? ` (${scoreGrade})` : ''}</div>
-            </div>
+        <div class="ds-score-ring-lg" style="${ringStyle}">
+          <div class="ds-ring-inner" style="background:rgba(15,23,42,0.8);backdrop-filter:blur(4px);">
+            <div class="ds-ring-value" style="color:#fff;">${Math.round(pct)}</div>
+            <div class="ds-ring-label" style="color:rgba(255,255,255,0.7);">${scoreLabel || 'оценка'}${scoreGrade ? ` (${scoreGrade})` : ''}</div>
           </div>
         </div>` : ''}
         ${metaLines?.length ? `<div class="text-xs text-white/80 space-y-1">${metaLines.map(l=>`<div>${l}</div>`).join('')}</div>` : ''}
       </div>
     </div>
   </div>
-  ${actionButtons ? `<div class="bg-white p-4 border-t border-slate-200"><div class="flex flex-wrap gap-2">${actionButtons}</div></div>` : ''}
+  ${actionButtons ? `<div class="p-4" style="background:var(--ds-surface);border-top:1px solid var(--ds-border);"><div class="ds-export-group">${actionButtons}</div></div>` : ''}
 </div>`;
 }
 
 function buildMetricCard(label, value, sub) {
-    return `<div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm hover:shadow-md transition">
-      <div class="text-xs text-slate-500">${label}</div>
-      <div class="text-xl font-semibold">${value}</div>
-      ${sub ? `<div class="text-[11px] text-slate-500">${sub}</div>` : ''}
+    return `<div class="ds-card" style="padding:0.75rem;animation:none;">
+      <div class="text-xs" style="color:var(--ds-text-muted);">${label}</div>
+      <div class="text-xl font-semibold" style="color:var(--ds-text);">${value}</div>
+      ${sub ? `<div class="text-[11px]" style="color:var(--ds-text-muted);">${sub}</div>` : ''}
     </div>`;
 }
 
 function buildFindingsGrid(critical, warning, info) {
-    const levelClass = { critical:'bg-rose-50 border-rose-200 text-rose-800',
-                         warning:'bg-amber-50 border-amber-200 text-amber-800',
-                         info:'bg-sky-50 border-sky-200 text-sky-800' };
+    const levelClass = { critical:'ds-findings-card severity-critical',
+                         warning:'ds-findings-card severity-warning',
+                         info:'ds-findings-card severity-info' };
     const levelLabel = { critical:'Критично', warning:'Предупреждение', info:'Инфо' };
     const render = (level, items) => `
-      <div class="rounded-lg border p-3 ${levelClass[level]}">
+      <div class="${levelClass[level]}">
         <div class="font-semibold text-sm mb-2 uppercase">${levelLabel[level]}</div>
         ${items.length ? items.slice(0,8).map(it => `
           <div class="mb-2 pb-2 border-b border-current/20 last:border-0 last:mb-0 last:pb-0">
@@ -2345,10 +2498,10 @@ function buildFindingsGrid(critical, warning, info) {
       </div>`;
     const total = critical.length + warning.length + info.length;
     if (!total) return '';
-    return `<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+    return `<div class="ds-card" style="padding:1.25rem;">
       <div class="flex items-center justify-between mb-3">
-        <h4 class="font-semibold text-slate-800">Приоритизированные Находки</h4>
-        <div class="text-xs text-slate-600">критично: <span class="font-semibold">${critical.length}</span>, предупреждений: <span class="font-semibold">${warning.length}</span>, инфо: <span class="font-semibold">${info.length}</span></div>
+        <h4 class="font-semibold" style="color:var(--ds-text);">Приоритизированные Находки</h4>
+        <div class="text-xs" style="color:var(--ds-text-secondary);">критично: <span class="font-semibold">${critical.length}</span>, предупреждений: <span class="font-semibold">${warning.length}</span>, инфо: <span class="font-semibold">${info.length}</span></div>
       </div>
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
         ${render('critical',critical)}${render('warning',warning)}${render('info',info)}
@@ -2358,24 +2511,24 @@ function buildFindingsGrid(critical, warning, info) {
 
 function buildRecommendations(recs) {
     if (!recs?.length) return '';
-    return `<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-      <h4 class="font-semibold text-blue-700 mb-3">Рекомендации</h4>
+    return `<div class="ds-card" style="padding:1.25rem;">
+      <h4 class="font-semibold mb-3" style="color:var(--ds-info);">Рекомендации</h4>
       <div class="space-y-2">${recs.map(r=>{
         const text = typeof r === 'string' ? r : (r.text || r.action || String(r));
-        return `<div class="text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded p-2">${escapeHtml(text)}</div>`;
+        return `<div class="text-sm rounded p-2" style="color:var(--ds-info);background:var(--ds-info-bg);border:1px solid var(--ds-info-border);">${escapeHtml(text)}</div>`;
       }).join('')}</div>
     </div>`;
 }
 
 function buildActionPlan(plan) {
     if (!plan?.length) return '';
-    return `<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-      <h4 class="font-semibold text-slate-800 mb-3">План Исправлений</h4>
+    return `<div class="ds-card" style="padding:1.25rem;">
+      <h4 class="font-semibold mb-3" style="color:var(--ds-text);">План Исправлений</h4>
       <div class="space-y-2">${plan.slice(0,20).map(it=>`
-        <div class="border rounded-lg p-3 bg-slate-50">
-          <div class="text-xs text-slate-600 mb-1">${escapeHtml(String(it.priority||'P2'))} | ${escapeHtml(String(it.owner||'SEO'))} | SLA: ${escapeHtml(String(it.sla||'н/д'))}</div>
-          <div class="text-sm font-medium text-slate-800">${escapeHtml(String(it.issue||it.title||''))}</div>
-          <div class="text-sm text-slate-700">${escapeHtml(String(it.action||it.details||''))}</div>
+        <div class="rounded-lg p-3" style="border:1px solid var(--ds-border);background:var(--ds-surface-soft);">
+          <div class="text-xs mb-1" style="color:var(--ds-text-muted);">${escapeHtml(String(it.priority||'P2'))} | ${escapeHtml(String(it.owner||'SEO'))} | SLA: ${escapeHtml(String(it.sla||'н/д'))}</div>
+          <div class="text-sm font-medium" style="color:var(--ds-text);">${escapeHtml(String(it.issue||it.title||''))}</div>
+          <div class="text-sm" style="color:var(--ds-text-secondary);">${escapeHtml(String(it.action||it.details||''))}</div>
         </div>`).join('')}
       </div>
     </div>`;
@@ -2479,8 +2632,8 @@ function generateLinkProfileAuditHTML(data) {
     };
 
     const lpActionBtns = `
-        <button id="lp-export-docx-btn" onclick="downloadLinkProfileDocxReport()" class="px-3 py-2 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-800 text-sm transition" aria-label="Скачать DOCX отчет"><i class="fas fa-file-word mr-1"></i>DOCX</button>
-        <button id="lp-export-xlsx-btn" onclick="downloadLinkProfileXlsxReport()" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition" aria-label="Скачать XLSX отчет"><i class="fas fa-file-excel mr-1"></i>XLSX</button>`;
+        <button id="lp-export-docx-btn" onclick="downloadLinkProfileDocxReport()" class="ds-export-btn" aria-label="Скачать DOCX отчет"><i class="fas fa-file-word mr-1"></i>DOCX</button>
+        <button id="lp-export-xlsx-btn" onclick="downloadLinkProfileXlsxReport()" class="ds-export-btn" aria-label="Скачать XLSX отчет"><i class="fas fa-file-excel mr-1"></i>XLSX</button>`;
 
     return `
         <div class="space-y-6 auditpro-results linkpro-results" id="link-profile-tabs-root">
@@ -2507,6 +2660,18 @@ function generateLinkProfileAuditHTML(data) {
 
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                 ${summaryCards.map(([label, value]) => buildMetricCard(escapeHtml(label), escapeHtml(String(value)))).join('')}
+            </div>
+
+            <!-- Charts -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Dofollow / Nofollow</h4>
+                    <div style="height:200px;"><canvas id="ds-chart-lp-dofollow"></canvas></div>
+                </div>
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Типы анкоров</h4>
+                    <div style="height:200px;"><canvas id="ds-chart-lp-anchors"></canvas></div>
+                </div>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-4 flex flex-wrap items-center justify-between gap-3">
@@ -2842,9 +3007,9 @@ Codes: ${escapeHtml(formatChain(s.response_codes))}
 
     const activeClass = (key) => (filter === key ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200');
     const rdActionBtns = `
-        <button type="button" onclick="downloadRedirectCheckerCsv()" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition"><i class="fas fa-file-csv mr-1"></i>CSV</button>
-        <button type="button" onclick="downloadRedirectCheckerDocx()" class="px-3 py-2 rounded-lg bg-sky-100 hover:bg-sky-200 text-sky-800 text-sm transition"><i class="fas fa-file-word mr-1"></i>DOCX</button>
-        <button type="button" onclick="copyRedirectCheckerSummary()" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition"><i class="fas fa-copy mr-1"></i>Копировать</button>`;
+        <button type="button" onclick="downloadRedirectCheckerCsv()" class="ds-export-btn"><i class="fas fa-file-csv mr-1"></i>CSV</button>
+        <button type="button" onclick="downloadRedirectCheckerDocx()" class="ds-export-btn"><i class="fas fa-file-word mr-1"></i>DOCX</button>
+        <button type="button" onclick="copyRedirectCheckerSummary()" class="ds-export-btn"><i class="fas fa-copy mr-1"></i>Копировать</button>`;
     return `
         <div class="redirectpro-results space-y-6">
             ${buildToolHeader({
@@ -2874,6 +3039,14 @@ Codes: ${escapeHtml(formatChain(s.response_codes))}
                 ${buildMetricCard('Warning', escapeHtml(String(summary.warnings || counters.warning || 0)))}
                 ${buildMetricCard('Error', escapeHtml(String(summary.errors || counters.error || 0)))}
                 ${buildMetricCard('UA', escapeHtml(selectedUa.label || '-'))}
+            </div>
+
+            <!-- Charts -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Сводка редиректов</h4>
+                    <div style="height:200px;"><canvas id="ds-chart-redirect-summary"></canvas></div>
+                </div>
             </div>
 
             ${buildRecommendations(recommendations)}
@@ -2965,19 +3138,19 @@ function generateCoreWebVitalsHTML(result) {
     };
     const exportButtons = `
         <div class="flex flex-wrap gap-2">
-            <button type="button" onclick="downloadCoreWebVitalsDocxReport()" class="px-3 py-2 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-800 text-sm transition">
+            <button type="button" onclick="downloadCoreWebVitalsDocxReport()" class="ds-export-btn">
                 <i class="fas fa-file-word mr-1"></i>DOCX
             </button>
-            <button type="button" onclick="downloadCoreWebVitalsXlsxReport()" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition">
+            <button type="button" onclick="downloadCoreWebVitalsXlsxReport()" class="ds-export-btn">
                 <i class="fas fa-file-excel mr-1"></i>XLSX
             </button>
-            <button type="button" onclick="downloadCoreWebVitalsCsvReport()" class="px-3 py-2 rounded-lg bg-cyan-100 hover:bg-cyan-200 text-cyan-800 text-sm transition">
+            <button type="button" onclick="downloadCoreWebVitalsCsvReport()" class="ds-export-btn">
                 <i class="fas fa-file-csv mr-1"></i>CSV
             </button>
-            <button type="button" onclick="downloadCoreWebVitalsJsonReport()" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition">
+            <button type="button" onclick="downloadCoreWebVitalsJsonReport()" class="ds-export-btn">
                 <i class="fas fa-file-code mr-1"></i>JSON
             </button>
-            <button type="button" onclick="copyCoreWebVitalsSummary()" class="px-3 py-2 rounded-lg bg-sky-100 hover:bg-sky-200 text-sky-800 text-sm transition">
+            <button type="button" onclick="copyCoreWebVitalsSummary()" class="ds-export-btn">
                 <i class="fas fa-copy mr-1"></i>Копировать
             </button>
         </div>
@@ -3404,6 +3577,14 @@ function generateCoreWebVitalsHTML(result) {
                 ${buildMetricCard('Grade', escapeHtml(summary.grade || '-'))}
             </div>
 
+            <!-- Charts -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Метрики CWV</h4>
+                    <div style="height:200px;"><canvas id="ds-chart-cwv-metrics"></canvas></div>
+                </div>
+            </div>
+
             <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
                 <h4 class="font-semibold mb-3">Lighthouse categories</h4>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
@@ -3820,10 +4001,10 @@ function generateRobotsHTML(data) {
     }
     
     const robotsActionBtns = `
-        <button onclick="downloadTextReport()" class="px-3 py-2 rounded-lg bg-blue-100 hover:bg-blue-200 text-blue-800 text-sm transition"><i class="fas fa-file-download mr-1"></i>TXT</button>
-        <button onclick="downloadWordReport()" class="px-3 py-2 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-800 text-sm transition"><i class="fas fa-file-word mr-1"></i>DOCX</button>
-        <button onclick="copyToClipboard(JSON.stringify(robotsData, null, 2))" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition"><i class="fas fa-copy mr-1"></i>JSON</button>
-        <button onclick='copyToClipboard(${JSON.stringify(rawContent)})' class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition"><i class="fas fa-file-alt mr-1"></i>robots.txt</button>`;
+        <button onclick="downloadTextReport()" class="ds-export-btn"><i class="fas fa-file-download"></i>TXT</button>
+        <button onclick="downloadWordReport()" class="ds-export-btn"><i class="fas fa-file-word"></i>DOCX</button>
+        <button onclick="copyToClipboard(JSON.stringify(robotsData, null, 2))" class="ds-export-btn"><i class="fas fa-copy"></i>JSON</button>
+        <button onclick='copyToClipboard(${JSON.stringify(rawContent)})' class="ds-export-btn"><i class="fas fa-file-alt"></i>robots.txt</button>`;
 
     return `
         <div class="space-y-6 auditpro-results">
@@ -3857,7 +4038,19 @@ function generateRobotsHTML(data) {
                 ${buildMetricCard('Байт', r.content_length || 0)}
                 ${buildMetricCard('Строк', r.lines_count || 0)}
             </div>
-            
+
+            <!-- Charts -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Score</h4>
+                    <div style="height:200px;"><canvas id="ds-chart-robots-score"></canvas></div>
+                </div>
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Issues by Severity</h4>
+                    <div style="height:200px;"><canvas id="ds-chart-robots-severity"></canvas></div>
+                </div>
+            </div>
+
             <!-- Issues -->
             ${issuesHTML ? `
                 <div class="bg-white rounded-xl shadow-md p-6">
@@ -4169,24 +4362,24 @@ function generateSitemapHTMLV2(result) {
                 </div>
                 <div class="bg-white p-4 border-t border-slate-200">
                     <div class="flex flex-wrap gap-2">
-                        <button onclick="copyToClipboard('${result.url}')" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition">
+                        <button onclick="copyToClipboard('${result.url}')" class="ds-export-btn">
                             <i class="fas fa-copy mr-1"></i>Копировать URL
                         </button>
                         ${exportUrls.length > 0 ? `
-                            <button onclick='downloadCurrentSitemapUrls("sitemap-urls-${safeDomain}-${dateStamp}")' class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition">
+                            <button onclick='downloadCurrentSitemapUrls("sitemap-urls-${safeDomain}-${dateStamp}")' class="ds-export-btn">
                                 <i class="fas fa-file-download mr-1"></i>Экспорт URL
                             </button>
-                            <button onclick='downloadCurrentSitemapUrlsParts("sitemap-urls-${safeDomain}-${dateStamp}", ${exportChunkSize})' class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition">
+                            <button onclick='downloadCurrentSitemapUrlsParts("sitemap-urls-${safeDomain}-${dateStamp}", ${exportChunkSize})' class="ds-export-btn">
                                 <i class="fas fa-layer-group mr-1"></i>Экспорт частями
                             </button>
                         ` : ''}
-                        <button onclick="downloadSitemapXlsxReport()" class="px-3 py-2 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-800 text-sm transition">
+                        <button onclick="downloadSitemapXlsxReport()" class="ds-export-btn">
                             <i class="fas fa-file-excel mr-1"></i>XLSX
                         </button>
-                        <button onclick="downloadSitemapDocxReport()" class="px-3 py-2 rounded-lg bg-sky-100 hover:bg-sky-200 text-sky-800 text-sm transition">
+                        <button onclick="downloadSitemapDocxReport()" class="ds-export-btn">
                             <i class="fas fa-file-word mr-1"></i>DOCX
                         </button>
-                        <button onclick="copyToClipboard(JSON.stringify(lastTaskResult, null, 2))" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition">
+                        <button onclick="copyToClipboard(JSON.stringify(lastTaskResult, null, 2))" class="ds-export-btn">
                             <i class="fas fa-code mr-1"></i>JSON
                         </button>
                     </div>
@@ -4200,6 +4393,18 @@ function generateSitemapHTMLV2(result) {
                 <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm transition hover:shadow-md"><div class="text-xs text-slate-500">Дубли</div><div class="text-xl font-semibold">${r.duplicate_urls_count || 0}</div></div>
                 <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm transition hover:shadow-md"><div class="text-xs text-slate-500">Неиндексируемые (live)</div><div class="text-xl font-semibold">${r.live_non_indexable_count || 0}</div></div>
                 <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm transition hover:shadow-md"><div class="text-xs text-slate-500">Глубина</div><div class="text-xl font-semibold">${r.max_depth_seen || 0}</div><div class="text-[11px] text-slate-500">самоссылки/повторы: ${r.self_child_refs || 0}/${r.repeated_child_refs || 0}</div></div>
+            </div>
+
+            <!-- Charts -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Оценка качества sitemap</h4>
+                    <div style="height:200px;"><canvas id="ds-chart-sitemap-score"></canvas></div>
+                </div>
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Распределение URL</h4>
+                    <div style="height:200px;"><canvas id="ds-chart-sitemap-dist"></canvas></div>
+                </div>
             </div>
 
             <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
@@ -4673,10 +4878,10 @@ function generateBotHTML(result) {
 
     const botScore = summary.total ? Math.round((summary.indexable || 0) / summary.total * 100) : null;
     const botActionBtns = `
-        <button onclick="downloadBotDocxReport()" class="px-3 py-2 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-800 text-sm transition"><i class="fas fa-file-word mr-1"></i>DOCX</button>
-        <button onclick="downloadBotXlsxReport()" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition"><i class="fas fa-file-excel mr-1"></i>XLSX</button>
-        <button onclick="copyBotPlaybooksAsJira()" class="px-3 py-2 rounded-lg bg-sky-100 hover:bg-sky-200 text-sky-800 text-sm transition"><i class="fas fa-list-check mr-1"></i>Jira задачи</button>
-        <button onclick="downloadBotTrendHistoryJson()" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition"><i class="fas fa-chart-line mr-1"></i>Тренды JSON</button>`;
+        <button onclick="downloadBotDocxReport()" class="ds-export-btn"><i class="fas fa-file-word mr-1"></i>DOCX</button>
+        <button onclick="downloadBotXlsxReport()" class="ds-export-btn"><i class="fas fa-file-excel mr-1"></i>XLSX</button>
+        <button onclick="copyBotPlaybooksAsJira()" class="ds-export-btn"><i class="fas fa-list-check mr-1"></i>Jira задачи</button>
+        <button onclick="downloadBotTrendHistoryJson()" class="ds-export-btn"><i class="fas fa-chart-line mr-1"></i>Тренды JSON</button>`;
 
     return `
         <div class="auditpro-results space-y-6">
@@ -4706,6 +4911,14 @@ function generateBotHTML(result) {
                 ${buildMetricCard('Индексируемо', `${summary.indexable || 0}/${summary.total || 0}`)}
                 ${buildMetricCard('Рендерится', `${summary.renderable || 0}/${summary.total || 0}`)}
                 ${buildMetricCard('Ср. ответ', `${summary.avg_response_time_ms || 0} ms`)}
+            </div>
+
+            <!-- Charts -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Доступность ботов</h4>
+                    <div style="height:200px;"><canvas id="ds-chart-bot-radar"></canvas></div>
+                </div>
             </div>
 
             ${buildFindingsGrid(
@@ -5449,9 +5662,9 @@ function generateRenderAuditHTML(result) {
         : '<div class="text-xs text-slate-500">В данных нет диагностики по вариантам.</div>';
 
     const renderActionBtns = `
-        <button onclick="downloadRenderDocxReport()" class="px-3 py-2 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-800 text-sm transition"><i class="fas fa-file-word mr-1"></i>DOCX</button>
-        <button onclick="downloadRenderXlsxReport()" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition"><i class="fas fa-file-excel mr-1"></i>XLSX</button>
-        <button onclick="copyCurrentTaskJson()" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition"><i class="fas fa-copy mr-1"></i>JSON</button>`;
+        <button onclick="downloadRenderDocxReport()" class="ds-export-btn"><i class="fas fa-file-word mr-1"></i>DOCX</button>
+        <button onclick="downloadRenderXlsxReport()" class="ds-export-btn"><i class="fas fa-file-excel mr-1"></i>XLSX</button>
+        <button onclick="copyCurrentTaskJson()" class="ds-export-btn"><i class="fas fa-copy mr-1"></i>JSON</button>`;
 
     return `
         <div class="space-y-6 renderpro-results">
@@ -5480,6 +5693,18 @@ function generateRenderAuditHTML(result) {
                 ${buildMetricCard('Потери контента', summary.missing_total || 0, `${summary.avg_missing_pct || 0}% в среднем`)}
                 ${buildMetricCard('JS-рендер', `${Math.round(Number(summary.avg_js_load_ms || 0))} мс`)}
                 ${buildMetricCard('Критичных', summary.critical_issues || 0)}
+            </div>
+
+            <!-- Charts -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Raw HTML</h4>
+                    <div style="height:200px;"><canvas id="ds-chart-render-raw"></canvas></div>
+                </div>
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Rendered HTML</h4>
+                    <div style="height:200px;"><canvas id="ds-chart-render-rendered"></canvas></div>
+                </div>
             </div>
 
             ${buildFindingsGrid(
@@ -5677,9 +5902,9 @@ function generateMobileCheckHTML(result) {
         ? 'bg-emerald-500/20 border border-emerald-400/40 text-emerald-100'
         : 'bg-rose-500/20 border border-rose-400/40 text-rose-100';
     const mobileActionBtns = `
-        <button onclick="downloadMobileDocxReport()" class="px-3 py-2 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-800 text-sm transition"><i class="fas fa-file-word mr-1"></i>DOCX</button>
-        <button onclick="downloadMobileXlsxReport()" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition"><i class="fas fa-file-excel mr-1"></i>XLSX</button>
-        <button onclick="copyCurrentTaskJson()" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition"><i class="fas fa-copy mr-1"></i>JSON</button>`;
+        <button onclick="downloadMobileDocxReport()" class="ds-export-btn"><i class="fas fa-file-word mr-1"></i>DOCX</button>
+        <button onclick="downloadMobileXlsxReport()" class="ds-export-btn"><i class="fas fa-file-excel mr-1"></i>XLSX</button>
+        <button onclick="copyCurrentTaskJson()" class="ds-export-btn"><i class="fas fa-copy mr-1"></i>JSON</button>`;
 
     return `
         <div class="space-y-6 auditpro-results">
@@ -5708,6 +5933,14 @@ function generateMobileCheckHTML(result) {
                 ${buildMetricCard('Критичных', summary.critical_issues || 0)}
                 ${buildMetricCard('Предупреждений', summary.warning_issues || 0)}
                 ${buildMetricCard('Ср. загрузка', `${summary.avg_load_time_ms || 0} мс`)}
+            </div>
+
+            <!-- Charts -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Мобильная совместимость</h4>
+                    <div style="height:200px;"><canvas id="ds-chart-mobile-radar"></canvas></div>
+                </div>
             </div>
 
             ${buildFindingsGrid(critIssues, warnIssues, infoIssues)}
@@ -5876,10 +6109,10 @@ function generateOnPageAuditHTML(result) {
     `).join('');
 
     const onpageActionBtns = `
-        <button onclick="downloadOnpageDocxReport()" class="px-3 py-2 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-800 text-sm transition"><i class="fas fa-file-word mr-1"></i>DOCX</button>
-        <button onclick="downloadOnpageXlsxReport()" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition"><i class="fas fa-file-excel mr-1"></i>XLSX</button>
-        <button onclick="copyOnpageTopFixes()" class="px-3 py-2 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-800 text-sm transition"><i class="fas fa-bolt mr-1"></i>Топ исправлений</button>
-        <button onclick="copyCurrentTaskJson()" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition"><i class="fas fa-copy mr-1"></i>JSON</button>`;
+        <button onclick="downloadOnpageDocxReport()" class="ds-export-btn"><i class="fas fa-file-word mr-1"></i>DOCX</button>
+        <button onclick="downloadOnpageXlsxReport()" class="ds-export-btn"><i class="fas fa-file-excel mr-1"></i>XLSX</button>
+        <button onclick="copyOnpageTopFixes()" class="ds-export-btn"><i class="fas fa-bolt mr-1"></i>Топ исправлений</button>
+        <button onclick="copyCurrentTaskJson()" class="ds-export-btn"><i class="fas fa-copy mr-1"></i>JSON</button>`;
     const onpageScore = r.score ?? summary.score ?? 0;
 
     return `
@@ -5911,6 +6144,14 @@ function generateOnPageAuditHTML(result) {
                 ${buildMetricCard('AI-риск', ai.ai_risk_composite ?? 0)}
                 ${buildMetricCard('Критично', summary.critical_issues ?? 0)}
                 ${buildMetricCard('Предупреждений', summary.warning_issues ?? 0)}
+            </div>
+
+            <!-- Charts -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">OnPage профиль</h4>
+                    <div style="height:200px;"><canvas id="ds-chart-onpage-radar"></canvas></div>
+                </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -6116,8 +6357,8 @@ function generateClusterizerHTML(result) {
         .join('');
 
     const clusterActionBtns = `
-        <button onclick="downloadClusterizerXlsxReport()" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition"><i class="fas fa-file-excel mr-1"></i>XLSX</button>
-        <button onclick="copyCurrentTaskJson()" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition"><i class="fas fa-copy mr-1"></i>JSON</button>`;
+        <button onclick="downloadClusterizerXlsxReport()" class="ds-export-btn"><i class="fas fa-file-excel mr-1"></i>XLSX</button>
+        <button onclick="copyCurrentTaskJson()" class="ds-export-btn"><i class="fas fa-copy mr-1"></i>JSON</button>`;
 
     return `
         <div class="space-y-6 sitepro-results">
@@ -6144,6 +6385,14 @@ function generateClusterizerHTML(result) {
                 ${buildMetricCard('Кластеров', Number(summary.clusters_total || 0))}
                 ${buildMetricCard('Основных', Number(summary.primary_clusters_total || 0))}
                 ${buildMetricCard('Когезия', `${Math.round(Number(summary.avg_cluster_cohesion || 0) * 1000) / 10}%`)}
+            </div>
+
+            <!-- Charts -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Распределение кластеров</h4>
+                    <div style="height:200px;"><canvas id="ds-chart-cluster-bar"></canvas></div>
+                </div>
             </div>
 
             <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
@@ -6769,9 +7018,9 @@ function generateSiteAuditProHTML(result) {
         : `<li class="text-slate-500">${escapeHtml(emptyText)}</li>`;
 
     const siteProActionBtns = `
-        <button onclick="downloadSiteAuditProDocxReport()" class="px-3 py-2 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-800 text-sm transition"><i class="fas fa-file-word mr-1"></i>DOCX</button>
-        <button onclick="downloadSiteAuditProXlsxReport()" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm transition"><i class="fas fa-file-excel mr-1"></i>XLSX</button>
-        <button onclick="copyCurrentTaskJson()" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm transition"><i class="fas fa-copy mr-1"></i>JSON</button>`;
+        <button onclick="downloadSiteAuditProDocxReport()" class="ds-export-btn"><i class="fas fa-file-word mr-1"></i>DOCX</button>
+        <button onclick="downloadSiteAuditProXlsxReport()" class="ds-export-btn"><i class="fas fa-file-excel mr-1"></i>XLSX</button>
+        <button onclick="copyCurrentTaskJson()" class="ds-export-btn"><i class="fas fa-copy mr-1"></i>JSON</button>`;
 
     return `
         <div class="space-y-6 sitepro-results">
@@ -6801,6 +7050,14 @@ function generateSiteAuditProHTML(result) {
                 ${buildMetricCard('Проблем', escapeHtml(String(totalIssues)))}
                 ${buildMetricCard('Критично', escapeHtml(String(summary.critical_issues || 0)))}
                 ${buildMetricCard('Предупреждений', escapeHtml(String(summary.warning_issues || 0)))}
+            </div>
+
+            <!-- Charts -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Профиль аудита сайта</h4>
+                    <div style="height:200px;"><canvas id="ds-chart-sitepro-radar"></canvas></div>
+                </div>
             </div>
 
             <div class="bg-white rounded-xl shadow-md p-6">
