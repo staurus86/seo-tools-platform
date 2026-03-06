@@ -28,6 +28,18 @@ class _Session:
         return self.mapping[url]
 
 
+class _AsyncClient:
+    def __init__(self, mapping):
+        self.mapping = mapping
+        self.calls = []
+
+    async def get(self, url, timeout=0, headers=None, allow_redirects=False, read_text=True, text_limit=None):
+        self.calls.append(url)
+        if url not in self.mapping:
+            raise AssertionError(f"Unexpected URL requested: {url}")
+        return self.mapping[url]
+
+
 class RobotsAndSitemapRegressionTests(unittest.TestCase):
     def test_parse_robots_keeps_consecutive_user_agents_in_same_group(self):
         parsed = robots.parse_robots(
@@ -43,7 +55,7 @@ class RobotsAndSitemapRegressionTests(unittest.TestCase):
     def test_fetch_robots_always_uses_site_root(self):
         seen = {}
 
-        def fake_get(url, timeout=0, headers=None):
+        def fake_get(url, timeout=0, headers=None, allow_redirects=False):
             seen["url"] = url
             return _Resp(url, 200, text="User-agent: *\n")
 
@@ -56,6 +68,22 @@ class RobotsAndSitemapRegressionTests(unittest.TestCase):
         self.assertEqual(status_code, 200)
         self.assertIsNone(error)
         self.assertEqual(seen["url"], "https://example.com/robots.txt")
+
+    def test_safe_fetch_with_redirects_sync_blocks_private_redirect_target(self):
+        client = _Session(
+            {
+                "https://example.com/robots.txt": _Resp(
+                    "https://example.com/robots.txt",
+                    302,
+                    headers={"Location": "http://127.0.0.1/private"},
+                )
+            }
+        )
+
+        with self.assertRaises(ValueError):
+            robots._safe_fetch_with_redirects_sync(client, "https://example.com/robots.txt")
+
+        self.assertEqual(client.calls, ["https://example.com/robots.txt"])
 
     def test_request_models_accept_bare_domain_input(self):
         robots_req = robots.RobotsCheckRequest(url="example.com")
@@ -154,6 +182,24 @@ class RobotsAndSitemapRegressionTests(unittest.TestCase):
         self.assertEqual(captured["result"]["results"]["resolved_sitemap_url"], "https://example.com/sitemap.xml")
         self.assertEqual(captured["result"]["results"]["resolved_sitemap_urls"], ["https://example.com/sitemap.xml"])
         self.assertEqual(captured["result"]["results"]["sitemap_discovery_source"], "robots_txt")
+
+    def test_safe_fetch_with_redirects_async_blocks_private_redirect_target(self):
+        client = _AsyncClient(
+            {
+                "https://example.com/sitemap.xml": robots._HttpResponseData(
+                    url="https://example.com/sitemap.xml",
+                    status_code=302,
+                    headers={"Location": "http://127.0.0.1/private.xml"},
+                    content=b"",
+                    text="",
+                )
+            }
+        )
+
+        with self.assertRaises(ValueError):
+            asyncio.run(robots._safe_fetch_with_redirects_async(client, "https://example.com/sitemap.xml", read_text=False))
+
+        self.assertEqual(client.calls, ["https://example.com/sitemap.xml"])
 
     def test_create_robots_check_uses_async_helper(self):
         seen = {}

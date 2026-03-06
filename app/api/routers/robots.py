@@ -189,6 +189,83 @@ class _AsyncSessionShim:
             )
 
 
+_REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
+
+
+def _response_header(headers: Optional[Dict[str, Any]], key: str) -> str:
+    header_map = headers or {}
+    return str(header_map.get(key) or header_map.get(key.lower()) or "")
+
+
+def _safe_fetch_with_redirects_sync(
+    client,
+    url: str,
+    timeout: int = 20,
+    headers: Optional[Dict[str, str]] = None,
+    max_redirects: int = 5,
+):
+    current_url = str(url or "").strip()
+    seen: set[str] = set()
+    for _ in range(max_redirects + 1):
+        target_error = _get_public_target_error(current_url)
+        if target_error:
+            raise ValueError(target_error)
+        response = client.get(current_url, timeout=timeout, headers=headers, allow_redirects=False)
+        response_url = str(getattr(response, "url", current_url) or current_url)
+        response_error = _get_public_target_error(response_url)
+        if response_error:
+            raise ValueError(response_error)
+        location = _response_header(getattr(response, "headers", {}), "Location").strip()
+        if getattr(response, "status_code", None) in _REDIRECT_STATUS_CODES and location:
+            next_url = urljoin(response_url, location)
+            if next_url in seen:
+                raise ValueError("Обнаружен цикл редиректов при запросе.")
+            seen.add(next_url)
+            current_url = next_url
+            continue
+        return response
+    raise ValueError("Превышен лимит редиректов при запросе.")
+
+
+async def _safe_fetch_with_redirects_async(
+    client,
+    url: str,
+    timeout: int = 20,
+    headers: Optional[Dict[str, str]] = None,
+    max_redirects: int = 5,
+    read_text: bool = True,
+    text_limit: Optional[int] = None,
+):
+    current_url = str(url or "").strip()
+    seen: set[str] = set()
+    for _ in range(max_redirects + 1):
+        target_error = _get_public_target_error(current_url)
+        if target_error:
+            raise ValueError(target_error)
+        response = await client.get(
+            current_url,
+            timeout=timeout,
+            headers=headers,
+            allow_redirects=False,
+            read_text=read_text,
+            text_limit=text_limit,
+        )
+        response_url = str(getattr(response, "url", current_url) or current_url)
+        response_error = _get_public_target_error(response_url)
+        if response_error:
+            raise ValueError(response_error)
+        location = _response_header(getattr(response, "headers", {}), "Location").strip()
+        if getattr(response, "status_code", None) in _REDIRECT_STATUS_CODES and location:
+            next_url = urljoin(response_url, location)
+            if next_url in seen:
+                raise ValueError("Обнаружен цикл редиректов при запросе.")
+            seen.add(next_url)
+            current_url = next_url
+            continue
+        return response
+    raise ValueError("Превышен лимит редиректов при запросе.")
+
+
 def fetch_robots(url: str, timeout: int = 20) -> Tuple[Optional[str], Optional[int], Optional[str]]:
     """Fetch robots.txt and return (content, status_code, error)"""
     try:
@@ -200,7 +277,12 @@ def fetch_robots(url: str, timeout: int = 20) -> Tuple[Optional[str], Optional[i
         if safety_error:
             return None, None, safety_error
         robots_url = urljoin(root + "/", "robots.txt")
-        resp = requests.get(robots_url, timeout=timeout, headers={"User-Agent": "Mozilla/5.0"})
+        resp = _safe_fetch_with_redirects_sync(
+            requests,
+            robots_url,
+            timeout=timeout,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
         return resp.text, resp.status_code, None
     except requests.exceptions.Timeout:
         return None, None, "Timeout"
@@ -222,7 +304,12 @@ async def fetch_robots_async(url: str, timeout: int = 20) -> Tuple[Optional[str]
             return None, None, safety_error
         robots_url = urljoin(root + "/", "robots.txt")
         async with aiohttp.ClientSession(headers={"User-Agent": "Mozilla/5.0"}) as session:
-            resp = await _async_http_get(session, robots_url, timeout=timeout, read_text=True)
+            resp = await _safe_fetch_with_redirects_async(
+                session,
+                robots_url,
+                timeout=timeout,
+                read_text=True,
+            )
         return resp.text, resp.status_code, None
     except asyncio.TimeoutError:
         return None, None, "Timeout"
@@ -619,7 +706,12 @@ def validate_sitemaps(sitemaps: List[str], timeout: int = 4, max_checks: int = 5
                     "error": target_error
                 })
                 continue
-            resp = requests.get(sm, timeout=timeout, headers={"User-Agent": "Mozilla/5.0"}, allow_redirects=True)
+            resp = _safe_fetch_with_redirects_sync(
+                requests,
+                sm,
+                timeout=timeout,
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
             decoded_content, _ = _decode_sitemap_payload(
                 resp.content,
                 getattr(resp, "url", sm),
@@ -685,7 +777,12 @@ async def validate_sitemaps_async(sitemaps: List[str], timeout: int = 4, max_che
                         "error": target_error
                     })
                     continue
-                resp = await _async_http_get(session, sm, timeout=timeout, allow_redirects=True, read_text=False)
+                resp = await _safe_fetch_with_redirects_async(
+                    session,
+                    sm,
+                    timeout=timeout,
+                    read_text=False,
+                )
                 decoded_content, _ = _decode_sitemap_payload(
                     resp.content,
                     resp.url,
@@ -1709,7 +1806,11 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
                     file_report["errors"].append(target_error)
                     sitemap_files.append(file_report)
                     continue
-                response = session.get(sitemap_url, timeout=20, allow_redirects=True)
+                response = _safe_fetch_with_redirects_sync(
+                    session,
+                    sitemap_url,
+                    timeout=20,
+                )
                 file_report["status_code"] = response.status_code
                 file_report["compressed_size_bytes"] = len(response.content or b"")
                 file_report["size_bytes"] = file_report["compressed_size_bytes"]
@@ -2011,7 +2112,11 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
                 }
                 started = time.time()
                 try:
-                    live_response = live_session.get(sample_url, timeout=live_check_timeout, allow_redirects=True)
+                    live_response = _safe_fetch_with_redirects_sync(
+                        live_session,
+                        sample_url,
+                        timeout=live_check_timeout,
+                    )
                     item["status_code"] = live_response.status_code
                     item["response_ms"] = int((time.time() - started) * 1000)
                     reasons: List[str] = []
@@ -2546,7 +2651,12 @@ async def check_sitemap_full_async(url: Union[str, List[str]]) -> Dict[str, Any]
                     file_report["errors"].append(target_error)
                     sitemap_files.append(file_report)
                     continue
-                response = await session.get(sitemap_url, timeout=20, allow_redirects=True, read_text=False)
+                response = await _safe_fetch_with_redirects_async(
+                    session,
+                    sitemap_url,
+                    timeout=20,
+                    read_text=False,
+                )
                 file_report["status_code"] = response.status_code
                 file_report["compressed_size_bytes"] = len(response.content or b"")
                 file_report["size_bytes"] = file_report["compressed_size_bytes"]
@@ -2847,7 +2957,13 @@ async def check_sitemap_full_async(url: Union[str, List[str]]) -> Dict[str, Any]
                 }
                 started = time.time()
                 try:
-                    live_response = await live_session.get(sample_url, timeout=live_check_timeout, allow_redirects=True, read_text=True, text_limit=200000)
+                    live_response = await _safe_fetch_with_redirects_async(
+                        live_session,
+                        sample_url,
+                        timeout=live_check_timeout,
+                        read_text=True,
+                        text_limit=200000,
+                    )
                     item["status_code"] = live_response.status_code
                     item["response_ms"] = int((time.time() - started) * 1000)
                     reasons: List[str] = []
@@ -3479,7 +3595,12 @@ def _discover_sitemap_urls(site_url: str, timeout: int = 12) -> tuple[List[str],
     with requests.Session() as session:
         # 1) robots.txt sitemap declarations (priority)
         try:
-            robots_resp = session.get(urljoin(root, "/robots.txt"), timeout=timeout, allow_redirects=True, headers=headers)
+            robots_resp = _safe_fetch_with_redirects_sync(
+                session,
+                urljoin(root, "/robots.txt"),
+                timeout=timeout,
+                headers=headers,
+            )
             if robots_resp.status_code == 200:
                 robots_candidates: List[str] = []
                 for line in (robots_resp.text or "").splitlines():
@@ -3495,7 +3616,12 @@ def _discover_sitemap_urls(site_url: str, timeout: int = 12) -> tuple[List[str],
                     if _get_public_target_error(normalized_loc):
                         continue
                     try:
-                        sm_resp = session.get(normalized_loc, timeout=timeout, allow_redirects=True, headers=headers)
+                        sm_resp = _safe_fetch_with_redirects_sync(
+                            session,
+                            normalized_loc,
+                            timeout=timeout,
+                            headers=headers,
+                        )
                         decoded_content, _ = _decode_sitemap_payload(
                             sm_resp.content,
                             getattr(sm_resp, "url", normalized_loc),
@@ -3532,7 +3658,12 @@ def _discover_sitemap_urls(site_url: str, timeout: int = 12) -> tuple[List[str],
             if _get_public_target_error(loc):
                 continue
             try:
-                sm_resp = session.get(loc, timeout=timeout, allow_redirects=True, headers=headers)
+                sm_resp = _safe_fetch_with_redirects_sync(
+                    session,
+                    loc,
+                    timeout=timeout,
+                    headers=headers,
+                )
                 decoded_content, _ = _decode_sitemap_payload(
                     sm_resp.content,
                     getattr(sm_resp, "url", loc),
@@ -3572,7 +3703,11 @@ async def _discover_sitemap_urls_async(site_url: str, timeout: int = 12) -> tupl
 
     async with aiohttp.ClientSession(headers={"User-Agent": "Mozilla/5.0 (compatible; SEO-Tools/1.0)"}) as session:
         try:
-            robots_resp = await _async_http_get(session, urljoin(root, "/robots.txt"), timeout=timeout, allow_redirects=True)
+            robots_resp = await _safe_fetch_with_redirects_async(
+                session,
+                urljoin(root, "/robots.txt"),
+                timeout=timeout,
+            )
             if robots_resp.status_code == 200:
                 robots_candidates: List[str] = []
                 for line in (robots_resp.text or "").splitlines():
@@ -3588,7 +3723,12 @@ async def _discover_sitemap_urls_async(site_url: str, timeout: int = 12) -> tupl
                     if _get_public_target_error(normalized_loc):
                         continue
                     try:
-                        sm_resp = await _async_http_get(session, normalized_loc, timeout=timeout, allow_redirects=True, read_text=False)
+                        sm_resp = await _safe_fetch_with_redirects_async(
+                            session,
+                            normalized_loc,
+                            timeout=timeout,
+                            read_text=False,
+                        )
                         decoded_content, _ = _decode_sitemap_payload(
                             sm_resp.content,
                             sm_resp.url,
@@ -3624,7 +3764,12 @@ async def _discover_sitemap_urls_async(site_url: str, timeout: int = 12) -> tupl
             if _get_public_target_error(loc):
                 continue
             try:
-                sm_resp = await _async_http_get(session, loc, timeout=timeout, allow_redirects=True, read_text=False)
+                sm_resp = await _safe_fetch_with_redirects_async(
+                    session,
+                    loc,
+                    timeout=timeout,
+                    read_text=False,
+                )
                 decoded_content, _ = _decode_sitemap_payload(
                     sm_resp.content,
                     sm_resp.url,
