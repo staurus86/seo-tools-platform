@@ -1,6 +1,7 @@
 """
 Robots.txt Checker, Sitemap Validator, and Bot Accessibility Checker router.
 """
+import asyncio
 import re
 import json
 import time
@@ -2302,7 +2303,7 @@ async def create_robots_check(data: RobotsCheckRequest):
     
     print(f"[API] Full robots.txt analysis for: {url}")
     
-    result = check_robots_full(url)
+    result = await asyncio.to_thread(check_robots_full, url)
     task_id = f"robots-{datetime.now().timestamp()}"
     create_task_result(task_id, "robots_check", url, result)
     
@@ -2329,7 +2330,7 @@ async def create_sitemap_validate(data: SitemapValidateRequest):
         target_sitemap_urls = [normalized_input]
         discovery_source = "direct_input"
     else:
-        discovered_urls, source = _discover_sitemap_urls(normalized_input)
+        discovered_urls, source = await asyncio.to_thread(_discover_sitemap_urls, normalized_input)
         if not discovered_urls:
             raise HTTPException(
                 status_code=422,
@@ -2343,7 +2344,7 @@ async def create_sitemap_validate(data: SitemapValidateRequest):
         f"sitemaps={len(target_sitemap_urls)}, source={discovery_source}"
     )
 
-    result = check_sitemap_full(target_sitemap_urls)
+    result = await asyncio.to_thread(check_sitemap_full, target_sitemap_urls)
     if isinstance(result, dict):
         resolved_sitemap_url = target_sitemap_urls[0] if target_sitemap_urls else ""
         result["input_url"] = normalized_input
