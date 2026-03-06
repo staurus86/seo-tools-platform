@@ -6,7 +6,7 @@ All tool endpoints import from here to read/write task results.
 import json
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
 from app.core.memory_guard import mark_activity, register_cleanup_callback
@@ -24,6 +24,10 @@ _task_lock = threading.RLock()
 _last_memory_prune_ts = 0.0
 
 _TERMINAL_STATUSES = {"SUCCESS", "FAILURE"}
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _mark_redis_unavailable(exc: Exception, where: str) -> None:
@@ -204,6 +208,7 @@ def _save_task_payload(task_id: str, data: Dict[str, Any]) -> None:
 
 def create_task_result(task_id: str, task_type: str, url: str, result: Dict[str, Any]):
     """Store task result in Redis with 24 hour TTL."""
+    now = _utc_now_iso()
     data = {
         "task_id": task_id,
         "task_type": task_type,
@@ -212,9 +217,11 @@ def create_task_result(task_id: str, task_type: str, url: str, result: Dict[str,
         "progress": 100,
         "status_message": "Completed",
         "error": None,
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": now,
+        "started_at": now,
+        "updated_at": now,
         "result": result,
-        "completed_at": datetime.utcnow().isoformat(),
+        "completed_at": now,
     }
     _save_task_payload(task_id, data)
     print(f"[API] Task {task_id} stored")
@@ -224,7 +231,7 @@ def create_task_pending(
     task_id: str, task_type: str, url: str, status_message: str = "Queued"
 ) -> None:
     """Create task record in pending state."""
-    now = datetime.utcnow().isoformat()
+    now = _utc_now_iso()
     data = {
         "task_id": task_id,
         "task_type": task_type,
@@ -235,6 +242,8 @@ def create_task_pending(
         "status_message": status_message,
         "error": None,
         "created_at": now,
+        "started_at": None,
+        "updated_at": now,
         "completed_at": None,
         "result": None,
     }
@@ -255,8 +264,11 @@ def update_task_state(
     task = get_task_result(task_id)
     if not task:
         return
+    now = _utc_now_iso()
     if status is not None:
         task["status"] = status
+        if status == "RUNNING" and not task.get("started_at"):
+            task["started_at"] = now
     if progress is not None:
         task["progress"] = max(0, min(100, int(progress)))
     if status_message is not None:
@@ -267,8 +279,11 @@ def update_task_state(
         task["error"] = error
     if progress_meta is not None:
         task["progress_meta"] = progress_meta
+    task["updated_at"] = now
     if status in ("SUCCESS", "FAILURE"):
-        task["completed_at"] = datetime.utcnow().isoformat()
+        if not task.get("started_at"):
+            task["started_at"] = now
+        task["completed_at"] = now
     _save_task_payload(task_id, task)
 
 

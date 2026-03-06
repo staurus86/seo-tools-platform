@@ -29,7 +29,23 @@
         <div class="ds-meter-track mb-2">
             <div id="progress-bar" class="ds-meter-fill" style="width: 0%"></div>
         </div>
-        <div id="progress-meta" class="hidden mt-3 grid grid-cols-1 md:grid-cols-3 xl:grid-cols-7 gap-2 text-sm">
+        <div id="progress-meta" class="hidden mt-3 grid grid-cols-1 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-8 gap-2 text-sm">
+            <div id="progress-task-type-card" class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
+                <div style="color:var(--ds-text-muted);">Тип задачи</div>
+                <div id="progress-task-type" class="font-semibold" style="color:var(--ds-text);">-</div>
+            </div>
+            <div id="progress-task-status-card" class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
+                <div style="color:var(--ds-text-muted);">Статус</div>
+                <div id="progress-task-status" class="font-semibold" style="color:var(--ds-text);">-</div>
+            </div>
+            <div id="progress-started-card" class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
+                <div style="color:var(--ds-text-muted);">Старт</div>
+                <div id="progress-started-at" class="font-semibold" style="color:var(--ds-text);">-</div>
+            </div>
+            <div id="progress-updated-card" class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
+                <div style="color:var(--ds-text-muted);">Последнее обновление</div>
+                <div id="progress-updated-at" class="font-semibold" style="color:var(--ds-text);">-</div>
+            </div>
             <div id="progress-elapsed-card" class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
                 <div style="color:var(--ds-text-muted);">Прошло</div>
                 <div id="progress-elapsed" class="font-semibold" style="color:var(--ds-text);">00:00</div>

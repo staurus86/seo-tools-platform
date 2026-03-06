@@ -37,6 +37,30 @@ class TaskStoreMemoryCleanupTests(unittest.TestCase):
             self.assertIsNone(_task_store.get_task_result("task-done"))
             self.assertGreaterEqual(summary["removed_idle"], 1)
 
+    @patch("app.api.routers._task_store.get_redis_client", return_value=None)
+    def test_task_timestamps_track_running_and_completion(self, _redis_mock):
+        _task_store.create_task_pending("task-progress", "redirect_checker", "https://example.com")
+        pending = _task_store.get_task_result("task-progress")
+
+        self.assertIsNotNone(pending.get("created_at"))
+        self.assertIsNotNone(pending.get("updated_at"))
+        self.assertIsNone(pending.get("started_at"))
+        self.assertIsNone(pending.get("completed_at"))
+
+        _task_store.update_task_state("task-progress", status="RUNNING", progress=10)
+        running = _task_store.get_task_result("task-progress")
+
+        self.assertIsNotNone(running.get("started_at"))
+        self.assertIsNotNone(running.get("updated_at"))
+        self.assertIsNone(running.get("completed_at"))
+
+        _task_store.update_task_state("task-progress", status="SUCCESS", progress=100, result={"ok": True})
+        finished = _task_store.get_task_result("task-progress")
+
+        self.assertIsNotNone(finished.get("started_at"))
+        self.assertIsNotNone(finished.get("updated_at"))
+        self.assertIsNotNone(finished.get("completed_at"))
+
 
 class ProgressMemoryCleanupTests(unittest.TestCase):
     def test_progress_ttl_cleanup_removes_expired_entries(self):

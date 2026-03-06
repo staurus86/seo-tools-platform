@@ -327,6 +327,19 @@ function _formatElapsed(ms) {
         : `${pad(minutes)}:${pad(seconds)}`;
 }
 
+function _formatDateTime(value) {
+    const dt = _parseIsoDate(value);
+    if (!dt) return '-';
+    return dt.toLocaleString('ru-RU', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+}
+
 function _formatHeartbeatAge(value) {
     const dt = _parseIsoDate(value);
     if (!dt) return '-';
@@ -339,6 +352,36 @@ function _formatHeartbeatAge(value) {
     if (min < 60) return `${min} мин назад`;
     const hours = Math.floor(min / 60);
     return `${hours} ч назад`;
+}
+
+function _formatTaskType(taskType) {
+    const value = String(taskType || '').trim().toLowerCase();
+    const labels = {
+        robots_check: 'Robots.txt',
+        sitemap_validate: 'Sitemap',
+        bot_check: 'Bot Check',
+        mobile_check: 'Mobile Audit',
+        render_audit: 'Render Audit',
+        site_audit_pro: 'Site Audit Pro',
+        onpage_audit: 'OnPage Audit',
+        clusterizer: 'Clusterizer',
+        redirect_checker: 'Redirect Checker',
+        core_web_vitals: 'Core Web Vitals',
+        link_profile_audit: 'Link Profile',
+        site_analyze: 'Site Analyze',
+    };
+    return labels[value] || taskType || '-';
+}
+
+function _formatTaskStatus(status) {
+    const value = String(status || '').trim().toUpperCase();
+    const labels = {
+        PENDING: 'PENDING',
+        RUNNING: 'RUNNING',
+        SUCCESS: 'SUCCESS',
+        FAILURE: 'FAILURE',
+    };
+    return labels[value] || value || '-';
 }
 
 function _formatProgressStage(taskType, progressMeta, data) {
@@ -384,6 +427,9 @@ async function checkTaskStatus() {
             String(progressMeta.current_stage ?? ''),
             String(progressMeta.heartbeat_at ?? ''),
             String(data.created_at ?? ''),
+            String(data.started_at ?? ''),
+            String(data.updated_at ?? ''),
+            String(data.task_type ?? ''),
             String(progressMeta.processed_pages ?? ''),
             String(progressMeta.total_pages ?? ''),
             String(progressMeta.queue_size ?? ''),
@@ -420,6 +466,10 @@ function updateProgress(data) {
     const totalEl = document.getElementById('progress-total');
     const queueEl = document.getElementById('progress-queue');
     const currentUrlEl = document.getElementById('progress-current-url');
+    const taskTypeEl = document.getElementById('progress-task-type');
+    const taskStatusEl = document.getElementById('progress-task-status');
+    const startedAtEl = document.getElementById('progress-started-at');
+    const updatedAtEl = document.getElementById('progress-updated-at');
     const elapsedEl = document.getElementById('progress-elapsed');
     const stageEl = document.getElementById('progress-stage-label');
     const heartbeatEl = document.getElementById('progress-heartbeat');
@@ -439,6 +489,10 @@ function updateProgress(data) {
         progressBar.classList.add('bg-green-500');
         statusIcon.innerHTML = '<i class="fas fa-check-circle text-green-500"></i>';
         progressMetaWrap.classList.add('hidden');
+        _toggleProgressMetaCard('progress-task-type-card', false);
+        _toggleProgressMetaCard('progress-task-status-card', false);
+        _toggleProgressMetaCard('progress-started-card', false);
+        _toggleProgressMetaCard('progress-updated-card', false);
         _toggleProgressMetaCard('progress-elapsed-card', false);
         _toggleProgressMetaCard('progress-stage-card', false);
         _toggleProgressMetaCard('progress-heartbeat-card', false);
@@ -454,6 +508,10 @@ function updateProgress(data) {
         progressBar.classList.add('bg-red-500');
         statusIcon.innerHTML = '<i class="fas fa-times-circle text-red-500"></i>';
         progressMetaWrap.classList.add('hidden');
+        _toggleProgressMetaCard('progress-task-type-card', false);
+        _toggleProgressMetaCard('progress-task-status-card', false);
+        _toggleProgressMetaCard('progress-started-card', false);
+        _toggleProgressMetaCard('progress-updated-card', false);
         _toggleProgressMetaCard('progress-elapsed-card', false);
         _toggleProgressMetaCard('progress-stage-card', false);
         _toggleProgressMetaCard('progress-heartbeat-card', false);
@@ -469,6 +527,10 @@ function updateProgress(data) {
     progressBar.classList.add('bg-blue-500');
     statusIcon.innerHTML = '<i class="fas fa-spinner fa-spin text-blue-500"></i>';
 
+    if (taskTypeEl) taskTypeEl.textContent = _formatTaskType(data.task_type);
+    if (taskStatusEl) taskStatusEl.textContent = _formatTaskStatus(data.status);
+    if (startedAtEl) startedAtEl.textContent = _formatDateTime(data.started_at || data.created_at);
+    if (updatedAtEl) updatedAtEl.textContent = _formatDateTime(data.updated_at || data.created_at);
     if (elapsedEl) elapsedEl.textContent = _formatElapsed(elapsedMs);
     if (stageEl) stageEl.textContent = _formatProgressStage(data.task_type, progressMeta, data);
     if (heartbeatEl) heartbeatEl.textContent = hasHeartbeat ? _formatHeartbeatAge(progressMeta.heartbeat_at) : 'ожидание';
@@ -477,6 +539,10 @@ function updateProgress(data) {
     const isCwvBatch = (data.task_type === 'core_web_vitals') && Number(progressMeta.total_pages || 0) > 1;
     const totalPages = Number(progressMeta.total_pages || 0);
     if (showLifecycleMeta) {
+        _toggleProgressMetaCard('progress-task-type-card', true);
+        _toggleProgressMetaCard('progress-task-status-card', true);
+        _toggleProgressMetaCard('progress-started-card', true);
+        _toggleProgressMetaCard('progress-updated-card', true);
         _toggleProgressMetaCard('progress-elapsed-card', true);
         _toggleProgressMetaCard('progress-stage-card', true);
         _toggleProgressMetaCard('progress-heartbeat-card', isRedirectChecker || hasHeartbeat);

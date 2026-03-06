@@ -4,12 +4,12 @@ Task management API endpoints.
 Covers: GET/DELETE /tasks/{task_id}, artifact serving,
 stale-artifact cleanup, rate-limit info, and Celery status.
 """
-from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter
 
 from app.api.routers._task_store import (
+    _utc_now_iso,
     delete_task_result,
     get_task_result,
     get_task_store_memory_stats,
@@ -38,6 +38,8 @@ async def get_task_status(task_id: str):
             "task_type": data.get("task_type"),
             "url": data.get("url", ""),
             "created_at": data.get("created_at"),
+            "started_at": data.get("started_at"),
+            "updated_at": data.get("updated_at"),
             "completed_at": data.get("completed_at"),
             "result": data.get("result"),
             "error": data.get("error"),
@@ -52,7 +54,9 @@ async def get_task_status(task_id: str):
         "status_message": "Задача пока не найдена",
         "task_type": "site_analyze",
         "url": "",
-        "created_at": datetime.utcnow(),
+        "created_at": _utc_now_iso(),
+        "started_at": None,
+        "updated_at": None,
         "completed_at": None,
         "result": None,
         "error": "Задача не найдена",
