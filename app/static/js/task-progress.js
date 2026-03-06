@@ -309,6 +309,61 @@ function updateStageRail(stage) {
     });
 }
 
+function _parseIsoDate(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    const dt = new Date(raw);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function _formatElapsed(ms) {
+    const totalSec = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+    const hours = Math.floor(totalSec / 3600);
+    const minutes = Math.floor((totalSec % 3600) / 60);
+    const seconds = totalSec % 60;
+    const pad = (n) => String(n).padStart(2, '0');
+    return hours > 0
+        ? `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
+        : `${pad(minutes)}:${pad(seconds)}`;
+}
+
+function _formatHeartbeatAge(value) {
+    const dt = _parseIsoDate(value);
+    if (!dt) return '-';
+    const diffMs = Date.now() - dt.getTime();
+    if (diffMs < 0) return 'только что';
+    const sec = Math.floor(diffMs / 1000);
+    if (sec < 5) return 'только что';
+    if (sec < 60) return `${sec} сек назад`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min} мин назад`;
+    const hours = Math.floor(min / 60);
+    return `${hours} ч назад`;
+}
+
+function _formatProgressStage(taskType, progressMeta, data) {
+    const stage = String(progressMeta.current_stage || '').trim().toLowerCase();
+    const redirectMap = {
+        redirect_checks: 'Redirect checks',
+        done: 'Готово',
+        failed: 'Ошибка'
+    };
+    if (taskType === 'redirect_checker' && stage) {
+        const scenarios = Number(progressMeta.scenario_count || 0);
+        const label = redirectMap[stage] || stage;
+        return scenarios > 0 ? `${label} · ${scenarios} сценариев` : label;
+    }
+    if (stage) return stage;
+    if (data.status === 'RUNNING') return 'Выполнение';
+    return 'Ожидание';
+}
+
+function _toggleProgressMetaCard(cardId, isVisible) {
+    const el = document.getElementById(cardId);
+    if (!el) return;
+    el.classList.toggle('hidden', !isVisible);
+}
+
 async function checkTaskStatus() {
     if (taskTerminalHandled || statusRequestInFlight) {
         return;
@@ -326,6 +381,9 @@ async function checkTaskStatus() {
             data.status || '',
             String(data.progress ?? ''),
             data.status_message || '',
+            String(progressMeta.current_stage ?? ''),
+            String(progressMeta.heartbeat_at ?? ''),
+            String(data.created_at ?? ''),
             String(progressMeta.processed_pages ?? ''),
             String(progressMeta.total_pages ?? ''),
             String(progressMeta.queue_size ?? ''),
@@ -362,7 +420,16 @@ function updateProgress(data) {
     const totalEl = document.getElementById('progress-total');
     const queueEl = document.getElementById('progress-queue');
     const currentUrlEl = document.getElementById('progress-current-url');
+    const elapsedEl = document.getElementById('progress-elapsed');
+    const stageEl = document.getElementById('progress-stage-label');
+    const heartbeatEl = document.getElementById('progress-heartbeat');
     const progressMeta = data.progress_meta || {};
+    const createdAt = _parseIsoDate(data.created_at);
+    const elapsedMs = createdAt ? (Date.now() - createdAt.getTime()) : 0;
+    const isRedirectChecker = data.task_type === 'redirect_checker';
+    const currentUrl = progressMeta.current_url || data.url || '-';
+    const hasHeartbeat = Boolean(progressMeta.heartbeat_at);
+    const showLifecycleMeta = data.status !== 'SUCCESS' && data.status !== 'FAILURE';
 
     if (data.status === 'SUCCESS') {
         statusTitle.textContent = 'Готово';
@@ -372,6 +439,9 @@ function updateProgress(data) {
         progressBar.classList.add('bg-green-500');
         statusIcon.innerHTML = '<i class="fas fa-check-circle text-green-500"></i>';
         progressMetaWrap.classList.add('hidden');
+        _toggleProgressMetaCard('progress-elapsed-card', false);
+        _toggleProgressMetaCard('progress-stage-card', false);
+        _toggleProgressMetaCard('progress-heartbeat-card', false);
         updateStageRail('done');
         return;
     }
@@ -384,6 +454,9 @@ function updateProgress(data) {
         progressBar.classList.add('bg-red-500');
         statusIcon.innerHTML = '<i class="fas fa-times-circle text-red-500"></i>';
         progressMetaWrap.classList.add('hidden');
+        _toggleProgressMetaCard('progress-elapsed-card', false);
+        _toggleProgressMetaCard('progress-stage-card', false);
+        _toggleProgressMetaCard('progress-heartbeat-card', false);
         updateStageRail('analyze');
         return;
     }
@@ -396,19 +469,59 @@ function updateProgress(data) {
     progressBar.classList.add('bg-blue-500');
     statusIcon.innerHTML = '<i class="fas fa-spinner fa-spin text-blue-500"></i>';
 
+    if (elapsedEl) elapsedEl.textContent = _formatElapsed(elapsedMs);
+    if (stageEl) stageEl.textContent = _formatProgressStage(data.task_type, progressMeta, data);
+    if (heartbeatEl) heartbeatEl.textContent = hasHeartbeat ? _formatHeartbeatAge(progressMeta.heartbeat_at) : 'ожидание';
+
     const isSitePro = (data.task_type === 'site_audit_pro');
     const isCwvBatch = (data.task_type === 'core_web_vitals') && Number(progressMeta.total_pages || 0) > 1;
     const totalPages = Number(progressMeta.total_pages || 0);
+    if (showLifecycleMeta) {
+        _toggleProgressMetaCard('progress-elapsed-card', true);
+        _toggleProgressMetaCard('progress-stage-card', true);
+        _toggleProgressMetaCard('progress-heartbeat-card', isRedirectChecker || hasHeartbeat);
+    }
     if ((isSitePro || isCwvBatch) && totalPages > 0) {
         const processedPages = Number(progressMeta.processed_pages || 0);
         const queueSize = Number(progressMeta.queue_size || 0);
         processedEl.textContent = String(processedPages);
         totalEl.textContent = String(totalPages);
         queueEl.textContent = String(queueSize);
-        currentUrlEl.textContent = progressMeta.current_url || '-';
+        currentUrlEl.textContent = currentUrl;
+        _toggleProgressMetaCard('progress-processed-card', true);
+        _toggleProgressMetaCard('progress-total-card', true);
+        _toggleProgressMetaCard('progress-queue-card', true);
+        _toggleProgressMetaCard('progress-current-url-card', true);
+        progressMetaWrap.classList.remove('hidden');
+    } else if (isRedirectChecker) {
+        processedEl.textContent = String(Number(progressMeta.scenario_count || 17));
+        totalEl.textContent = String(Number(progressMeta.scenario_count || 17));
+        queueEl.textContent = String(data.progress || 0) + '%';
+        currentUrlEl.textContent = currentUrl;
+        _toggleProgressMetaCard('progress-processed-card', true);
+        _toggleProgressMetaCard('progress-total-card', true);
+        _toggleProgressMetaCard('progress-queue-card', true);
+        _toggleProgressMetaCard('progress-current-url-card', true);
+        const processedCardLabel = document.querySelector('#progress-processed-card div');
+        const totalCardLabel = document.querySelector('#progress-total-card div');
+        const queueCardLabel = document.querySelector('#progress-queue-card div');
+        if (processedCardLabel) processedCardLabel.textContent = 'Сценариев';
+        if (totalCardLabel) totalCardLabel.textContent = 'План';
+        if (queueCardLabel) queueCardLabel.textContent = 'Прогресс';
         progressMetaWrap.classList.remove('hidden');
     } else {
-        progressMetaWrap.classList.add('hidden');
+        const processedCardLabel = document.querySelector('#progress-processed-card div');
+        const totalCardLabel = document.querySelector('#progress-total-card div');
+        const queueCardLabel = document.querySelector('#progress-queue-card div');
+        if (processedCardLabel) processedCardLabel.textContent = 'Обработано';
+        if (totalCardLabel) totalCardLabel.textContent = 'Всего';
+        if (queueCardLabel) queueCardLabel.textContent = 'Очередь';
+        _toggleProgressMetaCard('progress-processed-card', false);
+        _toggleProgressMetaCard('progress-total-card', false);
+        _toggleProgressMetaCard('progress-queue-card', false);
+        _toggleProgressMetaCard('progress-current-url-card', isRedirectChecker);
+        currentUrlEl.textContent = currentUrl;
+        progressMetaWrap.classList.toggle('hidden', !showLifecycleMeta);
     }
     updateStageRail(_deriveStage(data));
 }

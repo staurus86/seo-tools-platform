@@ -3,7 +3,7 @@ Redirect Checker router.
 """
 import asyncio
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 
 from fastapi import APIRouter, HTTPException
@@ -96,18 +96,29 @@ async def create_redirect_checker(data: RedirectCheckerRequest):
     create_task_pending(task_id, "redirect_checker", url, status_message="Задача поставлена в очередь")
 
     async def _run_redirect_task() -> None:
+        done_event = asyncio.Event()
+
+        async def _heartbeat() -> None:
+            while not done_event.is_set():
+                update_task_state(
+                    task_id,
+                    status="RUNNING",
+                    progress=10,
+                    status_message="Redirect Checker: выполняются сетевые сценарии",
+                    progress_meta={
+                        "current_stage": "redirect_checks",
+                        "scenario_count": 17,
+                        "current_url": url,
+                        "heartbeat_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
+                try:
+                    await asyncio.wait_for(done_event.wait(), timeout=5)
+                except asyncio.TimeoutError:
+                    continue
+
+        heartbeat_task = asyncio.create_task(_heartbeat())
         try:
-            update_task_state(
-                task_id,
-                status="RUNNING",
-                progress=10,
-                status_message="Запуск сценариев Redirect Checker",
-                progress_meta={
-                    "current_stage": "redirect_checks",
-                    "scenario_count": 17,
-                    "current_url": url,
-                },
-            )
             result = await asyncio.to_thread(
                 check_redirect_checker_full,
                 url,
@@ -132,6 +143,7 @@ async def create_redirect_checker(data: RedirectCheckerRequest):
                     "scenario_count": summary.get("total_scenarios", 17),
                     "duration_ms": summary.get("duration_ms"),
                     "current_url": url,
+                    "heartbeat_at": datetime.now(timezone.utc).isoformat(),
                 },
             )
         except ValueError as exc:
@@ -145,6 +157,7 @@ async def create_redirect_checker(data: RedirectCheckerRequest):
                     "current_stage": "failed",
                     "scenario_count": 17,
                     "current_url": url,
+                    "heartbeat_at": datetime.now(timezone.utc).isoformat(),
                 },
             )
         except Exception as exc:
@@ -158,8 +171,16 @@ async def create_redirect_checker(data: RedirectCheckerRequest):
                     "current_stage": "failed",
                     "scenario_count": 17,
                     "current_url": url,
+                    "heartbeat_at": datetime.now(timezone.utc).isoformat(),
                 },
             )
+        finally:
+            done_event.set()
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
 
     asyncio.create_task(_run_redirect_task())
     return {

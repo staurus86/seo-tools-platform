@@ -29,20 +29,32 @@
         <div class="ds-meter-track mb-2">
             <div id="progress-bar" class="ds-meter-fill" style="width: 0%"></div>
         </div>
-        <div id="progress-meta" class="hidden mt-3 grid grid-cols-1 md:grid-cols-4 gap-2 text-sm">
-            <div class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
+        <div id="progress-meta" class="hidden mt-3 grid grid-cols-1 md:grid-cols-3 xl:grid-cols-7 gap-2 text-sm">
+            <div id="progress-elapsed-card" class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
+                <div style="color:var(--ds-text-muted);">Прошло</div>
+                <div id="progress-elapsed" class="font-semibold" style="color:var(--ds-text);">00:00</div>
+            </div>
+            <div id="progress-stage-card" class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
+                <div style="color:var(--ds-text-muted);">Этап</div>
+                <div id="progress-stage-label" class="font-semibold" style="color:var(--ds-text);">Инициализация</div>
+            </div>
+            <div id="progress-heartbeat-card" class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
+                <div style="color:var(--ds-text-muted);">Heartbeat</div>
+                <div id="progress-heartbeat" class="font-semibold" style="color:var(--ds-text);">-</div>
+            </div>
+            <div id="progress-processed-card" class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
                 <div style="color:var(--ds-text-muted);">Обработано</div>
                 <div id="progress-processed" class="font-semibold" style="color:var(--ds-text);">0</div>
             </div>
-            <div class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
+            <div id="progress-total-card" class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
                 <div style="color:var(--ds-text-muted);">Всего</div>
                 <div id="progress-total" class="font-semibold" style="color:var(--ds-text);">0</div>
             </div>
-            <div class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
+            <div id="progress-queue-card" class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
                 <div style="color:var(--ds-text-muted);">Очередь</div>
                 <div id="progress-queue" class="font-semibold" style="color:var(--ds-text);">0</div>
             </div>
-            <div class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
+            <div id="progress-current-url-card" class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
                 <div style="color:var(--ds-text-muted);">Текущий URL</div>
                 <div id="progress-current-url" class="font-semibold truncate" style="color:var(--ds-text);">-</div>
             </div>
