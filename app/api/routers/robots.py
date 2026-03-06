@@ -242,14 +242,27 @@ async def _safe_fetch_with_redirects_async(
         target_error = _get_public_target_error(current_url)
         if target_error:
             raise ValueError(target_error)
-        response = await client.get(
-            current_url,
-            timeout=timeout,
-            headers=headers,
-            allow_redirects=False,
-            read_text=read_text,
-            text_limit=text_limit,
-        )
+        try:
+            response = await client.get(
+                current_url,
+                timeout=timeout,
+                headers=headers,
+                allow_redirects=False,
+                read_text=read_text,
+                text_limit=text_limit,
+            )
+        except TypeError as exc:
+            # Plain aiohttp.ClientSession.get does not accept shim-specific kwargs.
+            if "read_text" not in str(exc) and "text_limit" not in str(exc):
+                raise
+            response = await _async_http_get(
+                client,
+                current_url,
+                timeout=timeout,
+                allow_redirects=False,
+                read_text=read_text,
+                text_limit=text_limit,
+            )
         response_url = str(getattr(response, "url", current_url) or current_url)
         response_error = _get_public_target_error(response_url)
         if response_error:
@@ -3432,6 +3445,12 @@ class BotCheckRequest(URLModel):
     scan_mode: Optional[str] = "single"
     batch_urls: Optional[List[str]] = None
 
+    @field_validator("url", mode="before")
+    @classmethod
+    def _normalize_domain_input(cls, value):
+        normalized = _normalize_http_input(str(value or ""))
+        return normalized or value
+
     @field_validator("selected_bots", "bot_groups", mode="before")
     @classmethod
     def _normalize_list_fields(cls, value):
@@ -3440,6 +3459,17 @@ class BotCheckRequest(URLModel):
         if isinstance(value, str):
             v = value.strip()
             return [v] if v else []
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return value
+
+    @field_validator("batch_urls", mode="before")
+    @classmethod
+    def _normalize_batch_urls(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return [x.strip() for x in re.split(r"[\r\n,;]+", value) if x.strip()]
         if isinstance(value, list):
             return [str(item).strip() for item in value if str(item).strip()]
         return value
@@ -3459,6 +3489,22 @@ def _is_likely_sitemap_url(value: str) -> bool:
 def _looks_like_sitemap_xml(payload: str) -> bool:
     text = str(payload or "").lstrip("\ufeff \n\r\t").lower()
     return text.startswith("<?xml") or "<urlset" in text or "<sitemapindex" in text
+
+
+def _candidate_sitemap_score(sitemap_url: str) -> int:
+    path = (urlparse(sitemap_url).path or "").lower().strip("/")
+    filename = path.split("/")[-1] if path else ""
+    score = 0
+    if filename in ("sitemap.xml", "sitemap_index.xml", "sitemap-index.xml", "wp-sitemap.xml"):
+        score += 120
+    if "index" in filename:
+        score += 40
+    if filename.startswith("sitemap"):
+        score += 20
+    if re.search(r"(news|image|video|blog|post|tag|category|product|forum|help|article|media)", filename):
+        score -= 60
+    score -= path.count("/")
+    return score
 
 
 def _root_site_url(url: str) -> str:
@@ -3574,24 +3620,6 @@ def _discover_sitemap_urls(site_url: str, timeout: int = 12) -> tuple[List[str],
     root = f"{parsed_root.scheme}://{parsed_root.netloc}"
     headers = {"User-Agent": "Mozilla/5.0 (compatible; SEO-Tools/1.0)"}
 
-    def _candidate_score(sitemap_url: str) -> int:
-        path = (urlparse(sitemap_url).path or "").lower().strip("/")
-        filename = path.split("/")[-1] if path else ""
-        score = 0
-        # Prefer common "main" sitemap/index files.
-        if filename in ("sitemap.xml", "sitemap_index.xml", "sitemap-index.xml", "wp-sitemap.xml"):
-            score += 120
-        if "index" in filename:
-            score += 40
-        if filename.startswith("sitemap"):
-            score += 20
-        # De-prioritize vertical/topic sitemaps as default entry point.
-        if re.search(r"(news|image|video|blog|post|tag|category|product|forum|help|article|media)", filename):
-            score -= 60
-        # Slightly prefer shallower paths.
-        score -= path.count("/")
-        return score
-
     with requests.Session() as session:
         # 1) robots.txt sitemap declarations (priority)
         try:
@@ -3633,7 +3661,7 @@ def _discover_sitemap_urls(site_url: str, timeout: int = 12) -> tuple[List[str],
                         continue
                 if robots_candidates:
                     unique_candidates = list(dict.fromkeys(robots_candidates))
-                    unique_candidates.sort(key=lambda u: (_candidate_score(u), -len(u)), reverse=True)
+                    unique_candidates.sort(key=lambda u: (_candidate_sitemap_score(u), -len(u)), reverse=True)
                     return unique_candidates, "robots.txt"
         except Exception:
             pass
@@ -3686,21 +3714,6 @@ async def _discover_sitemap_urls_async(site_url: str, timeout: int = 12) -> tupl
     parsed_root = urlparse(candidate_root)
     root = f"{parsed_root.scheme}://{parsed_root.netloc}"
 
-    def _candidate_score(sitemap_url: str) -> int:
-        path = (urlparse(sitemap_url).path or "").lower().strip("/")
-        filename = path.split("/")[-1] if path else ""
-        score = 0
-        if filename in ("sitemap.xml", "sitemap_index.xml", "sitemap-index.xml", "wp-sitemap.xml"):
-            score += 120
-        if "index" in filename:
-            score += 40
-        if filename.startswith("sitemap"):
-            score += 20
-        if re.search(r"(news|image|video|blog|post|tag|category|product|forum|help|article|media)", filename):
-            score -= 60
-        score -= path.count("/")
-        return score
-
     async with aiohttp.ClientSession(headers={"User-Agent": "Mozilla/5.0 (compatible; SEO-Tools/1.0)"}) as session:
         try:
             robots_resp = await _safe_fetch_with_redirects_async(
@@ -3740,7 +3753,7 @@ async def _discover_sitemap_urls_async(site_url: str, timeout: int = 12) -> tupl
                         continue
                 if robots_candidates:
                     unique_candidates = list(dict.fromkeys(robots_candidates))
-                    unique_candidates.sort(key=lambda u: (_candidate_score(u), -len(u)), reverse=True)
+                    unique_candidates.sort(key=lambda u: (_candidate_sitemap_score(u), -len(u)), reverse=True)
                     return unique_candidates, "robots.txt"
         except Exception:
             pass
@@ -3781,18 +3794,6 @@ async def _discover_sitemap_urls_async(site_url: str, timeout: int = 12) -> tupl
                 continue
 
     return [], None
-
-    @field_validator("batch_urls", mode="before")
-    @classmethod
-    def _normalize_batch_urls(cls, value):
-        if value is None:
-            return None
-        if isinstance(value, str):
-            parts = [x.strip() for x in re.split(r"[\r\n,;]+", value) if x.strip()]
-            return parts
-        if isinstance(value, list):
-            return [str(item).strip() for item in value if str(item).strip()]
-        return value
 
 
 # ============ API ENDPOINTS ============

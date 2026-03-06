@@ -88,9 +88,11 @@ class RobotsAndSitemapRegressionTests(unittest.TestCase):
     def test_request_models_accept_bare_domain_input(self):
         robots_req = robots.RobotsCheckRequest(url="example.com")
         sitemap_req = robots.SitemapValidateRequest(url="example.com")
+        bot_req = robots.BotCheckRequest(url="example.com", batch_urls="https://a.test\nhttps://b.test; https://c.test")
 
         self.assertEqual(robots_req.url, "https://example.com")
         self.assertEqual(sitemap_req.url, "https://example.com")
+        self.assertEqual(bot_req.batch_urls, ["https://a.test", "https://b.test", "https://c.test"])
 
     def test_validate_sitemaps_rejects_non_xml_plain_text(self):
         response = _Resp(
@@ -200,6 +202,67 @@ class RobotsAndSitemapRegressionTests(unittest.TestCase):
             asyncio.run(robots._safe_fetch_with_redirects_async(client, "https://example.com/sitemap.xml", read_text=False))
 
         self.assertEqual(client.calls, ["https://example.com/sitemap.xml"])
+
+    def test_safe_fetch_with_redirects_async_falls_back_for_aiohttp_client_signature(self):
+        client_calls = []
+        fallback_calls = []
+
+        class _AioHttpLikeClient:
+            async def get(self, url, timeout=0, headers=None, allow_redirects=False, **kwargs):
+                client_calls.append(
+                    {
+                        "url": url,
+                        "timeout": timeout,
+                        "headers": headers,
+                        "allow_redirects": allow_redirects,
+                        "kwargs": dict(kwargs),
+                    }
+                )
+                raise TypeError("ClientSession._request() got an unexpected keyword argument 'read_text'")
+
+        async def fake_async_http_get(client, url, timeout=20, allow_redirects=True, read_text=True, text_limit=None):
+            fallback_calls.append(
+                {
+                    "url": url,
+                    "timeout": timeout,
+                    "allow_redirects": allow_redirects,
+                    "read_text": read_text,
+                    "text_limit": text_limit,
+                }
+            )
+            return robots._HttpResponseData(
+                url=url,
+                status_code=200,
+                headers={"Content-Type": "text/plain"},
+                content=b"User-agent: *\n",
+                text="User-agent: *\n",
+            )
+
+        with patch("app.api.routers.robots._async_http_get", side_effect=fake_async_http_get):
+            response = asyncio.run(
+                robots._safe_fetch_with_redirects_async(
+                    _AioHttpLikeClient(),
+                    "https://example.com/robots.txt",
+                    read_text=True,
+                    text_limit=512,
+                )
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(client_calls), 1)
+        self.assertEqual(client_calls[0]["kwargs"], {"read_text": True, "text_limit": 512})
+        self.assertEqual(
+            fallback_calls,
+            [
+                {
+                    "url": "https://example.com/robots.txt",
+                    "timeout": 20,
+                    "allow_redirects": False,
+                    "read_text": True,
+                    "text_limit": 512,
+                }
+            ],
+        )
 
     def test_create_robots_check_uses_async_helper(self):
         seen = {}
