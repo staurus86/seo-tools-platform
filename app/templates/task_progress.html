@@ -29,7 +29,7 @@
         <div class="ds-meter-track mb-2">
             <div id="progress-bar" class="ds-meter-fill" style="width: 0%"></div>
         </div>
-        <div id="progress-meta" class="hidden mt-3 grid grid-cols-1 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-8 gap-2 text-sm">
+        <div id="progress-meta" class="hidden mt-3 grid grid-cols-1 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-2 text-sm">
             <div id="progress-task-type-card" class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
                 <div style="color:var(--ds-text-muted);">Тип задачи</div>
                 <div id="progress-task-type" class="font-semibold" style="color:var(--ds-text);">-</div>
@@ -57,6 +57,18 @@
             <div id="progress-heartbeat-card" class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
                 <div style="color:var(--ds-text-muted);">Heartbeat</div>
                 <div id="progress-heartbeat" class="font-semibold" style="color:var(--ds-text);">-</div>
+            </div>
+            <div id="progress-step-card" class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
+                <div style="color:var(--ds-text-muted);">Текущий шаг</div>
+                <div id="progress-step" class="font-semibold truncate" style="color:var(--ds-text);">-</div>
+            </div>
+            <div id="progress-rate-card" class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
+                <div style="color:var(--ds-text-muted);">Скорость</div>
+                <div id="progress-rate" class="font-semibold" style="color:var(--ds-text);">-</div>
+            </div>
+            <div id="progress-eta-card" class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
+                <div style="color:var(--ds-text-muted);">ETA</div>
+                <div id="progress-eta" class="font-semibold" style="color:var(--ds-text);">-</div>
             </div>
             <div id="progress-processed-card" class="ds-card" style="padding:0.5rem 0.75rem;animation:none;">
                 <div style="color:var(--ds-text-muted);">Обработано</div>

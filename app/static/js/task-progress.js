@@ -340,6 +340,15 @@ function _formatDateTime(value) {
     });
 }
 
+function _formatDuration(ms) {
+    const totalSec = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+    if (totalSec < 60) return `${totalSec} сек`;
+    const hours = Math.floor(totalSec / 3600);
+    const minutes = Math.floor((totalSec % 3600) / 60);
+    if (hours > 0) return `${hours} ч ${minutes} мин`;
+    return `${minutes} мин`;
+}
+
 function _formatHeartbeatAge(value) {
     const dt = _parseIsoDate(value);
     if (!dt) return '-';
@@ -382,6 +391,54 @@ function _formatTaskStatus(status) {
         FAILURE: 'FAILURE',
     };
     return labels[value] || value || '-';
+}
+
+function _computeExecutionStats(data, elapsedMs) {
+    const meta = data.progress_meta || {};
+    const isRedirectChecker = data.task_type === 'redirect_checker';
+    const isBatchLike = Number(meta.total_pages || 0) > 0;
+
+    if (isRedirectChecker) {
+        const total = Number(meta.scenario_count || 0);
+        const done = Number(meta.current_scenario_index || 0);
+        if (total <= 0 || done <= 0 || elapsedMs <= 0) {
+            return { rate: '-', eta: '-', currentStep: meta.current_scenario_title || meta.current_step || '-' };
+        }
+        const perMinute = done / (elapsedMs / 60000);
+        const remaining = Math.max(0, total - done);
+        const etaMs = perMinute > 0 ? (remaining / perMinute) * 60000 : 0;
+        return {
+            rate: `${perMinute.toFixed(perMinute >= 10 ? 0 : 1)} сцен./мин`,
+            eta: remaining > 0 ? _formatDuration(etaMs) : 'почти готово',
+            currentStep: meta.current_scenario_title || meta.current_step || '-',
+        };
+    }
+
+    if (isBatchLike) {
+        const total = Number(meta.total_pages || 0);
+        const done = Number(meta.processed_pages || 0);
+        if (total <= 0 || done <= 0 || elapsedMs <= 0) {
+            return {
+                rate: '-',
+                eta: '-',
+                currentStep: meta.current_step || meta.current_url || data.status_message || '-',
+            };
+        }
+        const perMinute = done / (elapsedMs / 60000);
+        const remaining = Math.max(0, total - done);
+        const etaMs = perMinute > 0 ? (remaining / perMinute) * 60000 : 0;
+        return {
+            rate: `${perMinute.toFixed(perMinute >= 10 ? 0 : 1)} стр./мин`,
+            eta: remaining > 0 ? _formatDuration(etaMs) : 'почти готово',
+            currentStep: meta.current_step || meta.current_url || data.status_message || '-',
+        };
+    }
+
+    return {
+        rate: '-',
+        eta: '-',
+        currentStep: meta.current_step || meta.current_scenario_title || meta.current_url || data.status_message || '-',
+    };
 }
 
 function _formatProgressStage(taskType, progressMeta, data) {
@@ -435,7 +492,7 @@ async function checkTaskStatus() {
             String(progressMeta.queue_size ?? ''),
             progressMeta.current_url || '',
         ].join('|');
-        if (nextProgressKey !== lastProgressStateKey) {
+        if (nextProgressKey !== lastProgressStateKey || data.status === 'RUNNING' || data.status === 'PENDING') {
             updateProgress(data);
             lastProgressStateKey = nextProgressKey;
         }
@@ -470,6 +527,9 @@ function updateProgress(data) {
     const taskStatusEl = document.getElementById('progress-task-status');
     const startedAtEl = document.getElementById('progress-started-at');
     const updatedAtEl = document.getElementById('progress-updated-at');
+    const stepEl = document.getElementById('progress-step');
+    const rateEl = document.getElementById('progress-rate');
+    const etaEl = document.getElementById('progress-eta');
     const elapsedEl = document.getElementById('progress-elapsed');
     const stageEl = document.getElementById('progress-stage-label');
     const heartbeatEl = document.getElementById('progress-heartbeat');
@@ -480,6 +540,7 @@ function updateProgress(data) {
     const currentUrl = progressMeta.current_url || data.url || '-';
     const hasHeartbeat = Boolean(progressMeta.heartbeat_at);
     const showLifecycleMeta = data.status !== 'SUCCESS' && data.status !== 'FAILURE';
+    const executionStats = _computeExecutionStats(data, elapsedMs);
 
     if (data.status === 'SUCCESS') {
         statusTitle.textContent = 'Готово';
@@ -496,6 +557,9 @@ function updateProgress(data) {
         _toggleProgressMetaCard('progress-elapsed-card', false);
         _toggleProgressMetaCard('progress-stage-card', false);
         _toggleProgressMetaCard('progress-heartbeat-card', false);
+        _toggleProgressMetaCard('progress-step-card', false);
+        _toggleProgressMetaCard('progress-rate-card', false);
+        _toggleProgressMetaCard('progress-eta-card', false);
         updateStageRail('done');
         return;
     }
@@ -515,6 +579,9 @@ function updateProgress(data) {
         _toggleProgressMetaCard('progress-elapsed-card', false);
         _toggleProgressMetaCard('progress-stage-card', false);
         _toggleProgressMetaCard('progress-heartbeat-card', false);
+        _toggleProgressMetaCard('progress-step-card', false);
+        _toggleProgressMetaCard('progress-rate-card', false);
+        _toggleProgressMetaCard('progress-eta-card', false);
         updateStageRail('analyze');
         return;
     }
@@ -534,6 +601,9 @@ function updateProgress(data) {
     if (elapsedEl) elapsedEl.textContent = _formatElapsed(elapsedMs);
     if (stageEl) stageEl.textContent = _formatProgressStage(data.task_type, progressMeta, data);
     if (heartbeatEl) heartbeatEl.textContent = hasHeartbeat ? _formatHeartbeatAge(progressMeta.heartbeat_at) : 'ожидание';
+    if (stepEl) stepEl.textContent = executionStats.currentStep || '-';
+    if (rateEl) rateEl.textContent = executionStats.rate || '-';
+    if (etaEl) etaEl.textContent = executionStats.eta || '-';
 
     const isSitePro = (data.task_type === 'site_audit_pro');
     const isCwvBatch = (data.task_type === 'core_web_vitals') && Number(progressMeta.total_pages || 0) > 1;
@@ -546,6 +616,9 @@ function updateProgress(data) {
         _toggleProgressMetaCard('progress-elapsed-card', true);
         _toggleProgressMetaCard('progress-stage-card', true);
         _toggleProgressMetaCard('progress-heartbeat-card', isRedirectChecker || hasHeartbeat);
+        _toggleProgressMetaCard('progress-step-card', true);
+        _toggleProgressMetaCard('progress-rate-card', executionStats.rate !== '-');
+        _toggleProgressMetaCard('progress-eta-card', executionStats.eta !== '-');
     }
     if ((isSitePro || isCwvBatch) && totalPages > 0) {
         const processedPages = Number(progressMeta.processed_pages || 0);

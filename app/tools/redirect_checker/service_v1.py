@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import re
 import time
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qsl, urljoin, urlparse, urlunparse
 
 import requests
@@ -277,8 +277,10 @@ def run_redirect_checker(
     allowed_query_params: Optional[List[str]] = None,
     required_query_params: Optional[List[str]] = None,
     ignore_query_params: Optional[List[str]] = None,
+    progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> Dict[str, Any]:
     started = time.perf_counter()
+    total_scenarios = 17
 
     normalized_input = _normalize_http_input(url)
     if not normalized_input:
@@ -334,7 +336,25 @@ def run_redirect_checker(
     scenarios: List[Dict[str, Any]] = []
     traces_for_chain: List[Tuple[str, Dict[str, Any]]] = [("base", base_trace)]
 
+    def _notify_progress(index: int, key: str, title: str, test_url: str = "") -> None:
+        if not progress_callback:
+            return
+        try:
+            progress_callback(
+                {
+                    "current_scenario_index": index,
+                    "scenario_count": total_scenarios,
+                    "current_scenario_key": key,
+                    "current_scenario_title": title,
+                    "current_step": title,
+                    "current_url": test_url or normalized_input,
+                }
+            )
+        except Exception:
+            pass
+
     # 1) HTTP -> HTTPS
+    _notify_progress(1, "http_to_https", "HTTP -> HTTPS", normalized_input)
     http_url = urlunparse(("http", base_netloc, "/", "", "", ""))
     trace_http = _trace_url(http_url, ua_value, timeout=timeout, max_hops=max_hops)
     traces_for_chain.append(("http_to_https", trace_http))
@@ -368,6 +388,7 @@ def run_redirect_checker(
     )
 
     # 2) WWW vs non-WWW
+    _notify_progress(2, "www_consistency", "WWW vs без WWW", normalized_input)
     alt_host = ""
     if base_host.startswith("www."):
         alt_host = base_host[4:]
@@ -421,6 +442,7 @@ def run_redirect_checker(
     )
 
     # 3) Multiple slashes
+    _notify_progress(3, "multiple_slashes", "Множественные слеши", normalized_input)
     slashes_url = urlunparse((base_scheme, base_netloc, "/redirect-checker//probe//", "", "", ""))
     trace_slashes = _trace_url(slashes_url, ua_value, timeout=timeout, max_hops=max_hops)
     traces_for_chain.append(("multiple_slashes", trace_slashes))
@@ -453,6 +475,7 @@ def run_redirect_checker(
     )
 
     # 4) URL case
+    _notify_progress(4, "url_case", "Регистр URL", normalized_input)
     case_url = urlunparse((base_scheme, base_netloc, "/CART", "", "", ""))
     trace_case = _trace_url(case_url, ua_value, timeout=timeout, max_hops=max_hops)
     traces_for_chain.append(("url_case", trace_case))
@@ -497,6 +520,7 @@ def run_redirect_checker(
     )
 
     # 5) index files
+    _notify_progress(5, "index_files", "Index-файлы", normalized_input)
     index_url = urlunparse((base_scheme, base_netloc, "/index.html", "", "", ""))
     trace_index = _trace_url(index_url, ua_value, timeout=timeout, max_hops=max_hops)
     traces_for_chain.append(("index_files", trace_index))
@@ -530,6 +554,7 @@ def run_redirect_checker(
     )
 
     # 6) trailing slash
+    _notify_progress(6, "trailing_slash", "Trailing slash", normalized_input)
     slash_a = urlunparse((base_scheme, base_netloc, "/page", "", "", ""))
     slash_b = urlunparse((base_scheme, base_netloc, "/page/", "", "", ""))
     trace_slash_a = _trace_url(slash_a, ua_value, timeout=timeout, max_hops=max_hops)
@@ -610,6 +635,7 @@ def run_redirect_checker(
     )
 
     # 7) old extensions
+    _notify_progress(7, "legacy_extensions", "Старые расширения", normalized_input)
     ext_html_url = urlunparse((base_scheme, base_netloc, "/legacy-page.html", "", "", ""))
     ext_php_url = urlunparse((base_scheme, base_netloc, "/legacy-page.php", "", "", ""))
     trace_ext_html = _trace_url(ext_html_url, ua_value, timeout=timeout, max_hops=max_hops)
@@ -658,6 +684,7 @@ def run_redirect_checker(
     )
 
     # 8) canonical tag
+    _notify_progress(8, "canonical_tag", "Canonical тег", normalized_input)
     canonical_url = str(base_trace.get("canonical_url") or "").strip()
     canonical_source = str(base_trace.get("canonical_source") or "")
     canonical_host = (urlparse(canonical_url).hostname or "").lower() if canonical_url else ""
@@ -692,6 +719,7 @@ def run_redirect_checker(
     )
 
     # 9) 404 page
+    _notify_progress(9, "missing_404", "404-страницы", normalized_input)
     random_404 = f"/redirect-checker-404-{uuid.uuid4().hex[:10]}"
     url_404 = urlunparse((base_scheme, base_netloc, random_404, "", "", ""))
     trace_404 = _trace_url(url_404, ua_value, timeout=timeout, max_hops=max_hops)
@@ -725,6 +753,7 @@ def run_redirect_checker(
     )
 
     # 10) redirect chains
+    _notify_progress(10, "redirect_chains", "Цепочки редиректов", normalized_input)
     worst_name = ""
     worst_trace: Dict[str, Any] = {}
     worst_hops = -1
@@ -764,6 +793,7 @@ def run_redirect_checker(
     )
 
     # 11) user-agent comparison
+    _notify_progress(11, "user_agent_emulation", "User-Agent эмуляция", normalized_input)
     ua_rows: List[Dict[str, Any]] = []
     compare_keys = ["googlebot_desktop", "googlebot_smartphone", "yandex_bot"]
     ua_traces: Dict[str, Dict[str, Any]] = {}
@@ -826,6 +856,7 @@ def run_redirect_checker(
     )
 
     # 12) query params canonicalization
+    _notify_progress(12, "query_params_canonicalization", "Query params canonicalization", normalized_input)
     param_probe_query = "utm_source=test&gclid=abc123&page=2&sort=asc&ref=campaign"
     param_probe_url = urlunparse((base_scheme, base_netloc, "/redirect-checker-param-probe", "", param_probe_query, ""))
     trace_params = _trace_url(param_probe_url, ua_value, timeout=timeout, max_hops=max_hops)
@@ -883,6 +914,7 @@ def run_redirect_checker(
     )
 
     # 13) required query params preserved
+    _notify_progress(13, "required_query_params", "Preserve required params", normalized_input)
     if required_params:
         required_probe_query = "&".join([f"{name}=1" for name in required_params])
         required_probe_url = urlunparse(
@@ -939,6 +971,7 @@ def run_redirect_checker(
     )
 
     # 14) canonical should match final URL
+    _notify_progress(14, "canonical_matches_final", "Canonical vs Final URL", normalized_input)
     final_base_url = str(base_trace.get("final_url") or normalized_input)
     canonical_norm = _normalize_for_compare(canonical_url) if canonical_url else ""
     final_norm = _normalize_for_compare(final_base_url)
@@ -967,6 +1000,7 @@ def run_redirect_checker(
     )
 
     # 15) mixed redirect types in one chain
+    _notify_progress(15, "mixed_redirect_types", "Mixed redirect types", normalized_input)
     mixed_chains: List[str] = []
     for chain_name, trace_item in traces_for_chain:
         chain_codes = [code for code in _trace_codes(trace_item) if code in REDIRECT_STATUSES]
@@ -1002,6 +1036,7 @@ def run_redirect_checker(
     )
 
     # 16) cross-domain redirects
+    _notify_progress(16, "cross_domain_redirect", "Cross-domain redirect control", normalized_input)
     allowed_hosts: set[str] = set()
     for candidate_host in [base_host, target_host, alt_host]:
         allowed_hosts.update(_expand_host_aliases(candidate_host))
@@ -1063,6 +1098,7 @@ def run_redirect_checker(
     )
 
     # 17) soft-404 after redirect
+    _notify_progress(17, "soft_404_detection", "Soft-404 detection", normalized_input)
     final_404_url = str(trace_404.get("final_url") or "")
     base_norm = _normalize_for_compare(str(base_trace.get("final_url") or normalized_input))
     final_404_norm = _normalize_for_compare(final_404_url)

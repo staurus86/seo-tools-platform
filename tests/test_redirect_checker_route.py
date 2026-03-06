@@ -79,6 +79,7 @@ class RedirectCheckerRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs.get("allowed_query_params"), ["page", "sort"])
         self.assertEqual(kwargs.get("required_query_params"), ["page"])
         self.assertEqual(kwargs.get("ignore_query_params"), ["utm_source", "gclid"])
+        self.assertTrue(callable(kwargs.get("progress_callback")))
 
     async def test_export_redirect_checker_docx(self):
         if importlib.util.find_spec("multipart") is None:
