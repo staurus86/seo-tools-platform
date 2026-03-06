@@ -2254,6 +2254,12 @@ class DOCXGenerator:
             text = str(value or "-")
             return text if len(text) <= limit else text[: limit - 1] + "…"
 
+        def _fmt_duration_ms(value: Any) -> str:
+            try:
+                return f"{int(value or 0)} ms"
+            except Exception:
+                return "0 ms"
+
         def _safe_iso_dt(value: Any) -> str:
             raw = str(value or "").strip()
             if not raw:
@@ -2335,6 +2341,7 @@ class DOCXGenerator:
                         item.get("key", "-"),
                         item.get("title", "-"),
                         _status_label(item.get("status")),
+                        _fmt_duration_ms(item.get("duration_ms")),
                         _chain_codes(item),
                         item.get("hops", 0),
                         _clip(item.get("expected"), 110),
@@ -2344,7 +2351,7 @@ class DOCXGenerator:
                 )
             self._add_table(
                 doc,
-                ["#", "Key", "Сценарий", "Статус", "Коды", "Хопы", "Expected", "Actual", "Рекомендация"],
+                ["#", "Key", "Сценарий", "Статус", "Время", "Коды", "Хопы", "Expected", "Actual", "Рекомендация"],
                 scenario_rows,
             )
         else:
@@ -2364,6 +2371,7 @@ class DOCXGenerator:
                 )
                 doc.add_paragraph(f"Что проверялось: {item.get('what_checked') or '-'}")
                 doc.add_paragraph(f"Тестовый URL: {item.get('test_url') or '-'}")
+                doc.add_paragraph(f"Время сценария: {_fmt_duration_ms(item.get('duration_ms'))}")
                 doc.add_paragraph(f"Expected: {item.get('expected') or '-'}")
                 doc.add_paragraph(f"Actual: {item.get('actual') or '-'}")
                 doc.add_paragraph(f"Коды ответа: {_chain_codes(item)}")

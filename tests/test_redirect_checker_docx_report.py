@@ -46,6 +46,7 @@ class RedirectCheckerDocxReportTests(unittest.TestCase):
                         "recommendation": "Настройте принудительный HTTPS.",
                         "test_url": "http://example.com/",
                         "response_codes": [200],
+                        "duration_ms": 120,
                         "final_url": "http://example.com/",
                         "hops": 0,
                         "chain": [{"url": "http://example.com/", "status_code": 200, "location": ""}],
@@ -62,6 +63,7 @@ class RedirectCheckerDocxReportTests(unittest.TestCase):
                         "recommendation": "Добавьте canonical в <head>.",
                         "test_url": "https://example.com/",
                         "response_codes": [200],
+                        "duration_ms": 45,
                         "final_url": "https://example.com/",
                         "hops": 0,
                         "chain": [{"url": "https://example.com/", "status_code": 200, "location": ""}],
@@ -87,6 +89,12 @@ class RedirectCheckerDocxReportTests(unittest.TestCase):
 
             doc = Document(report_path)
             text = "\n".join(p.text for p in doc.paragraphs)
+            table_text = "\n".join(
+                cell.text
+                for table in doc.tables
+                for row in table.rows
+                for cell in row.cells
+            )
             self.assertIn("Redirect Checker Report", text)
             self.assertIn("3. Нарушения и разбор", text)
             self.assertIn("4. План действий при нарушениях", text)
@@ -95,6 +103,9 @@ class RedirectCheckerDocxReportTests(unittest.TestCase):
             self.assertIn("HTTP -> HTTPS", text)
             self.assertIn("Canonical тег", text)
             self.assertIn("Критерий приемки:", text)
+            self.assertIn("Время сценария: 120 ms", text)
+            self.assertIn("Время", table_text)
+            self.assertIn("120 ms", table_text)
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
