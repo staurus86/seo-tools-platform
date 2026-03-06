@@ -3345,6 +3345,14 @@ function generateRedirectCheckerHTML(result) {
     const slowestScenarios = [...allScenarios]
         .sort((a, b) => Number(b.duration_ms || 0) - Number(a.duration_ms || 0))
         .slice(0, 5);
+    const longChainScenarios = [...allScenarios]
+        .filter((s) => Number(s.hops || 0) >= 2)
+        .sort((a, b) => {
+            const hopDelta = Number(b.hops || 0) - Number(a.hops || 0);
+            if (hopDelta !== 0) return hopDelta;
+            return Number(b.duration_ms || 0) - Number(a.duration_ms || 0);
+        })
+        .slice(0, 5);
 
     const scenarioRows = scenarios.map((s) => `
         <tr>
@@ -3395,6 +3403,19 @@ Duration: ${escapeHtml(formatMs(s.duration_ms))}
             </div>
         </div>
     `).join('');
+    const longChainRows = longChainScenarios.map((s, index) => `
+        <div class="flex items-start justify-between gap-4 py-3 border-b border-slate-100 last:border-b-0">
+            <div class="min-w-0">
+                <div class="text-xs uppercase tracking-wide text-slate-400">#${index + 1} · ${escapeHtml(s.key || '-')}</div>
+                <div class="font-medium text-slate-900">${escapeHtml(s.title || '-')}</div>
+                <div class="text-sm text-slate-500 truncate">${escapeHtml(formatChain(s.response_codes))}</div>
+            </div>
+            <div class="text-right shrink-0">
+                <div class="font-semibold text-slate-900">${escapeHtml(String(s.hops || 0))} hops</div>
+                <div class="text-xs text-slate-500">${escapeHtml(formatMs(s.duration_ms))}</div>
+            </div>
+        </div>
+    `).join('');
 
     const activeClass = (key) => (filter === key ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200');
     const rdActionBtns = `
@@ -3434,7 +3455,7 @@ Duration: ${escapeHtml(formatMs(s.duration_ms))}
             </div>
 
             <!-- Charts -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <div class="ds-card" style="padding:1rem;">
                     <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Сводка редиректов</h4>
                     <div style="height:200px;"><canvas id="ds-chart-redirect-summary"></canvas></div>
@@ -3442,6 +3463,10 @@ Duration: ${escapeHtml(formatMs(s.duration_ms))}
                 <div class="ds-card" style="padding:1rem;">
                     <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Самые медленные сценарии</h4>
                     <div class="space-y-1">${slowestRows || '<div class="text-sm text-slate-500">Нет данных по длительности</div>'}</div>
+                </div>
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Цепочки 2+ hops</h4>
+                    <div class="space-y-1">${longChainRows || '<div class="text-sm text-slate-500">Длинных цепочек не обнаружено</div>'}</div>
                 </div>
             </div>
 
