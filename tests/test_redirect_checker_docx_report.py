@@ -87,10 +87,11 @@ class RedirectCheckerDocxReportTests(unittest.TestCase):
 
             doc = Document(report_path)
             text = "\n".join(p.text for p in doc.paragraphs)
-            self.assertIn("Отчет Redirect Checker", text)
+            self.assertIn("Redirect Checker Report", text)
             self.assertIn("3. Нарушения и разбор", text)
             self.assertIn("4. План действий при нарушениях", text)
             self.assertIn("6. Краткие ТЗ на исправление", text)
+            self.assertIn("Приложение. Полная структура результата", text)
             self.assertIn("HTTP -> HTTPS", text)
             self.assertIn("Canonical тег", text)
             self.assertIn("Критерий приемки:", text)

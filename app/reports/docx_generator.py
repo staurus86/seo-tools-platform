@@ -1,10 +1,10 @@
-﻿"""
+"""
 Word Report Generator
 """
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
 from docx.oxml.ns import qn
 from typing import Dict, Any, List
 from datetime import datetime
@@ -24,6 +24,44 @@ class DOCXGenerator:
     def __init__(self):
         self.reports_dir = settings.REPORTS_DIR
         os.makedirs(self.reports_dir, exist_ok=True)
+
+    def _configure_document(self, doc: Document, report_title: str = "", subject: str = "") -> None:
+        """Apply shared typography and spacing so reports look consistent across tools."""
+        for section in doc.sections:
+            section.left_margin = Inches(0.7)
+            section.right_margin = Inches(0.7)
+            section.top_margin = Inches(0.65)
+            section.bottom_margin = Inches(0.65)
+
+        normal_style = doc.styles["Normal"]
+        normal_style.font.name = "Calibri"
+        normal_style.font.size = Pt(10.5)
+        normal_style.paragraph_format.space_after = Pt(6)
+        normal_style.paragraph_format.line_spacing = 1.12
+
+        for style_name, size, color in (
+            ("Title", 28, RGBColor(15, 76, 129)),
+            ("Heading 1", 16, RGBColor(15, 76, 129)),
+            ("Heading 2", 13, RGBColor(14, 116, 144)),
+            ("Heading 3", 11, RGBColor(30, 41, 59)),
+        ):
+            if style_name not in doc.styles:
+                continue
+            style = doc.styles[style_name]
+            style.font.name = "Calibri"
+            style.font.size = Pt(size)
+            style.font.bold = True
+            style.font.color.rgb = color
+            style.paragraph_format.space_before = Pt(10 if style_name != "Heading 3" else 8)
+            style.paragraph_format.space_after = Pt(5)
+            style.paragraph_format.keep_with_next = True
+
+        doc.core_properties.author = "SEO Tools Platform"
+        doc.core_properties.company = "SEO Tools Platform"
+        if report_title:
+            doc.core_properties.title = self._fix_text(report_title)
+        if subject:
+            doc.core_properties.subject = self._fix_text(subject)
     
     def _add_heading(self, doc, text: str, level: int = 1):
         """Добавляет заголовок."""
@@ -36,12 +74,14 @@ class DOCXGenerator:
         table = doc.add_table(rows=1, cols=len(headers))
         table.style = 'Table Grid'
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        table.autofit = True
 
         # Header row with brand color background
         hdr_cells = table.rows[0].cells
         for i, header in enumerate(headers):
             cell = hdr_cells[i]
             cell.text = self._fix_text(str(header))
+            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
             # Brand color header background
             shading = cell._element.get_or_add_tcPr()
             shd_el = shading.makeelement(qn('w:shd'), {
@@ -56,10 +96,19 @@ class DOCXGenerator:
                     run.font.color.rgb = RGBColor(255, 255, 255)
 
         # Data rows
-        for row_data in rows:
+        for row_index, row_data in enumerate(rows):
             row_cells = table.add_row().cells
             for i, value in enumerate(row_data):
                 row_cells[i].text = self._fix_text(str(value))
+                row_cells[i].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+                if row_index % 2 == 0:
+                    tc_pr = row_cells[i]._element.get_or_add_tcPr()
+                    shd_el = tc_pr.makeelement(qn('w:shd'), {
+                        qn('w:val'): 'clear',
+                        qn('w:color'): 'auto',
+                        qn('w:fill'): 'F8FBFF'
+                    })
+                    tc_pr.append(shd_el)
 
         return table
 
@@ -208,6 +257,7 @@ class DOCXGenerator:
 
     def _add_cover_page(self, doc: Document, title: str, subtitle: str, url: str, generated_at: str) -> None:
         """Creates a branded cover page."""
+        self._configure_document(doc, title, subtitle)
         # Push content down
         doc.add_paragraph()
 
@@ -251,6 +301,143 @@ class DOCXGenerator:
 
         # Page break
         doc.add_page_break()
+
+    def _is_scalar_value(self, value: Any) -> bool:
+        return value is None or isinstance(value, (str, int, float, bool))
+
+    def _format_appendix_label(self, value: Any) -> str:
+        raw = str(value or "").replace("_", " ").replace(".", " / ").strip()
+        if not raw:
+            return "Поле"
+        return self._fix_text(raw[:1].upper() + raw[1:])
+
+    def _format_appendix_value(self, value: Any, limit: int = 1600) -> str:
+        if value is None:
+            return "—"
+        if isinstance(value, bool):
+            return "Да" if value else "Нет"
+        if isinstance(value, float):
+            return f"{value:.3f}".rstrip("0").rstrip(".")
+        if isinstance(value, (dict, list)):
+            rendered = json.dumps(value, ensure_ascii=False)
+        else:
+            rendered = str(value)
+        rendered = self._fix_text(rendered)
+        if len(rendered) > limit:
+            return rendered[:limit] + " ..."
+        return rendered
+
+    def _add_appendix_tree(
+        self,
+        doc: Document,
+        value: Any,
+        level: int = 2,
+        depth: int = 0,
+        max_depth: int = 6,
+        max_items: int = 200,
+    ) -> None:
+        if depth >= max_depth:
+            doc.add_paragraph("Достигнута предельная глубина вложенности. Остальные данные скрыты для читаемости.")
+            return
+
+        if self._is_scalar_value(value):
+            doc.add_paragraph(self._format_appendix_value(value))
+            return
+
+        if isinstance(value, dict):
+            if not value:
+                doc.add_paragraph("Раздел пуст.")
+                return
+
+            scalar_rows = []
+            nested_items = []
+            for key, item in value.items():
+                if self._is_scalar_value(item):
+                    scalar_rows.append([self._format_appendix_label(key), self._format_appendix_value(item)])
+                else:
+                    nested_items.append((key, item))
+
+            if scalar_rows:
+                self._add_table(doc, ["Поле", "Значение"], scalar_rows[:max_items])
+                if len(scalar_rows) > max_items:
+                    doc.add_paragraph(f"Показаны первые {max_items} строк из {len(scalar_rows)}.")
+
+            for key, item in nested_items[:max_items]:
+                self._add_heading(doc, self._format_appendix_label(key), level=min(level, 3))
+                self._add_appendix_tree(
+                    doc,
+                    item,
+                    level=min(level + 1, 4),
+                    depth=depth + 1,
+                    max_depth=max_depth,
+                    max_items=max_items,
+                )
+            if len(nested_items) > max_items:
+                doc.add_paragraph(f"Показаны первые {max_items} вложенных блоков из {len(nested_items)}.")
+            return
+
+        if isinstance(value, list):
+            if not value:
+                doc.add_paragraph("Список пуст.")
+                return
+
+            shown = value[:max_items]
+            if all(self._is_scalar_value(item) for item in shown):
+                for item in shown:
+                    doc.add_paragraph(self._format_appendix_value(item), style='List Bullet')
+            elif all(isinstance(item, dict) for item in shown):
+                scalar_keys: List[str] = []
+                for item in shown:
+                    for key, sub_value in item.items():
+                        if self._is_scalar_value(sub_value) and key not in scalar_keys:
+                            scalar_keys.append(key)
+                scalar_keys = scalar_keys[:6]
+                if scalar_keys:
+                    rows = []
+                    for item in shown:
+                        rows.append([self._format_appendix_value(item.get(key), limit=300) for key in scalar_keys])
+                    self._add_table(doc, [self._format_appendix_label(key) for key in scalar_keys], rows)
+                for idx, item in enumerate(shown, start=1):
+                    nested = {k: v for k, v in item.items() if not self._is_scalar_value(v)}
+                    if not nested:
+                        continue
+                    self._add_heading(doc, f"Элемент {idx}", level=min(level, 4))
+                    self._add_appendix_tree(
+                        doc,
+                        nested,
+                        level=min(level + 1, 4),
+                        depth=depth + 1,
+                        max_depth=max_depth,
+                        max_items=max_items,
+                    )
+            else:
+                for idx, item in enumerate(shown, start=1):
+                    self._add_heading(doc, f"Элемент {idx}", level=min(level, 4))
+                    self._add_appendix_tree(
+                        doc,
+                        item,
+                        level=min(level + 1, 4),
+                        depth=depth + 1,
+                        max_depth=max_depth,
+                        max_items=max_items,
+                    )
+            if len(value) > max_items:
+                doc.add_paragraph(f"Показаны первые {max_items} элементов из {len(value)}.")
+            return
+
+        doc.add_paragraph(self._format_appendix_value(value))
+
+    def _add_full_result_appendix(self, doc: Document, data: Dict[str, Any], title: str = "Приложение. Полная структура результата") -> None:
+        payload = data if isinstance(data, dict) else {"value": data}
+        if not payload:
+            return
+        doc.add_page_break()
+        self._add_heading(doc, title, level=1)
+        doc.add_paragraph(
+            "Этот раздел сохраняет структурированный снимок результата, чтобы DOCX не терял поля, "
+            "которые пользователь видит на странице отчета."
+        )
+        self._add_appendix_tree(doc, payload, level=2, depth=0)
 
     def _add_header_footer(self, doc: Document, report_title: str) -> None:
         """Add header and footer to the document."""
@@ -325,6 +512,7 @@ class DOCXGenerator:
             for rec in recs[:30]:
                 doc.add_paragraph(str(rec), style='List Bullet')
 
+        self._add_full_result_appendix(doc, data)
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)
         return filepath
@@ -602,6 +790,7 @@ class DOCXGenerator:
         doc.add_paragraph('Yandex Webmaster: https://yandex.com/support/webmaster/en/robot-workings/allow-disallow')
         doc.add_paragraph('Yandex Clean-param: https://yandex.com/support/webmaster/en/robot-workings/clean-param')
 
+        self._add_full_result_appendix(doc, data)
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)
         return filepath
@@ -755,6 +944,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Рекомендации отсутствуют.")
 
+        self._add_full_result_appendix(doc, data)
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)
         return filepath
@@ -981,6 +1171,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Критичных рекомендаций по итогам проверки нет.")
 
+        self._add_full_result_appendix(doc, data)
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)
         return filepath
@@ -1544,6 +1735,7 @@ class DOCXGenerator:
                 ])
             self._add_table(doc, ["URL", "Индексируемо", "Всего", "Рендерится", "Критично", "Предупреждения"], rows)
 
+        self._add_full_result_appendix(doc, data)
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)
         return filepath
@@ -1787,6 +1979,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Рекомендации недоступны.")
 
+        self._add_full_result_appendix(doc, data)
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)
         return filepath
@@ -1863,6 +2056,7 @@ class DOCXGenerator:
         else:
             doc.add_paragraph("Рекомендации недоступны.")
 
+        self._add_full_result_appendix(doc, data)
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)
         return filepath
@@ -1991,6 +2185,7 @@ class DOCXGenerator:
             self._add_heading(doc, "11. Авто-брендовые ключи", level=1)
             doc.add_paragraph(", ".join(map(str, derived[:100])))
 
+        self._add_full_result_appendix(doc, data)
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)
         return filepath
@@ -2349,6 +2544,7 @@ class DOCXGenerator:
                 done_text = template.get("done") or "После исправления сценарий должен перейти в статус Passed."
                 doc.add_paragraph(f"Критерий приемки: {done_text}")
 
+        self._add_full_result_appendix(doc, data)
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)
         return filepath
@@ -2798,6 +2994,7 @@ class DOCXGenerator:
             else:
                 doc.add_paragraph("Рекомендации не сформированы.")
 
+        self._add_full_result_appendix(doc, data)
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)
         return filepath
@@ -2824,3 +3021,4 @@ class DOCXGenerator:
 
 # Singleton
 docx_generator = DOCXGenerator()
+

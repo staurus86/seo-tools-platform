@@ -64,6 +64,29 @@ def _score_badge(value: Any) -> str:
     return "❌ Critical"
 
 
+def _is_scalar(value: Any) -> bool:
+    return value is None or isinstance(value, (str, int, float, bool))
+
+
+def _fmt_value(value: Any, limit: int = 1600) -> str:
+    if value is None:
+        return "—"
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    if isinstance(value, float):
+        text = f"{value:.3f}".rstrip("0").rstrip(".")
+    else:
+        text = str(value)
+    return text if len(text) <= limit else (text[:limit] + " ...")
+
+
+def _fmt_label(value: Any) -> str:
+    raw = str(value or "").replace("_", " ").replace(".", " / ").strip()
+    if not raw:
+        return "Field"
+    return raw[:1].upper() + raw[1:]
+
+
 def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) -> BytesIO:
     try:
         from docx import Document  # type: ignore
@@ -167,6 +190,67 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
             for i, val in enumerate(row):
                 cells[i].text = str(val)
         return table
+
+    def add_structured(value: Any, level: int = 2, depth: int = 0, max_depth: int = 6, max_items: int = 200) -> None:
+        if depth >= max_depth:
+            doc.add_paragraph("Maximum nesting depth reached. Remaining data is hidden for readability.")
+            return
+        if _is_scalar(value):
+            doc.add_paragraph(_fmt_value(value))
+            return
+        if isinstance(value, dict):
+            if not value:
+                doc.add_paragraph("No data.")
+                return
+            scalar_rows = []
+            nested_items = []
+            for key, item in value.items():
+                if _is_scalar(item):
+                    scalar_rows.append([_fmt_label(key), _fmt_value(item)])
+                else:
+                    nested_items.append((key, item))
+            if scalar_rows:
+                add_table(["Field", "Value"], scalar_rows[:max_items])
+            for key, item in nested_items[:max_items]:
+                add_heading(_fmt_label(key), min(level, 3), color="0E7490" if level > 1 else "0B3B63")
+                add_structured(item, level=min(level + 1, 4), depth=depth + 1, max_depth=max_depth, max_items=max_items)
+            if len(value) > max_items:
+                doc.add_paragraph(f"Showing first {max_items} items out of {len(value)}.")
+            return
+        if isinstance(value, list):
+            if not value:
+                doc.add_paragraph("No items.")
+                return
+            shown = value[:max_items]
+            if all(_is_scalar(item) for item in shown):
+                for item in shown:
+                    doc.add_paragraph(_fmt_value(item), style="List Bullet")
+            elif all(isinstance(item, dict) for item in shown):
+                scalar_keys = []
+                for item in shown:
+                    for key, sub_value in item.items():
+                        if _is_scalar(sub_value) and key not in scalar_keys:
+                            scalar_keys.append(key)
+                scalar_keys = scalar_keys[:6]
+                if scalar_keys:
+                    add_table(
+                        [_fmt_label(key) for key in scalar_keys],
+                        [[_fmt_value(item.get(key), 300) for key in scalar_keys] for item in shown],
+                    )
+                for idx, item in enumerate(shown, start=1):
+                    nested = {k: v for k, v in item.items() if not _is_scalar(v)}
+                    if not nested:
+                        continue
+                    add_heading(f"Item {idx}", min(level, 4), color="0E7490")
+                    add_structured(nested, level=min(level + 1, 4), depth=depth + 1, max_depth=max_depth, max_items=max_items)
+            else:
+                for idx, item in enumerate(shown, start=1):
+                    add_heading(f"Item {idx}", min(level, 4), color="0E7490")
+                    add_structured(item, level=min(level + 1, 4), depth=depth + 1, max_depth=max_depth, max_items=max_items)
+            if len(value) > max_items:
+                doc.add_paragraph(f"Showing first {max_items} items out of {len(value)}.")
+            return
+        doc.add_paragraph(_fmt_value(value))
 
     final_url = _safe(result, ["final_url"], _safe(result, ["requested_url"], "-"))
     score_total = _num(_safe(result, ["score", "total"], 0))
@@ -671,6 +755,11 @@ def build_docx_v2(job: Dict[str, Any], job_id: str, wow_enabled: bool = True) ->
         for key, snippet in snippet_library.items():
             add_heading(str(key), 2, color="0E7490")
             doc.add_paragraph(str(snippet)[:1800])
+
+    doc.add_page_break()
+    add_heading("Appendix: Full Result Snapshot", 1, color="0B3B63")
+    add_subtitle("Structured export of the report payload to avoid losing fields that are visible in the UI.")
+    add_structured(job)
 
     bio = BytesIO()
     doc.save(bio)
