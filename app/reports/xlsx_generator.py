@@ -5033,6 +5033,151 @@ class XLSXGenerator:
         wb.close()
         return filepath
 
+    def generate_redirect_checker_report(self, task_id: str, data: Dict[str, Any]) -> str:
+        """Generate XLSX report for redirect_checker."""
+        wb = Workbook()
+        self._add_cover_sheet(wb, 'Redirect Checker Report', data.get('url', ''), datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        header_style = self._create_header_style()
+        cell_style = self._create_cell_style()
+
+        results = data.get("results", {}) or {}
+        summary = results.get("summary", {}) or {}
+        scenarios = results.get("scenarios", []) or []
+        recommendations = results.get("recommendations", []) or []
+        selected_ua = results.get("selected_user_agent", {}) or {}
+        applied_policy = results.get("applied_policy", {}) or {}
+        checked_url = data.get("url") or results.get("checked_url") or "н/д"
+
+        def _status_label(value: Any) -> str:
+            status = str(value or "").lower()
+            if status == "passed":
+                return "PASSED"
+            if status == "warning":
+                return "WARNING"
+            if status == "error":
+                return "ERROR"
+            return "UNKNOWN"
+
+        def _chain_codes(item: Dict[str, Any]) -> str:
+            codes = item.get("response_codes") or []
+            if not isinstance(codes, list) or not codes:
+                return "-"
+            return " -> ".join(str(code) for code in codes)
+
+        ws = wb.active
+        ws.title = "Summary"
+        self._apply_tab_color(ws)
+        ws["A1"] = "Redirect Checker Report"
+        ws["A1"].font = Font(bold=True, size=16)
+        ws.merge_cells("A1:D1")
+
+        summary_rows = [
+            ("URL", checked_url),
+            ("User-Agent", selected_ua.get("label") or selected_ua.get("key") or "н/д"),
+            ("Всего сценариев", summary.get("total_scenarios", len(scenarios))),
+            ("Passed", summary.get("passed", 0)),
+            ("Warning", summary.get("warnings", 0)),
+            ("Error", summary.get("errors", 0)),
+            ("Quality score", summary.get("quality_score", 0)),
+            ("Quality grade", summary.get("quality_grade", "-")),
+            ("Duration ms", summary.get("duration_ms", 0)),
+            ("Host policy", applied_policy.get("canonical_host_policy", "auto")),
+            ("Trailing slash policy", applied_policy.get("trailing_slash_policy", "auto")),
+            ("Lowercase", "on" if applied_policy.get("enforce_lowercase", True) else "off"),
+        ]
+        row_idx = 3
+        for key, value in summary_rows:
+            self._apply_style(ws.cell(row=row_idx, column=1, value=key), header_style)
+            self._apply_style(ws.cell(row=row_idx, column=2, value=value), cell_style)
+            row_idx += 1
+        ws.column_dimensions["A"].width = 28
+        ws.column_dimensions["B"].width = 120
+
+        scenarios_ws = wb.create_sheet("Scenarios")
+        self._apply_tab_color(scenarios_ws)
+        scenario_headers = [
+            "#", "Key", "Scenario", "Status", "Duration ms", "Codes", "Hops",
+            "Expected", "Actual", "Test URL", "Final URL", "Recommendation",
+        ]
+        for col, header in enumerate(scenario_headers, 1):
+            self._apply_style(scenarios_ws.cell(row=1, column=col, value=header), header_style)
+        for row_idx, item in enumerate(scenarios, start=2):
+            values = [
+                item.get("id", "-"),
+                item.get("key", "-"),
+                item.get("title", "-"),
+                _status_label(item.get("status")),
+                int(item.get("duration_ms") or 0),
+                _chain_codes(item),
+                int(item.get("hops") or 0),
+                item.get("expected", "-"),
+                item.get("actual", "-"),
+                item.get("test_url", "-"),
+                item.get("final_url", "-"),
+                item.get("recommendation", "-"),
+            ]
+            for col, value in enumerate(values, 1):
+                self._apply_style(scenarios_ws.cell(row=row_idx, column=col, value=value), cell_style)
+            status_token = str(item.get("status") or "").lower()
+            if status_token == "passed":
+                self._apply_severity_cell_style(scenarios_ws.cell(row=row_idx, column=4), "ok")
+            elif status_token == "warning":
+                self._apply_severity_cell_style(scenarios_ws.cell(row=row_idx, column=4), "warning")
+            elif status_token == "error":
+                self._apply_severity_cell_style(scenarios_ws.cell(row=row_idx, column=4), "critical")
+                self._apply_row_severity_fill(scenarios_ws, row_idx, 1, len(scenario_headers), "critical")
+        self._apply_alternating_rows(scenarios_ws, 2, scenarios_ws.max_row, 1, len(scenario_headers))
+        scenarios_ws.freeze_panes = "A2"
+        scenarios_ws.auto_filter.ref = f"A1:L{max(1, scenarios_ws.max_row)}"
+        for col, width in enumerate([6, 24, 26, 14, 12, 20, 8, 38, 42, 36, 36, 48], 1):
+            scenarios_ws.column_dimensions[get_column_letter(col)].width = width
+
+        slowest_ws = wb.create_sheet("Slowest")
+        self._apply_tab_color(slowest_ws)
+        slow_headers = ["Rank", "Scenario", "Key", "Duration ms", "Status", "Test URL", "Recommendation"]
+        for col, header in enumerate(slow_headers, 1):
+            self._apply_style(slowest_ws.cell(row=1, column=col, value=header), header_style)
+        slowest = sorted(
+            list(scenarios),
+            key=lambda item: int(item.get("duration_ms") or 0),
+            reverse=True,
+        )[:10]
+        for row_idx, item in enumerate(slowest, start=2):
+            values = [
+                row_idx - 1,
+                item.get("title", "-"),
+                item.get("key", "-"),
+                int(item.get("duration_ms") or 0),
+                _status_label(item.get("status")),
+                item.get("test_url", "-"),
+                item.get("recommendation", "-"),
+            ]
+            for col, value in enumerate(values, 1):
+                self._apply_style(slowest_ws.cell(row=row_idx, column=col, value=value), cell_style)
+        self._apply_alternating_rows(slowest_ws, 2, slowest_ws.max_row, 1, len(slow_headers))
+        slowest_ws.freeze_panes = "A2"
+        slowest_ws.auto_filter.ref = f"A1:G{max(1, slowest_ws.max_row)}"
+        for col, width in enumerate([8, 28, 24, 12, 12, 42, 56], 1):
+            slowest_ws.column_dimensions[get_column_letter(col)].width = width
+
+        rec_ws = wb.create_sheet("Recommendations")
+        self._apply_tab_color(rec_ws)
+        self._apply_style(rec_ws.cell(row=1, column=1, value="#"), header_style)
+        self._apply_style(rec_ws.cell(row=1, column=2, value="Recommendation"), header_style)
+        for row_idx, rec in enumerate(recommendations, start=2):
+            self._apply_style(rec_ws.cell(row=row_idx, column=1, value=row_idx - 1), cell_style)
+            self._apply_style(rec_ws.cell(row=row_idx, column=2, value=str(rec)), cell_style)
+        self._apply_alternating_rows(rec_ws, 2, rec_ws.max_row, 1, 2)
+        rec_ws.freeze_panes = "A2"
+        rec_ws.auto_filter.ref = f"A1:B{max(1, rec_ws.max_row)}"
+        rec_ws.column_dimensions["A"].width = 8
+        rec_ws.column_dimensions["B"].width = 120
+
+        filepath = os.path.join(self.reports_dir, f"{task_id}.xlsx")
+        self._save_workbook(wb, filepath)
+        wb.close()
+        return filepath
+
     def generate_core_web_vitals_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Generate Core Web Vitals report to XLSX (single or batch)."""
         wb = Workbook()
@@ -5489,6 +5634,7 @@ class XLSXGenerator:
             'bot_check': self.generate_bot_report,
             'site_audit_pro': self.generate_site_audit_pro_report,
             'onpage_audit': self.generate_onpage_report,
+            'redirect_checker': self.generate_redirect_checker_report,
             'clusterizer': self.generate_clusterizer_report,
             'link_profile_audit': self.generate_link_profile_report,
             'core_web_vitals': self.generate_core_web_vitals_report,

@@ -402,6 +402,32 @@ async def export_redirect_checker_docx(data: ExportRequest):
         return _error_response(str(e), status_code=500)
 
 
+@router.post("/export/redirect-checker-xlsx")
+async def export_redirect_checker_xlsx(data: ExportRequest):
+    """Export Redirect Checker report to XLSX."""
+    from app.reports.xlsx_generator import xlsx_generator
+
+    try:
+        task = get_task_result(data.task_id)
+        if not task:
+            return _error_response("Задача не найдена", status_code=404, task_id=data.task_id)
+        if task.get("task_type") != "redirect_checker":
+            return _error_response(f"Неподдерживаемый тип задачи: {task.get('task_type')}", status_code=400)
+
+        task_result = task.get("result", {}) or {}
+        url = task.get("url", "") or task_result.get("url", "")
+        payload = {"url": url, "results": task_result.get("results", task_result)}
+
+        filepath = xlsx_generator.generate_redirect_checker_report(data.task_id, payload)
+        if not filepath or not os.path.exists(filepath):
+            return _error_response("Не удалось сформировать отчет", status_code=500)
+        append_task_artifact(data.task_id, filepath, kind="export")
+
+        return _file_response(filepath, _XLSX, _export_filename("redirect_checker_report", url, "xlsx"))
+    except Exception as e:
+        return _error_response(str(e), status_code=500)
+
+
 # ─── core web vitals ───────────────────────────────────────────────────────
 
 

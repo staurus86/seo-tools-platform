@@ -172,6 +172,80 @@ class RedirectCheckerRouteTests(unittest.IsolatedAsyncioTestCase):
             docx_generator.reports_dir = original_reports_dir
             shutil.rmtree(temp_dir, ignore_errors=True)
 
+    async def test_export_redirect_checker_xlsx(self):
+        if importlib.util.find_spec("multipart") is None:
+            self.skipTest("python-multipart is not installed in this environment")
+
+        from fastapi.responses import Response
+        from app.api.routes import (
+            ExportRequest,
+            create_task_result,
+            export_redirect_checker_xlsx,
+        )
+        from app.reports.xlsx_generator import xlsx_generator
+
+        temp_dir = Path("tests") / ".tmp_redirect_xlsx_route"
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)
+        temp_dir.mkdir(parents=True, exist_ok=True)
+
+        original_reports_dir = xlsx_generator.reports_dir
+        try:
+            xlsx_generator.reports_dir = str(temp_dir)
+            task_id = "redirect-xlsx-route-test"
+            fake_result = {
+                "task_type": "redirect_checker",
+                "url": "https://example.com/",
+                "results": {
+                    "checked_url": "https://example.com/",
+                    "selected_user_agent": {"key": "googlebot_desktop", "label": "Googlebot Desktop"},
+                    "summary": {
+                        "total_scenarios": 3,
+                        "passed": 1,
+                        "warnings": 1,
+                        "errors": 1,
+                        "quality_score": 78,
+                        "quality_grade": "B",
+                        "duration_ms": 820,
+                    },
+                    "scenarios": [
+                        {
+                            "id": 1,
+                            "key": "http_to_https",
+                            "title": "HTTP -> HTTPS",
+                            "status": "error",
+                            "expected": "Постоянный редирект 301/308 на HTTPS",
+                            "actual": "200 | Final: http://example.com/",
+                            "recommendation": "Настройте принудительный HTTPS.",
+                            "test_url": "http://example.com/",
+                            "response_codes": [200],
+                            "duration_ms": 120,
+                            "final_url": "http://example.com/",
+                            "hops": 0,
+                            "chain": [{"url": "http://example.com/", "status_code": 200, "location": ""}],
+                            "error": "",
+                        },
+                    ],
+                    "recommendations": [
+                        "Настройте принудительный HTTPS.",
+                    ],
+                    "checked_at": "2026-02-25T10:00:00Z",
+                },
+            }
+            create_task_result(task_id, "redirect_checker", "https://example.com/", fake_result)
+
+            response = await export_redirect_checker_xlsx(ExportRequest(task_id=task_id))
+            self.assertIsInstance(response, Response)
+            self.assertEqual(
+                response.media_type,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            self.assertIn("redirect_checker_report_example.com_", response.headers.get("content-disposition", ""))
+            self.assertGreater(len(response.body), 0)
+        finally:
+            xlsx_generator.reports_dir = original_reports_dir
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()

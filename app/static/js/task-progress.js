@@ -3265,6 +3265,49 @@ async function downloadRedirectCheckerDocx() {
     }
 }
 
+async function downloadRedirectCheckerXlsx() {
+    if (!redirectCheckerData) {
+        alert('Нет данных Redirect Checker');
+        return;
+    }
+
+    const exportTaskId = redirectCheckerData.task_id || taskId;
+    if (!exportTaskId) {
+        alert('Не найден task_id для экспорта XLSX');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/export/redirect-checker-xlsx', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task_id: exportTaskId })
+        });
+
+        if (!response.ok) {
+            let payload = null;
+            try {
+                payload = await response.json();
+            } catch (_) {
+                payload = null;
+            }
+            throw new Error((payload && payload.error) ? payload.error : 'Не удалось сформировать XLSX-отчет Redirect Checker');
+        }
+
+        const blob = await response.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filenameFromResponse(response, 'redirect-checker-report', 'xlsx', redirectCheckerData?.url || '');
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(a.href);
+    } catch (error) {
+        console.error('Ошибка скачивания Redirect Checker XLSX:', error);
+        alert(error.message || 'Не удалось скачать XLSX-отчет Redirect Checker');
+    }
+}
+
 function generateRedirectCheckerHTML(result) {
     const resultData = result.result || result;
     const r = resultData.results || resultData;
@@ -3299,6 +3342,9 @@ function generateRedirectCheckerHTML(result) {
         warning: allScenarios.filter((s) => String(s.status || '').toLowerCase() === 'warning').length,
         error: allScenarios.filter((s) => String(s.status || '').toLowerCase() === 'error').length,
     };
+    const slowestScenarios = [...allScenarios]
+        .sort((a, b) => Number(b.duration_ms || 0) - Number(a.duration_ms || 0))
+        .slice(0, 5);
 
     const scenarioRows = scenarios.map((s) => `
         <tr>
@@ -3336,9 +3382,23 @@ Duration: ${escapeHtml(formatMs(s.duration_ms))}
             </td>
         </tr>
     `).join('');
+    const slowestRows = slowestScenarios.map((s, index) => `
+        <div class="flex items-start justify-between gap-4 py-3 border-b border-slate-100 last:border-b-0">
+            <div class="min-w-0">
+                <div class="text-xs uppercase tracking-wide text-slate-400">#${index + 1} · ${escapeHtml(s.key || '-')}</div>
+                <div class="font-medium text-slate-900">${escapeHtml(s.title || '-')}</div>
+                <div class="text-sm text-slate-500 truncate">${escapeHtml(s.test_url || s.final_url || '-')}</div>
+            </div>
+            <div class="text-right shrink-0">
+                <div class="font-semibold text-slate-900">${escapeHtml(formatMs(s.duration_ms))}</div>
+                <div class="text-xs text-slate-500">${escapeHtml(String(s.status || 'unknown').toUpperCase())}</div>
+            </div>
+        </div>
+    `).join('');
 
     const activeClass = (key) => (filter === key ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200');
     const rdActionBtns = `
+        <button type="button" onclick="downloadRedirectCheckerXlsx()" class="ds-export-btn"><i class="fas fa-file-excel mr-1"></i>XLSX</button>
         <button type="button" onclick="downloadRedirectCheckerCsv()" class="ds-export-btn"><i class="fas fa-file-csv mr-1"></i>CSV</button>
         <button type="button" onclick="downloadRedirectCheckerDocx()" class="ds-export-btn"><i class="fas fa-file-word mr-1"></i>DOCX</button>
         <button type="button" onclick="copyRedirectCheckerSummary()" class="ds-export-btn"><i class="fas fa-copy mr-1"></i>Копировать</button>`;
@@ -3378,6 +3438,10 @@ Duration: ${escapeHtml(formatMs(s.duration_ms))}
                 <div class="ds-card" style="padding:1rem;">
                     <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Сводка редиректов</h4>
                     <div style="height:200px;"><canvas id="ds-chart-redirect-summary"></canvas></div>
+                </div>
+                <div class="ds-card" style="padding:1rem;">
+                    <h4 class="text-sm font-semibold mb-2" style="color:var(--ds-text);">Самые медленные сценарии</h4>
+                    <div class="space-y-1">${slowestRows || '<div class="text-sm text-slate-500">Нет данных по длительности</div>'}</div>
                 </div>
             </div>
 
