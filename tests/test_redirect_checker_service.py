@@ -71,6 +71,8 @@ class RedirectCheckerServiceTests(unittest.TestCase):
         self.assertEqual(keyed.get("missing_404", {}).get("status"), "passed")
         self.assertEqual(keyed.get("query_params_canonicalization", {}).get("status"), "passed")
         self.assertEqual(keyed.get("soft_404_detection", {}).get("status"), "passed")
+        self.assertEqual(keyed.get("http_to_https", {}).get("duration_ms"), 10)
+        self.assertEqual(keyed.get("trailing_slash", {}).get("duration_ms"), 20)
         self.assertEqual(summary.get("errors"), 0)
         self.assertIn("applied_policy", payload)
 

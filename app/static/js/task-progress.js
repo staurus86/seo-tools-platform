@@ -349,6 +349,16 @@ function _formatDuration(ms) {
     return `${minutes} мин`;
 }
 
+function _formatTimeOnly(value) {
+    const dt = value instanceof Date ? value : _parseIsoDate(value);
+    if (!dt) return '-';
+    return dt.toLocaleTimeString('ru-RU', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+    });
+}
+
 function _formatHeartbeatAge(value) {
     const dt = _parseIsoDate(value);
     if (!dt) return '-';
@@ -402,14 +412,17 @@ function _computeExecutionStats(data, elapsedMs) {
         const total = Number(meta.scenario_count || 0);
         const done = Number(meta.current_scenario_index || 0);
         if (total <= 0 || done <= 0 || elapsedMs <= 0) {
-            return { rate: '-', eta: '-', currentStep: meta.current_scenario_title || meta.current_step || '-' };
+            return { rate: '-', eta: '-', etaMs: 0, finishAt: '-', currentStep: meta.current_scenario_title || meta.current_step || '-' };
         }
         const perMinute = done / (elapsedMs / 60000);
         const remaining = Math.max(0, total - done);
         const etaMs = perMinute > 0 ? (remaining / perMinute) * 60000 : 0;
+        const finishAt = remaining > 0 && etaMs > 0 ? _formatTimeOnly(new Date(Date.now() + etaMs)) : 'скоро';
         return {
             rate: `${perMinute.toFixed(perMinute >= 10 ? 0 : 1)} сцен./мин`,
             eta: remaining > 0 ? _formatDuration(etaMs) : 'почти готово',
+            etaMs,
+            finishAt,
             currentStep: meta.current_scenario_title || meta.current_step || '-',
         };
     }
@@ -421,15 +434,20 @@ function _computeExecutionStats(data, elapsedMs) {
             return {
                 rate: '-',
                 eta: '-',
+                etaMs: 0,
+                finishAt: '-',
                 currentStep: meta.current_step || meta.current_url || data.status_message || '-',
             };
         }
         const perMinute = done / (elapsedMs / 60000);
         const remaining = Math.max(0, total - done);
         const etaMs = perMinute > 0 ? (remaining / perMinute) * 60000 : 0;
+        const finishAt = remaining > 0 && etaMs > 0 ? _formatTimeOnly(new Date(Date.now() + etaMs)) : 'скоро';
         return {
             rate: `${perMinute.toFixed(perMinute >= 10 ? 0 : 1)} стр./мин`,
             eta: remaining > 0 ? _formatDuration(etaMs) : 'почти готово',
+            etaMs,
+            finishAt,
             currentStep: meta.current_step || meta.current_url || data.status_message || '-',
         };
     }
@@ -437,6 +455,8 @@ function _computeExecutionStats(data, elapsedMs) {
     return {
         rate: '-',
         eta: '-',
+        etaMs: 0,
+        finishAt: '-',
         currentStep: meta.current_step || meta.current_scenario_title || meta.current_url || data.status_message || '-',
     };
 }
@@ -530,6 +550,7 @@ function updateProgress(data) {
     const stepEl = document.getElementById('progress-step');
     const rateEl = document.getElementById('progress-rate');
     const etaEl = document.getElementById('progress-eta');
+    const finishAtEl = document.getElementById('progress-finish-at');
     const elapsedEl = document.getElementById('progress-elapsed');
     const stageEl = document.getElementById('progress-stage-label');
     const heartbeatEl = document.getElementById('progress-heartbeat');
@@ -560,6 +581,7 @@ function updateProgress(data) {
         _toggleProgressMetaCard('progress-step-card', false);
         _toggleProgressMetaCard('progress-rate-card', false);
         _toggleProgressMetaCard('progress-eta-card', false);
+        _toggleProgressMetaCard('progress-finish-card', false);
         updateStageRail('done');
         return;
     }
@@ -582,6 +604,7 @@ function updateProgress(data) {
         _toggleProgressMetaCard('progress-step-card', false);
         _toggleProgressMetaCard('progress-rate-card', false);
         _toggleProgressMetaCard('progress-eta-card', false);
+        _toggleProgressMetaCard('progress-finish-card', false);
         updateStageRail('analyze');
         return;
     }
@@ -604,6 +627,7 @@ function updateProgress(data) {
     if (stepEl) stepEl.textContent = executionStats.currentStep || '-';
     if (rateEl) rateEl.textContent = executionStats.rate || '-';
     if (etaEl) etaEl.textContent = executionStats.eta || '-';
+    if (finishAtEl) finishAtEl.textContent = executionStats.finishAt || '-';
 
     const isSitePro = (data.task_type === 'site_audit_pro');
     const isCwvBatch = (data.task_type === 'core_web_vitals') && Number(progressMeta.total_pages || 0) > 1;
@@ -619,6 +643,7 @@ function updateProgress(data) {
         _toggleProgressMetaCard('progress-step-card', true);
         _toggleProgressMetaCard('progress-rate-card', executionStats.rate !== '-');
         _toggleProgressMetaCard('progress-eta-card', executionStats.eta !== '-');
+        _toggleProgressMetaCard('progress-finish-card', executionStats.finishAt !== '-');
     }
     if ((isSitePro || isCwvBatch) && totalPages > 0) {
         const processedPages = Number(progressMeta.processed_pages || 0);
@@ -3122,6 +3147,7 @@ function copyRedirectCheckerSummary() {
     lines.push('');
     scenarios.forEach((s) => {
         lines.push(`[${String(s.status || '').toUpperCase()}] ${s.id || '-'} ${s.key || '-'} ${s.title || ''}`);
+        lines.push(`Duration: ${s.duration_ms || 0} ms`);
         lines.push(`Expected: ${s.expected || '-'}`);
         lines.push(`Actual: ${s.actual || '-'}`);
         if (s.recommendation) lines.push(`Fix: ${s.recommendation}`);
@@ -3153,6 +3179,7 @@ function downloadRedirectCheckerCsv() {
         'what_checked',
         'expected',
         'actual',
+        'duration_ms',
         'response_codes',
         'hops',
         'test_url',
@@ -3171,6 +3198,7 @@ function downloadRedirectCheckerCsv() {
             s.what_checked || '',
             s.expected || '',
             s.actual || '',
+            s.duration_ms || 0,
             Array.isArray(s.response_codes) ? s.response_codes.join(' -> ') : '',
             s.hops || 0,
             s.test_url || '',
@@ -3249,6 +3277,7 @@ function generateRedirectCheckerHTML(result) {
     const recommendations = Array.isArray(r.recommendations) ? r.recommendations : [];
 
     const formatChain = (codes) => Array.isArray(codes) && codes.length ? codes.join(' -> ') : '-';
+    const formatMs = (value) => `${Number(value || 0)} ms`;
     const statusClass = (status) => {
         const s = String(status || '').toLowerCase();
         if (s === 'passed') return 'passed';
@@ -3283,6 +3312,7 @@ function generateRedirectCheckerHTML(result) {
                     ${statusIcon(s.status)} ${escapeHtml(String(s.status || 'unknown').toUpperCase())}
                 </span>
                 <div class="redirectpro-meta mt-1">Хопы: <span class="font-medium">${escapeHtml(s.hops || 0)}</span></div>
+                <div class="redirectpro-meta mt-1">Время: <span class="font-medium">${escapeHtml(formatMs(s.duration_ms))}</span></div>
             </td>
             <td class="redirectpro-cell">
                 <div class="font-medium text-slate-800">${escapeHtml(formatChain(s.response_codes))}</div>
@@ -3300,6 +3330,7 @@ function generateRedirectCheckerHTML(result) {
 Error: ${escapeHtml(s.error || '-')}
 Final URL: ${escapeHtml(s.final_url || '-')}
 Codes: ${escapeHtml(formatChain(s.response_codes))}
+Duration: ${escapeHtml(formatMs(s.duration_ms))}
                     </div>
                 </details>
             </td>

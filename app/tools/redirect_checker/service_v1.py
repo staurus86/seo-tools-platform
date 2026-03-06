@@ -206,6 +206,18 @@ def _normalize_param_names(values: Optional[List[str]]) -> List[str]:
     return result
 
 
+def _sum_trace_durations(*traces: Optional[Dict[str, Any]]) -> int:
+    total = 0
+    for trace in traces:
+        if not isinstance(trace, dict):
+            continue
+        try:
+            total += int(trace.get("duration_ms") or 0)
+        except Exception:
+            continue
+    return total
+
+
 def _apex_domain(hostname: str) -> str:
     host = str(hostname or "").strip().lower().strip(".")
     if not host:
@@ -243,6 +255,7 @@ def _make_scenario(
     response_codes: Optional[List[int]] = None,
     final_url: Optional[str] = None,
     hops: Optional[int] = None,
+    duration_ms: Optional[int] = None,
     details: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     trace = trace or {}
@@ -259,6 +272,7 @@ def _make_scenario(
         "response_codes": response_codes if response_codes is not None else _trace_codes(trace),
         "final_url": str(final_url if final_url is not None else trace.get("final_url") or ""),
         "hops": int(hops if hops is not None else trace.get("hops") or 0),
+        "duration_ms": int(duration_ms if duration_ms is not None else trace.get("duration_ms") or 0),
         "chain": trace.get("chain") or [],
         "error": str(trace.get("error") or ""),
         "details": details or {},
@@ -630,6 +644,7 @@ def run_redirect_checker(
             response_codes=_trace_codes(trace_slash_a) + _trace_codes(trace_slash_b),
             final_url=f"{trace_slash_a.get('final_url') or '-'} | {trace_slash_b.get('final_url') or '-'}",
             hops=max(int(trace_slash_a.get("hops") or 0), int(trace_slash_b.get("hops") or 0)),
+            duration_ms=_sum_trace_durations(trace_slash_a, trace_slash_b),
             details={"trace_a": trace_slash_a, "trace_b": trace_slash_b},
         )
     )
@@ -679,6 +694,7 @@ def run_redirect_checker(
             response_codes=_trace_codes(trace_ext_html) + _trace_codes(trace_ext_php),
             final_url=f"{trace_ext_html.get('final_url') or '-'} | {trace_ext_php.get('final_url') or '-'}",
             hops=max(int(trace_ext_html.get("hops") or 0), int(trace_ext_php.get("hops") or 0)),
+            duration_ms=_sum_trace_durations(trace_ext_html, trace_ext_php),
             details={"trace_html": trace_ext_html, "trace_php": trace_ext_php},
         )
     )
