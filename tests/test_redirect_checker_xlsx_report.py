@@ -25,10 +25,10 @@ class RedirectCheckerXlsxReportTests(unittest.TestCase):
                     "label": "Googlebot Desktop",
                 },
                 "summary": {
-                    "total_scenarios": 3,
+                    "total_scenarios": 5,
                     "passed": 1,
-                    "warnings": 1,
-                    "errors": 1,
+                    "warnings": 2,
+                    "errors": 2,
                     "quality_score": 71,
                     "quality_grade": "C",
                     "duration_ms": 1240,
@@ -76,6 +76,34 @@ class RedirectCheckerXlsxReportTests(unittest.TestCase):
                         "final_url": "https://example.com/final",
                         "hops": 1,
                     },
+                    {
+                        "id": 4,
+                        "key": "missing_404",
+                        "title": "404-страницы",
+                        "status": "error",
+                        "expected": "HTTP 404 для несуществующей страницы",
+                        "actual": "200 на несуществующий URL",
+                        "recommendation": "Настройте корректный 404.",
+                        "test_url": "https://example.com/missing-page",
+                        "response_codes": [200],
+                        "duration_ms": 80,
+                        "final_url": "https://example.com/missing-page",
+                        "hops": 0,
+                    },
+                    {
+                        "id": 5,
+                        "key": "soft_404_detection",
+                        "title": "Soft-404 detection",
+                        "status": "warning",
+                        "expected": "404/410 вместо soft-404",
+                        "actual": "200 и контент похож на валидную страницу",
+                        "recommendation": "Проверьте soft-404.",
+                        "test_url": "https://example.com/missing-page",
+                        "response_codes": [200],
+                        "duration_ms": 60,
+                        "final_url": "https://example.com/",
+                        "hops": 0,
+                    },
                 ],
                 "recommendations": [
                     "Настройте принудительный HTTPS.",
@@ -97,6 +125,7 @@ class RedirectCheckerXlsxReportTests(unittest.TestCase):
             self.assertIn("Summary", wb.sheetnames)
             self.assertIn("Scenarios", wb.sheetnames)
             self.assertIn("Slowest", wb.sheetnames)
+            self.assertIn("404 Risks", wb.sheetnames)
             self.assertIn("Recommendations", wb.sheetnames)
 
             summary_ws = wb["Summary"]
@@ -113,6 +142,11 @@ class RedirectCheckerXlsxReportTests(unittest.TestCase):
             slowest_ws = wb["Slowest"]
             self.assertEqual(slowest_ws["B2"].value, "Цепочки редиректов")
             self.assertEqual(slowest_ws["D2"].value, 220)
+
+            risk_ws = wb["404 Risks"]
+            self.assertEqual(risk_ws["A2"].value, "missing_404")
+            self.assertEqual(risk_ws["D2"].value, 80)
+            self.assertEqual(risk_ws["A3"].value, "soft_404_detection")
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 

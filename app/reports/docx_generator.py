@@ -2420,7 +2420,40 @@ class DOCXGenerator:
                 action_rows,
             )
 
-        self._add_heading(doc, "5. Рекомендации", level=1)
+        risk_404_items = [
+            item for item in scenarios
+            if str(item.get("key") or "").lower() in {"missing_404", "soft_404_detection"}
+        ]
+        risk_404_items.sort(
+            key=lambda item: (
+                0 if str(item.get("status") or "").lower() == "error" else 1,
+                -int(item.get("duration_ms") or 0),
+            )
+        )
+
+        self._add_heading(doc, "5. 404 Risks", level=1)
+        if not risk_404_items:
+            doc.add_paragraph("Риски soft-404 и некорректных 404 не обнаружены.")
+        else:
+            risk_rows = []
+            for item in risk_404_items:
+                risk_rows.append(
+                    [
+                        item.get("key", "-"),
+                        item.get("title", "-"),
+                        _status_label(item.get("status")),
+                        _fmt_duration_ms(item.get("duration_ms")),
+                        _clip(item.get("actual"), 140),
+                        _clip(item.get("recommendation"), 120),
+                    ]
+                )
+            self._add_table(
+                doc,
+                ["Key", "Сценарий", "Статус", "Время", "Actual", "Рекомендация"],
+                risk_rows,
+            )
+
+        self._add_heading(doc, "6. Рекомендации", level=1)
         if recommendations:
             for rec in recommendations[:50]:
                 doc.add_paragraph(str(rec), style="List Bullet")
@@ -2433,7 +2466,7 @@ class DOCXGenerator:
             doc.add_paragraph("Критических рекомендаций нет.")
 
         doc.add_page_break()
-        self._add_heading(doc, "6. Краткие ТЗ на исправление", level=1)
+        self._add_heading(doc, "7. Краткие ТЗ на исправление", level=1)
         tz_templates = {
             "http_to_https": {
                 "goal": "Все запросы по HTTP должны вести на HTTPS одним постоянным редиректом.",

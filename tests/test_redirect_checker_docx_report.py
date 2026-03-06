@@ -26,10 +26,10 @@ class RedirectCheckerDocxReportTests(unittest.TestCase):
                     "label": "Googlebot Desktop",
                 },
                 "summary": {
-                    "total_scenarios": 11,
+                    "total_scenarios": 13,
                     "passed": 8,
-                    "warnings": 2,
-                    "errors": 1,
+                    "warnings": 3,
+                    "errors": 2,
                     "quality_score": 71,
                     "quality_grade": "C",
                     "duration_ms": 1240,
@@ -69,6 +69,40 @@ class RedirectCheckerDocxReportTests(unittest.TestCase):
                         "chain": [{"url": "https://example.com/", "status_code": 200, "location": ""}],
                         "error": "",
                     },
+                    {
+                        "id": 9,
+                        "key": "missing_404",
+                        "title": "404-страницы",
+                        "what_checked": "Проверка кода ответа для несуществующей страницы",
+                        "status": "error",
+                        "expected": "HTTP 404 для несуществующей страницы",
+                        "actual": "200 на несуществующий URL",
+                        "recommendation": "Настройте корректный 404.",
+                        "test_url": "https://example.com/missing-page",
+                        "response_codes": [200],
+                        "duration_ms": 80,
+                        "final_url": "https://example.com/missing-page",
+                        "hops": 0,
+                        "chain": [{"url": "https://example.com/missing-page", "status_code": 200, "location": ""}],
+                        "error": "",
+                    },
+                    {
+                        "id": 17,
+                        "key": "soft_404_detection",
+                        "title": "Soft-404 detection",
+                        "what_checked": "Проверка soft-404 после редиректа",
+                        "status": "warning",
+                        "expected": "404/410 вместо soft-404",
+                        "actual": "200 и контент похож на валидную страницу",
+                        "recommendation": "Проверьте soft-404.",
+                        "test_url": "https://example.com/missing-page",
+                        "response_codes": [200],
+                        "duration_ms": 60,
+                        "final_url": "https://example.com/",
+                        "hops": 0,
+                        "chain": [{"url": "https://example.com/missing-page", "status_code": 200, "location": "https://example.com/"}],
+                        "error": "",
+                    },
                 ],
                 "recommendations": [
                     "Настройте принудительный HTTPS.",
@@ -98,10 +132,13 @@ class RedirectCheckerDocxReportTests(unittest.TestCase):
             self.assertIn("Redirect Checker Report", text)
             self.assertIn("3. Нарушения и разбор", text)
             self.assertIn("4. План действий при нарушениях", text)
-            self.assertIn("6. Краткие ТЗ на исправление", text)
+            self.assertIn("5. 404 Risks", text)
+            self.assertIn("7. Краткие ТЗ на исправление", text)
             self.assertIn("Приложение. Полная структура результата", text)
             self.assertIn("HTTP -> HTTPS", text)
             self.assertIn("Canonical тег", text)
+            self.assertIn("404-страницы", text)
+            self.assertIn("Soft-404 detection", text)
             self.assertIn("Критерий приемки:", text)
             self.assertIn("Время сценария: 120 ms", text)
             self.assertIn("Время", table_text)

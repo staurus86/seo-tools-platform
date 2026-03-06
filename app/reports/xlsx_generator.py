@@ -5160,6 +5160,39 @@ class XLSXGenerator:
         for col, width in enumerate([8, 28, 24, 12, 12, 42, 56], 1):
             slowest_ws.column_dimensions[get_column_letter(col)].width = width
 
+        risk_404_ws = wb.create_sheet("404 Risks")
+        self._apply_tab_color(risk_404_ws)
+        risk_headers = ["Key", "Scenario", "Status", "Duration ms", "Actual", "Expected", "Recommendation"]
+        for col, header in enumerate(risk_headers, 1):
+            self._apply_style(risk_404_ws.cell(row=1, column=col, value=header), header_style)
+        risk_items = [
+            item for item in scenarios
+            if str(item.get("key") or "").lower() in {"missing_404", "soft_404_detection"}
+        ]
+        risk_items.sort(
+            key=lambda item: (
+                0 if str(item.get("status") or "").lower() == "error" else 1,
+                int(item.get("duration_ms") or 0) * -1,
+            )
+        )
+        for row_idx, item in enumerate(risk_items, start=2):
+            values = [
+                item.get("key", "-"),
+                item.get("title", "-"),
+                _status_label(item.get("status")),
+                int(item.get("duration_ms") or 0),
+                item.get("actual", "-"),
+                item.get("expected", "-"),
+                item.get("recommendation", "-"),
+            ]
+            for col, value in enumerate(values, 1):
+                self._apply_style(risk_404_ws.cell(row=row_idx, column=col, value=value), cell_style)
+        self._apply_alternating_rows(risk_404_ws, 2, risk_404_ws.max_row, 1, len(risk_headers))
+        risk_404_ws.freeze_panes = "A2"
+        risk_404_ws.auto_filter.ref = f"A1:G{max(1, risk_404_ws.max_row)}"
+        for col, width in enumerate([24, 28, 12, 12, 42, 36, 56], 1):
+            risk_404_ws.column_dimensions[get_column_letter(col)].width = width
+
         rec_ws = wb.create_sheet("Recommendations")
         self._apply_tab_color(rec_ws)
         self._apply_style(rec_ws.cell(row=1, column=1, value="#"), header_style)
