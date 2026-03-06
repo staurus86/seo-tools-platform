@@ -6,7 +6,7 @@ report generator, and streams the file as an attachment.
 """
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Request
@@ -26,11 +26,17 @@ class ExportRequest(BaseModel):
 
 
 def _safe_domain(url: str) -> str:
-    return re.sub(r"[^a-zA-Z0-9._-]+", "_", (urlparse(url).netloc or "site"))
+    parsed = urlparse(str(url or ""))
+    candidate = parsed.netloc or parsed.path or "site"
+    return re.sub(r"[^a-zA-Z0-9._-]+", "_", candidate)
 
 
 def _ts() -> str:
-    return datetime.utcnow().strftime("%Y-%m-%d_%H-%M")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+
+
+def _export_filename(prefix: str, url: str, extension: str) -> str:
+    return f"{prefix}_{_safe_domain(url)}_{_ts()}.{extension}"
 
 
 def _file_response(filepath: str, media_type: str, filename: str) -> Response:
@@ -41,6 +47,12 @@ def _file_response(filepath: str, media_type: str, filename: str) -> Response:
         media_type=media_type,
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+def _error_response(message: str, status_code: int = 400, **extra) -> JSONResponse:
+    payload = {"error": message}
+    payload.update(extra)
+    return JSONResponse(status_code=status_code, content=payload)
 
 
 _DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -58,9 +70,9 @@ async def export_robots_word(data: ExportRequest):
     try:
         task = get_task_result(data.task_id)
         if not task:
-            return {"error": "Задача не найдена", "task_id": data.task_id}
+            return _error_response("Задача не найдена", status_code=404, task_id=data.task_id)
         if task.get("task_type") != "robots_check":
-            return {"error": f"Неподдерживаемый тип задачи: {task.get('task_type')}"}
+            return _error_response(f"Неподдерживаемый тип задачи: {task.get('task_type')}", status_code=400)
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
@@ -68,11 +80,11 @@ async def export_robots_word(data: ExportRequest):
 
         filepath = docx_generator.generate_robots_report(data.task_id, payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Не удалось сформировать отчет"}
+            return _error_response("Не удалось сформировать отчет", status_code=500)
 
-        return _file_response(filepath, _DOCX, f"robots_report_{_safe_domain(url)}_{_ts()}.docx")
+        return _file_response(filepath, _DOCX, _export_filename("robots_report", url, "docx"))
     except Exception as e:
-        return {"error": str(e)}
+        return _error_response(str(e), status_code=500)
 
 
 # ─── sitemap ───────────────────────────────────────────────────────────────
@@ -86,9 +98,9 @@ async def export_sitemap_xlsx(data: ExportRequest):
     try:
         task = get_task_result(data.task_id)
         if not task:
-            return {"error": "Задача не найдена", "task_id": data.task_id}
+            return _error_response("Задача не найдена", status_code=404, task_id=data.task_id)
         if task.get("task_type") != "sitemap_validate":
-            return {"error": f"Неподдерживаемый тип задачи: {task.get('task_type')}"}
+            return _error_response(f"Неподдерживаемый тип задачи: {task.get('task_type')}", status_code=400)
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
@@ -96,11 +108,11 @@ async def export_sitemap_xlsx(data: ExportRequest):
 
         filepath = xlsx_generator.generate_sitemap_report(data.task_id, payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Не удалось сформировать отчет"}
+            return _error_response("Не удалось сформировать отчет", status_code=500)
 
-        return _file_response(filepath, _XLSX, f"sitemap_report_{_safe_domain(url)}_{_ts()}.xlsx")
+        return _file_response(filepath, _XLSX, _export_filename("sitemap_report", url, "xlsx"))
     except Exception as e:
-        return {"error": str(e)}
+        return _error_response(str(e), status_code=500)
 
 
 @router.post("/export/sitemap-docx")
@@ -111,9 +123,9 @@ async def export_sitemap_docx(data: ExportRequest):
     try:
         task = get_task_result(data.task_id)
         if not task:
-            return {"error": "Задача не найдена", "task_id": data.task_id}
+            return _error_response("Задача не найдена", status_code=404, task_id=data.task_id)
         if task.get("task_type") != "sitemap_validate":
-            return {"error": f"Неподдерживаемый тип задачи: {task.get('task_type')}"}
+            return _error_response(f"Неподдерживаемый тип задачи: {task.get('task_type')}", status_code=400)
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
@@ -121,11 +133,11 @@ async def export_sitemap_docx(data: ExportRequest):
 
         filepath = docx_generator.generate_sitemap_report(data.task_id, payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Не удалось сформировать отчет"}
+            return _error_response("Не удалось сформировать отчет", status_code=500)
 
-        return _file_response(filepath, _DOCX, f"sitemap_report_{_safe_domain(url)}_{_ts()}.docx")
+        return _file_response(filepath, _DOCX, _export_filename("sitemap_report", url, "docx"))
     except Exception as e:
-        return {"error": str(e)}
+        return _error_response(str(e), status_code=500)
 
 
 # ─── bot checker ───────────────────────────────────────────────────────────
@@ -139,9 +151,9 @@ async def export_bot_xlsx(data: ExportRequest):
     try:
         task = get_task_result(data.task_id)
         if not task:
-            return {"error": "Задача не найдена", "task_id": data.task_id}
+            return _error_response("Задача не найдена", status_code=404, task_id=data.task_id)
         if task.get("task_type") != "bot_check":
-            return {"error": f"Неподдерживаемый тип задачи: {task.get('task_type')}"}
+            return _error_response(f"Неподдерживаемый тип задачи: {task.get('task_type')}", status_code=400)
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
@@ -149,11 +161,11 @@ async def export_bot_xlsx(data: ExportRequest):
 
         filepath = xlsx_generator.generate_bot_report(data.task_id, payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Не удалось сформировать отчет"}
+            return _error_response("Не удалось сформировать отчет", status_code=500)
 
-        return _file_response(filepath, _XLSX, f"bot_report_{_safe_domain(url)}_{_ts()}.xlsx")
+        return _file_response(filepath, _XLSX, _export_filename("bot_report", url, "xlsx"))
     except Exception as e:
-        return {"error": str(e)}
+        return _error_response(str(e), status_code=500)
 
 
 @router.post("/export/bot-docx")
@@ -164,9 +176,9 @@ async def export_bot_docx(data: ExportRequest):
     try:
         task = get_task_result(data.task_id)
         if not task:
-            return {"error": "Задача не найдена", "task_id": data.task_id}
+            return _error_response("Задача не найдена", status_code=404, task_id=data.task_id)
         if task.get("task_type") != "bot_check":
-            return {"error": f"Неподдерживаемый тип задачи: {task.get('task_type')}"}
+            return _error_response(f"Неподдерживаемый тип задачи: {task.get('task_type')}", status_code=400)
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
@@ -174,11 +186,11 @@ async def export_bot_docx(data: ExportRequest):
 
         filepath = docx_generator.generate_bot_report(data.task_id, payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Не удалось сформировать отчет"}
+            return _error_response("Не удалось сформировать отчет", status_code=500)
 
-        return _file_response(filepath, _DOCX, f"bot_report_{_safe_domain(url)}_{_ts()}.docx")
+        return _file_response(filepath, _DOCX, _export_filename("bot_report", url, "docx"))
     except Exception as e:
-        return {"error": str(e)}
+        return _error_response(str(e), status_code=500)
 
 
 # ─── mobile check ──────────────────────────────────────────────────────────
@@ -194,9 +206,9 @@ async def export_mobile_docx(data: ExportRequest, request: Request):
 
         task = get_task_result(data.task_id)
         if not task:
-            return {"error": "Задача не найдена", "task_id": data.task_id}
+            return _error_response("Задача не найдена", status_code=404, task_id=data.task_id)
         if task.get("task_type") != "mobile_check":
-            return {"error": f"Неподдерживаемый тип задачи: {task.get('task_type')}"}
+            return _error_response(f"Неподдерживаемый тип задачи: {task.get('task_type')}", status_code=400)
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
@@ -208,10 +220,10 @@ async def export_mobile_docx(data: ExportRequest, request: Request):
 
         filepath = docx_generator.generate_mobile_report(data.task_id, payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Не удалось сформировать отчет"}
+            return _error_response("Не удалось сформировать отчет", status_code=500)
         append_task_artifact(data.task_id, filepath, kind="export")
 
-        return _file_response(filepath, _DOCX, f"mobile_report_{_safe_domain(url)}_{_ts()}.docx")
+        return _file_response(filepath, _DOCX, _export_filename("mobile_report", url, "docx"))
     except Exception as e:
         print(f"[mobile-docx] export failed: {e}\n{traceback.format_exc()}")
         return JSONResponse(status_code=500, content={"error": str(e)})
@@ -225,26 +237,26 @@ async def export_mobile_xlsx(data: ExportRequest, request: Request):
     try:
         task = get_task_result(data.task_id)
         if not task:
-            return {"error": "Задача не найдена", "task_id": data.task_id}
+            return _error_response("Задача не найдена", status_code=404, task_id=data.task_id)
         if task.get("task_type") != "mobile_check":
-            return {"error": f"Неподдерживаемый тип задачи: {task.get('task_type')}"}
+            return _error_response(f"Неподдерживаемый тип задачи: {task.get('task_type')}", status_code=400)
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
         results = task_result.get("results", task_result) or {}
         issues_count = results.get("issues_count") or len(results.get("issues", []) or [])
         if issues_count <= 0:
-            return {"error": "Проблемы не найдены, XLSX-отчет не формируется"}
+            return _error_response("Проблемы не найдены, XLSX-отчет не формируется", status_code=400)
 
         payload = {"url": url, "results": results, "server_base_url": str(request.base_url)}
         filepath = xlsx_generator.generate_mobile_report(data.task_id, payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Не удалось сформировать отчет"}
+            return _error_response("Не удалось сформировать отчет", status_code=500)
         append_task_artifact(data.task_id, filepath, kind="export")
 
-        return _file_response(filepath, _XLSX, f"mobile_issues_{_safe_domain(url)}_{_ts()}.xlsx")
+        return _file_response(filepath, _XLSX, _export_filename("mobile_issues", url, "xlsx"))
     except Exception as e:
-        return {"error": str(e)}
+        return _error_response(str(e), status_code=500)
 
 
 # ─── render audit ──────────────────────────────────────────────────────────
@@ -258,9 +270,9 @@ async def export_render_docx(data: ExportRequest):
     try:
         task = get_task_result(data.task_id)
         if not task:
-            return {"error": "Задача не найдена", "task_id": data.task_id}
+            return _error_response("Задача не найдена", status_code=404, task_id=data.task_id)
         if task.get("task_type") != "render_audit":
-            return {"error": f"Неподдерживаемый тип задачи: {task.get('task_type')}"}
+            return _error_response(f"Неподдерживаемый тип задачи: {task.get('task_type')}", status_code=400)
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
@@ -268,12 +280,12 @@ async def export_render_docx(data: ExportRequest):
 
         filepath = docx_generator.generate_render_report(data.task_id, payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Не удалось сформировать отчет"}
+            return _error_response("Не удалось сформировать отчет", status_code=500)
         append_task_artifact(data.task_id, filepath, kind="export")
 
-        return _file_response(filepath, _DOCX, f"render_report_{_safe_domain(url)}_{_ts()}.docx")
+        return _file_response(filepath, _DOCX, _export_filename("render_report", url, "docx"))
     except Exception as e:
-        return {"error": str(e)}
+        return _error_response(str(e), status_code=500)
 
 
 @router.post("/export/render-xlsx")
@@ -284,26 +296,26 @@ async def export_render_xlsx(data: ExportRequest):
     try:
         task = get_task_result(data.task_id)
         if not task:
-            return {"error": "Задача не найдена", "task_id": data.task_id}
+            return _error_response("Задача не найдена", status_code=404, task_id=data.task_id)
         if task.get("task_type") != "render_audit":
-            return {"error": f"Неподдерживаемый тип задачи: {task.get('task_type')}"}
+            return _error_response(f"Неподдерживаемый тип задачи: {task.get('task_type')}", status_code=400)
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
         results = task_result.get("results", task_result) or {}
         issues_count = results.get("issues_count") or len(results.get("issues", []) or [])
         if issues_count <= 0:
-            return {"error": "Проблемы не найдены, XLSX-отчет не формируется"}
+            return _error_response("Проблемы не найдены, XLSX-отчет не формируется", status_code=400)
 
         payload = {"url": url, "results": results}
         filepath = xlsx_generator.generate_render_report(data.task_id, payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Не удалось сформировать отчет"}
+            return _error_response("Не удалось сформировать отчет", status_code=500)
         append_task_artifact(data.task_id, filepath, kind="export")
 
-        return _file_response(filepath, _XLSX, f"render_issues_{_safe_domain(url)}_{_ts()}.xlsx")
+        return _file_response(filepath, _XLSX, _export_filename("render_issues", url, "xlsx"))
     except Exception as e:
-        return {"error": str(e)}
+        return _error_response(str(e), status_code=500)
 
 
 # ─── onpage audit ──────────────────────────────────────────────────────────
@@ -317,9 +329,9 @@ async def export_onpage_docx(data: ExportRequest):
     try:
         task = get_task_result(data.task_id)
         if not task:
-            return {"error": "Задача не найдена", "task_id": data.task_id}
+            return _error_response("Задача не найдена", status_code=404, task_id=data.task_id)
         if task.get("task_type") != "onpage_audit":
-            return {"error": f"Неподдерживаемый тип задачи: {task.get('task_type')}"}
+            return _error_response(f"Неподдерживаемый тип задачи: {task.get('task_type')}", status_code=400)
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
@@ -327,12 +339,12 @@ async def export_onpage_docx(data: ExportRequest):
 
         filepath = docx_generator.generate_onpage_report(data.task_id, payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Не удалось сформировать отчет"}
+            return _error_response("Не удалось сформировать отчет", status_code=500)
         append_task_artifact(data.task_id, filepath, kind="export")
 
-        return _file_response(filepath, _DOCX, f"onpage_report_{_safe_domain(url)}_{_ts()}.docx")
+        return _file_response(filepath, _DOCX, _export_filename("onpage_report", url, "docx"))
     except Exception as e:
-        return {"error": str(e)}
+        return _error_response(str(e), status_code=500)
 
 
 @router.post("/export/onpage-xlsx")
@@ -343,9 +355,9 @@ async def export_onpage_xlsx(data: ExportRequest):
     try:
         task = get_task_result(data.task_id)
         if not task:
-            return {"error": "Задача не найдена", "task_id": data.task_id}
+            return _error_response("Задача не найдена", status_code=404, task_id=data.task_id)
         if task.get("task_type") != "onpage_audit":
-            return {"error": f"Неподдерживаемый тип задачи: {task.get('task_type')}"}
+            return _error_response(f"Неподдерживаемый тип задачи: {task.get('task_type')}", status_code=400)
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
@@ -353,12 +365,12 @@ async def export_onpage_xlsx(data: ExportRequest):
 
         filepath = xlsx_generator.generate_onpage_report(data.task_id, payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Не удалось сформировать отчет"}
+            return _error_response("Не удалось сформировать отчет", status_code=500)
         append_task_artifact(data.task_id, filepath, kind="export")
 
-        return _file_response(filepath, _XLSX, f"onpage_report_{_safe_domain(url)}_{_ts()}.xlsx")
+        return _file_response(filepath, _XLSX, _export_filename("onpage_report", url, "xlsx"))
     except Exception as e:
-        return {"error": str(e)}
+        return _error_response(str(e), status_code=500)
 
 
 # ─── redirect checker ──────────────────────────────────────────────────────
@@ -372,9 +384,9 @@ async def export_redirect_checker_docx(data: ExportRequest):
     try:
         task = get_task_result(data.task_id)
         if not task:
-            return {"error": "Задача не найдена", "task_id": data.task_id}
+            return _error_response("Задача не найдена", status_code=404, task_id=data.task_id)
         if task.get("task_type") != "redirect_checker":
-            return {"error": f"Неподдерживаемый тип задачи: {task.get('task_type')}"}
+            return _error_response(f"Неподдерживаемый тип задачи: {task.get('task_type')}", status_code=400)
 
         task_result = task.get("result", {}) or {}
         url = task.get("url", "") or task_result.get("url", "")
@@ -382,14 +394,12 @@ async def export_redirect_checker_docx(data: ExportRequest):
 
         filepath = docx_generator.generate_redirect_checker_report(data.task_id, payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Не удалось сформировать отчет"}
+            return _error_response("Не удалось сформировать отчет", status_code=500)
         append_task_artifact(data.task_id, filepath, kind="export")
 
-        return _file_response(
-            filepath, _DOCX, f"redirect_checker_report_{_safe_domain(url)}_{_ts()}.docx"
-        )
+        return _file_response(filepath, _DOCX, _export_filename("redirect_checker_report", url, "docx"))
     except Exception as e:
-        return {"error": str(e)}
+        return _error_response(str(e), status_code=500)
 
 
 # ─── core web vitals ───────────────────────────────────────────────────────
@@ -403,9 +413,9 @@ async def export_core_web_vitals_docx(data: ExportRequest):
     try:
         task = get_task_result(data.task_id)
         if not task:
-            return {"error": "Задача не найдена", "task_id": data.task_id}
+            return _error_response("Задача не найдена", status_code=404, task_id=data.task_id)
         if task.get("task_type") != "core_web_vitals":
-            return {"error": f"Неподдерживаемый тип задачи: {task.get('task_type')}"}
+            return _error_response(f"Неподдерживаемый тип задачи: {task.get('task_type')}", status_code=400)
 
         task_result = task.get("result", {}) or {}
         url = task.get("url", "") or task_result.get("url", "")
@@ -413,14 +423,12 @@ async def export_core_web_vitals_docx(data: ExportRequest):
 
         filepath = docx_generator.generate_core_web_vitals_report(data.task_id, payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Не удалось сформировать отчет"}
+            return _error_response("Не удалось сформировать отчет", status_code=500)
         append_task_artifact(data.task_id, filepath, kind="export")
 
-        return _file_response(
-            filepath, _DOCX, f"core_web_vitals_report_{_safe_domain(url)}_{_ts()}.docx"
-        )
+        return _file_response(filepath, _DOCX, _export_filename("core_web_vitals_report", url, "docx"))
     except Exception as e:
-        return {"error": str(e)}
+        return _error_response(str(e), status_code=500)
 
 
 @router.post("/export/core-web-vitals-xlsx")
@@ -431,9 +439,9 @@ async def export_core_web_vitals_xlsx(data: ExportRequest):
     try:
         task = get_task_result(data.task_id)
         if not task:
-            return {"error": "Задача не найдена", "task_id": data.task_id}
+            return _error_response("Задача не найдена", status_code=404, task_id=data.task_id)
         if task.get("task_type") != "core_web_vitals":
-            return {"error": f"Неподдерживаемый тип задачи: {task.get('task_type')}"}
+            return _error_response(f"Неподдерживаемый тип задачи: {task.get('task_type')}", status_code=400)
 
         task_result = task.get("result", {}) or {}
         url = task.get("url", "") or task_result.get("url", "")
@@ -441,14 +449,12 @@ async def export_core_web_vitals_xlsx(data: ExportRequest):
 
         filepath = xlsx_generator.generate_core_web_vitals_report(data.task_id, payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Не удалось сформировать отчет"}
+            return _error_response("Не удалось сформировать отчет", status_code=500)
         append_task_artifact(data.task_id, filepath, kind="export")
 
-        return _file_response(
-            filepath, _XLSX, f"core_web_vitals_report_{_safe_domain(url)}_{_ts()}.xlsx"
-        )
+        return _file_response(filepath, _XLSX, _export_filename("core_web_vitals_report", url, "xlsx"))
     except Exception as e:
-        return {"error": str(e)}
+        return _error_response(str(e), status_code=500)
 
 
 # ─── site audit pro ────────────────────────────────────────────────────────
@@ -462,13 +468,13 @@ async def export_site_audit_pro_docx(data: ExportRequest):
 
     try:
         if not getattr(settings, "SITE_AUDIT_PRO_ENABLED", True):
-            return {"error": "Site Audit Pro отключён через feature flag"}
+            return _error_response("Site Audit Pro отключён через feature flag", status_code=403)
 
         task = get_task_result(data.task_id)
         if not task:
-            return {"error": "Задача не найдена", "task_id": data.task_id}
+            return _error_response("Задача не найдена", status_code=404, task_id=data.task_id)
         if task.get("task_type") != "site_audit_pro":
-            return {"error": f"Неподдерживаемый тип задачи: {task.get('task_type')}"}
+            return _error_response(f"Неподдерживаемый тип задачи: {task.get('task_type')}", status_code=400)
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
@@ -476,12 +482,12 @@ async def export_site_audit_pro_docx(data: ExportRequest):
 
         filepath = docx_generator.generate_site_audit_pro_report(data.task_id, payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Не удалось сформировать отчет"}
+            return _error_response("Не удалось сформировать отчет", status_code=500)
         append_task_artifact(data.task_id, filepath, kind="export")
 
-        return _file_response(filepath, _DOCX, f"site_audit_pro_{_safe_domain(url)}_{_ts()}.docx")
+        return _file_response(filepath, _DOCX, _export_filename("site_audit_pro", url, "docx"))
     except Exception as e:
-        return {"error": str(e)}
+        return _error_response(str(e), status_code=500)
 
 
 @router.post("/export/site-audit-pro-xlsx")
@@ -492,13 +498,13 @@ async def export_site_audit_pro_xlsx(data: ExportRequest):
 
     try:
         if not getattr(settings, "SITE_AUDIT_PRO_ENABLED", True):
-            return {"error": "Site Audit Pro отключён через feature flag"}
+            return _error_response("Site Audit Pro отключён через feature flag", status_code=403)
 
         task = get_task_result(data.task_id)
         if not task:
-            return {"error": "Задача не найдена", "task_id": data.task_id}
+            return _error_response("Задача не найдена", status_code=404, task_id=data.task_id)
         if task.get("task_type") != "site_audit_pro":
-            return {"error": f"Неподдерживаемый тип задачи: {task.get('task_type')}"}
+            return _error_response(f"Неподдерживаемый тип задачи: {task.get('task_type')}", status_code=400)
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
@@ -506,12 +512,12 @@ async def export_site_audit_pro_xlsx(data: ExportRequest):
 
         filepath = xlsx_generator.generate_site_audit_pro_report(data.task_id, payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Не удалось сформировать отчет"}
+            return _error_response("Не удалось сформировать отчет", status_code=500)
         append_task_artifact(data.task_id, filepath, kind="export")
 
-        return _file_response(filepath, _XLSX, f"site_audit_pro_{_safe_domain(url)}_{_ts()}.xlsx")
+        return _file_response(filepath, _XLSX, _export_filename("site_audit_pro", url, "xlsx"))
     except Exception as e:
-        return {"error": str(e)}
+        return _error_response(str(e), status_code=500)
 
 
 # ─── clusterizer ───────────────────────────────────────────────────────────
@@ -525,9 +531,9 @@ async def export_clusterizer_xlsx(data: ExportRequest):
     try:
         task = get_task_result(data.task_id)
         if not task:
-            return {"error": "Задача не найдена", "task_id": data.task_id}
+            return _error_response("Задача не найдена", status_code=404, task_id=data.task_id)
         if task.get("task_type") != "clusterizer":
-            return {"error": f"Неподдерживаемый тип задачи: {task.get('task_type')}"}
+            return _error_response(f"Неподдерживаемый тип задачи: {task.get('task_type')}", status_code=400)
 
         task_result = task.get("result", {})
         payload = {
@@ -537,12 +543,13 @@ async def export_clusterizer_xlsx(data: ExportRequest):
 
         filepath = xlsx_generator.generate_clusterizer_report(data.task_id, payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Не удалось сформировать отчет"}
+            return _error_response("Не удалось сформировать отчет", status_code=500)
         append_task_artifact(data.task_id, filepath, kind="export")
 
-        return _file_response(filepath, _XLSX, f"clusterizer_report_{_ts()}.xlsx")
+        report_url = payload.get("url", "")
+        return _file_response(filepath, _XLSX, _export_filename("clusterizer_report", report_url, "xlsx"))
     except Exception as e:
-        return {"error": str(e)}
+        return _error_response(str(e), status_code=500)
 
 
 # ─── link profile ──────────────────────────────────────────────────────────
@@ -556,9 +563,9 @@ async def export_link_profile_docx(data: ExportRequest):
     try:
         task = get_task_result(data.task_id)
         if not task:
-            return {"error": "Задача не найдена", "task_id": data.task_id}
+            return _error_response("Задача не найдена", status_code=404, task_id=data.task_id)
         if task.get("task_type") != "link_profile_audit":
-            return {"error": f"Неподдерживаемый тип задачи: {task.get('task_type')}"}
+            return _error_response(f"Неподдерживаемый тип задачи: {task.get('task_type')}", status_code=400)
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
@@ -566,13 +573,12 @@ async def export_link_profile_docx(data: ExportRequest):
 
         filepath = docx_generator.generate_link_profile_report(data.task_id, payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Не удалось сформировать отчет"}
+            return _error_response("Не удалось сформировать отчет", status_code=500)
         append_task_artifact(data.task_id, filepath, kind="export")
 
-        domain = re.sub(r"[^a-zA-Z0-9._-]+", "_", (urlparse(url).netloc or str(url) or "site"))
-        return _file_response(filepath, _DOCX, f"link_profile_report_{domain}_{_ts()}.docx")
+        return _file_response(filepath, _DOCX, _export_filename("link_profile_report", url, "docx"))
     except Exception as e:
-        return {"error": str(e)}
+        return _error_response(str(e), status_code=500)
 
 
 @router.post("/export/link-profile-xlsx")
@@ -583,9 +589,9 @@ async def export_link_profile_xlsx(data: ExportRequest):
     try:
         task = get_task_result(data.task_id)
         if not task:
-            return {"error": "Задача не найдена", "task_id": data.task_id}
+            return _error_response("Задача не найдена", status_code=404, task_id=data.task_id)
         if task.get("task_type") != "link_profile_audit":
-            return {"error": f"Неподдерживаемый тип задачи: {task.get('task_type')}"}
+            return _error_response(f"Неподдерживаемый тип задачи: {task.get('task_type')}", status_code=400)
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
@@ -593,10 +599,11 @@ async def export_link_profile_xlsx(data: ExportRequest):
 
         filepath = xlsx_generator.generate_link_profile_report(data.task_id, payload)
         if not filepath or not os.path.exists(filepath):
-            return {"error": "Не удалось сформировать отчет"}
+            return _error_response("Не удалось сформировать отчет", status_code=500)
         append_task_artifact(data.task_id, filepath, kind="export")
 
-        domain = re.sub(r"[^a-zA-Z0-9._-]+", "_", (urlparse(url).netloc or str(url) or "site"))
-        return _file_response(filepath, _XLSX, f"link_profile_report_{domain}_{_ts()}.xlsx")
+        return _file_response(filepath, _XLSX, _export_filename("link_profile_report", url, "xlsx"))
     except Exception as e:
-        return {"error": str(e)}
+        return _error_response(str(e), status_code=500)
+
+

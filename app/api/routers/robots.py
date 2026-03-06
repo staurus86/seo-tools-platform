@@ -6,8 +6,12 @@ import json
 import time
 import math
 import random
+import gzip
+import io
+import ipaddress
+import socket
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any, Union, Tuple
 from urllib.parse import urljoin, urlparse
 
@@ -95,7 +99,14 @@ import re
 def fetch_robots(url: str, timeout: int = 20) -> Tuple[Optional[str], Optional[int], Optional[str]]:
     """Fetch robots.txt and return (content, status_code, error)"""
     try:
-        robots_url = url.rstrip('/') + '/robots.txt'
+        normalized = _normalize_http_input(url)
+        if not normalized:
+            return None, None, "Invalid URL"
+        root = _root_site_url(normalized)
+        safety_error = _get_public_target_error(root)
+        if safety_error:
+            return None, None, safety_error
+        robots_url = urljoin(root + "/", "robots.txt")
         resp = requests.get(robots_url, timeout=timeout, headers={"User-Agent": "Mozilla/5.0"})
         return resp.text, resp.status_code, None
     except requests.exceptions.Timeout:
@@ -113,6 +124,7 @@ def parse_robots(text: str) -> ParseResult:
     result.raw_lines = lines
     
     current_group = None
+    current_group_closed = False
     
     for idx, raw in enumerate(lines, start=1):
         stripped = raw.strip()
@@ -129,12 +141,14 @@ def parse_robots(text: str) -> ParseResult:
         value = value.strip()
         
         if key == "user-agent":
-            if current_group is None or current_group.user_agents:
+            if current_group is None or current_group_closed:
                 current_group = Group()
                 result.groups.append(current_group)
+                current_group_closed = False
             current_group.user_agents.append(value)
             
         elif key == "disallow":
+            current_group_closed = True
             if not current_group or not current_group.user_agents:
                 err = f"Строка {idx}: Disallow без предшествующего User-agent"
                 result.syntax_errors.append({"line": idx, "error": err, "content": raw})
@@ -148,6 +162,7 @@ def parse_robots(text: str) -> ParseResult:
                 result.all_disallow.append(rule)
                 
         elif key == "allow":
+            current_group_closed = True
             if not current_group or not current_group.user_agents:
                 err = f"Строка {idx}: Allow без предшествующего User-agent"
                 result.syntax_errors.append({"line": idx, "error": err, "content": raw})
@@ -161,11 +176,13 @@ def parse_robots(text: str) -> ParseResult:
                 result.all_allow.append(rule)
                 
         elif key == "sitemap":
+            current_group_closed = True
             if value and not value.startswith("http://") and not value.startswith("https://"):
                 result.warnings.append(f"Строка {idx}: Sitemap должен содержать полный URL")
             result.sitemaps.append(value)
             
         elif key == "crawl-delay":
+            current_group_closed = True
             if not current_group or not current_group.user_agents:
                 err = f"Строка {idx}: Crawl-delay без предшествующего User-agent"
                 result.syntax_errors.append({"line": idx, "error": err, "content": raw})
@@ -184,12 +201,15 @@ def parse_robots(text: str) -> ParseResult:
                 continue
                 
         elif key == "clean-param":
+            current_group_closed = True
             result.clean_params.append(value)
             
         elif key == "host":
+            current_group_closed = True
             result.hosts.append(value)
 
         elif key in UNSUPPORTED_ROBOTS_DIRECTIVES:
+            current_group_closed = True
             result.unsupported_directives.append({
                 "line": idx,
                 "directive": key,
@@ -200,6 +220,7 @@ def parse_robots(text: str) -> ParseResult:
             )
 
         else:
+            current_group_closed = True
             result.warnings.append(f"Строка {idx}: Неизвестная директива '{key}' - будет проигнорирована")
     
     return result
@@ -473,9 +494,26 @@ def validate_sitemaps(sitemaps: List[str], timeout: int = 4, max_checks: int = 5
                     "error": "Invalid sitemap URL scheme"
                 })
                 continue
+            target_error = _get_public_target_error(sm)
+            if target_error:
+                checks.append({
+                    "url": sm,
+                    "ok": False,
+                    "status_code": None,
+                    "content_type": None,
+                    "error": target_error
+                })
+                continue
             resp = requests.get(sm, timeout=timeout, headers={"User-Agent": "Mozilla/5.0"}, allow_redirects=True)
+            decoded_content, _ = _decode_sitemap_payload(
+                resp.content,
+                getattr(resp, "url", sm),
+                getattr(resp, "headers", {}),
+            )
             content_type = (resp.headers.get("Content-Type") or "").lower()
-            looks_xml = any(token in content_type for token in ["xml", "text/plain"]) or resp.text.lstrip().startswith("<?xml")
+            looks_xml = _looks_like_sitemap_bytes(decoded_content) or (
+                "xml" in content_type and decoded_content[:20000].strip()
+            )
             ok = resp.status_code == 200 and looks_xml
             checks.append({
                 "url": sm,
@@ -754,7 +792,7 @@ def check_robots_full(url: str) -> Dict[str, Any]:
         return {
             "task_type": "robots_check",
             "url": url,
-            "completed_at": datetime.utcnow().isoformat(),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
             "results": {
                 "robots_txt_found": False,
                 "status_code": None,
@@ -884,7 +922,7 @@ def check_robots_full(url: str) -> Dict[str, Any]:
         return {
             "task_type": "robots_check",
             "url": url,
-            "completed_at": datetime.utcnow().isoformat(),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
             "results": {
                 "robots_txt_found": False,
                 "status_code": status_code,
@@ -932,7 +970,7 @@ def check_robots_full(url: str) -> Dict[str, Any]:
     response = {
         "task_type": "robots_check",
         "url": url,
-        "completed_at": datetime.utcnow().isoformat(),
+        "completed_at": datetime.now(timezone.utc).isoformat(),
         "results": {
             "robots_txt_found": True,
             "status_code": status_code,
@@ -1009,7 +1047,7 @@ def check_robots_simple(url: str) -> Dict[str, Any]:
         return {
             "task_type": "robots_check",
             "url": url,
-            "completed_at": datetime.utcnow().isoformat(),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
             "results": {
                 "robots_txt_found": response.status_code == 200,
                 "status_code": response.status_code,
@@ -1041,7 +1079,7 @@ def check_robots_simple(url: str) -> Dict[str, Any]:
         return {
             "task_type": "robots_check",
             "url": url,
-            "completed_at": datetime.utcnow().isoformat(),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
             "results": {
                 "error": str(e),
                 "robots_txt_found": False,
@@ -1110,11 +1148,11 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
         try:
             dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
             if dt.tzinfo is not None:
-                return dt.astimezone().replace(tzinfo=None)
-            return dt
+                return dt.astimezone(timezone.utc)
+            return dt.replace(tzinfo=timezone.utc)
         except Exception:
             try:
-                return datetime.strptime(raw, "%Y-%m-%d")
+                return datetime.strptime(raw, "%Y-%m-%d").replace(tzinfo=timezone.utc)
             except Exception:
                 return None
 
@@ -1206,7 +1244,7 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
     tool_notes: List[str] = []
     allowed_changefreq = {"always", "hourly", "daily", "weekly", "monthly", "yearly", "never"}
     root_status_code = None
-    now_utc = datetime.utcnow()
+    now_utc = datetime.now(timezone.utc)
 
     try:
         session = requests.Session()
@@ -1225,6 +1263,7 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
                 "ok": False,
                 "status_code": None,
                 "type": "unknown",
+                "compression": "none",
                 "size_bytes": 0,
                 "urls_count": 0,
                 "duplicate_count": 0,
@@ -1237,9 +1276,15 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
             }
 
             try:
+                target_error = _get_public_target_error(sitemap_url)
+                if target_error:
+                    file_report["errors"].append(target_error)
+                    sitemap_files.append(file_report)
+                    continue
                 response = session.get(sitemap_url, timeout=20, allow_redirects=True)
                 file_report["status_code"] = response.status_code
-                file_report["size_bytes"] = len(response.content or b"")
+                file_report["compressed_size_bytes"] = len(response.content or b"")
+                file_report["size_bytes"] = file_report["compressed_size_bytes"]
                 if root_status_code is None:
                     root_status_code = response.status_code
 
@@ -1252,8 +1297,19 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
                     file_report["warnings"].append("Размер файла превышает 50 МиБ.")
 
                 try:
-                    root = ET.fromstring(response.content)
-                except ET.ParseError as parse_error:
+                    decoded_content, was_gzip = _decode_sitemap_payload(
+                        response.content,
+                        getattr(response, "url", sitemap_url),
+                        getattr(response, "headers", {}),
+                        max_decoded_bytes=max_file_size,
+                    )
+                    if was_gzip:
+                        file_report["compression"] = "gzip"
+                    file_report["size_bytes"] = len(decoded_content or b"")
+                    if file_report["size_bytes"] > max_file_size:
+                        file_report["warnings"].append("Размер файла превышает 50 МиБ.")
+                    root = ET.fromstring(decoded_content)
+                except (ET.ParseError, ValueError) as parse_error:
                     file_report["errors"].append(f"Ошибка парсинга XML: {parse_error}")
                     sitemap_files.append(file_report)
                     continue
@@ -1276,6 +1332,10 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
                         if loc == sitemap_url:
                             self_child_refs += 1
                             file_report["warnings"].append(f"Самоссылка в sitemap-индексе: {loc}")
+                            continue
+                        child_error = _get_public_target_error(loc)
+                        if child_error:
+                            file_report["warnings"].append(f"Небезопасный URL дочернего sitemap пропущен: {loc}")
                             continue
                         child_count += 1
                         if loc in visited or loc in queue:
@@ -1565,7 +1625,6 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
                                     else:
                                         item["canonical_status"] = "other"
                                         canonical_non_self_count += 1
-                                        reasons.append("canonical указывает на другой URL")
                     item["reasons"] = reasons
                     item["indexable"] = (200 <= int(live_response.status_code) < 300) and len(reasons) == 0
                     if item["indexable"] is False:
@@ -1578,7 +1637,9 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
                     live_check_errors_count += 1
                 live_indexability_checks.append(item)
 
-        if canonical_checked_count > 0 and (canonical_missing_count + canonical_invalid_count + canonical_non_self_count) > 0:
+        canonical_error_count = canonical_missing_count + canonical_invalid_count
+
+        if canonical_checked_count > 0 and (canonical_error_count + canonical_non_self_count) > 0:
             warnings.append(
                 "Проверка canonical на случайной выборке: "
                 f"отсутствует={canonical_missing_count}, некорректный={canonical_invalid_count}, не self-canonical={canonical_non_self_count} "
@@ -1653,9 +1714,11 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
         if live_non_indexable_count > 0:
             recommendations.append("Проверьте неиндексируемые URL из live-выборки (HTTP-ошибки или noindex).")
             quality_score -= min(15, live_non_indexable_count)
-        if canonical_checked_count > 0 and (canonical_missing_count + canonical_invalid_count + canonical_non_self_count) > 0:
-            recommendations.append("Проверьте canonical в выборке URL (отсутствует/некорректный/не self canonical).")
-            quality_score -= min(8, canonical_missing_count + canonical_invalid_count + canonical_non_self_count)
+        if canonical_error_count > 0:
+            recommendations.append("Исправьте отсутствующие и некорректные canonical в выборке URL.")
+            quality_score -= min(8, canonical_error_count)
+        elif canonical_non_self_count > 0:
+            recommendations.append("Проверьте non-self canonical в выборке URL и подтвердите, что он задан намеренно.")
 
         if not recommendations:
             recommendations.append("Критических проблем sitemap не обнаружено. Поддерживайте текущую структуру и отслеживайте состояние в инструментах вебмастеров.")
@@ -1724,13 +1787,13 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
                 "Исправьте noindex/HTTP-проблемы на страницах из выборки и запустите проверку повторно.",
                 "SEO/Dev",
             ))
-        if canonical_checked_count > 0 and (canonical_missing_count + canonical_invalid_count + canonical_non_self_count) > 0:
+        if canonical_error_count > 0:
             issues.append(build_issue(
                 "warning",
                 "canonical_sample_issues",
                 "Проблемы canonical в случайной выборке",
-                f"Выборка={canonical_checked_count}, отсутствует={canonical_missing_count}, некорректный={canonical_invalid_count}, не self={canonical_non_self_count}.",
-                "Исправьте отсутствующие/некорректные canonical и проверьте цели canonical для URL из выборки.",
+                f"Выборка={canonical_checked_count}, отсутствует={canonical_missing_count}, некорректный={canonical_invalid_count}, non-self={canonical_non_self_count}.",
+                "Исправьте отсутствующие и некорректные canonical; non-self canonical проверьте отдельно на предмет осознанной настройки.",
                 "SEO/Dev",
             ))
 
@@ -1776,7 +1839,7 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
         return {
             "task_type": "sitemap_validate",
             "url": primary_root_url,
-            "completed_at": datetime.utcnow().isoformat(),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
             "results": {
                 "root_sitemaps": root_urls,
                 "valid": len(errors) == 0 and len(sitemap_files) > 0,
@@ -1857,7 +1920,7 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
         return {
             "task_type": "sitemap_validate",
             "url": primary_root_url,
-            "completed_at": datetime.utcnow().isoformat(),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
             "results": {
                 "valid": False,
                 "error": str(e),
@@ -1942,7 +2005,7 @@ def _check_bots_legacy(url: str) -> Dict[str, Any]:
     return {
         "task_type": "bot_check",
         "url": url,
-        "completed_at": datetime.utcnow().isoformat(),
+        "completed_at": datetime.now(timezone.utc).isoformat(),
         "results": {
             "engine": "legacy",
             "bots_checked": [b[0] for b in bots],
@@ -1959,8 +2022,20 @@ def _check_bots_legacy(url: str) -> Dict[str, Any]:
 class RobotsCheckRequest(URLModel):
     url: str
 
+    @field_validator("url", mode="before")
+    @classmethod
+    def _normalize_domain_input(cls, value):
+        normalized = _normalize_http_input(str(value or ""))
+        return normalized or value
+
 class SitemapValidateRequest(URLModel):
     url: str
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def _normalize_domain_input(cls, value):
+        normalized = _normalize_http_input(str(value or ""))
+        return normalized or value
 
 class BotCheckRequest(URLModel):
     url: str
@@ -2001,6 +2076,109 @@ def _is_likely_sitemap_url(value: str) -> bool:
 def _looks_like_sitemap_xml(payload: str) -> bool:
     text = str(payload or "").lstrip("\ufeff \n\r\t").lower()
     return text.startswith("<?xml") or "<urlset" in text or "<sitemapindex" in text
+
+
+def _root_site_url(url: str) -> str:
+    parsed = urlparse(str(url or ""))
+    if parsed.scheme in ("http", "https") and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return str(url or "").strip()
+
+
+def _is_public_ip_address(value: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(str(value or "").strip())
+    except ValueError:
+        return False
+    return bool(ip.is_global)
+
+
+def _is_public_hostname(hostname: str) -> bool:
+    host = str(hostname or "").strip().rstrip(".")
+    if not host:
+        return False
+    lowered = host.lower()
+    if lowered in {"localhost", "localhost.localdomain"} or lowered.endswith(".local"):
+        return False
+    if _is_public_ip_address(host):
+        return True
+    try:
+        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+    except socket.gaierror:
+        return False
+    addresses = set()
+    for info in infos:
+        sockaddr = info[4]
+        if not sockaddr:
+            continue
+        addr = str(sockaddr[0] or "").strip()
+        if not addr:
+            continue
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
+            return False
+        addresses.add(ip)
+    return bool(addresses) and all(ip.is_global for ip in addresses)
+
+
+def _get_public_target_error(url: str) -> str:
+    parsed = urlparse(str(url or "").strip())
+    if parsed.scheme not in ("http", "https"):
+        return "Разрешены только HTTP/HTTPS URL."
+    hostname = str(parsed.hostname or "").strip()
+    if not hostname:
+        return "URL должен содержать домен."
+    if not _is_public_hostname(hostname):
+        return "Приватные, loopback и локальные адреса недоступны для проверки."
+    return ""
+
+
+def _looks_like_sitemap_bytes(payload: bytes) -> bool:
+    head = (payload or b"")[:20000].lstrip(b"\xef\xbb\xbf \n\r\t").lower()
+    return head.startswith(b"<?xml") or b"<urlset" in head or b"<sitemapindex" in head
+
+
+def _response_looks_gzipped_sitemap(url: str, headers: Optional[Dict[str, Any]], payload: bytes) -> bool:
+    header_map = headers or {}
+    content_type = str(header_map.get("Content-Type") or header_map.get("content-type") or "").lower()
+    content_encoding = str(header_map.get("Content-Encoding") or header_map.get("content-encoding") or "").lower()
+    path = (urlparse(str(url or "")).path or "").lower()
+    return (
+        path.endswith(".gz")
+        or "gzip" in content_type
+        or "x-gzip" in content_type
+        or "gzip" in content_encoding
+        or (payload or b"").startswith(b"\x1f\x8b")
+    )
+
+
+def _decode_sitemap_payload(
+    payload: bytes,
+    url: str = "",
+    headers: Optional[Dict[str, Any]] = None,
+    max_decoded_bytes: int = 52428800,
+) -> Tuple[bytes, bool]:
+    raw = payload or b""
+    if not raw or _looks_like_sitemap_bytes(raw):
+        return raw, False
+    if not _response_looks_gzipped_sitemap(url, headers, raw):
+        return raw, False
+    try:
+        with gzip.GzipFile(fileobj=io.BytesIO(raw)) as gz_file:
+            chunks: List[bytes] = []
+            total = 0
+            while True:
+                chunk = gz_file.read(65536)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_decoded_bytes:
+                    raise ValueError("Размер распакованного sitemap превышает 50 МиБ.")
+                chunks.append(chunk)
+        return b"".join(chunks), True
+    except (OSError, EOFError) as exc:
+        raise ValueError(f"Не удалось распаковать gzip sitemap: {exc}") from exc
 
 
 def _discover_sitemap_urls(site_url: str, timeout: int = 12) -> tuple[List[str], Optional[str]]:
@@ -2047,9 +2225,16 @@ def _discover_sitemap_urls(site_url: str, timeout: int = 12) -> tuple[List[str],
                     normalized_loc = _normalize_http_input(loc)
                     if not normalized_loc:
                         continue
+                    if _get_public_target_error(normalized_loc):
+                        continue
                     try:
                         sm_resp = session.get(normalized_loc, timeout=timeout, allow_redirects=True, headers=headers)
-                        if sm_resp.status_code == 200 and _looks_like_sitemap_xml(sm_resp.text[:10000]):
+                        decoded_content, _ = _decode_sitemap_payload(
+                            sm_resp.content,
+                            getattr(sm_resp, "url", normalized_loc),
+                            getattr(sm_resp, "headers", {}),
+                        )
+                        if sm_resp.status_code == 200 and _looks_like_sitemap_bytes(decoded_content):
                             robots_candidates.append(normalized_loc)
                     except Exception:
                         continue
@@ -2063,17 +2248,30 @@ def _discover_sitemap_urls(site_url: str, timeout: int = 12) -> tuple[List[str],
         # 2) Common fallback sitemap paths
         common_paths = (
             "/sitemap.xml",
+            "/sitemap.xml.gz",
             "/sitemap_index.xml",
+            "/sitemap_index.xml.gz",
             "/sitemap-index.xml",
+            "/sitemap-index.xml.gz",
             "/sitemaps.xml",
+            "/sitemaps.xml.gz",
             "/sitemaps/sitemap.xml",
+            "/sitemaps/sitemap.xml.gz",
             "/wp-sitemap.xml",
+            "/wp-sitemap.xml.gz",
         )
         for path in common_paths:
             loc = urljoin(root, path)
+            if _get_public_target_error(loc):
+                continue
             try:
                 sm_resp = session.get(loc, timeout=timeout, allow_redirects=True, headers=headers)
-                if sm_resp.status_code == 200 and _looks_like_sitemap_xml(sm_resp.text[:10000]):
+                decoded_content, _ = _decode_sitemap_payload(
+                    sm_resp.content,
+                    getattr(sm_resp, "url", loc),
+                    getattr(sm_resp, "headers", {}),
+                )
+                if sm_resp.status_code == 200 and _looks_like_sitemap_bytes(decoded_content):
                     return [loc], "common_path"
             except Exception:
                 continue
@@ -2098,7 +2296,9 @@ def _discover_sitemap_urls(site_url: str, timeout: int = 12) -> tuple[List[str],
 @router.post("/tasks/robots-check")
 async def create_robots_check(data: RobotsCheckRequest):
     """Full robots.txt analysis"""
-    url = data.url
+    url = _normalize_http_input(str(data.url or ""))
+    if not url:
+        raise HTTPException(status_code=422, detail="Введите корректный домен или URL сайта.")
     
     print(f"[API] Full robots.txt analysis for: {url}")
     
@@ -2121,6 +2321,9 @@ async def create_sitemap_validate(data: SitemapValidateRequest):
     normalized_input = _normalize_http_input(raw_input)
     if not normalized_input:
         raise HTTPException(status_code=422, detail="Введите корректный домен или URL sitemap.")
+    target_error = _get_public_target_error(_root_site_url(normalized_input))
+    if target_error:
+        raise HTTPException(status_code=422, detail=target_error)
 
     if _is_likely_sitemap_url(normalized_input):
         target_sitemap_urls = [normalized_input]
@@ -2142,10 +2345,17 @@ async def create_sitemap_validate(data: SitemapValidateRequest):
 
     result = check_sitemap_full(target_sitemap_urls)
     if isinstance(result, dict):
+        resolved_sitemap_url = target_sitemap_urls[0] if target_sitemap_urls else ""
         result["input_url"] = normalized_input
-        result["resolved_sitemap_url"] = target_sitemap_urls[0] if target_sitemap_urls else ""
+        result["resolved_sitemap_url"] = resolved_sitemap_url
         result["resolved_sitemap_urls"] = target_sitemap_urls
         result["sitemap_discovery_source"] = discovery_source
+        results_payload = result.setdefault("results", {})
+        if isinstance(results_payload, dict):
+            results_payload["input_url"] = normalized_input
+            results_payload["resolved_sitemap_url"] = resolved_sitemap_url
+            results_payload["resolved_sitemap_urls"] = target_sitemap_urls
+            results_payload["sitemap_discovery_source"] = discovery_source
     task_id = f"sitemap-{datetime.now().timestamp()}"
     create_task_result(
         task_id,
@@ -2188,3 +2398,4 @@ async def create_bot_check(data: BotCheckRequest):
         "status": "SUCCESS",
         "message": "Bot check completed"
     }
+

@@ -51,6 +51,39 @@ function extractDomain(value) {
     }
 }
 
+function sanitizeFilenamePart(value) {
+    return String(value || 'site')
+        .trim()
+        .replace(/^https?:\/\//i, '')
+        .replace(/[^a-zA-Z0-9._-]+/g, '_')
+        .replace(/^_+|_+$/g, '') || 'site';
+}
+
+function buildFilenameTimestamp() {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    return [
+        now.getFullYear(),
+        pad(now.getMonth() + 1),
+        pad(now.getDate())
+    ].join('-') + '_' + [
+        pad(now.getHours()),
+        pad(now.getMinutes()),
+        pad(now.getSeconds())
+    ].join('-');
+}
+
+function buildReportFilename(prefix, extension, sourceUrl = '') {
+    const domain = sanitizeFilenamePart(extractDomain(sourceUrl) || sourceUrl || 'site');
+    return `${prefix}-${domain}-${buildFilenameTimestamp()}.${extension}`;
+}
+
+function filenameFromResponse(response, fallbackPrefix, extension, sourceUrl = '') {
+    const cd = response.headers.get('Content-Disposition') || response.headers.get('content-disposition') || '';
+    const match = cd.match(/filename=([^;]+)/i);
+    return match ? match[1].replace(/\"/g, '') : buildReportFilename(fallbackPrefix, extension, sourceUrl);
+}
+
 function saveBotTrendSnapshot(result) {
     try {
         const r = result.results || result;
@@ -1180,7 +1213,7 @@ function downloadTextReport() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `robots-report-${new Date().toISOString().slice(0,10)}.txt`;
+    a.download = buildReportFilename('robots-report', 'txt', robotsData?.url || '');
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1247,9 +1280,7 @@ async function downloadSitemapXlsxReport() {
         const blob = await response.blob();
         const href = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        const cd = response.headers.get('Content-Disposition') || '';
-        const m = cd.match(/filename=([^;]+)/i);
-        a.download = m ? m[1].replace(/\"/g, '') : `sitemap-report-${new Date().toISOString().slice(0,10)}.xlsx`;
+        a.download = filenameFromResponse(response, 'sitemap-report', 'xlsx', sitemapData?.url || '');
         a.href = href;
         document.body.appendChild(a);
         a.click();
@@ -1279,10 +1310,8 @@ async function downloadSitemapDocxReport() {
         const blob = await response.blob();
         const href = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        const cd = response.headers.get('Content-Disposition') || '';
-        const m = /filename=([^;]+)/i.exec(cd);
         a.href = href;
-        a.download = m ? m[1].replace(/\"/g, '') : `sitemap-report-${new Date().toISOString().slice(0,10)}.docx`;
+        a.download = filenameFromResponse(response, 'sitemap-report', 'docx', sitemapData?.url || '');
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -1340,9 +1369,7 @@ async function downloadBotXlsxReport() {
         const blob = await response.blob();
         const href = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        const cd = response.headers.get('Content-Disposition') || '';
-        const m = cd.match(/filename=([^;]+)/i);
-        a.download = m ? m[1].replace(/\"/g, '') : `bot-report-${new Date().toISOString().slice(0,10)}.xlsx`;
+        a.download = filenameFromResponse(response, 'bot-report', 'xlsx', botData?.url || '');
         a.href = href;
         document.body.appendChild(a);
         a.click();
@@ -1372,9 +1399,7 @@ async function downloadBotDocxReport() {
         const blob = await response.blob();
         const href = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        const cd = response.headers.get('Content-Disposition') || '';
-        const m = cd.match(/filename=([^;]+)/i);
-        a.download = m ? m[1].replace(/\"/g, '') : `bot-report-${new Date().toISOString().slice(0,10)}.docx`;
+        a.download = filenameFromResponse(response, 'bot-report', 'docx', botData?.url || '');
         a.href = href;
         document.body.appendChild(a);
         a.click();
@@ -1468,7 +1493,7 @@ function downloadBotTrendHistoryJson() {
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
     const href = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.download = `bot-trends-${payload.domain || 'domain'}-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = buildReportFilename('bot-trends', 'json', url || payload.domain || '');
     a.href = href;
     document.body.appendChild(a);
     a.click();
@@ -1496,7 +1521,7 @@ async function downloadWordReport() {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `robots-report-${new Date().toISOString().slice(0,10)}.docx`;
+            a.download = filenameFromResponse(response, 'robots-report', 'docx', robotsData?.url || '');
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -1534,9 +1559,7 @@ async function downloadMobileDocxReport() {
         const blob = await response.blob();
         const href = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        const cd = response.headers.get('Content-Disposition') || '';
-        const m = cd.match(/filename=([^;]+)/i);
-        a.download = m ? m[1].replace(/\"/g, '') : `mobile-report-${new Date().toISOString().slice(0,10)}.docx`;
+        a.download = filenameFromResponse(response, 'mobile-report', 'docx', mobileData?.url || '');
         a.href = href;
         document.body.appendChild(a);
         a.click();
@@ -1567,9 +1590,7 @@ async function downloadMobileXlsxReport() {
         const blob = await response.blob();
         const href = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        const cd = response.headers.get('Content-Disposition') || '';
-        const m = cd.match(/filename=([^;]+)/i);
-        a.download = m ? m[1].replace(/\"/g, '') : `mobile-issues-${new Date().toISOString().slice(0,10)}.xlsx`;
+        a.download = filenameFromResponse(response, 'mobile-issues', 'xlsx', mobileData?.url || '');
         a.href = href;
         document.body.appendChild(a);
         a.click();
@@ -1599,9 +1620,7 @@ async function downloadRenderDocxReport() {
         const blob = await response.blob();
         const href = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        const cd = response.headers.get('Content-Disposition') || '';
-        const m = cd.match(/filename=([^;]+)/i);
-        a.download = m ? m[1].replace(/\"/g, '') : `render-report-${new Date().toISOString().slice(0,10)}.docx`;
+        a.download = filenameFromResponse(response, 'render-report', 'docx', renderData?.url || '');
         a.href = href;
         document.body.appendChild(a);
         a.click();
@@ -1632,9 +1651,7 @@ async function downloadRenderXlsxReport() {
         const blob = await response.blob();
         const href = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        const cd = response.headers.get('Content-Disposition') || '';
-        const m = cd.match(/filename=([^;]+)/i);
-        a.download = m ? m[1].replace(/\"/g, '') : `render-issues-${new Date().toISOString().slice(0,10)}.xlsx`;
+        a.download = filenameFromResponse(response, 'render-issues', 'xlsx', renderData?.url || '');
         a.href = href;
         document.body.appendChild(a);
         a.click();
@@ -1665,9 +1682,7 @@ async function downloadSiteAuditProXlsxReport() {
         const blob = await response.blob();
         const href = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        const cd = response.headers.get('Content-Disposition') || '';
-        const m = cd.match(/filename=([^;]+)/i);
-        a.download = m ? m[1].replace(/\"/g, '') : `site-audit-pro-${new Date().toISOString().slice(0,10)}.xlsx`;
+        a.download = filenameFromResponse(response, 'site-audit-pro', 'xlsx', siteAuditProData?.url || '');
         a.href = href;
         document.body.appendChild(a);
         a.click();
@@ -1698,9 +1713,7 @@ async function downloadSiteAuditProDocxReport() {
         const blob = await response.blob();
         const href = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        const cd = response.headers.get('Content-Disposition') || '';
-        const m = cd.match(/filename=([^;]+)/i);
-        a.download = m ? m[1].replace(/\"/g, '') : `site-audit-pro-${new Date().toISOString().slice(0,10)}.docx`;
+        a.download = filenameFromResponse(response, 'site-audit-pro', 'docx', siteAuditProData?.url || '');
         a.href = href;
         document.body.appendChild(a);
         a.click();
@@ -1731,9 +1744,7 @@ async function downloadOnpageDocxReport() {
         const blob = await response.blob();
         const href = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        const cd = response.headers.get('Content-Disposition') || '';
-        const m = cd.match(/filename=([^;]+)/i);
-        a.download = m ? m[1].replace(/\"/g, '') : `onpage-report-${new Date().toISOString().slice(0,10)}.docx`;
+        a.download = filenameFromResponse(response, 'onpage-report', 'docx', onpageData?.url || '');
         a.href = href;
         document.body.appendChild(a);
         a.click();
@@ -1764,9 +1775,7 @@ async function downloadOnpageXlsxReport() {
         const blob = await response.blob();
         const href = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        const cd = response.headers.get('Content-Disposition') || '';
-        const m = cd.match(/filename=([^;]+)/i);
-        a.download = m ? m[1].replace(/\"/g, '') : `onpage-report-${new Date().toISOString().slice(0,10)}.xlsx`;
+        a.download = filenameFromResponse(response, 'onpage-report', 'xlsx', onpageData?.url || '');
         a.href = href;
         document.body.appendChild(a);
         a.click();
@@ -1797,9 +1806,7 @@ async function downloadCoreWebVitalsDocxReport() {
         const blob = await response.blob();
         const href = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        const cd = response.headers.get('Content-Disposition') || '';
-        const m = cd.match(/filename=([^;]+)/i);
-        a.download = m ? m[1].replace(/\"/g, '') : `core-web-vitals-${new Date().toISOString().slice(0,10)}.docx`;
+        a.download = filenameFromResponse(response, 'core-web-vitals', 'docx', coreWebVitalsData?.url || '');
         a.href = href;
         document.body.appendChild(a);
         a.click();
@@ -1830,9 +1837,7 @@ async function downloadCoreWebVitalsXlsxReport() {
         const blob = await response.blob();
         const href = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        const cd = response.headers.get('Content-Disposition') || '';
-        const m = cd.match(/filename=([^;]+)/i);
-        a.download = m ? m[1].replace(/\"/g, '') : `core-web-vitals-${new Date().toISOString().slice(0,10)}.xlsx`;
+        a.download = filenameFromResponse(response, 'core-web-vitals', 'xlsx', coreWebVitalsData?.url || '');
         a.href = href;
         document.body.appendChild(a);
         a.click();
@@ -1857,7 +1862,7 @@ function downloadCoreWebVitalsJsonReport() {
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
     const href = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.download = `core-web-vitals-${new Date().toISOString().slice(0,10)}.json`;
+    a.download = buildReportFilename('core-web-vitals', 'json', coreWebVitalsData?.url || '');
     a.href = href;
     document.body.appendChild(a);
     a.click();
@@ -1976,7 +1981,7 @@ function downloadCoreWebVitalsCsvReport() {
     const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
     const href = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.download = `core-web-vitals-${new Date().toISOString().slice(0,10)}.csv`;
+    a.download = buildReportFilename('core-web-vitals', 'csv', coreWebVitalsData?.url || '');
     a.href = href;
     document.body.appendChild(a);
     a.click();
@@ -2096,9 +2101,7 @@ async function downloadClusterizerXlsxReport() {
         const blob = await response.blob();
         const href = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        const cd = response.headers.get('Content-Disposition') || '';
-        const m = cd.match(/filename=([^;]+)/i);
-        a.download = m ? m[1].replace(/\"/g, '') : `clusterizer-report-${new Date().toISOString().slice(0,10)}.xlsx`;
+        a.download = filenameFromResponse(response, 'clusterizer-report', 'xlsx', clusterizerData?.url || '');
         a.href = href;
         document.body.appendChild(a);
         a.click();
@@ -2145,9 +2148,7 @@ async function downloadLinkProfileDocxReport() {
         const blob = await response.blob();
         const href = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        const cd = response.headers.get('Content-Disposition') || '';
-        const m = cd.match(/filename=([^;]+)/i);
-        const filename = m ? m[1].replace(/\"/g, '') : `link-profile-report-${new Date().toISOString().slice(0,10)}.docx`;
+        const filename = filenameFromResponse(response, 'link-profile-report', 'docx', linkProfileData?.url || '');
         a.download = filename;
         a.href = href;
         document.body.appendChild(a);
@@ -2185,9 +2186,7 @@ async function downloadLinkProfileXlsxReport() {
         const blob = await response.blob();
         const href = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        const cd = response.headers.get('Content-Disposition') || '';
-        const m = cd.match(/filename=([^;]+)/i);
-        const filename = m ? m[1].replace(/\"/g, '') : `link-profile-report-${new Date().toISOString().slice(0,10)}.xlsx`;
+        const filename = filenameFromResponse(response, 'link-profile-report', 'xlsx', linkProfileData?.url || '');
         a.download = filename;
         a.href = href;
         document.body.appendChild(a);
@@ -2934,9 +2933,9 @@ function downloadRedirectCheckerCsv() {
     const csv = '\ufeff' + csvBody;
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
-    const safeDomain = String((payload.url || r.checked_url || 'site')).replace(/[^a-zA-Z0-9._-]+/g, '_');
+    const safeDomain = sanitizeFilenamePart(extractDomain(payload.url || r.checked_url || '') || payload.url || r.checked_url || 'site');
     link.href = URL.createObjectURL(blob);
-    link.download = `redirect_checker_${safeDomain}.csv`;
+    link.download = `redirect_checker_${safeDomain}_${buildFilenameTimestamp()}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -2974,10 +2973,8 @@ async function downloadRedirectCheckerDocx() {
 
         const blob = await response.blob();
         const a = document.createElement('a');
-        const cd = response.headers.get('content-disposition') || '';
-        const m = /filename=([^;]+)/i.exec(cd);
         a.href = URL.createObjectURL(blob);
-        a.download = m ? m[1].replace(/\"/g, '') : `redirect-checker-report-${new Date().toISOString().slice(0,10)}.docx`;
+        a.download = filenameFromResponse(response, 'redirect-checker-report', 'docx', redirectCheckerData?.url || '');
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -3872,7 +3869,7 @@ function generateRobotsHTML(data) {
             <div class="bg-red-50 border border-red-200 rounded-lg p-3 mb-2">
                 <div class="flex items-center">
                     <i class="fas fa-exclamation-triangle text-red-500 mr-2"></i>
-                    <span class="text-red-700 font-medium">${issue}</span>
+                    <span class="text-red-700 font-medium">${escapeHtml(issue)}</span>
                 </div>
             </div>
         `).join('');
@@ -3884,7 +3881,7 @@ function generateRobotsHTML(data) {
             <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-2">
                 <div class="flex items-center">
                     <i class="fas fa-exclamation-circle text-yellow-500 mr-2"></i>
-                    <span class="text-yellow-700">${warning}</span>
+                    <span class="text-yellow-700">${escapeHtml(warning)}</span>
                 </div>
             </div>
         `).join('');
@@ -3894,10 +3891,11 @@ function generateRobotsHTML(data) {
     if (processedSitemaps.length > 0) {
         sitemapsHtml = processedSitemaps.map(sm => {
             const canCheck = /^https?:\/\//i.test(sm || '');
+            const safeHref = sanitizeHttpUrl(sm || '');
             return `
             <div class="flex items-center gap-2 bg-green-50 border border-green-200 rounded px-3 py-2 mb-1">
                 <i class="fas fa-sitemap text-green-500"></i>
-                <a href="${sm}" target="_blank" class="text-green-700 hover:underline text-sm break-all flex-1">${sm}</a>
+                <a href="${safeHref || '#'}" target="_blank" class="text-green-700 hover:underline text-sm break-all flex-1">${escapeHtml(sm)}</a>
                 <button
                     ${canCheck ? `onclick='runSitemapCheckFromRobots(${JSON.stringify(sm)})'` : 'disabled'}
                     class="text-xs px-3 py-1 rounded border ${canCheck ? 'border-blue-200 text-blue-700 hover:bg-blue-50' : 'border-gray-200 text-gray-400 cursor-not-allowed'}"
@@ -3916,7 +3914,7 @@ function generateRobotsHTML(data) {
             <div class="border rounded-lg mb-4 overflow-hidden">
                 <div class="bg-gray-100 px-4 py-2 border-b">
                     <span class="font-semibold text-gray-700">Группа ${idx + 1}:</span>
-                    <span class="text-gray-600 ml-2">${group.user_agents.join(', ')}</span>
+                    <span class="text-gray-600 ml-2">${escapeHtml((group.user_agents || []).join(', '))}</span>
                 </div>
                 <div class="p-4">
                     ${group.disallow.length > 0 ? `
@@ -3926,8 +3924,8 @@ function generateRobotsHTML(data) {
                                 ${group.disallow.map(d => `
                                     <div class="flex items-center text-sm font-mono bg-red-50 px-2 py-1 rounded mb-1">
                                         <span class="text-red-600 mr-2">Disallow:</span>
-                                        <span class="text-gray-700 break-all">${d.path}</span>
-                                        <span class="text-gray-400 ml-auto text-xs">line ${d.line}</span>
+                                        <span class="text-gray-700 break-all">${escapeHtml(d.path)}</span>
+                                        <span class="text-gray-400 ml-auto text-xs">line ${escapeHtml(d.line)}</span>
                                     </div>
                                 `).join('')}
                             </div>
@@ -3940,8 +3938,8 @@ function generateRobotsHTML(data) {
                                 ${group.allow.map(a => `
                                     <div class="flex items-center text-sm font-mono bg-green-50 px-2 py-1 rounded mb-1">
                                         <span class="text-green-600 mr-2">Allow:</span>
-                                        <span class="text-gray-700 break-all">${a.path}</span>
-                                        <span class="text-gray-400 ml-auto text-xs">line ${a.line}</span>
+                                        <span class="text-gray-700 break-all">${escapeHtml(a.path)}</span>
+                                        <span class="text-gray-400 ml-auto text-xs">line ${escapeHtml(a.line)}</span>
                                     </div>
                                 `).join('')}
                             </div>
@@ -3957,7 +3955,7 @@ function generateRobotsHTML(data) {
         recommendationsHTML = recommendations.map(rec => `
             <div class="flex items-start mb-2 p-2 bg-blue-50 rounded">
                 <i class="fas fa-lightbulb text-blue-500 mr-2 mt-1"></i>
-                <span class="text-sm text-blue-700">${rec}</span>
+                <span class="text-sm text-blue-700">${escapeHtml(rec)}</span>
             </div>
         `).join('');
     }
@@ -3966,9 +3964,9 @@ function generateRobotsHTML(data) {
     if (topFixes.length > 0) {
         topFixesHTML = topFixes.map(fix => `
             <div class="border rounded-lg p-3 mb-2 bg-indigo-50 border-indigo-200">
-                <div class="text-sm font-semibold text-indigo-700">[${(fix.priority || 'medium').toUpperCase()}] ${fix.title || 'Исправление'}</div>
-                ${fix.why ? `<div class="text-sm text-indigo-700 mt-1">Почему: ${fix.why}</div>` : ''}
-                ${fix.action ? `<div class="text-sm text-indigo-800 mt-1">Действие: ${fix.action}</div>` : ''}
+                <div class="text-sm font-semibold text-indigo-700">[${escapeHtml((fix.priority || 'medium').toUpperCase())}] ${escapeHtml(fix.title || 'Исправление')}</div>
+                ${fix.why ? `<div class="text-sm text-indigo-700 mt-1">Почему: ${escapeHtml(fix.why)}</div>` : ''}
+                ${fix.action ? `<div class="text-sm text-indigo-800 mt-1">Действие: ${escapeHtml(fix.action)}</div>` : ''}
             </div>
         `).join('');
     }
@@ -3979,14 +3977,15 @@ function generateRobotsHTML(data) {
             const ok = check.ok;
             const badge = ok === true ? 'bg-green-100 text-green-700' : (ok === null ? 'bg-gray-100 text-gray-700' : 'bg-red-100 text-red-700');
             const status = ok === true ? '' : (ok === null ? 'ПРОПУЩЕНО' : 'ОШИБКА');
+            const safeHref = sanitizeHttpUrl(check.url || '');
             return `
                 <div class="border rounded-lg p-3 mb-2">
                     <div class="flex items-center justify-between">
-                        <a href="${check.url}" target="_blank" class="text-sm text-blue-600 hover:underline break-all">${check.url}</a>
-                        <span class="text-xs px-2 py-1 rounded ${badge}">${status}</span>
+                        <a href="${safeHref || '#'}" target="_blank" class="text-sm text-blue-600 hover:underline break-all">${escapeHtml(check.url)}</a>
+                        <span class="text-xs px-2 py-1 rounded ${badge}">${escapeHtml(status)}</span>
                     </div>
                     <div class="text-xs text-gray-500 mt-1">
-                        ${check.status_code ? `HTTP ${check.status_code}` : ''} ${check.error ? `• ${check.error}` : ''}
+                        ${check.status_code ? `HTTP ${escapeHtml(check.status_code)}` : ''} ${check.error ? `• ${escapeHtml(check.error)}` : ''}
                     </div>
                 </div>
             `;
@@ -4008,8 +4007,8 @@ function generateRobotsHTML(data) {
     if (unsupportedDirectives.length > 0) {
         unsupportedDirectivesHTML = unsupportedDirectives.map(item => `
             <div class="border rounded-lg p-3 mb-2 bg-amber-50 border-amber-200 text-amber-800 text-sm">
-                <span class="font-semibold">Line ${item.line || '?'}</span>
-                : <span class="font-mono">${item.directive || ''}${item.value ? `: ${item.value}` : ''}</span>
+                <span class="font-semibold">Line ${escapeHtml(item.line || '?')}</span>
+                : <span class="font-mono">${escapeHtml(item.directive || '')}${item.value ? `: ${escapeHtml(item.value)}` : ''}</span>
             </div>
         `).join('');
     }
@@ -4017,8 +4016,8 @@ function generateRobotsHTML(data) {
     let hostValidationHTML = '';
     if (hostList.length > 0 || hostWarnings.length > 0) {
         hostValidationHTML = `
-            ${hostList.length > 0 ? `<div class="text-sm text-gray-700 mb-2"><span class="font-semibold">Hosts:</span> ${hostList.join(', ')}</div>` : ''}
-            ${hostWarnings.map(w => `<div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-2 text-yellow-700 text-sm">${w}</div>`).join('')}
+            ${hostList.length > 0 ? `<div class="text-sm text-gray-700 mb-2"><span class="font-semibold">Hosts:</span> ${escapeHtml(hostList.join(', '))}</div>` : ''}
+            ${hostWarnings.map(w => `<div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-2 text-yellow-700 text-sm">${escapeHtml(w)}</div>`).join('')}
         `;
     }
 
@@ -4026,10 +4025,10 @@ function generateRobotsHTML(data) {
     if (conflictDetails.length > 0) {
         conflictDetailsHTML = conflictDetails.map(item => `
             <div class="border rounded-lg p-3 mb-2 bg-orange-50 border-orange-200 text-sm text-orange-800">
-                <span class="font-semibold">${item.type || 'conflict'}</span>
-                ${item.user_agent ? ` | UA: ${item.user_agent}` : ''}
-                ${item.path ? ` | Path: ${item.path}` : ''}
-                ${item.groups ? ` | Группы: ${item.groups}` : ''}
+                <span class="font-semibold">${escapeHtml(item.type || 'conflict')}</span>
+                ${item.user_agent ? ` | UA: ${escapeHtml(item.user_agent)}` : ''}
+                ${item.path ? ` | Path: ${escapeHtml(item.path)}` : ''}
+                ${item.groups ? ` | Группы: ${escapeHtml(item.groups)}` : ''}
             </div>
         `).join('');
     }
@@ -4037,15 +4036,15 @@ function generateRobotsHTML(data) {
     let longestMatchHTML = '';
     if (longestMatchNotes.length > 0) {
         longestMatchHTML = longestMatchNotes.map(note => `
-            <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2 text-blue-700 text-sm">${note}</div>
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2 text-blue-700 text-sm">${escapeHtml(note)}</div>
         `).join('');
     }
 
     let httpStatusAnalysisHTML = '';
     if (httpStatusNotes.length > 0) {
         httpStatusAnalysisHTML = `
-            <div class="text-sm text-gray-700 mb-2"><span class="font-semibold">Контекст HTTP-статуса:</span> ${httpStatusAnalysis.status_code ?? r.status_code ?? 'н/д'}</div>
-            ${httpStatusNotes.map(note => `<div class="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-2 text-slate-700 text-sm">${note}</div>`).join('')}
+            <div class="text-sm text-gray-700 mb-2"><span class="font-semibold">Контекст HTTP-статуса:</span> ${escapeHtml(httpStatusAnalysis.status_code ?? r.status_code ?? 'н/д')}</div>
+            ${httpStatusNotes.map(note => `<div class="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-2 text-slate-700 text-sm">${escapeHtml(note)}</div>`).join('')}
         `;
     }
 
@@ -4300,8 +4299,8 @@ function generateSitemapHTMLV2(result) {
     const sitemapDiscoverySource = r.sitemap_discovery_source || '';
     const duplicateLines = duplicateDetails.map(d => `${d.url}	первый: ${d.first_sitemap || '-'}	дубликат: ${d.duplicate_sitemap || '-'}`);
     const exportChunkSize = r.export_chunk_size || 25000;
-    const dateStamp = new Date().toISOString().slice(0, 10);
-    const safeDomain = (result.url || 'sitemap').replace(/https?:\/\//, '').replace(/[^\w.-]+/g, '_');
+    const dateStamp = buildFilenameTimestamp();
+    const safeDomain = sanitizeFilenamePart(extractDomain(result.url || resolvedSitemapUrl || '') || result.url || resolvedSitemapUrl || 'sitemap');
     sitemapExportUrls = exportUrls;
     sitemapDuplicateLines = duplicateLines;
     sitemapFilePreviewUrls = sitemapFiles.map(f => (f.urls || []).slice(0, 100000));
