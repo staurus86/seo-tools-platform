@@ -1,6 +1,7 @@
 """
 Redirect Checker router.
 """
+import asyncio
 import re
 from datetime import datetime
 from typing import Optional, List
@@ -9,7 +10,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import field_validator
 
 from app.validators import URLModel, normalize_http_input
-from app.api.routers._task_store import create_task_result
+from app.api.routers._task_store import create_task_pending, update_task_state
 
 router = APIRouter(tags=["SEO Tools"])
 
@@ -74,7 +75,7 @@ class RedirectCheckerRequest(URLModel):
 
 @router.post("/tasks/redirect-checker")
 async def create_redirect_checker(data: RedirectCheckerRequest):
-    """Run redirect checker with policy-aware SEO checks."""
+    """Run redirect checker as background task with task-store progress."""
     url = normalize_http_input(data.url or "")
     if not url:
         raise HTTPException(status_code=422, detail="Введите корректный URL сайта (домен или http/https URL).")
@@ -91,26 +92,78 @@ async def create_redirect_checker(data: RedirectCheckerRequest):
         f"slash_policy={trailing_slash_policy}, lowercase={enforce_lowercase}"
     )
 
-    try:
-        result = check_redirect_checker_full(
-            url,
-            user_agent=user_agent,
-            canonical_host_policy=canonical_host_policy,
-            trailing_slash_policy=trailing_slash_policy,
-            enforce_lowercase=enforce_lowercase,
-            allowed_query_params=allowed_query_params,
-            required_query_params=required_query_params,
-            ignore_query_params=ignore_query_params,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Redirect checker failed: {exc}")
-
     task_id = f"redirect-{datetime.now().timestamp()}"
-    create_task_result(task_id, "redirect_checker", url, result)
+    create_task_pending(task_id, "redirect_checker", url, status_message="Задача поставлена в очередь")
+
+    async def _run_redirect_task() -> None:
+        try:
+            update_task_state(
+                task_id,
+                status="RUNNING",
+                progress=10,
+                status_message="Запуск сценариев Redirect Checker",
+                progress_meta={
+                    "current_stage": "redirect_checks",
+                    "scenario_count": 17,
+                    "current_url": url,
+                },
+            )
+            result = await asyncio.to_thread(
+                check_redirect_checker_full,
+                url,
+                user_agent=user_agent,
+                canonical_host_policy=canonical_host_policy,
+                trailing_slash_policy=trailing_slash_policy,
+                enforce_lowercase=enforce_lowercase,
+                allowed_query_params=allowed_query_params,
+                required_query_params=required_query_params,
+                ignore_query_params=ignore_query_params,
+            )
+            summary = ((result or {}).get("results", {}) or {}).get("summary", {}) or {}
+            update_task_state(
+                task_id,
+                status="SUCCESS",
+                progress=100,
+                status_message="Redirect Checker завершен",
+                result=result,
+                error=None,
+                progress_meta={
+                    "current_stage": "done",
+                    "scenario_count": summary.get("total_scenarios", 17),
+                    "duration_ms": summary.get("duration_ms"),
+                    "current_url": url,
+                },
+            )
+        except ValueError as exc:
+            update_task_state(
+                task_id,
+                status="FAILURE",
+                progress=100,
+                status_message="Redirect Checker завершился с ошибкой валидации",
+                error=str(exc),
+                progress_meta={
+                    "current_stage": "failed",
+                    "scenario_count": 17,
+                    "current_url": url,
+                },
+            )
+        except Exception as exc:
+            update_task_state(
+                task_id,
+                status="FAILURE",
+                progress=100,
+                status_message="Redirect Checker завершился с ошибкой",
+                error=f"Redirect checker failed: {exc}",
+                progress_meta={
+                    "current_stage": "failed",
+                    "scenario_count": 17,
+                    "current_url": url,
+                },
+            )
+
+    asyncio.create_task(_run_redirect_task())
     return {
         "task_id": task_id,
-        "status": "SUCCESS",
-        "message": "Redirect checker completed",
+        "status": "PENDING",
+        "message": "Redirect checker started",
     }

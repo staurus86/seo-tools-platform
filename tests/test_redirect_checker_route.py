@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 import importlib.util
 import shutil
@@ -30,13 +31,15 @@ class RedirectCheckerRouteTests(unittest.IsolatedAsyncioTestCase):
         with patch("app.api.routes.check_redirect_checker_full", return_value=fake_result):
             payload = RedirectCheckerRequest(url="example.com", user_agent="googlebot_desktop")
             response = await create_redirect_checker(payload)
+            await asyncio.sleep(0.05)
 
-        self.assertEqual(response.get("status"), "SUCCESS")
+        self.assertEqual(response.get("status"), "PENDING")
         task_id = str(response.get("task_id", ""))
         self.assertTrue(task_id.startswith("redirect-"))
         stored = get_task_result(task_id)
         self.assertIsNotNone(stored)
         self.assertEqual((stored or {}).get("task_type"), "redirect_checker")
+        self.assertEqual((stored or {}).get("status"), "SUCCESS")
 
     async def test_route_passes_policy_parameters(self):
         if importlib.util.find_spec("multipart") is None:
@@ -64,8 +67,9 @@ class RedirectCheckerRouteTests(unittest.IsolatedAsyncioTestCase):
                 ignore_query_params=["utm_source", "gclid"],
             )
             response = await create_redirect_checker(payload)
+            await asyncio.sleep(0.05)
 
-        self.assertEqual(response.get("status"), "SUCCESS")
+        self.assertEqual(response.get("status"), "PENDING")
         self.assertEqual(mock_check.call_count, 1)
         _, kwargs = mock_check.call_args
         self.assertEqual(kwargs.get("user_agent"), "googlebot_desktop")
