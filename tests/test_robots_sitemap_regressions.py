@@ -130,12 +130,18 @@ class RobotsAndSitemapRegressionTests(unittest.TestCase):
             captured["url"] = url
             captured["result"] = result
 
+        async def fake_discover(url, timeout=12):
+            return ["https://example.com/sitemap.xml"], "robots_txt"
+
+        async def fake_check(urls):
+            return {"results": {"valid": True}}
+
         with patch("app.api.routers.robots._get_public_target_error", return_value=""), patch(
-            "app.api.routers.robots._discover_sitemap_urls",
-            return_value=(["https://example.com/sitemap.xml"], "robots_txt"),
+            "app.api.routers.robots._discover_sitemap_urls_async",
+            side_effect=fake_discover,
         ), patch(
-            "app.api.routers.robots.check_sitemap_full",
-            return_value={"results": {"valid": True}},
+            "app.api.routers.robots.check_sitemap_full_async",
+            side_effect=fake_check,
         ), patch(
             "app.api.routers.robots.create_task_result",
             side_effect=fake_create_task_result,
@@ -149,27 +155,23 @@ class RobotsAndSitemapRegressionTests(unittest.TestCase):
         self.assertEqual(captured["result"]["results"]["resolved_sitemap_urls"], ["https://example.com/sitemap.xml"])
         self.assertEqual(captured["result"]["results"]["sitemap_discovery_source"], "robots_txt")
 
-    def test_create_robots_check_uses_to_thread(self):
-        thread_calls = []
+    def test_create_robots_check_uses_async_helper(self):
+        seen = {}
 
-        async def fake_to_thread(func, *args, **kwargs):
-            func_name = getattr(func, "__name__", None) or getattr(func, "_mock_name", str(func))
-            thread_calls.append((func_name, args))
-            return func(*args, **kwargs)
+        async def fake_check(url):
+            seen["url"] = url
+            return {"results": {"status": "ok"}}
 
         with patch(
-            "app.api.routers.robots.asyncio.to_thread",
-            side_effect=fake_to_thread,
-        ), patch(
-            "app.api.routers.robots.check_robots_full",
-            return_value={"results": {"status": "ok"}},
+            "app.api.routers.robots.check_robots_full_async",
+            side_effect=fake_check,
         ), patch(
             "app.api.routers.robots.create_task_result",
         ) as create_task_result:
             response = asyncio.run(robots.create_robots_check(robots.RobotsCheckRequest(url="example.com")))
 
         self.assertEqual(response["status"], "SUCCESS")
-        self.assertEqual(thread_calls, [("check_robots_full", ("https://example.com",))])
+        self.assertEqual(seen["url"], "https://example.com")
         create_task_result.assert_called_once()
 
     def test_non_self_canonical_does_not_mark_sample_as_non_indexable(self):
@@ -213,30 +215,24 @@ class RobotsAndSitemapRegressionTests(unittest.TestCase):
         self.assertEqual(result["results"]["live_non_indexable_count"], 0)
         self.assertEqual(canonical_sample["non_self_count"], 1)
 
-    def test_create_sitemap_validate_uses_to_thread_for_discovery_and_validation(self):
-        thread_calls = []
+    def test_create_sitemap_validate_uses_async_helpers_for_discovery_and_validation(self):
+        calls = []
 
-        def fake_discover(url):
+        async def fake_discover(url, timeout=12):
             self.assertEqual(url, "https://example.com")
+            calls.append(("discover", url))
             return ["https://example.com/sitemap.xml"], "robots_txt"
 
-        def fake_check(urls):
+        async def fake_check(urls):
             self.assertEqual(urls, ["https://example.com/sitemap.xml"])
+            calls.append(("check", list(urls)))
             return {"results": {"valid": True}}
 
-        async def fake_to_thread(func, *args, **kwargs):
-            func_name = getattr(func, "__name__", None) or getattr(func, "_mock_name", str(func))
-            thread_calls.append((func_name, args))
-            return func(*args, **kwargs)
-
         with patch("app.api.routers.robots._get_public_target_error", return_value=""), patch(
-            "app.api.routers.robots.asyncio.to_thread",
-            side_effect=fake_to_thread,
-        ), patch(
-            "app.api.routers.robots._discover_sitemap_urls",
+            "app.api.routers.robots._discover_sitemap_urls_async",
             side_effect=fake_discover,
         ), patch(
-            "app.api.routers.robots.check_sitemap_full",
+            "app.api.routers.robots.check_sitemap_full_async",
             side_effect=fake_check,
         ), patch(
             "app.api.routers.robots.create_task_result",
@@ -245,10 +241,10 @@ class RobotsAndSitemapRegressionTests(unittest.TestCase):
 
         self.assertEqual(response["status"], "SUCCESS")
         self.assertEqual(
-            thread_calls,
+            calls,
             [
-                ("_discover_sitemap_urls", ("https://example.com",)),
-                ("check_sitemap_full", (["https://example.com/sitemap.xml"],)),
+                ("discover", "https://example.com"),
+                ("check", ["https://example.com/sitemap.xml"]),
             ],
         )
 
