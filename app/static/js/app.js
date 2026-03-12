@@ -82,11 +82,11 @@ async function startTask(event, endpoint) {
             .split(/\r?\n/)
             .map((x) => x.trim())
             .filter((x) => x.length > 0);
-        if (batchMode && parsedBatchUrls.length > 500) {
-            showToast('Batch scan limit: maximum 500 URLs', 'warning');
+        if (batchMode && parsedBatchUrls.length > 1500) {
+            showToast('Batch scan limit: maximum 1500 URLs', 'warning');
             return;
         }
-        const batchUrls = parsedBatchUrls.slice(0, 500);
+        const batchUrls = parsedBatchUrls.slice(0, 1500);
 
         data.batch_mode = batchMode;
         if (batchMode) {
@@ -95,7 +95,7 @@ async function startTask(event, endpoint) {
                 return;
             }
             data.batch_urls = batchUrls;
-            data.max_pages = Math.min(500, Math.max(1, batchUrls.length));
+            data.max_pages = Math.min(1500, Math.max(1, batchUrls.length));
             data.mode = 'full';
             if (!data.url || String(data.url).trim() === '') {
                 data.url = batchUrls[0];
@@ -441,7 +441,7 @@ function initSiteAuditProBatchUI() {
         const isBatch = modeSelect.value === 'batch';
         const isFull = reportModeSelect.value === 'full';
         if (isBatch) return;
-        const crawlMax = isFull ? 30 : 5;
+        const crawlMax = isFull ? 1500 : 200;
         maxPagesInput.max = String(crawlMax);
         if (parseInt(maxPagesInput.value || '1', 10) > crawlMax) {
             maxPagesInput.value = String(crawlMax);
@@ -454,8 +454,8 @@ function initSiteAuditProBatchUI() {
         batchBox.classList.toggle('hidden', !isBatch);
         batchFlag.value = isBatch ? 'true' : 'false';
         if (isBatch) {
-            maxPagesInput.value = '500';
-            maxPagesInput.max = '500';
+            maxPagesInput.value = '1500';
+            maxPagesInput.max = '1500';
             maxPagesInput.title = 'Max URLs in batch mode';
             rootUrlInput.required = false;
             rootUrlInput.disabled = true;
