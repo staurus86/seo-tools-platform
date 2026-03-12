@@ -18,6 +18,7 @@ def _compute_pagerank(graph: Dict[str, Set[str]]) -> Dict[str, float]:
     scores = {u: 1.0 / n for u in nodes}
     for _ in range(20):
         new_scores = {u: (1.0 - damping) / n for u in nodes}
+        dangling_sum = 0.0
         for u in nodes:
             outgoing = graph[u]
             if outgoing:
@@ -25,9 +26,10 @@ def _compute_pagerank(graph: Dict[str, Set[str]]) -> Dict[str, float]:
                 for v in outgoing:
                     new_scores[v] += damping * share
             else:
-                share = scores[u] / n
-                for v in nodes:
-                    new_scores[v] += damping * share
+                dangling_sum += scores[u]
+        dangling_share = damping * dangling_sum / n
+        for u in nodes:
+            new_scores[u] += dangling_share
         scores = new_scores
     max_score = max(scores.values()) if scores else 1.0
     return {u: round((s / max_score) * 100.0, 2) for u, s in scores.items()}
@@ -94,7 +96,7 @@ def _build_semantic_linking_map(
                         "suggested_anchor": common_sorted[0] if common_sorted else "",
                     }
                 )
-        semantic_sorted = sorted(semantic, key=lambda x: x["relevance_score"], reverse=True)
+        semantic_sorted = sorted(semantic, key=lambda x: x["relevance_score"], reverse=True)[:20]
         semantic_by_url[src.url] = semantic_sorted
         src.topic_hub = len(semantic_sorted) >= 3
         if semantic_sorted:

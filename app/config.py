@@ -129,12 +129,12 @@ class Settings(BaseSettings):
     # Site Audit Pro rollout
     SITE_AUDIT_PRO_ENABLED: bool = env_bool("SITE_AUDIT_PRO_ENABLED", "true")
     SITE_AUDIT_PRO_DEFAULT_MODE: str = os.getenv("SITE_AUDIT_PRO_DEFAULT_MODE", "quick")
-    SITE_AUDIT_PRO_MAX_PAGES_LIMIT: int = int(os.getenv("SITE_AUDIT_PRO_MAX_PAGES_LIMIT", "5"))
-    SITE_AUDIT_PRO_MAX_PAGES_LIMIT_QUICK: int = int(os.getenv("SITE_AUDIT_PRO_MAX_PAGES_LIMIT_QUICK", "5"))
-    SITE_AUDIT_PRO_MAX_PAGES_LIMIT_FULL: int = int(os.getenv("SITE_AUDIT_PRO_MAX_PAGES_LIMIT_FULL", "30"))
-    SITE_AUDIT_PRO_INLINE_ISSUES_LIMIT: int = int(os.getenv("SITE_AUDIT_PRO_INLINE_ISSUES_LIMIT", "200"))
-    SITE_AUDIT_PRO_INLINE_SEMANTIC_LIMIT: int = int(os.getenv("SITE_AUDIT_PRO_INLINE_SEMANTIC_LIMIT", "200"))
-    SITE_AUDIT_PRO_INLINE_PAGES_LIMIT: int = int(os.getenv("SITE_AUDIT_PRO_INLINE_PAGES_LIMIT", "500"))
+    SITE_AUDIT_PRO_MAX_PAGES_LIMIT: int = int(os.getenv("SITE_AUDIT_PRO_MAX_PAGES_LIMIT", "1500"))
+    SITE_AUDIT_PRO_MAX_PAGES_LIMIT_QUICK: int = int(os.getenv("SITE_AUDIT_PRO_MAX_PAGES_LIMIT_QUICK", "200"))
+    SITE_AUDIT_PRO_MAX_PAGES_LIMIT_FULL: int = int(os.getenv("SITE_AUDIT_PRO_MAX_PAGES_LIMIT_FULL", "1500"))
+    SITE_AUDIT_PRO_INLINE_ISSUES_LIMIT: int = int(os.getenv("SITE_AUDIT_PRO_INLINE_ISSUES_LIMIT", "500"))
+    SITE_AUDIT_PRO_INLINE_SEMANTIC_LIMIT: int = int(os.getenv("SITE_AUDIT_PRO_INLINE_SEMANTIC_LIMIT", "500"))
+    SITE_AUDIT_PRO_INLINE_PAGES_LIMIT: int = int(os.getenv("SITE_AUDIT_PRO_INLINE_PAGES_LIMIT", "1500"))
     
     # CORS — comma-separated list of allowed origins.
     # Empty string means allow all ("*"). Set to your domain(s) in production.

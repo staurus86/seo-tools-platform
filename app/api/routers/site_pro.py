@@ -49,9 +49,9 @@ def check_site_audit_pro(
 class SiteAuditProRequest(URLModel):
     url: Optional[str] = None
     mode: Optional[str] = "quick"
-    max_pages: int = Field(default=5, ge=1, le=500)
+    max_pages: int = Field(default=100, ge=1, le=1500)
     batch_mode: bool = False
-    batch_urls: Optional[List[str]] = Field(default=None, max_length=500)
+    batch_urls: Optional[List[str]] = Field(default=None, max_length=1500)
     extended_hreflang_checks: bool = False
 
     @field_validator("batch_urls", mode="before")
@@ -82,12 +82,12 @@ async def create_site_audit_pro(data: SiteAuditProRequest, background_tasks: Bac
     extended_hreflang_checks = bool(getattr(data, "extended_hreflang_checks", False))
     if batch_mode:
         mode = "full"
-    base_limit = int(getattr(settings, "SITE_AUDIT_PRO_MAX_PAGES_LIMIT", 5) or 5)
-    quick_limit = int(getattr(settings, "SITE_AUDIT_PRO_MAX_PAGES_LIMIT_QUICK", min(base_limit, 5)) or min(base_limit, 5))
-    full_limit = int(getattr(settings, "SITE_AUDIT_PRO_MAX_PAGES_LIMIT_FULL", max(base_limit, 30)) or max(base_limit, 30))
+    base_limit = int(getattr(settings, "SITE_AUDIT_PRO_MAX_PAGES_LIMIT", 1500) or 1500)
+    quick_limit = int(getattr(settings, "SITE_AUDIT_PRO_MAX_PAGES_LIMIT_QUICK", min(base_limit, 200)) or min(base_limit, 200))
+    full_limit = int(getattr(settings, "SITE_AUDIT_PRO_MAX_PAGES_LIMIT_FULL", max(base_limit, 1500)) or max(base_limit, 1500))
     mode_limit = full_limit if mode == "full" else quick_limit
-    effective_max_pages_limit = 500 if batch_mode else mode_limit
-    mode_default_pages = 30 if mode == "full" else 5
+    effective_max_pages_limit = 1500 if batch_mode else mode_limit
+    mode_default_pages = 100 if mode == "full" else 50
     max_pages = max(1, min(int(data.max_pages or mode_default_pages), effective_max_pages_limit))
 
     raw_batch_urls = list(getattr(data, "batch_urls", []) or [])
@@ -106,7 +106,7 @@ async def create_site_audit_pro(data: SiteAuditProRequest, background_tasks: Bac
             continue
         seen_batch_urls.add(candidate)
         normalized_batch_urls.append(candidate)
-        if len(normalized_batch_urls) >= 500:
+        if len(normalized_batch_urls) >= 1500:
             break
 
     if batch_mode and not normalized_batch_urls:

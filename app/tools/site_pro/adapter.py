@@ -1402,9 +1402,9 @@ class SiteAuditProAdapter:
                             "reason": "Shared topic without internal link",
                         }
                     )
-                if len(semantic_suggestions) >= 200:
+                if len(semantic_suggestions) >= 500:
                     break
-            if len(semantic_suggestions) >= 200:
+            if len(semantic_suggestions) >= 500:
                 break
 
         severity_counts = {"critical": 0, "warning": 0, "info": 0}
