@@ -72,6 +72,9 @@ elif [ "$SERVICE_MODE" = "llm-worker" ]; then
 else
     echo "Starting in WEB mode..."
     echo ""
-    
+
+    export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/ms-playwright}"
+    echo "PLAYWRIGHT_BROWSERS_PATH: ${PLAYWRIGHT_BROWSERS_PATH}"
+
     exec python -m uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}" --log-level info
 fi
