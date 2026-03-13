@@ -959,7 +959,9 @@ class DOCXGenerator:
         variants = results.get('variants', []) or []
         issues = results.get('issues', []) or []
         recommendations = results.get('recommendations', []) or []
+        server_base_url = str(data.get('server_base_url') or '').strip()
         generated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        temp_screenshots: List[str] = []
 
         self._add_cover_page(doc, 'Render Audit Report', 'Render-аудит', data.get('url', ''), generated_at)
         self._add_header_footer(doc, 'Render Audit Report')
@@ -1139,8 +1141,10 @@ class DOCXGenerator:
                 screenshots = variant.get('screenshots', {}) or {}
                 for key in ('js', 'nojs', 'js_landscape', 'nojs_landscape'):
                     shot = screenshots.get(key) or {}
-                    shot_path = shot.get('path')
-                    if shot_path and os.path.exists(shot_path):
+                    shot_path = self._resolve_render_screenshot(
+                        shot, task_id, server_base_url, temp_screenshots,
+                    )
+                    if shot_path:
                         caption = {
                             'js': 'Скриншот: рендер с JavaScript',
                             'nojs': 'Скриншот: версия без JavaScript',
@@ -1148,7 +1152,10 @@ class DOCXGenerator:
                             'nojs_landscape': 'Скриншот: мобильный (горизонтальный), без JavaScript',
                         }.get(key, 'Скриншот')
                         doc.add_paragraph(caption)
-                        doc.add_picture(shot_path, width=Inches(6.5))
+                        try:
+                            doc.add_picture(shot_path, width=Inches(6.5))
+                        except Exception:
+                            doc.add_paragraph(f"Не удалось встроить скриншот: {shot_path}")
         else:
             doc.add_paragraph("Данные по профилям отсутствуют.")
 
@@ -1174,7 +1181,62 @@ class DOCXGenerator:
         self._add_full_result_appendix(doc, data)
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         self._save_document(doc, filepath)
+        for tmp in temp_screenshots:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
         return filepath
+
+    def _resolve_render_screenshot(
+        self,
+        shot: Dict[str, Any],
+        task_id: str,
+        server_base_url: str,
+        temp_screenshots: List[str],
+    ) -> str:
+        """Resolve render screenshot: try local path, then fallback to HTTP download."""
+        raw_path = str(shot.get("path") or "").strip()
+        shot_name = str(shot.get("name") or "").strip()
+        shot_url = str(shot.get("url") or "").strip()
+
+        candidates: List[str] = []
+        if raw_path:
+            candidates.append(raw_path)
+        if shot_name:
+            candidates.append(
+                os.path.join(self.reports_dir, "render", task_id, "screenshots", shot_name)
+            )
+        if raw_path:
+            candidates.append(
+                os.path.join(self.reports_dir, "render", task_id, "screenshots", os.path.basename(raw_path))
+            )
+
+        for candidate in candidates:
+            if candidate and os.path.exists(candidate):
+                return candidate
+
+        if shot_url:
+            if shot_url.startswith("/"):
+                if server_base_url:
+                    shot_url = urljoin(server_base_url, shot_url)
+                else:
+                    shot_url = ""
+            if shot_url:
+                try:
+                    response = requests.get(shot_url, timeout=25)
+                    if response.status_code == 200 and response.content:
+                        fd, temp_path = tempfile.mkstemp(
+                            prefix=f"render_docx_{task_id}_", suffix=".png"
+                        )
+                        os.close(fd)
+                        with open(temp_path, "wb") as f:
+                            f.write(response.content)
+                        temp_screenshots.append(temp_path)
+                        return temp_path
+                except Exception:
+                    pass
+        return ""
 
     def generate_mobile_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Extended mobile DOCX report with Russian content."""
@@ -1496,6 +1558,7 @@ class DOCXGenerator:
                 "базовым требованиям удобства и технической корректности."
             )
 
+        self._add_full_result_appendix(doc, data)
         filepath = os.path.join(self.reports_dir, f"{task_id}.docx")
         try:
             self._save_document(doc, filepath)
@@ -1987,8 +2050,6 @@ class DOCXGenerator:
     def generate_site_audit_pro_report(self, task_id: str, data: Dict[str, Any]) -> str:
         """Generate compact DOCX report for site_audit_pro."""
         doc = Document()
-        title = doc.add_heading("Отчет Site Audit Pro", 0)
-        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         results = data.get("results", {}) or {}
         summary = results.get("summary", {}) or {}
@@ -1997,10 +2058,14 @@ class DOCXGenerator:
         pages = results.get("pages", []) or []
         issues = results.get("issues", []) or []
         url = data.get("url", "н/д")
+        generated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        self._add_cover_page(doc, 'Site Audit Pro Report', 'Комплексный технический аудит', data.get('url', ''), generated_at)
+        self._add_header_footer(doc, 'Site Audit Pro Report')
 
         doc.add_paragraph(f"URL: {url}")
         doc.add_paragraph(f"Режим: {results.get('mode', 'quick')}")
-        doc.add_paragraph(f"Сформирован: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        doc.add_paragraph(f"Сформирован: {generated_at}")
 
         self._add_heading(doc, "1. Ключевая сводка", level=1)
         summary_rows = [

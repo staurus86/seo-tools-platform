@@ -263,7 +263,7 @@ async def export_mobile_xlsx(data: ExportRequest, request: Request):
 
 
 @router.post("/export/render-docx")
-async def export_render_docx(data: ExportRequest):
+async def export_render_docx(data: ExportRequest, request: Request):
     """Export render audit report to DOCX."""
     from app.reports.docx_generator import docx_generator
 
@@ -276,7 +276,11 @@ async def export_render_docx(data: ExportRequest):
 
         task_result = task.get("result", {})
         url = task.get("url", "") or task_result.get("url", "")
-        payload = {"url": url, "results": task_result.get("results", task_result)}
+        payload = {
+            "url": url,
+            "results": task_result.get("results", task_result),
+            "server_base_url": str(request.base_url),
+        }
 
         filepath = docx_generator.generate_render_report(data.task_id, payload)
         if not filepath or not os.path.exists(filepath):
