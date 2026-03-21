@@ -24,6 +24,7 @@
     --ds-success-bg: #ecfdf3;
     --ds-success-border: #86efac;
     --ds-warn: #c2410c;
+    --ds-warning: #c2410c;
     --ds-warn-bg: #fffbeb;
     --ds-warn-border: #fcd34d;
     --ds-danger: #b91c1c;
@@ -66,6 +67,7 @@
     --ds-success-bg: #052e16;
     --ds-success-border: #166534;
     --ds-warn: #fb923c;
+    --ds-warning: #fb923c;
     --ds-warn-bg: #431407;
     --ds-warn-border: #92400e;
     --ds-danger: #f87171;

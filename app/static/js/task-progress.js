@@ -8505,9 +8505,9 @@ function _batchExtractIssues(item, toolType) {
         else info++;
     });
     const parts = [];
-    if (critical > 0) parts.push(`<span style="color:#ef4444;font-weight:600;">${critical} critical</span>`);
-    if (warning > 0) parts.push(`<span style="color:#f59e0b;">${warning} warning</span>`);
-    if (info > 0) parts.push(`<span style="color:#3b82f6;">${info} info</span>`);
+    if (critical > 0) parts.push(`<span style="color:var(--ds-danger);font-weight:600;">${critical} critical</span>`);
+    if (warning > 0) parts.push(`<span style="color:var(--ds-warning);">${warning} warning</span>`);
+    if (info > 0) parts.push(`<span style="color:var(--ds-info);">${info} info</span>`);
     return parts.join(', ') || '—';
 }
 
