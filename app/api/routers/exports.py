@@ -637,3 +637,291 @@ async def export_link_profile_xlsx(data: ExportRequest):
         return _error_response(str(e), status_code=500)
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# GET endpoints — /tasks/{tool}/{task_id}/export/{format}
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Mapping: path tool slug → (task_type, report_prefix, generator_method_suffix)
+_TOOL_META = {
+    "bot-check": ("bot_check", "bot_report", "bot_report"),
+    "mobile-check": ("mobile_check", "mobile_report", "mobile_report"),
+    "render-audit": ("render_audit", "render_report", "render_report"),
+    "onpage-audit": ("onpage_audit", "onpage_report", "onpage_report"),
+    "redirect-checker": ("redirect_checker", "redirect_checker_report", "redirect_checker_report"),
+    "core-web-vitals": ("core_web_vitals", "core_web_vitals_report", "core_web_vitals_report"),
+}
+
+
+def _get_task_or_error(task_id: str, expected_type: str):
+    """Return (task, task_result, url, error_response).
+
+    If error_response is not None the caller should return it immediately.
+    """
+    task = get_task_result(task_id)
+    if not task:
+        return None, None, None, _error_response("Task not found", status_code=404, task_id=task_id)
+    if task.get("task_type") != expected_type:
+        return None, None, None, _error_response(
+            f"Unsupported task type: {task.get('task_type')}", status_code=400
+        )
+    task_result = task.get("result", {}) or {}
+    url = task.get("url", "") or task_result.get("url", "")
+    return task, task_result, url, None
+
+
+# ─── bot-check GET ────────────────────────────────────────────────────────
+
+
+@router.get("/tasks/bot-check/{task_id}/export/xlsx")
+async def get_bot_check_xlsx(task_id: str):
+    """GET export: Bot Checker → XLSX."""
+    from app.reports.xlsx_generator import xlsx_generator
+
+    try:
+        task, task_result, url, err = _get_task_or_error(task_id, "bot_check")
+        if err:
+            return err
+        payload = {"url": url, "results": task_result.get("results", task_result)}
+        filepath = xlsx_generator.generate_bot_report(task_id, payload)
+        if not filepath or not os.path.exists(filepath):
+            return _error_response("Failed to generate report", status_code=500)
+        append_task_artifact(task_id, filepath, kind="export")
+        return _file_response(filepath, _XLSX, _export_filename("bot_report", url, "xlsx"))
+    except Exception as e:
+        return _error_response(str(e), status_code=500)
+
+
+@router.get("/tasks/bot-check/{task_id}/export/docx")
+async def get_bot_check_docx(task_id: str):
+    """GET export: Bot Checker → DOCX."""
+    from app.reports.docx_generator import docx_generator
+
+    try:
+        task, task_result, url, err = _get_task_or_error(task_id, "bot_check")
+        if err:
+            return err
+        payload = {"url": url, "results": task_result.get("results", task_result)}
+        filepath = docx_generator.generate_bot_report(task_id, payload)
+        if not filepath or not os.path.exists(filepath):
+            return _error_response("Failed to generate report", status_code=500)
+        append_task_artifact(task_id, filepath, kind="export")
+        return _file_response(filepath, _DOCX, _export_filename("bot_report", url, "docx"))
+    except Exception as e:
+        return _error_response(str(e), status_code=500)
+
+
+# ─── mobile-check GET ────────────────────────────────────────────────────
+
+
+@router.get("/tasks/mobile-check/{task_id}/export/xlsx")
+async def get_mobile_check_xlsx(task_id: str, request: Request):
+    """GET export: Mobile Audit → XLSX."""
+    from app.reports.xlsx_generator import xlsx_generator
+
+    try:
+        task, task_result, url, err = _get_task_or_error(task_id, "mobile_check")
+        if err:
+            return err
+        results = task_result.get("results", task_result) or {}
+        payload = {"url": url, "results": results, "server_base_url": str(request.base_url)}
+        filepath = xlsx_generator.generate_mobile_report(task_id, payload)
+        if not filepath or not os.path.exists(filepath):
+            return _error_response("Failed to generate report", status_code=500)
+        append_task_artifact(task_id, filepath, kind="export")
+        return _file_response(filepath, _XLSX, _export_filename("mobile_report", url, "xlsx"))
+    except Exception as e:
+        return _error_response(str(e), status_code=500)
+
+
+@router.get("/tasks/mobile-check/{task_id}/export/docx")
+async def get_mobile_check_docx(task_id: str, request: Request):
+    """GET export: Mobile Audit → DOCX."""
+    from app.reports.docx_generator import docx_generator
+
+    try:
+        task, task_result, url, err = _get_task_or_error(task_id, "mobile_check")
+        if err:
+            return err
+        payload = {
+            "url": url,
+            "results": task_result.get("results", task_result),
+            "server_base_url": str(request.base_url),
+        }
+        filepath = docx_generator.generate_mobile_report(task_id, payload)
+        if not filepath or not os.path.exists(filepath):
+            return _error_response("Failed to generate report", status_code=500)
+        append_task_artifact(task_id, filepath, kind="export")
+        return _file_response(filepath, _DOCX, _export_filename("mobile_report", url, "docx"))
+    except Exception as e:
+        return _error_response(str(e), status_code=500)
+
+
+# ─── render-audit GET ─────────────────────────────────────────────────────
+
+
+@router.get("/tasks/render-audit/{task_id}/export/xlsx")
+async def get_render_audit_xlsx(task_id: str):
+    """GET export: Render Audit → XLSX."""
+    from app.reports.xlsx_generator import xlsx_generator
+
+    try:
+        task, task_result, url, err = _get_task_or_error(task_id, "render_audit")
+        if err:
+            return err
+        results = task_result.get("results", task_result) or {}
+        payload = {"url": url, "results": results}
+        filepath = xlsx_generator.generate_render_report(task_id, payload)
+        if not filepath or not os.path.exists(filepath):
+            return _error_response("Failed to generate report", status_code=500)
+        append_task_artifact(task_id, filepath, kind="export")
+        return _file_response(filepath, _XLSX, _export_filename("render_report", url, "xlsx"))
+    except Exception as e:
+        return _error_response(str(e), status_code=500)
+
+
+@router.get("/tasks/render-audit/{task_id}/export/docx")
+async def get_render_audit_docx(task_id: str, request: Request):
+    """GET export: Render Audit → DOCX."""
+    from app.reports.docx_generator import docx_generator
+
+    try:
+        task, task_result, url, err = _get_task_or_error(task_id, "render_audit")
+        if err:
+            return err
+        payload = {
+            "url": url,
+            "results": task_result.get("results", task_result),
+            "server_base_url": str(request.base_url),
+        }
+        filepath = docx_generator.generate_render_report(task_id, payload)
+        if not filepath or not os.path.exists(filepath):
+            return _error_response("Failed to generate report", status_code=500)
+        append_task_artifact(task_id, filepath, kind="export")
+        return _file_response(filepath, _DOCX, _export_filename("render_report", url, "docx"))
+    except Exception as e:
+        return _error_response(str(e), status_code=500)
+
+
+# ─── onpage-audit GET ─────────────────────────────────────────────────────
+
+
+@router.get("/tasks/onpage-audit/{task_id}/export/xlsx")
+async def get_onpage_audit_xlsx(task_id: str):
+    """GET export: OnPage Audit → XLSX."""
+    from app.reports.xlsx_generator import xlsx_generator
+
+    try:
+        task, task_result, url, err = _get_task_or_error(task_id, "onpage_audit")
+        if err:
+            return err
+        payload = {"url": url, "results": task_result.get("results", task_result)}
+        filepath = xlsx_generator.generate_onpage_report(task_id, payload)
+        if not filepath or not os.path.exists(filepath):
+            return _error_response("Failed to generate report", status_code=500)
+        append_task_artifact(task_id, filepath, kind="export")
+        return _file_response(filepath, _XLSX, _export_filename("onpage_report", url, "xlsx"))
+    except Exception as e:
+        return _error_response(str(e), status_code=500)
+
+
+@router.get("/tasks/onpage-audit/{task_id}/export/docx")
+async def get_onpage_audit_docx(task_id: str):
+    """GET export: OnPage Audit → DOCX."""
+    from app.reports.docx_generator import docx_generator
+
+    try:
+        task, task_result, url, err = _get_task_or_error(task_id, "onpage_audit")
+        if err:
+            return err
+        payload = {"url": url, "results": task_result.get("results", task_result)}
+        filepath = docx_generator.generate_onpage_report(task_id, payload)
+        if not filepath or not os.path.exists(filepath):
+            return _error_response("Failed to generate report", status_code=500)
+        append_task_artifact(task_id, filepath, kind="export")
+        return _file_response(filepath, _DOCX, _export_filename("onpage_report", url, "docx"))
+    except Exception as e:
+        return _error_response(str(e), status_code=500)
+
+
+# ─── redirect-checker GET ─────────────────────────────────────────────────
+
+
+@router.get("/tasks/redirect-checker/{task_id}/export/xlsx")
+async def get_redirect_checker_xlsx(task_id: str):
+    """GET export: Redirect Checker → XLSX."""
+    from app.reports.xlsx_generator import xlsx_generator
+
+    try:
+        task, task_result, url, err = _get_task_or_error(task_id, "redirect_checker")
+        if err:
+            return err
+        payload = {"url": url, "results": task_result.get("results", task_result)}
+        filepath = xlsx_generator.generate_redirect_checker_report(task_id, payload)
+        if not filepath or not os.path.exists(filepath):
+            return _error_response("Failed to generate report", status_code=500)
+        append_task_artifact(task_id, filepath, kind="export")
+        return _file_response(filepath, _XLSX, _export_filename("redirect_checker_report", url, "xlsx"))
+    except Exception as e:
+        return _error_response(str(e), status_code=500)
+
+
+@router.get("/tasks/redirect-checker/{task_id}/export/docx")
+async def get_redirect_checker_docx(task_id: str):
+    """GET export: Redirect Checker → DOCX."""
+    from app.reports.docx_generator import docx_generator
+
+    try:
+        task, task_result, url, err = _get_task_or_error(task_id, "redirect_checker")
+        if err:
+            return err
+        payload = {"url": url, "results": task_result.get("results", task_result)}
+        filepath = docx_generator.generate_redirect_checker_report(task_id, payload)
+        if not filepath or not os.path.exists(filepath):
+            return _error_response("Failed to generate report", status_code=500)
+        append_task_artifact(task_id, filepath, kind="export")
+        return _file_response(filepath, _DOCX, _export_filename("redirect_checker_report", url, "docx"))
+    except Exception as e:
+        return _error_response(str(e), status_code=500)
+
+
+# ─── core-web-vitals GET ──────────────────────────────────────────────────
+
+
+@router.get("/tasks/core-web-vitals/{task_id}/export/xlsx")
+async def get_core_web_vitals_xlsx(task_id: str):
+    """GET export: Core Web Vitals → XLSX."""
+    from app.reports.xlsx_generator import xlsx_generator
+
+    try:
+        task, task_result, url, err = _get_task_or_error(task_id, "core_web_vitals")
+        if err:
+            return err
+        payload = {"url": url, "results": task_result.get("results", task_result)}
+        filepath = xlsx_generator.generate_core_web_vitals_report(task_id, payload)
+        if not filepath or not os.path.exists(filepath):
+            return _error_response("Failed to generate report", status_code=500)
+        append_task_artifact(task_id, filepath, kind="export")
+        return _file_response(filepath, _XLSX, _export_filename("core_web_vitals_report", url, "xlsx"))
+    except Exception as e:
+        return _error_response(str(e), status_code=500)
+
+
+@router.get("/tasks/core-web-vitals/{task_id}/export/docx")
+async def get_core_web_vitals_docx(task_id: str):
+    """GET export: Core Web Vitals → DOCX."""
+    from app.reports.docx_generator import docx_generator
+
+    try:
+        task, task_result, url, err = _get_task_or_error(task_id, "core_web_vitals")
+        if err:
+            return err
+        payload = {"url": url, "results": task_result.get("results", task_result)}
+        filepath = docx_generator.generate_core_web_vitals_report(task_id, payload)
+        if not filepath or not os.path.exists(filepath):
+            return _error_response("Failed to generate report", status_code=500)
+        append_task_artifact(task_id, filepath, kind="export")
+        return _file_response(filepath, _DOCX, _export_filename("core_web_vitals_report", url, "docx"))
+    except Exception as e:
+        return _error_response(str(e), status_code=500)
+
+

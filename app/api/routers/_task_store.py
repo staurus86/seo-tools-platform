@@ -286,6 +286,32 @@ def update_task_state(
         task["completed_at"] = now
     _save_task_payload(task_id, task)
 
+    # Broadcast update via WebSocket (best-effort, fire-and-forget)
+    try:
+        import asyncio as _aio
+        from app.main import ws_manager  # lazy import to avoid circular dependency
+
+        broadcast_data = {"task_id": task_id}
+        if status is not None:
+            broadcast_data["status"] = status
+        if progress is not None:
+            broadcast_data["progress"] = task["progress"]
+        if status_message is not None:
+            broadcast_data["status_message"] = status_message
+        if result is not None:
+            broadcast_data["result"] = result
+        if error is not None:
+            broadcast_data["error"] = error
+        if progress_meta is not None:
+            broadcast_data["progress_meta"] = progress_meta
+        broadcast_data["updated_at"] = task.get("updated_at")
+
+        loop = _aio.get_event_loop()
+        if loop.is_running():
+            _aio.ensure_future(ws_manager.broadcast(task_id, broadcast_data))
+    except Exception:
+        pass  # WebSocket broadcast is best-effort
+
 
 def append_task_artifact(task_id: str, artifact_path: str, kind: str = "report") -> None:
     """Attach generated artifact path to task payload for future cleanup."""

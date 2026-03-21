@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random as _random
+import time as _time
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 import math
@@ -822,3 +823,50 @@ def run_keyword_clusterizer(
             "unclustered_keywords": unclustered_keywords,
         },
     }
+
+
+# ── Keyword Expansion via Google Suggest ──────────────────────────────────────
+
+
+def expand_keywords_google_suggest(
+    keywords: List[str],
+    *,
+    max_per_keyword: int = 5,
+    max_total: int = 200,
+    lang: str = "ru",
+) -> List[str]:
+    """Expand keywords using Google Autocomplete suggestions.
+
+    Returns a list of *new* suggestions (not already present in *keywords*).
+    Safe to call without API keys — uses the public suggest endpoint.
+    """
+    import requests as _requests
+
+    existing_lower = {kw.strip().lower() for kw in keywords if kw.strip()}
+    expanded: Set[str] = set()
+    checked = 0
+
+    for kw in keywords[:50]:  # limit source keywords for expansion
+        if len(expanded) >= max_total:
+            break
+        try:
+            resp = _requests.get(
+                "https://suggestqueries.google.com/complete/search",
+                params={"client": "firefox", "q": kw, "hl": lang},
+                timeout=5,
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                suggestions = data[1] if len(data) > 1 else []
+                for s in suggestions[:max_per_keyword]:
+                    s = s.strip().lower()
+                    if s and s not in existing_lower and len(s) > 2:
+                        expanded.add(s)
+            checked += 1
+            if checked % 10 == 0:
+                _time.sleep(1)  # rate limiting
+        except Exception:
+            pass
+
+    return list(expanded)[:max_total]

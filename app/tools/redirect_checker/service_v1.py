@@ -405,7 +405,7 @@ def run_redirect_checker(
     progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> Dict[str, Any]:
     started = time.perf_counter()
-    total_scenarios = 18
+    total_scenarios = 23
 
     normalized_input = _normalize_http_input(url)
     if not normalized_input:
@@ -1305,6 +1305,235 @@ def run_redirect_checker(
             details={
                 "js_result": js_result,
             },
+        )
+    )
+
+    # 19) HSTS Preload Check
+    _notify_progress(19, "hsts_preload", "HSTS Preload Check", normalized_input)
+    hsts_session = requests.Session()
+    if use_proxy:
+        from app.proxy import get_requests_proxies
+        _hsts_proxies = get_requests_proxies()
+        if _hsts_proxies:
+            hsts_session.proxies.update(_hsts_proxies)
+    try:
+        hsts_resp = hsts_session.get(canonical_from_base, timeout=10, allow_redirects=True,
+                                     headers={"User-Agent": ua_value})
+        hsts_header = hsts_resp.headers.get("Strict-Transport-Security", "")
+        has_hsts = bool(hsts_header)
+        has_max_age = "max-age=" in hsts_header.lower()
+        has_includesub = "includesubdomains" in hsts_header.lower()
+        has_preload = "preload" in hsts_header.lower()
+        hsts_max_age_val = 0
+        if has_max_age:
+            m_hsts = re.search(r'max-age=(\d+)', hsts_header)
+            if m_hsts:
+                hsts_max_age_val = int(m_hsts.group(1))
+        hsts_preload_ready = has_hsts and has_max_age and hsts_max_age_val >= 31536000 and has_includesub and has_preload
+        hsts_error = ""
+    except Exception as e_hsts:
+        hsts_header = ""
+        has_hsts = False
+        hsts_preload_ready = False
+        hsts_max_age_val = 0
+        hsts_error = str(e_hsts)
+
+    if hsts_error:
+        status_hsts = "warning"
+        rec_hsts = "Не удалось проверить HSTS. Проверьте доступность сайта."
+    elif hsts_preload_ready:
+        status_hsts = "passed"
+        rec_hsts = ""
+    elif has_hsts and not hsts_preload_ready:
+        status_hsts = "warning"
+        rec_hsts = "HSTS присутствует, но не готов к preload. Убедитесь: max-age >= 31536000, includeSubDomains, preload."
+    else:
+        status_hsts = "error"
+        rec_hsts = "Включите HSTS (Strict-Transport-Security) для защиты от downgrade-атак и улучшения SEO."
+    scenarios.append(
+        _make_scenario(
+            sid=19,
+            key="hsts_preload",
+            title="HSTS Preload Check",
+            what_checked="Наличие Strict-Transport-Security и готовность к preload",
+            status=status_hsts,
+            expected="HSTS с max-age >= 31536000, includeSubDomains, preload",
+            actual=f"header={hsts_header or '-'} | preload_ready={hsts_preload_ready}",
+            recommendation=rec_hsts,
+            test_url=canonical_from_base,
+            trace=base_trace,
+            details={"has_hsts": has_hsts, "header": hsts_header, "preload_ready": hsts_preload_ready, "max_age": hsts_max_age_val, "error": hsts_error},
+        )
+    )
+
+    # 20) Pagination Redirect (page=1 -> canonical)
+    _notify_progress(20, "pagination_redirect", "Pagination ?page=1 redirect", normalized_input)
+    page1_url = urlunparse((base_scheme, base_netloc, "/", "", "page=1", ""))
+    trace_page1 = _trace_url(page1_url, ua_value, timeout=timeout, max_hops=max_hops, use_proxy=use_proxy)
+    traces_for_chain.append(("pagination_redirect", trace_page1))
+    final_page1_url = str(trace_page1.get("final_url") or "")
+    final_page1_query = urlparse(final_page1_url).query or ""
+    page1_first_code = (_trace_codes(trace_page1) or [None])[0]
+    has_page1_param = "page=1" in final_page1_query.lower()
+    if trace_page1.get("error"):
+        status_page1 = "warning"
+        rec_page1 = "Проверьте обработку ?page=1 и настройте 301 на каноническую версию без пагинации."
+    elif not has_page1_param and int(trace_page1.get("hops") or 0) >= 1 and page1_first_code in PERMANENT_REDIRECT_STATUSES:
+        status_page1 = "passed"
+        rec_page1 = ""
+    elif not has_page1_param:
+        status_page1 = "warning"
+        rec_page1 = "?page=1 убирается, но используйте 301 вместо 302 для SEO."
+    else:
+        status_page1 = "warning"
+        rec_page1 = "Настройте 301 редирект ?page=1 на каноническую версию URL без page=1."
+    scenarios.append(
+        _make_scenario(
+            sid=20,
+            key="pagination_redirect",
+            title="Pagination ?page=1 redirect",
+            what_checked="Редирект ?page=1 на каноническую версию без пагинации",
+            status=status_page1,
+            expected="?page=1 перенаправляется 301 на URL без page=1",
+            actual=f"{_chain_summary(trace_page1)} | Final: {final_page1_url or '-'}",
+            recommendation=rec_page1,
+            test_url=page1_url,
+            trace=trace_page1,
+        )
+    )
+
+    # 21) UTM Parameter Handling
+    _notify_progress(21, "utm_handling", "UTM Parameter Handling", normalized_input)
+    utm_url = urlunparse((base_scheme, base_netloc, "/", "", "utm_source=test&utm_medium=test", ""))
+    trace_utm = _trace_url(utm_url, ua_value, timeout=timeout, max_hops=max_hops, use_proxy=use_proxy)
+    traces_for_chain.append(("utm_handling", trace_utm))
+    final_utm_url = str(trace_utm.get("final_url") or "")
+    final_utm_query = urlparse(final_utm_url).query or ""
+    utm_stripped = "utm_source" not in final_utm_query.lower()
+    if trace_utm.get("error"):
+        status_utm = "warning"
+        rec_utm = "Проверьте обработку UTM-параметров при редиректах."
+    elif utm_stripped and int(trace_utm.get("hops") or 0) >= 1:
+        status_utm = "info"
+        rec_utm = "UTM-параметры удаляются при редиректе (clean URL policy)."
+    elif not utm_stripped:
+        status_utm = "passed"
+        rec_utm = ""
+    else:
+        status_utm = "passed"
+        rec_utm = ""
+    scenarios.append(
+        _make_scenario(
+            sid=21,
+            key="utm_handling",
+            title="UTM Parameter Handling",
+            what_checked="Обработка UTM-параметров при редиректах",
+            status=status_utm,
+            expected="UTM-параметры сохраняются или корректно очищаются",
+            actual=f"{_chain_summary(trace_utm)} | Final: {final_utm_url or '-'} | UTM stripped: {utm_stripped}",
+            recommendation=rec_utm,
+            test_url=utm_url,
+            trace=trace_utm,
+        )
+    )
+
+    # 22) Legacy Extension Redirect (.html/.php -> clean URL) for index files
+    _notify_progress(22, "legacy_index_redirect", "Legacy index.html/index.php redirect", normalized_input)
+    idx_html_url = urlunparse((base_scheme, base_netloc, "/index.html", "", "", ""))
+    idx_php_url = urlunparse((base_scheme, base_netloc, "/index.php", "", "", ""))
+    trace_idx_html = _trace_url(idx_html_url, ua_value, timeout=timeout, max_hops=max_hops, use_proxy=use_proxy)
+    trace_idx_php = _trace_url(idx_php_url, ua_value, timeout=timeout, max_hops=max_hops, use_proxy=use_proxy)
+    traces_for_chain.append(("legacy_index_html", trace_idx_html))
+    traces_for_chain.append(("legacy_index_php", trace_idx_php))
+    idx_html_final = str(trace_idx_html.get("final_url") or "")
+    idx_php_final = str(trace_idx_php.get("final_url") or "")
+    idx_html_status = int(trace_idx_html.get("final_status_code") or 0)
+    idx_php_status = int(trace_idx_php.get("final_status_code") or 0)
+    idx_html_path = urlparse(idx_html_final).path or "/"
+    idx_php_path = urlparse(idx_php_final).path or "/"
+    idx_html_ok = (int(trace_idx_html.get("hops") or 0) >= 1 and idx_html_path in ("/", "")) or idx_html_status in (404, 410)
+    idx_php_ok = (int(trace_idx_php.get("hops") or 0) >= 1 and idx_php_path in ("/", "")) or idx_php_status in (404, 410)
+    if idx_html_ok and idx_php_ok:
+        status_legacy_idx = "passed"
+        rec_legacy_idx = ""
+    elif idx_html_status == 200 and idx_html_path == "/index.html":
+        status_legacy_idx = "warning"
+        rec_legacy_idx = "/index.html отдаёт 200 (дублирование контента). Настройте 301 на корень."
+    elif idx_php_status == 200 and idx_php_path == "/index.php":
+        status_legacy_idx = "warning"
+        rec_legacy_idx = "/index.php отдаёт 200 (дублирование контента). Настройте 301 на корень."
+    else:
+        status_legacy_idx = "warning"
+        rec_legacy_idx = "Проверьте обработку /index.html и /index.php — они должны вести 301 на корень или отдавать 404."
+    scenarios.append(
+        _make_scenario(
+            sid=22,
+            key="legacy_index_redirect",
+            title="Legacy index.html/index.php redirect",
+            what_checked="Проверка дубликатов /index.html и /index.php",
+            status=status_legacy_idx,
+            expected="index.html/php перенаправляются на корень или отдают 404",
+            actual=(
+                f".html: {_chain_summary(trace_idx_html)} -> {idx_html_final or '-'} (status {idx_html_status}) | "
+                f".php: {_chain_summary(trace_idx_php)} -> {idx_php_final or '-'} (status {idx_php_status})"
+            ),
+            recommendation=rec_legacy_idx,
+            test_url=f"{idx_html_url} | {idx_php_url}",
+            response_codes=_trace_codes(trace_idx_html) + _trace_codes(trace_idx_php),
+            final_url=f"{idx_html_final or '-'} | {idx_php_final or '-'}",
+            hops=max(int(trace_idx_html.get("hops") or 0), int(trace_idx_php.get("hops") or 0)),
+            duration_ms=_sum_trace_durations(trace_idx_html, trace_idx_php),
+            details={"trace_html": trace_idx_html, "trace_php": trace_idx_php},
+        )
+    )
+
+    # 23) Mixed Content Check
+    _notify_progress(23, "mixed_content", "Mixed Content Check", normalized_input)
+    mixed_content_items: List[str] = []
+    mixed_content_error = ""
+    final_https_url = str(base_trace.get("final_url") or canonical_from_base)
+    if urlparse(final_https_url).scheme == "https":
+        try:
+            mc_resp = hsts_session.get(final_https_url, timeout=10, allow_redirects=True,
+                                       headers={"User-Agent": ua_value})
+            mc_content_type = str(mc_resp.headers.get("Content-Type") or "").lower()
+            if "text/html" in mc_content_type or "application/xhtml+xml" in mc_content_type:
+                mc_html = str(mc_resp.text or "")
+                mc_soup = BeautifulSoup(mc_html, "html.parser")
+                for tag in mc_soup.find_all(["script", "link", "img", "iframe", "source", "video", "audio", "embed", "object"]):
+                    src = str(tag.get("src") or tag.get("href") or "").strip()
+                    if src.startswith("http://"):
+                        mixed_content_items.append(src[:120])
+                    if len(mixed_content_items) >= 10:
+                        break
+        except Exception as e_mc:
+            mixed_content_error = str(e_mc)
+
+    if mixed_content_error:
+        status_mixed_content = "warning"
+        rec_mixed_content = "Не удалось проверить mixed content. Проверьте вручную."
+    elif mixed_content_items:
+        status_mixed_content = "warning"
+        rec_mixed_content = f"Mixed content: обнаружены HTTP-ресурсы на HTTPS-странице ({len(mixed_content_items)} шт.). Замените http:// на https:// или //."
+    else:
+        status_mixed_content = "passed"
+        rec_mixed_content = ""
+    scenarios.append(
+        _make_scenario(
+            sid=23,
+            key="mixed_content",
+            title="Mixed Content Check",
+            what_checked="Проверка HTTP-ресурсов на HTTPS-странице",
+            status=status_mixed_content,
+            expected="Все ресурсы загружаются по HTTPS",
+            actual=(
+                f"Mixed content items: {len(mixed_content_items)}"
+                + (f" | Examples: {', '.join(mixed_content_items[:3])}" if mixed_content_items else "")
+            ),
+            recommendation=rec_mixed_content,
+            test_url=final_https_url,
+            trace=base_trace,
+            details={"mixed_content_items": mixed_content_items, "error": mixed_content_error},
         )
     )
 

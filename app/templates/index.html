@@ -45,6 +45,12 @@
             <textarea name="keywords" rows="3" placeholder="ключ 1, ключ 2, ключ 3"
                       class="ds-textarea focus:ring-2 focus:ring-blue-500"></textarea>
             <label class="flex items-center gap-2 text-sm cursor-pointer" style="color:var(--ds-text-secondary);"><input type="checkbox" name="use_proxy" value="true" class="rounded"><i class="fas fa-globe-americas text-xs" style="color:var(--ds-brand-2);"></i>Geo-прокси</label>
+            <details class="rounded-lg border p-3" style="border-color:var(--ds-border);background:var(--ds-surface-soft);">
+                <summary class="cursor-pointer text-sm font-medium" style="color:#3b82f6;">Сравнение с конкурентами</summary>
+                <div class="mt-2 space-y-2">
+                    <textarea name="competitor_urls" rows="3" placeholder="URL конкурентов (по одному на строку, до 5)" class="ds-textarea text-sm"></textarea>
+                </div>
+            </details>
             <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:#3b82f6;border-color:#3b82f6;">
                 <i class="fas fa-play"></i>Запустить OnPage-аудит
             </button>
@@ -124,6 +130,49 @@
                 <i class="fas fa-play"></i>Проверить robots.txt
             </button>
         </form>
+        <details class="rounded-lg border p-3 mt-3" style="border-color:var(--ds-border);background:var(--ds-surface-soft);">
+            <summary class="cursor-pointer text-sm font-medium" style="color:var(--ds-success);">
+                <i class="fas fa-hammer mr-1"></i>Конструктор robots.txt
+            </summary>
+            <div class="mt-3 space-y-3" id="robots-constructor">
+                <div id="robots-groups">
+                    <div class="robots-group border rounded p-2 mb-2" style="border-color:var(--ds-border);">
+                        <div class="flex gap-2 mb-2">
+                            <input type="text" placeholder="User-agent (e.g. *)" value="*" class="ds-input text-sm flex-1 rc-ua">
+                            <button type="button" onclick="addRobotsRule(this)" class="ds-btn ds-btn-neutral text-xs">+ Rule</button>
+                        </div>
+                        <div class="rc-rules space-y-1">
+                            <div class="flex gap-2">
+                                <select class="ds-select text-sm rc-directive" style="width:120px;">
+                                    <option value="Disallow">Disallow</option>
+                                    <option value="Allow">Allow</option>
+                                </select>
+                                <input type="text" placeholder="/path" value="/" class="ds-input text-sm flex-1 rc-path">
+                                <button type="button" onclick="this.parentElement.remove()" class="text-red-500 text-xs px-2">&times;</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <button type="button" onclick="addRobotsGroup()" class="ds-btn ds-btn-neutral text-sm w-full">+ User-agent group</button>
+                <input type="text" placeholder="Sitemap URL (e.g. https://example.com/sitemap.xml)" class="ds-input text-sm" id="rc-sitemap">
+                <div class="flex gap-2">
+                    <button type="button" onclick="generateRobotsTxt()" class="ds-btn ds-btn-primary text-sm flex-1" style="background:var(--ds-success);border-color:var(--ds-success);">
+                        <i class="fas fa-code mr-1"></i>Generate
+                    </button>
+                    <button type="button" onclick="validateRobotsUrl()" class="ds-btn ds-btn-neutral text-sm flex-1">
+                        <i class="fas fa-check-circle mr-1"></i>Validate URL
+                    </button>
+                </div>
+                <input type="url" placeholder="URL to validate against rules" class="ds-input text-sm" id="rc-test-url">
+                <pre id="rc-output" class="p-3 rounded text-sm font-mono" style="background:var(--ds-surface);color:var(--ds-text);border:1px solid var(--ds-border);min-height:80px;white-space:pre-wrap;display:none;"></pre>
+            </div>
+        </details>
+        <script>
+        function addRobotsRule(btn){var rules=btn.closest('.robots-group').querySelector('.rc-rules');var div=document.createElement('div');div.className='flex gap-2';div.innerHTML='<select class="ds-select text-sm rc-directive" style="width:120px;"><option value="Disallow">Disallow</option><option value="Allow">Allow</option></select><input type="text" placeholder="/path" class="ds-input text-sm flex-1 rc-path"><button type="button" onclick="this.parentElement.remove()" class="text-red-500 text-xs px-2">&times;</button>';rules.appendChild(div);}
+        function addRobotsGroup(){var container=document.getElementById('robots-groups');var div=document.createElement('div');div.className='robots-group border rounded p-2 mb-2';div.style.borderColor='var(--ds-border)';div.innerHTML='<div class="flex gap-2 mb-2"><input type="text" placeholder="User-agent" value="*" class="ds-input text-sm flex-1 rc-ua"><button type="button" onclick="addRobotsRule(this)" class="ds-btn ds-btn-neutral text-xs">+ Rule</button><button type="button" onclick="this.closest(\x27.robots-group\x27).remove()" class="text-red-500 text-xs px-2">&times;</button></div><div class="rc-rules space-y-1"><div class="flex gap-2"><select class="ds-select text-sm rc-directive" style="width:120px;"><option value="Disallow">Disallow</option><option value="Allow">Allow</option></select><input type="text" placeholder="/path" value="/" class="ds-input text-sm flex-1 rc-path"><button type="button" onclick="this.parentElement.remove()" class="text-red-500 text-xs px-2">&times;</button></div></div>';container.appendChild(div);}
+        async function generateRobotsTxt(){var groups=[];document.querySelectorAll('.robots-group').forEach(function(g){var ua=g.querySelector('.rc-ua').value.trim()||'*';var rules=[];g.querySelectorAll('.rc-rules > div').forEach(function(r){rules.push({directive:r.querySelector('.rc-directive').value,path:r.querySelector('.rc-path').value.trim()||'/'});});groups.push({user_agent:ua,rules:rules});});var sitemaps=(document.getElementById('rc-sitemap').value||'').split(',').map(function(s){return s.trim();}).filter(Boolean);var resp=await fetch('/api/tools/robots-generator',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({groups:groups,sitemaps:sitemaps})});var data=await resp.json();var output=document.getElementById('rc-output');output.style.display='block';output.textContent=data.content||'Error generating robots.txt';}
+        async function validateRobotsUrl(){var testUrl=document.getElementById('rc-test-url').value.trim();if(!testUrl){alert('Enter a URL to validate');return;}var rules=[];document.querySelectorAll('.robots-group').forEach(function(g){var ua=g.querySelector('.rc-ua').value.trim()||'*';g.querySelectorAll('.rc-rules > div').forEach(function(r){rules.push({user_agent:ua,directive:r.querySelector('.rc-directive').value.toLowerCase(),path:r.querySelector('.rc-path').value.trim()||'/'});});});var resp=await fetch('/api/tools/robots-validator',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:testUrl,rules:rules})});var data=await resp.json();var output=document.getElementById('rc-output');output.style.display='block';var text='URL: '+data.url+'\nPath: '+data.test_path+'\n\n';(data.results||[]).forEach(function(r){text+='['+r.user_agent+'] '+r.directive+' '+r.path+' \u2192 '+r.result+(r.matches?' (MATCH)':'')+'\n';});output.textContent=text;}
+        </script>
     </div>
 
     <!-- Tool 3: Sitemap Validator -->
@@ -384,6 +433,10 @@
                     title="Минимальный размер кластера"
                 >
             </div>
+            <label class="flex items-center gap-2 text-sm cursor-pointer" style="color:var(--ds-text-secondary);">
+                <input type="checkbox" name="expand_keywords" value="true" class="rounded">
+                <i class="fas fa-expand-arrows-alt text-xs" style="color:#06b6d4;"></i>Расширить ключи (Google Suggest)
+            </label>
             <p class="text-xs" style="color:var(--ds-text-muted);">Формат textarea: <code>ключ;123</code> или <code>ключ[TAB]123</code>. Файл: Semrush / Ahrefs / Google Ads / KeyCollector / plain CSV. Лимит 25 000 ключей.</p>
             <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:#06b6d4;border-color:#06b6d4;">
                 <i class="fas fa-play"></i>Запустить кластеризацию

@@ -1,5 +1,6 @@
 """
-Robots.txt Checker, Sitemap Validator, and Bot Accessibility Checker router.
+Robots.txt Checker, Sitemap Validator, Bot Accessibility Checker,
+Robots.txt Visual Constructor & URL Validator router.
 """
 import asyncio
 import re
@@ -3929,4 +3930,54 @@ async def create_bot_check(data: BotCheckRequest):
         "message": "Bot check completed"
     }
 
+
+# ============ ROBOTS.TXT VISUAL CONSTRUCTOR ============
+
+
+@router.post("/api/tools/robots-validator")
+async def validate_url_accessibility(data: dict):
+    """Check if a URL is accessible based on given robots.txt rules."""
+    url = data.get("url", "")
+    robots_rules = data.get("rules", [])
+    test_path = urlparse(url).path or "/"
+
+    results = []
+    for rule in robots_rules:
+        ua = rule.get("user_agent", "*")
+        directive = rule.get("directive", "disallow")
+        path = rule.get("path", "/")
+        matches = test_path.startswith(path)
+        results.append({
+            "user_agent": ua,
+            "directive": directive,
+            "path": path,
+            "matches": matches,
+            "result": "blocked" if matches and directive == "disallow" else "allowed",
+        })
+
+    return {"url": url, "test_path": test_path, "rules_checked": len(results), "results": results}
+
+
+@router.post("/api/tools/robots-generator")
+async def generate_robots_txt(data: dict):
+    """Generate robots.txt content from structured rules."""
+    groups = data.get("groups", [])
+    sitemaps = data.get("sitemaps", [])
+
+    lines: List[str] = []
+    for group in groups:
+        ua = group.get("user_agent", "*")
+        lines.append(f"User-agent: {ua}")
+        for rule in group.get("rules", []):
+            directive = rule.get("directive", "Disallow")
+            path = rule.get("path", "/")
+            lines.append(f"{directive}: {path}")
+        lines.append("")
+
+    for sm in sitemaps:
+        if sm.strip():
+            lines.append(f"Sitemap: {sm.strip()}")
+
+    content = "\n".join(lines)
+    return {"content": content, "lines": len(lines), "groups": len(groups), "sitemaps": len(sitemaps)}
 

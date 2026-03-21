@@ -125,3 +125,87 @@ async def create_onpage_audit(data: OnPageAuditRequest, background_tasks: Backgr
 
     background_tasks.add_task(_run_onpage_task)
     return {"task_id": task_id, "status": "PENDING", "message": "OnPage аудит запущен"}
+
+
+# ── Competitor Comparison ─────────────────────────────────────────────────────
+
+
+class CompetitorCompareRequest(URLModel):
+    url: str
+    competitor_urls: List[str] = []
+    keywords: Optional[List[str]] = None
+
+    @field_validator("competitor_urls", mode="before")
+    @classmethod
+    def _normalize_competitor_urls(cls, value):
+        if value is None:
+            return []
+        if isinstance(value, str):
+            raw = value.replace("\r", "\n")
+            return [u.strip() for u in raw.split("\n") if u.strip()]
+        if isinstance(value, list):
+            return [str(v).strip() for v in value if str(v).strip()]
+        return []
+
+    @field_validator("keywords", mode="before")
+    @classmethod
+    def _normalize_comp_keywords(cls, value):
+        if value is None:
+            return []
+        if isinstance(value, str):
+            raw = value.replace("\r", "\n")
+            parts = []
+            for chunk in raw.split("\n"):
+                parts.extend([x.strip() for x in chunk.split(",") if x.strip()])
+            return parts
+        if isinstance(value, list):
+            return [str(v).strip() for v in value if str(v).strip()]
+        return []
+
+
+@router.post("/tasks/competitor-compare")
+async def create_competitor_compare(data: CompetitorCompareRequest, background_tasks: BackgroundTasks):
+    """Compare on-page SEO metrics of a URL against competitors."""
+    from app.tools.onpage.service_v1 import run_competitor_comparison
+
+    url = (data.url or "").strip()
+    if not url:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail="URL обязателен")
+
+    comp_urls = [u for u in (data.competitor_urls or []) if u]
+    if not comp_urls:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail="Добавьте хотя бы один URL конкурента")
+
+    task_id = f"comp-compare-{datetime.now().timestamp()}"
+    create_task_pending(task_id, "competitor_comparison", url, status_message="Задача поставлена в очередь")
+
+    def _run_compare_task() -> None:
+        try:
+            total = 1 + len(comp_urls[:5])
+            update_task_state(task_id, status="RUNNING", progress=5, status_message="Анализ целевой страницы")
+            result = run_competitor_comparison(
+                url=url,
+                competitor_urls=comp_urls,
+                keywords=data.keywords or [],
+            )
+            update_task_state(
+                task_id,
+                status="SUCCESS",
+                progress=100,
+                status_message=f"Сравнение завершено: {total} страниц",
+                result={"task_type": "competitor_comparison", "results": result},
+                error=None,
+            )
+        except Exception as exc:
+            update_task_state(
+                task_id,
+                status="FAILURE",
+                progress=100,
+                status_message="Сравнение завершилось с ошибкой",
+                error=str(exc),
+            )
+
+    background_tasks.add_task(_run_compare_task)
+    return {"task_id": task_id, "status": "PENDING", "message": "Сравнение с конкурентами запущено"}

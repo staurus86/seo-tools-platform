@@ -4,6 +4,51 @@ let statusRequestInFlight = false;
 let lastProgressStateKey = '';
 const PROGRESS_STAGE_ORDER = ['queue', 'fetch', 'render', 'analyze', 'done'];
 
+// ---------------------------------------------------------------------------
+// WebSocket real-time updates (falls back to polling when unavailable)
+// ---------------------------------------------------------------------------
+let _wsHandle = null;
+
+function connectTaskWebSocket(tid, onMessage) {
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = protocol + '//' + location.host + '/ws/tasks/' + tid;
+    var ws = null;
+    var pingTimer = null;
+
+    try {
+        ws = new WebSocket(wsUrl);
+        ws.onopen = function() {
+            console.log('[WS] Connected for task:', tid);
+            pingTimer = setInterval(function() {
+                if (ws && ws.readyState === WebSocket.OPEN) ws.send('ping');
+            }, 30000);
+        };
+        ws.onmessage = function(event) {
+            if (event.data === 'pong') return;
+            try {
+                var data = JSON.parse(event.data);
+                onMessage(data);
+            } catch(e) { /* ignore non-JSON */ }
+        };
+        ws.onclose = function() {
+            if (pingTimer) clearInterval(pingTimer);
+            pingTimer = null;
+            console.log('[WS] Disconnected, falling back to polling');
+            ws = null;
+        };
+        ws.onerror = function() {
+            if (ws) ws.close();
+        };
+    } catch(e) {
+        console.log('[WS] Not available, using polling');
+    }
+
+    return {
+        close: function() { if (ws) ws.close(); if (pingTimer) clearInterval(pingTimer); },
+        isConnected: function() { return ws && ws.readyState === WebSocket.OPEN; }
+    };
+}
+
 function addTaskToLocalHistory(item) {
     try {
         if (typeof window.addToHistory === 'function') {
@@ -263,9 +308,22 @@ function normalizeMojibakeDeep(input) {
     return input;
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', function() {
     checkTaskStatus();
     pollInterval = setInterval(checkTaskStatus, 1500);
+
+    // Try to establish WebSocket for real-time updates
+    if (typeof taskId !== 'undefined' && taskId) {
+        _wsHandle = connectTaskWebSocket(taskId, function(wsData) {
+            if (taskTerminalHandled) {
+                if (_wsHandle) _wsHandle.close();
+                return;
+            }
+            // WebSocket delivers a partial or full update — do a fresh poll
+            // to get the complete payload (result can be large, WS sends slim updates).
+            checkTaskStatus();
+        });
+    }
 });
 
 function _deriveStage(data) {
@@ -520,10 +578,12 @@ async function checkTaskStatus() {
         if (data.status === 'SUCCESS') {
             taskTerminalHandled = true;
             clearInterval(pollInterval);
+            if (_wsHandle) _wsHandle.close();
             showResults(data.result);
         } else if (data.status === 'FAILURE') {
             taskTerminalHandled = true;
             clearInterval(pollInterval);
+            if (_wsHandle) _wsHandle.close();
             showError(data);
         }
     } catch (error) {

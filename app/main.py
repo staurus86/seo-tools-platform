@@ -44,7 +44,7 @@ logger.info(f"PYTHONPATH: {os.environ.get('PYTHONPATH', 'NOT SET')}")
 # Try importing FastAPI
 try:
     logger.info("Importing FastAPI...")
-    from fastapi import FastAPI, Request
+    from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
     from fastapi.staticfiles import StaticFiles
     from fastapi.templating import Jinja2Templates
     from fastapi.middleware.cors import CORSMiddleware
@@ -89,6 +89,51 @@ app = FastAPI(
     docs_url="/api/docs",
     redoc_url="/api/redoc",
 )
+
+
+# ---------------------------------------------------------------------------
+# WebSocket connection manager — pushes real-time task updates to browsers
+# ---------------------------------------------------------------------------
+from typing import Dict, Set
+import asyncio
+import json as _json
+
+
+class ConnectionManager:
+    """Manages per-task WebSocket subscribers."""
+
+    def __init__(self):
+        self.active: Dict[str, Set[WebSocket]] = {}  # task_id -> set of websockets
+
+    async def connect(self, websocket: WebSocket, task_id: str):
+        await websocket.accept()
+        if task_id not in self.active:
+            self.active[task_id] = set()
+        self.active[task_id].add(websocket)
+
+    def disconnect(self, websocket: WebSocket, task_id: str):
+        if task_id in self.active:
+            self.active[task_id].discard(websocket)
+            if not self.active[task_id]:
+                del self.active[task_id]
+
+    async def broadcast(self, task_id: str, data: dict):
+        if task_id not in self.active:
+            return
+        dead: Set[WebSocket] = set()
+        for ws in self.active[task_id]:
+            try:
+                await ws.send_json(data)
+            except Exception:
+                dead.add(ws)
+        for ws in dead:
+            self.active[task_id].discard(ws)
+        if task_id in self.active and not self.active[task_id]:
+            del self.active[task_id]
+
+
+ws_manager = ConnectionManager()
+
 
 # CORS middleware
 # In production set ALLOWED_ORIGINS env var (comma-separated domains).
@@ -214,6 +259,19 @@ async def llm_crawler_results_page(request: Request, job_id: str):
 async def llm_crawler_results_page_v2(request: Request, job_id: str):
     """Backward-compatible alias to the single LLM crawler result page."""
     return RedirectResponse(url=f"/llm-crawler/results/{job_id}", status_code=307)
+
+
+@app.websocket("/ws/tasks/{task_id}")
+async def websocket_task(websocket: WebSocket, task_id: str):
+    """Push real-time task progress to the browser via WebSocket."""
+    await ws_manager.connect(websocket, task_id)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket, task_id)
 
 
 @app.get("/health")

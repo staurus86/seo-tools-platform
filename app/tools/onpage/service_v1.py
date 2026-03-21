@@ -1420,3 +1420,115 @@ class OnPageAuditServiceV1:
                 },
             },
         }
+
+
+# ── Competitor Comparison ─────────────────────────────────────────────────────
+
+
+def run_competitor_comparison(
+    *,
+    url: str,
+    competitor_urls: list,
+    keywords: list | None = None,
+) -> dict:
+    """Compare on-page SEO metrics of a URL against competitors."""
+    service = OnPageAuditServiceV1()
+
+    # Analyze target
+    target_result = service.run(url=url, keywords=keywords or [])
+
+    # Analyze competitors (max 5)
+    competitor_results: list[dict] = []
+    for comp_url in competitor_urls[:5]:
+        try:
+            comp_result = service.run(url=comp_url, keywords=keywords or [])
+            competitor_results.append(comp_result)
+        except Exception as e:
+            competitor_results.append({"url": comp_url, "error": str(e)})
+
+    # ── helpers ────────────────────────────────────────────────────────────
+    def _extract_metrics(result: dict) -> dict:
+        r = result.get("results", {})
+        return {
+            "url": r.get("url", ""),
+            "score": r.get("score", 0),
+            "word_count": r.get("content", {}).get("word_count", 0),
+            "title_len": r.get("technical", {}).get("title_len", 0),
+            "description_len": r.get("technical", {}).get("description_len", 0),
+            "h1_count": r.get("technical", {}).get("h1_count", 0),
+            "h2_count": r.get("heading_analysis", {}).get("counts", {}).get("h2_count", 0),
+            "images_total": r.get("media", {}).get("images_total", 0),
+            "internal_links": r.get("links", {}).get("internal_links", 0),
+            "external_links": r.get("links", {}).get("external_links", 0),
+            "schema_types": len(r.get("schema_analysis", {}).get("types", [])),
+            "readability": r.get("content", {}).get("readability_score", 0),
+            "keyword_coverage_pct": r.get("keyword_coverage", {}).get("coverage_pct", 0),
+            "ai_risk": r.get("ai_insights", {}).get("ai_risk_composite", 0),
+            "spam_score": r.get("scores", {}).get("spam_score", 0),
+            "issues_critical": r.get("summary", {}).get("critical_issues", 0),
+            "issues_warning": r.get("summary", {}).get("warning_issues", 0),
+        }
+
+    target_metrics = _extract_metrics(target_result)
+    comp_metrics = [_extract_metrics(cr) for cr in competitor_results if "error" not in cr]
+
+    # Calculate averages
+    avg_metrics: dict = {}
+    if comp_metrics:
+        for key in target_metrics:
+            if key == "url":
+                continue
+            vals = [cm.get(key, 0) for cm in comp_metrics if isinstance(cm.get(key), (int, float))]
+            avg_metrics[key] = round(sum(vals) / max(1, len(vals)), 1) if vals else 0
+
+    # Generate insights
+    insights: list[dict] = []
+    if avg_metrics:
+        if target_metrics["word_count"] < avg_metrics.get("word_count", 0) * 0.7:
+            insights.append({
+                "type": "gap",
+                "metric": "word_count",
+                "message": (
+                    f"Your content ({target_metrics['word_count']} words) is shorter "
+                    f"than competitor average ({avg_metrics['word_count']})"
+                ),
+            })
+        if target_metrics["score"] < avg_metrics.get("score", 0):
+            insights.append({
+                "type": "gap",
+                "metric": "score",
+                "message": (
+                    f"Your SEO score ({target_metrics['score']}) is below "
+                    f"competitor average ({avg_metrics['score']})"
+                ),
+            })
+        if target_metrics["schema_types"] < avg_metrics.get("schema_types", 0):
+            insights.append({
+                "type": "gap",
+                "metric": "schema",
+                "message": "Competitors use more structured data types",
+            })
+        if target_metrics["internal_links"] < avg_metrics.get("internal_links", 0) * 0.5:
+            insights.append({
+                "type": "gap",
+                "metric": "internal_links",
+                "message": "Your page has significantly fewer internal links than competitors",
+            })
+        if target_metrics["score"] > avg_metrics.get("score", 0):
+            insights.append({
+                "type": "advantage",
+                "metric": "score",
+                "message": (
+                    f"Your SEO score ({target_metrics['score']}) is above "
+                    f"competitor average ({avg_metrics['score']})"
+                ),
+            })
+
+    return {
+        "task_type": "competitor_comparison",
+        "target": target_metrics,
+        "competitors": comp_metrics,
+        "competitor_avg": avg_metrics,
+        "insights": insights,
+        "keywords_used": keywords or [],
+    }

@@ -314,6 +314,21 @@ async function startTask(event, endpoint) {
         data.keywords_text = parsedKeywords.join('\n');
     }
 
+    // OnPage: switch to competitor-compare endpoint when competitor URLs are provided
+    if (endpoint === 'onpage-audit') {
+        const rawCompUrls = (data.competitor_urls || '').toString().trim();
+        if (rawCompUrls) {
+            const compUrls = rawCompUrls.replace(/\r/g, '\n').split('\n').map(u => u.trim()).filter(u => u.length > 0);
+            if (compUrls.length > 0) {
+                data.competitor_urls = compUrls.slice(0, 5);
+                endpoint = 'competitor-compare';
+            }
+        }
+        if (!data.competitor_urls || (typeof data.competitor_urls === 'string' && !data.competitor_urls.trim())) {
+            delete data.competitor_urls;
+        }
+    }
+
     // Show loading state
     const button = form.querySelector('button[type="submit"]');
     const originalText = button.innerHTML;

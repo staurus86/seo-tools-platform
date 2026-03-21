@@ -72,6 +72,7 @@ class ClusterizerRequest(BaseModel):
     clustering_mode: Optional[str] = "balanced"
     similarity_threshold_pct: int = 35
     min_cluster_size: int = 2
+    expand_keywords: bool = False
 
     @field_validator("keywords", mode="before")
     @classmethod
@@ -132,7 +133,12 @@ async def create_clusterizer_task(data: ClusterizerRequest, background_tasks: Ba
         status_message="Задача поставлена в очередь",
     )
 
+    do_expand = bool(data.expand_keywords)
+
     def _run_clusterizer_task() -> None:
+        nonlocal keyword_rows
+        expansion_stats: Optional[Dict[str, Any]] = None
+
         try:
             update_task_state(
                 task_id,
@@ -140,6 +146,23 @@ async def create_clusterizer_task(data: ClusterizerRequest, background_tasks: Ba
                 progress=5,
                 status_message="Подготовка ключей",
             )
+
+            # ── keyword expansion via Google Suggest ──────────────────
+            if do_expand:
+                update_task_state(task_id, status="RUNNING", progress=8, status_message="Расширение ключей через Google Suggest")
+                from app.tools.clusterizer.service_v1 import expand_keywords_google_suggest
+
+                original_kws = [str(item.get("keyword") or "").strip() for item in keyword_rows if str(item.get("keyword") or "").strip()]
+                original_count = len(original_kws)
+                new_kws = expand_keywords_google_suggest(original_kws)
+                if new_kws:
+                    for nk in new_kws:
+                        keyword_rows.append({"keyword": nk, "frequency": 0})
+                expansion_stats = {
+                    "original_count": original_count,
+                    "expanded_count": len(new_kws),
+                    "new_keywords": new_kws,
+                }
 
             def _progress(progress: int, message: str) -> None:
                 update_task_state(
@@ -166,6 +189,8 @@ async def create_clusterizer_task(data: ClusterizerRequest, background_tasks: Ba
             )
             if isinstance(result_payload, dict):
                 result_payload["summary"] = summary_payload
+                if expansion_stats:
+                    result_payload["expansion_stats"] = expansion_stats
             if isinstance(result, dict):
                 result["results"] = result_payload
 
