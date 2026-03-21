@@ -122,6 +122,7 @@ async def run_llm_crawler(payload: LlmCrawlerRunRequest, request: Request) -> Di
     limits_enabled = bool(getattr(settings, "LLM_CRAWLER_LIMITS_ENABLED", False))
     subject = request_subject(request)
     options = payload.options.model_dump()
+    options["use_proxy"] = bool(payload.use_proxy)
     if limits_enabled:
         tool_limit = max(1, int(getattr(settings, "LLM_CRAWLER_RATE_LIMIT_PER_MINUTE", 999) or 999))
         tool_rate = check_rate_limit(subject, "tool-minute", tool_limit, 60)

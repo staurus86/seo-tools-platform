@@ -92,6 +92,7 @@ def check_mobile_full(
     mode: str = "full",
     devices: Optional[List[str]] = None,
     progress_callback=None,
+    use_proxy: bool = False,
 ) -> Dict[str, Any]:
     """Feature-flagged mobile check with v2 service fallback."""
     from app.config import settings
@@ -101,7 +102,7 @@ def check_mobile_full(
         try:
             from app.tools.mobile.service_v2 import MobileCheckServiceV2
 
-            checker = MobileCheckServiceV2(timeout=getattr(settings, "MOBILE_CHECK_TIMEOUT", 20))
+            checker = MobileCheckServiceV2(timeout=getattr(settings, "MOBILE_CHECK_TIMEOUT", 20), use_proxy=use_proxy)
             selected_mode = (mode or getattr(settings, "MOBILE_CHECK_MODE", "quick") or "quick").lower()
             if selected_mode not in ("quick", "full"):
                 selected_mode = "full"
@@ -141,6 +142,7 @@ class MobileCheckRequest(URLModel):
     url: str
     mode: Optional[str] = "quick"
     devices: Optional[List[str]] = None
+    use_proxy: bool = False
 
 
 @router.post("/tasks/mobile-check")
@@ -168,6 +170,7 @@ async def create_mobile_check(data: MobileCheckRequest, background_tasks: Backgr
                 mode=mode,
                 devices=devices,
                 progress_callback=_progress,
+                use_proxy=bool(data.use_proxy),
             )
 
             results = result.get("results", {}) if isinstance(result, dict) else {}

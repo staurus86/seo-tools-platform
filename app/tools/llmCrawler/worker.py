@@ -47,6 +47,7 @@ def _process_job(job_id: str) -> None:
             options=options,
             request_id=request_id,
             progress_callback=_progress,
+            use_proxy=bool(options.get("use_proxy", False)),
         )
         duration = int((time.perf_counter() - started) * 1000)
         update_job_record(job_id, status="done", progress=100, result=result, error=None, duration_ms=duration)

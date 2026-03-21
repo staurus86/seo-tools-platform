@@ -44,6 +44,7 @@
                    class="ds-input focus:ring-2 focus:ring-blue-500">
             <textarea name="keywords" rows="3" placeholder="ключ 1, ключ 2, ключ 3"
                       class="ds-textarea focus:ring-2 focus:ring-blue-500"></textarea>
+            <label class="flex items-center gap-2 text-sm cursor-pointer" style="color:var(--ds-text-secondary);"><input type="checkbox" name="use_proxy" value="true" class="rounded"><i class="fas fa-globe-americas text-xs" style="color:var(--ds-brand-2);"></i>Geo-прокси</label>
             <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:#3b82f6;border-color:#3b82f6;">
                 <i class="fas fa-play"></i>Запустить OnPage-аудит
             </button>
@@ -96,6 +97,7 @@
                     <p class="text-xs mt-1" style="color:var(--ds-text-muted);">До 1500 URL, по одному URL в строке.</p>
                 </div>
             </div>
+            <label class="flex items-center gap-2 text-sm cursor-pointer" style="color:var(--ds-text-secondary);"><input type="checkbox" name="use_proxy" value="true" class="rounded"><i class="fas fa-globe-americas text-xs" style="color:var(--ds-brand-2);"></i>Geo-прокси</label>
             <button type="submit" class="w-full ds-btn ds-btn-primary">
                 <i class="fas fa-play"></i>Запустить Site Audit Pro
             </button>
@@ -117,6 +119,7 @@
         <form class="space-y-3" onsubmit="startTask(event, 'robots-check')">
             <input type="url" name="url" placeholder="https://example.com" required
                    class="ds-input focus:ring-2 focus:ring-green-500">
+            <label class="flex items-center gap-2 text-sm cursor-pointer" style="color:var(--ds-text-secondary);"><input type="checkbox" name="use_proxy" value="true" class="rounded"><i class="fas fa-globe-americas text-xs" style="color:var(--ds-brand-2);"></i>Geo-прокси</label>
             <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:var(--ds-success);border-color:var(--ds-success);">
                 <i class="fas fa-play"></i>Проверить robots.txt
             </button>
@@ -139,6 +142,7 @@
             <input type="text" name="url" placeholder="example.com или https://example.com/sitemap.xml" required
                    class="ds-input focus:ring-2 focus:ring-teal-500">
             <p class="text-xs" style="color:var(--ds-text-muted);">Можно ввести домен, сайт с http/https или полный URL sitemap. Сначала ищем sitemap в robots.txt.</p>
+            <label class="flex items-center gap-2 text-sm cursor-pointer" style="color:var(--ds-text-secondary);"><input type="checkbox" name="use_proxy" value="true" class="rounded"><i class="fas fa-globe-americas text-xs" style="color:var(--ds-brand-2);"></i>Geo-прокси</label>
             <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:var(--ds-brand-2);border-color:var(--ds-brand-2);">
                 <i class="fas fa-play"></i>Проверить sitemap
             </button>
@@ -160,6 +164,7 @@
         <form class="space-y-3" onsubmit="startTask(event, 'render-audit')">
             <input type="url" name="url" placeholder="https://example.com/page" required
                    class="ds-input focus:ring-2 focus:ring-orange-500">
+            <label class="flex items-center gap-2 text-sm cursor-pointer" style="color:var(--ds-text-secondary);"><input type="checkbox" name="use_proxy" value="true" class="rounded"><i class="fas fa-globe-americas text-xs" style="color:var(--ds-brand-2);"></i>Geo-прокси</label>
             <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:#f97316;border-color:#f97316;">
                 <i class="fas fa-play"></i>Запустить render-аудит
             </button>
@@ -201,6 +206,7 @@
                     <label class="flex items-center gap-2"><input type="checkbox" name="devices" value="Samsung Galaxy Tab S9" class="rounded border-gray-300 text-pink-600 focus:ring-pink-500"><span>Samsung Galaxy Tab S9</span></label>
                 </div>
             </details>
+            <label class="flex items-center gap-2 text-sm cursor-pointer" style="color:var(--ds-text-secondary);"><input type="checkbox" name="use_proxy" value="true" class="rounded"><i class="fas fa-globe-americas text-xs" style="color:var(--ds-brand-2);"></i>Geo-прокси</label>
             <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:#ec4899;border-color:#ec4899;">
                 <i class="fas fa-play"></i>Запустить мобильную проверку
             </button>
@@ -299,6 +305,7 @@
                     </label>
                 </div>
             </details>
+            <label class="flex items-center gap-2 text-sm cursor-pointer" style="color:var(--ds-text-secondary);"><input type="checkbox" name="use_proxy" value="true" class="rounded"><i class="fas fa-globe-americas text-xs" style="color:var(--ds-brand-2);"></i>Geo-прокси</label>
             <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:var(--ds-danger);border-color:var(--ds-danger);">
                 <i class="fas fa-play"></i>Запустить проверку ботов
             </button>
@@ -490,6 +497,7 @@
                     </div>
                 </div>
             </details>
+            <label class="flex items-center gap-2 text-sm cursor-pointer" style="color:var(--ds-text-secondary);"><input type="checkbox" name="use_proxy" value="true" class="rounded"><i class="fas fa-globe-americas text-xs" style="color:var(--ds-brand-2);"></i>Geo-прокси</label>
             <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:var(--ds-success);border-color:var(--ds-success);">
                 <i class="fas fa-play"></i>Запустить Redirect Checker
             </button>
@@ -549,6 +557,7 @@
                     <option value="mobile">Mobile</option>
                 </select>
             </div>
+            <label class="flex items-center gap-2 text-sm cursor-pointer" style="color:var(--ds-text-secondary);"><input type="checkbox" name="use_proxy" value="true" class="rounded"><i class="fas fa-globe-americas text-xs" style="color:var(--ds-brand-2);"></i>Geo-прокси</label>
             <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:#0ea5e9;border-color:#0ea5e9;">
                 <i class="fas fa-play"></i>Запустить Core Web Vitals Scanner
             </button>
@@ -605,6 +614,7 @@
                 <input type="number" name="timeoutMs" value="20000" min="3000" max="120000"
                        class="ds-input">
             </div>
+            <label class="flex items-center gap-2 text-sm cursor-pointer" style="color:var(--ds-text-secondary);"><input type="checkbox" name="use_proxy" value="true" class="rounded"><i class="fas fa-globe-americas text-xs" style="color:var(--ds-brand-2);"></i>Geo-прокси</label>
             <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:#475569;border-color:#475569;">
                 <i class="fas fa-play"></i>Запустить LLM Crawler Simulation
             </button>

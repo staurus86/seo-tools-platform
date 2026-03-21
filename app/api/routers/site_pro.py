@@ -29,6 +29,7 @@ def check_site_audit_pro(
     batch_urls: Optional[List[str]] = None,
     extended_hreflang_checks: bool = False,
     progress_callback=None,
+    use_proxy: bool = False,
 ) -> Dict[str, Any]:
     """Feature-flagged Site Audit Pro entrypoint."""
     from app.tools.site_pro.service import SiteAuditProService
@@ -43,6 +44,7 @@ def check_site_audit_pro(
         batch_urls=batch_urls or [],
         extended_hreflang_checks=extended_hreflang_checks,
         progress_callback=progress_callback,
+        use_proxy=use_proxy,
     )
 
 
@@ -53,6 +55,7 @@ class SiteAuditProRequest(URLModel):
     batch_mode: bool = False
     batch_urls: Optional[List[str]] = Field(default=None, max_length=1500)
     extended_hreflang_checks: bool = False
+    use_proxy: bool = False
 
     @field_validator("batch_urls", mode="before")
     @classmethod
@@ -182,6 +185,7 @@ async def create_site_audit_pro(data: SiteAuditProRequest, background_tasks: Bac
                 batch_urls=normalized_batch_urls,
                 extended_hreflang_checks=extended_hreflang_checks,
                 progress_callback=_progress,
+                use_proxy=bool(data.use_proxy),
             )
             chunk_manifest = (((result or {}).get("results") or {}).get("artifacts") or {}).get("chunk_manifest", {})
             for chunk in (chunk_manifest.get("chunks") or []):

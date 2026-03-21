@@ -74,6 +74,10 @@ async function startTask(event, endpoint) {
         }
     });
 
+    if (!Object.prototype.hasOwnProperty.call(data, 'use_proxy')) {
+        data.use_proxy = false;
+    }
+
     if (endpoint === 'site-audit-pro') {
         const scanMode = (data.scan_mode || 'crawl').toString();
         const batchMode = scanMode === 'batch';

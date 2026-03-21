@@ -71,6 +71,7 @@ def check_render_full(
     url: str,
     task_id: str,
     progress_callback=None,
+    use_proxy: bool = False,
 ) -> Dict[str, Any]:
     """Feature-flagged render audit with v2 service fallback."""
     from app.config import settings
@@ -180,7 +181,7 @@ def check_render_full(
         try:
             from app.tools.render.service_v2 import RenderAuditServiceV2
 
-            checker = RenderAuditServiceV2(timeout=getattr(settings, "RENDER_AUDIT_TIMEOUT", 35))
+            checker = RenderAuditServiceV2(timeout=getattr(settings, "RENDER_AUDIT_TIMEOUT", 35), use_proxy=use_proxy)
             result = checker.run(url=url, task_id=task_id, progress_callback=progress_callback)
             ensured = _ensure_render_profiles(result)
             if debug_render:
@@ -229,6 +230,7 @@ def check_render_full(
 
 class RenderAuditRequest(URLModel):
     url: str
+    use_proxy: bool = False
 
 
 @router.post("/tasks/render-audit")
@@ -249,7 +251,7 @@ async def create_render_audit(data: RenderAuditRequest, background_tasks: Backgr
             def _progress(progress: int, message: str) -> None:
                 update_task_state(task_id, status="RUNNING", progress=progress, status_message=message)
 
-            result = check_render_full(url, task_id=task_id, progress_callback=_progress)
+            result = check_render_full(url, task_id=task_id, progress_callback=_progress, use_proxy=bool(data.use_proxy))
             results = result.get("results", {}) if isinstance(result, dict) else {}
             if debug_render:
                 variants = results.get("variants", []) if isinstance(results, dict) else []

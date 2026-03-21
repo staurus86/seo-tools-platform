@@ -73,6 +73,7 @@ class LlmCrawlerRunRequest(BaseModel):
     sitemap_url: str | None = None
     mode: str = Field(default="single_url")
     options: LlmCrawlerOptions = Field(default_factory=LlmCrawlerOptions)
+    use_proxy: bool = False
 
     @field_validator("url", mode="before")
     @classmethod

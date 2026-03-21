@@ -14,10 +14,10 @@ from app.api.routers._task_store import create_task_pending, update_task_state
 router = APIRouter(tags=["SEO Tools"])
 
 
-def check_core_web_vitals(url: str, strategy: str = "desktop") -> Dict[str, Any]:
+def check_core_web_vitals(url: str, strategy: str = "desktop", use_proxy: bool = False) -> Dict[str, Any]:
     from app.tools.core_web_vitals import run_core_web_vitals
 
-    return run_core_web_vitals(url=url, strategy=strategy)
+    return run_core_web_vitals(url=url, strategy=strategy, use_proxy=use_proxy)
 
 
 class CoreWebVitalsRequest(URLModel):
@@ -26,6 +26,7 @@ class CoreWebVitalsRequest(URLModel):
     scan_mode: Optional[str] = "single"
     batch_urls: Optional[List[str]] = None
     competitor_mode: bool = False
+    use_proxy: bool = False
 
     @field_validator("strategy", mode="before")
     @classmethod
@@ -723,7 +724,7 @@ async def create_core_web_vitals(data: CoreWebVitalsRequest, background_tasks: B
                     )
 
                     try:
-                        scan_result = check_core_web_vitals(target_url, strategy=strategy)
+                        scan_result = check_core_web_vitals(target_url, strategy=strategy, use_proxy=bool(data.use_proxy))
                         payload = scan_result.get("results", {}) if isinstance(scan_result, dict) else {}
                         summary = payload.get("summary", {}) if isinstance(payload, dict) else {}
                         metrics = payload.get("metrics", {}) if isinstance(payload, dict) else {}
@@ -854,7 +855,7 @@ async def create_core_web_vitals(data: CoreWebVitalsRequest, background_tasks: B
                     "current_url": url,
                 },
             )
-            result = check_core_web_vitals(url, strategy=strategy)
+            result = check_core_web_vitals(url, strategy=strategy, use_proxy=bool(data.use_proxy))
             update_task_state(
                 task_id,
                 status="SUCCESS",

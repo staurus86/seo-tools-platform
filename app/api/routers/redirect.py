@@ -26,6 +26,7 @@ def check_redirect_checker_full(
     required_query_params: Optional[List[str]] = None,
     ignore_query_params: Optional[List[str]] = None,
     progress_callback=None,
+    use_proxy: bool = False,
 ) -> dict:
     from app.tools.redirect_checker import run_redirect_checker
 
@@ -39,6 +40,7 @@ def check_redirect_checker_full(
         required_query_params=required_query_params,
         ignore_query_params=ignore_query_params,
         progress_callback=progress_callback,
+        use_proxy=use_proxy,
     )
 
 
@@ -51,6 +53,7 @@ class RedirectCheckerRequest(URLModel):
     allowed_query_params: Optional[List[str]] = None
     required_query_params: Optional[List[str]] = None
     ignore_query_params: Optional[List[str]] = None
+    use_proxy: bool = False
 
     @field_validator("canonical_host_policy", mode="before")
     @classmethod
@@ -170,6 +173,7 @@ async def create_redirect_checker(data: RedirectCheckerRequest):
                 required_query_params=required_query_params,
                 ignore_query_params=ignore_query_params,
                 progress_callback=_progress_callback,
+                use_proxy=bool(data.use_proxy),
             )
             summary = ((result or {}).get("results", {}) or {}).get("summary", {}) or {}
             with progress_lock:

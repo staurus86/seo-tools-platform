@@ -1084,6 +1084,7 @@ class SiteAuditProAdapter:
         batch_mode: bool = False,
         extended_hreflang_checks: bool = False,
         progress_callback: Optional[Callable[[int, str, Optional[Dict[str, Any]]], None]] = None,
+        use_proxy: bool = False,
     ) -> NormalizedSiteAuditPayload:
         def notify(progress: int, message: str, meta: Optional[Dict[str, Any]] = None) -> None:
             if callable(progress_callback):
@@ -1130,6 +1131,11 @@ class SiteAuditProAdapter:
 
         session = requests.Session()
         session.headers.update({"User-Agent": "SEO-Tools-SiteAuditPro/0.1"})
+        if use_proxy:
+            from app.proxy import get_requests_proxies
+            _proxies = get_requests_proxies()
+            if _proxies:
+                session.proxies.update(_proxies)
         total_target = len(prepared_batch_urls) if effective_batch_mode else page_limit
         total_target = max(1, total_target)
 

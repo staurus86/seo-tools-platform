@@ -27,6 +27,7 @@ class SiteAuditProService:
         batch_urls: Optional[List[str]] = None,
         extended_hreflang_checks: bool = False,
         progress_callback: ProgressCallback = None,
+        use_proxy: bool = False,
     ) -> Dict[str, Any]:
         def notify(progress: int, message: str, meta: Optional[Dict[str, Any]] = None) -> None:
             if callable(progress_callback):
@@ -52,6 +53,7 @@ class SiteAuditProService:
             batch_urls=batch_urls or [],
             extended_hreflang_checks=extended_hreflang_checks,
             progress_callback=_adapter_progress,
+            use_proxy=use_proxy,
         )
         notify(75, "Building normalized report payload")
         public_results = self.adapter.to_public_results(normalized)

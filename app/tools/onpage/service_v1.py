@@ -609,6 +609,7 @@ class OnPageAuditServiceV1:
         description_max_len: int = 160,
         h1_required: bool = True,
         h1_max_count: int = 1,
+        use_proxy: bool = False,
     ) -> Dict[str, Any]:
         clean_url = _ensure_url(url)
         if not clean_url:
@@ -655,7 +656,13 @@ class OnPageAuditServiceV1:
             }
 
         try:
-            response = requests.get(clean_url, timeout=self.timeout, headers={"User-Agent": "Mozilla/5.0"})
+            proxy_kwargs = {}
+            if use_proxy:
+                from app.proxy import get_requests_proxies
+                _proxies = get_requests_proxies()
+                if _proxies:
+                    proxy_kwargs["proxies"] = _proxies
+            response = requests.get(clean_url, timeout=self.timeout, headers={"User-Agent": "Mozilla/5.0"}, **proxy_kwargs)
             final_url = response.url or clean_url
             status_code = response.status_code
             raw_html = decode_response_text(response)

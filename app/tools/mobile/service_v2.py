@@ -121,8 +121,9 @@ def _safe_int(value: Any, default: int = 0) -> int:
 
 
 class MobileCheckServiceV2:
-    def __init__(self, timeout: int = 20):
+    def __init__(self, timeout: int = 20, use_proxy: bool = False):
         self.timeout = timeout
+        self.use_proxy = use_proxy
 
     def _select_devices(self, mode: str = "full", selected: Optional[List[str]] = None) -> List[MobileDevice]:
         by_name = {d.name: d for d in DEVICE_PROFILES}
@@ -135,7 +136,13 @@ class MobileCheckServiceV2:
 
     def _http_prefetch(self, url: str) -> Dict[str, Any]:
         try:
-            resp = requests.get(url, timeout=self.timeout, headers={"User-Agent": "Mozilla/5.0"})
+            proxy_kwargs = {}
+            if self.use_proxy:
+                from app.proxy import get_requests_proxies
+                _proxies = get_requests_proxies()
+                if _proxies:
+                    proxy_kwargs["proxies"] = _proxies
+            resp = requests.get(url, timeout=self.timeout, headers={"User-Agent": "Mozilla/5.0"}, **proxy_kwargs)
             soup = BeautifulSoup(decode_response_text(resp), "html.parser")
             viewport = _extract_meta_viewport(soup)
             return {
@@ -266,7 +273,13 @@ class MobileCheckServiceV2:
 
         with sync_playwright() as p:
             _notify(12, "Запуск браузерного движка")
-            browser = p.chromium.launch(headless=True)
+            launch_kwargs = {"headless": True}
+            if self.use_proxy:
+                from app.proxy import get_playwright_proxy
+                _pw_proxy = get_playwright_proxy()
+                if _pw_proxy:
+                    launch_kwargs["proxy"] = _pw_proxy
+            browser = p.chromium.launch(**launch_kwargs)
             total_devices = len(devices) or 1
             for device in devices:
                 started = time.perf_counter()

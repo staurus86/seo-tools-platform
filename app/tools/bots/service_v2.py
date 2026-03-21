@@ -409,7 +409,9 @@ class BotAccessibilityServiceV2:
         sla_profile: str = "standard",
         baseline_enabled: bool = True,
         ai_block_expected: bool = False,
+        use_proxy: bool = False,
     ):
+        self.use_proxy = use_proxy
         profile = RETRY_PROFILES.get(str(retry_profile or "standard").lower(), RETRY_PROFILES["standard"])
         self.retry_profile = str(retry_profile or "standard").lower()
         self.timeout = max(3, int(timeout or profile["timeout"] or 15))
@@ -436,6 +438,11 @@ class BotAccessibilityServiceV2:
         adapter = HTTPAdapter(max_retries=retry, pool_connections=50, pool_maxsize=100)
         session.mount("http://", adapter)
         session.mount("https://", adapter)
+        if self.use_proxy:
+            from app.proxy import get_requests_proxies
+            _proxies = get_requests_proxies()
+            if _proxies:
+                session.proxies.update(_proxies)
         return session
 
     def _baseline_file_path(self, domain: str) -> str:

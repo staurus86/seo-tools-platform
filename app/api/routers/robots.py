@@ -124,9 +124,16 @@ async def _async_http_get(
     allow_redirects: bool = True,
     read_text: bool = True,
     text_limit: Optional[int] = None,
+    use_proxy: bool = False,
 ) -> _HttpResponseData:
     timeout_cfg = aiohttp.ClientTimeout(total=timeout)
-    async with session.get(url, timeout=timeout_cfg, allow_redirects=allow_redirects) as resp:
+    proxy_kwargs: dict = {}
+    if use_proxy:
+        from app.proxy import get_aiohttp_proxy
+        _proxy = get_aiohttp_proxy()
+        if _proxy:
+            proxy_kwargs["proxy"] = _proxy
+    async with session.get(url, timeout=timeout_cfg, allow_redirects=allow_redirects, **proxy_kwargs) as resp:
         content = await resp.read()
         headers = dict(resp.headers)
         text = ""
@@ -143,9 +150,10 @@ async def _async_http_get(
 
 
 class _AsyncSessionShim:
-    def __init__(self, headers: Optional[Dict[str, str]] = None):
+    def __init__(self, headers: Optional[Dict[str, str]] = None, use_proxy: bool = False):
         self.headers = dict(headers or {})
         self._session: Optional[aiohttp.ClientSession] = None
+        self.use_proxy = use_proxy
 
     async def open(self):
         if self._session is None or self._session.closed:
@@ -177,6 +185,7 @@ class _AsyncSessionShim:
                 allow_redirects=allow_redirects,
                 read_text=read_text,
                 text_limit=text_limit,
+                use_proxy=self.use_proxy,
             )
         async with aiohttp.ClientSession(headers=request_headers) as session:
             return await _async_http_get(
@@ -186,6 +195,7 @@ class _AsyncSessionShim:
                 allow_redirects=allow_redirects,
                 read_text=read_text,
                 text_limit=text_limit,
+                use_proxy=self.use_proxy,
             )
 
 
@@ -235,6 +245,7 @@ async def _safe_fetch_with_redirects_async(
     max_redirects: int = 5,
     read_text: bool = True,
     text_limit: Optional[int] = None,
+    use_proxy: bool = False,
 ):
     current_url = str(url or "").strip()
     seen: set[str] = set()
@@ -262,6 +273,7 @@ async def _safe_fetch_with_redirects_async(
                 allow_redirects=False,
                 read_text=read_text,
                 text_limit=text_limit,
+                use_proxy=use_proxy,
             )
         response_url = str(getattr(response, "url", current_url) or current_url)
         response_error = _get_public_target_error(response_url)
@@ -305,7 +317,7 @@ def fetch_robots(url: str, timeout: int = 20) -> Tuple[Optional[str], Optional[i
         return None, None, str(e)
 
 
-async def fetch_robots_async(url: str, timeout: int = 20) -> Tuple[Optional[str], Optional[int], Optional[str]]:
+async def fetch_robots_async(url: str, timeout: int = 20, use_proxy: bool = False) -> Tuple[Optional[str], Optional[int], Optional[str]]:
     """Async fetch for robots.txt returning (content, status_code, error)."""
     try:
         normalized = _normalize_http_input(url)
@@ -322,6 +334,7 @@ async def fetch_robots_async(url: str, timeout: int = 20) -> Tuple[Optional[str]
                 robots_url,
                 timeout=timeout,
                 read_text=True,
+                use_proxy=use_proxy,
             )
         return resp.text, resp.status_code, None
     except asyncio.TimeoutError:
@@ -1323,11 +1336,11 @@ def check_robots_full(url: str) -> Dict[str, Any]:
     return response
 
 
-async def check_robots_full_async(url: str) -> Dict[str, Any]:
+async def check_robots_full_async(url: str, use_proxy: bool = False) -> Dict[str, Any]:
     """Async robots.txt audit using aiohttp for network-bound work."""
     print(f"[ROBOTS] Starting full audit for: {url}")
 
-    raw_text, status_code, error = await fetch_robots_async(url)
+    raw_text, status_code, error = await fetch_robots_async(url, use_proxy=use_proxy)
 
     if error:
         return {
@@ -2478,7 +2491,7 @@ def check_sitemap_full(url: Union[str, List[str]]) -> Dict[str, Any]:
 
 
 
-async def check_sitemap_full_async(url: Union[str, List[str]]) -> Dict[str, Any]:
+async def check_sitemap_full_async(url: Union[str, List[str]], use_proxy: bool = False) -> Dict[str, Any]:
     """Full sitemap validation with sitemap index traversal and URL export."""
     import xml.etree.ElementTree as ET
     from app.config import settings
@@ -2629,7 +2642,7 @@ async def check_sitemap_full_async(url: Union[str, List[str]]) -> Dict[str, Any]
     root_status_code = None
     now_utc = datetime.now(timezone.utc)
 
-    session = _AsyncSessionShim({"User-Agent": "Mozilla/5.0"})
+    session = _AsyncSessionShim({"User-Agent": "Mozilla/5.0"}, use_proxy=use_proxy)
     await session.open()
     try:
 
@@ -3338,6 +3351,7 @@ def check_bots_full(
     ai_block_expected: bool = False,
     batch_mode: bool = False,
     batch_urls: Optional[List[str]] = None,
+    use_proxy: bool = False,
 ) -> Dict[str, Any]:
     """Bot accessibility check with feature-flagged v2 engine."""
     from app.config import settings
@@ -3358,6 +3372,7 @@ def check_bots_full(
                 sla_profile=sla_profile,
                 baseline_enabled=baseline_enabled,
                 ai_block_expected=ai_block_expected,
+                use_proxy=use_proxy,
             )
             if batch_mode:
                 return checker.run_batch(batch_urls or [], selected_bots=selected_bots, bot_groups=bot_groups)
@@ -3417,6 +3432,7 @@ def _check_bots_legacy(url: str) -> Dict[str, Any]:
 # ============ REQUEST MODELS ============
 class RobotsCheckRequest(URLModel):
     url: str
+    use_proxy: bool = False
 
     @field_validator("url", mode="before")
     @classmethod
@@ -3426,6 +3442,7 @@ class RobotsCheckRequest(URLModel):
 
 class SitemapValidateRequest(URLModel):
     url: str
+    use_proxy: bool = False
 
     @field_validator("url", mode="before")
     @classmethod
@@ -3444,6 +3461,7 @@ class BotCheckRequest(URLModel):
     ai_block_expected: bool = False
     scan_mode: Optional[str] = "single"
     batch_urls: Optional[List[str]] = None
+    use_proxy: bool = False
 
     @field_validator("url", mode="before")
     @classmethod
@@ -3807,7 +3825,7 @@ async def create_robots_check(data: RobotsCheckRequest):
     
     print(f"[API] Full robots.txt analysis for: {url}")
     
-    result = await check_robots_full_async(url)
+    result = await check_robots_full_async(url, use_proxy=bool(data.use_proxy))
     task_id = f"robots-{datetime.now().timestamp()}"
     create_task_result(task_id, "robots_check", url, result)
     
@@ -3848,7 +3866,7 @@ async def create_sitemap_validate(data: SitemapValidateRequest):
         f"sitemaps={len(target_sitemap_urls)}, source={discovery_source}"
     )
 
-    result = await check_sitemap_full_async(target_sitemap_urls)
+    result = await check_sitemap_full_async(target_sitemap_urls, use_proxy=bool(data.use_proxy))
     if isinstance(result, dict):
         resolved_sitemap_url = target_sitemap_urls[0] if target_sitemap_urls else ""
         result["input_url"] = normalized_input
@@ -3894,6 +3912,7 @@ async def create_bot_check(data: BotCheckRequest):
         ai_block_expected=bool(data.ai_block_expected),
         batch_mode=(str(data.scan_mode or "single").lower() == "batch"),
         batch_urls=(data.batch_urls or []),
+        use_proxy=bool(data.use_proxy),
     )
     task_id = f"bots-{datetime.now().timestamp()}"
     create_task_result(task_id, "bot_check", url, result)

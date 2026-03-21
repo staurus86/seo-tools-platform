@@ -27,6 +27,7 @@ def check_onpage_audit(
     description_max_len: int = 160,
     h1_required: bool = True,
     h1_max_count: int = 1,
+    use_proxy: bool = False,
 ) -> Dict[str, Any]:
     """Single-page on-page audit."""
     from app.tools.onpage import OnPageAuditServiceV1
@@ -45,6 +46,7 @@ def check_onpage_audit(
         description_max_len=description_max_len,
         h1_required=h1_required,
         h1_max_count=h1_max_count,
+        use_proxy=use_proxy,
     )
 
 
@@ -61,6 +63,7 @@ class OnPageAuditRequest(URLModel):
     description_max_len: int = 160
     h1_required: bool = True
     h1_max_count: int = 1
+    use_proxy: bool = False
 
     @field_validator("keywords", mode="before")
     @classmethod
@@ -101,6 +104,7 @@ async def create_onpage_audit(data: OnPageAuditRequest, background_tasks: Backgr
                 description_max_len=int(data.description_max_len or 160),
                 h1_required=bool(data.h1_required),
                 h1_max_count=int(data.h1_max_count or 1),
+                use_proxy=bool(data.use_proxy),
             )
             update_task_state(
                 task_id,

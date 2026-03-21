@@ -821,6 +821,7 @@ def generate_recommendations_full(site_url: str, critical_issues: list, warning_
 class SiteAnalyzeRequest(URLModel):
     url: str
     max_pages: int = 20
+    use_proxy: bool = False
 
 
 @router.post("/tasks/site-analyze")

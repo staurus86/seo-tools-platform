@@ -184,10 +184,16 @@ def _fetch_http(
     timeout_ms: int,
     max_redirect_hops: int,
     max_html_bytes: int,
+    use_proxy: bool = False,
 ) -> Dict[str, Any]:
     from .security import get_allowed_ips_for_url
-    
+
     session = requests.Session()
+    if use_proxy:
+        from app.proxy import get_requests_proxies
+        _proxies = get_requests_proxies()
+        if _proxies:
+            session.proxies.update(_proxies)
     session.headers.update(
         {
             "User-Agent": user_agent,
@@ -283,6 +289,7 @@ def _rendered_fetch(
     url: str,
     timeout_ms: int,
     max_html_bytes: int,
+    use_proxy: bool = False,
 ) -> Dict[str, Any]:
     from .security import get_allowed_ips_for_url
     
@@ -303,7 +310,13 @@ def _rendered_fetch(
     with sync_playwright() as p:
         # Do not reuse browser between runs: sync_playwright() closes its own loop/context.
         # Reusing cached browser across calls can trigger "Event loop is closed".
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+        launch_kwargs = {"headless": True, "args": ["--no-sandbox"]}
+        if use_proxy:
+            from app.proxy import get_playwright_proxy
+            _pw_proxy = get_playwright_proxy()
+            if _pw_proxy:
+                launch_kwargs["proxy"] = _pw_proxy
+        browser = p.chromium.launch(**launch_kwargs)
         context = None
         try:
             context = browser.new_context(user_agent=UA_RENDER)
@@ -393,6 +406,7 @@ def _fetch_profile_snapshot(
     max_redirect_hops: int,
     max_html_bytes: int,
     show_headers: bool,
+    use_proxy: bool = False,
 ) -> Optional[Dict[str, Any]]:
     user_agent = BOT_USER_AGENTS.get(profile)
     if not user_agent:
@@ -403,6 +417,7 @@ def _fetch_profile_snapshot(
         timeout_ms=timeout_ms,
         max_redirect_hops=max_redirect_hops,
         max_html_bytes=max_html_bytes,
+        use_proxy=use_proxy,
     )
     return build_snapshot(
         html=str(payload.get("body_text") or ""),
@@ -2554,6 +2569,7 @@ def _policies_from_robots(
     timeout_ms: int,
     max_html_bytes: int,
     max_redirect_hops: int,
+    use_proxy: bool = False,
 ) -> Dict[str, Any]:
     cached = _robots_cache_get(final_url)
     if cached:
@@ -2567,6 +2583,7 @@ def _policies_from_robots(
         timeout_ms=timeout_ms,
         max_redirect_hops=max_redirect_hops,
         max_html_bytes=max_html_bytes,
+        use_proxy=use_proxy,
     )
     robots_text = str(robots_fetch.get("body_text") or "")
     rules = parse_robots_rules(robots_text)
@@ -2620,6 +2637,7 @@ def run_llm_crawler_simulation(
     options: Dict[str, Any],
     request_id: str,
     progress_callback: Optional[Callable[[int, str], None]] = None,
+    use_proxy: bool = False,
 ) -> Dict[str, Any]:
     started_at = time.perf_counter()
 
@@ -2653,6 +2671,7 @@ def run_llm_crawler_simulation(
         timeout_ms=timeout_ms,
         max_redirect_hops=max_redirect_hops,
         max_html_bytes=max_html_bytes,
+        use_proxy=use_proxy,
     )
     nojs_snapshot = build_snapshot(
         html=str(nojs_http.get("body_text") or ""),
@@ -2682,6 +2701,7 @@ def run_llm_crawler_simulation(
         timeout_ms=timeout_ms,
         max_html_bytes=max_html_bytes,
         max_redirect_hops=max_redirect_hops,
+        use_proxy=use_proxy,
     )
     policies["meta"] = {
         "meta_robots": ((nojs_snapshot.get("meta") or {}).get("meta_robots") or ""),
@@ -2714,6 +2734,7 @@ def run_llm_crawler_simulation(
                 url=str(nojs_snapshot.get("final_url") or normalized_url),
                 timeout_ms=min(timeout_ms, 15000),
                 max_html_bytes=max_html_bytes,
+                use_proxy=use_proxy,
             )
             rendered_snapshot = build_snapshot(
                 html=str(rendered_http.get("body_text") or ""),
@@ -2762,6 +2783,7 @@ def run_llm_crawler_simulation(
                 max_redirect_hops=max_redirect_hops,
                 max_html_bytes=max_html_bytes,
                 show_headers=show_headers,
+                use_proxy=use_proxy,
             )
             gbot_snapshot = _fetch_profile_snapshot(
                 profile="googlebot",
@@ -2770,6 +2792,7 @@ def run_llm_crawler_simulation(
                 max_redirect_hops=max_redirect_hops,
                 max_html_bytes=max_html_bytes,
                 show_headers=show_headers,
+                use_proxy=use_proxy,
             )
             if gpt_snapshot and gbot_snapshot:
                 cloaking_result = _cloaking_analysis(rendered_snapshot, gpt_snapshot, gbot_snapshot)

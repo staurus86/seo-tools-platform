@@ -420,9 +420,10 @@ def _build_recommendations(missing: Dict[str, List[str]]) -> List[str]:
 
 
 class RenderAuditServiceV2:
-    def __init__(self, timeout: int = 35):
+    def __init__(self, timeout: int = 35, use_proxy: bool = False):
         self.timeout = max(10, int(timeout))
         self.timeout_ms = self.timeout * 1000
+        self.use_proxy = use_proxy
         self.debug_enabled = bool(getattr(settings, "RENDER_AUDIT_DEBUG", False) or getattr(settings, "DEBUG", False))
 
     def _dbg(self, task_id: str, message: str) -> None:
@@ -468,7 +469,13 @@ class RenderAuditServiceV2:
         js_timing: Dict[str, float] = {}
         nojs_timing: Dict[str, float] = {}
         emulation: Dict[str, Any] = {}
-        browser = p.chromium.launch(headless=True)
+        launch_kwargs = {"headless": True}
+        if self.use_proxy:
+            from app.proxy import get_playwright_proxy
+            _pw_proxy = get_playwright_proxy()
+            if _pw_proxy:
+                launch_kwargs["proxy"] = _pw_proxy
+        browser = p.chromium.launch(**launch_kwargs)
         try:
             ctx_kwargs: Dict[str, Any] = {"locale": "en-US", "user_agent": ua}
             if mobile:
@@ -604,8 +611,14 @@ class RenderAuditServiceV2:
                 notify(10 + int((idx - 1) * 40), f"Аудит профиля {label} ({idx}/2)")
                 self._dbg(task_id, f"variant-start id={vid} label={label} mobile={mobile}")
                 try:
+                    proxy_kwargs = {}
+                    if self.use_proxy:
+                        from app.proxy import get_requests_proxies
+                        _proxies = get_requests_proxies()
+                        if _proxies:
+                            proxy_kwargs["proxies"] = _proxies
                     try:
-                        r = requests.get(url, timeout=self.timeout, headers={"User-Agent": ua}, allow_redirects=True)
+                        r = requests.get(url, timeout=self.timeout, headers={"User-Agent": ua}, allow_redirects=True, **proxy_kwargs)
                         raw = self._parse_raw(decode_response_text(r), r.status_code)
                     except Exception:
                         raw = self._parse_raw("", None)

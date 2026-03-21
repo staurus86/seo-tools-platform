@@ -360,6 +360,7 @@ def run_core_web_vitals(
     strategy: str = "desktop",
     timeout: int = 60,
     api_key: Optional[str] = None,
+    use_proxy: bool = False,
 ) -> Dict[str, Any]:
     normalized_url = _normalize_http_input(url)
     if not normalized_url:
@@ -387,6 +388,13 @@ def run_core_web_vitals(
     response = None
     last_exception: Optional[Exception] = None
     retries_used = 0
+    proxy_kwargs = {}
+    if use_proxy:
+        from app.proxy import get_requests_proxies
+        _proxies = get_requests_proxies()
+        if _proxies:
+            proxy_kwargs["proxies"] = _proxies
+
     for attempt in range(max_retries):
         read_timeout = configured_timeout + (attempt * 15)
         try:
@@ -394,6 +402,7 @@ def run_core_web_vitals(
                 PSI_ENDPOINT,
                 params=params,
                 timeout=(10, read_timeout),
+                **proxy_kwargs,
             )
             if response.status_code in (500, 502, 503, 504) and attempt < (max_retries - 1):
                 retries_used += 1

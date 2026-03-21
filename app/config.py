@@ -143,6 +143,9 @@ class Settings(BaseSettings):
     # History
     HISTORY_SIZE: int = 10
     
+    # Geo-proxy (Webshare format: ip:port:user:pass, comma or newline separated)
+    GEO_PROXY_LIST: str = os.getenv("GEO_PROXY_LIST", "")
+
     # Playwright
     PLAYWRIGHT_BROWSERS_PATH: str = os.getenv("PLAYWRIGHT_BROWSERS_PATH", "0")
 
