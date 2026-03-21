@@ -830,8 +830,20 @@ function showResults(data) {
         };
         linkProfileRenderPayload = result;
         linkProfileRowsLimitByScope = {};
+    } else if (result.task_type === 'unified_audit') {
+        unifiedAuditData = {
+            ...result,
+            task_id: result.task_id || taskId,
+            url: result.url || ''
+        };
+    } else if (result.task_type && result.task_type.startsWith('batch_')) {
+        batchResultsData = {
+            ...result,
+            task_id: result.task_id || taskId,
+            url: result.url || ''
+        };
     }
-    
+
     const resultsContent = document.getElementById('results-content');
     
     // Generate results HTML based on task type
@@ -864,6 +876,10 @@ function showResults(data) {
     } else if (result.task_type === 'link_profile_audit') {
         resultsContent.innerHTML = generateLinkProfileAuditHTML(result);
         switchLinkProfileAuditTab('executive');
+    } else if (result.task_type === 'unified_audit') {
+        resultsContent.innerHTML = generateUnifiedAuditHTML(result);
+    } else if (result.task_type && result.task_type.startsWith('batch_')) {
+        resultsContent.innerHTML = generateBatchResultsHTML(result);
     } else {
         resultsContent.innerHTML = generateGenericHTML(result);
     }
@@ -1069,6 +1085,21 @@ function initChartsForTool(taskType, result) {
             }
         }
 
+        if (taskType === 'unified_audit') {
+            const overallScore = Number(r.overall_score ?? 0);
+            if (overallScore > 0) {
+                createScoreGauge('ds-chart-unified-overall', overallScore, 'Overall');
+            }
+            const scores = r.scores || {};
+            const scoreLabels = Object.keys(scores);
+            const scoreValues = scoreLabels.map(k => Number(scores[k] || 0));
+            if (scoreLabels.length > 0) {
+                const readableLabels = scoreLabels.map(k => k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
+                createBarChart('ds-chart-unified-scores', readableLabels,
+                    [{data: scoreValues, label: 'Score', color: '#0f4c81'}]);
+            }
+        }
+
     } catch (e) {
         console.warn('Chart init error:', e);
     }
@@ -1098,6 +1129,8 @@ let linkProfileRenderPayload = null;
 let linkProfileRowsLimitByScope = {};
 const LINK_PROFILE_DEFAULT_ROWS = 100;
 const LINK_PROFILE_ROWS_STEP = 200;
+let unifiedAuditData = null;
+let batchResultsData = null;
 let lastTaskResult = null;
 let sitemapExportUrls = [];
 let sitemapDuplicateLines = [];
@@ -7942,6 +7975,416 @@ function generateSiteAuditProHTML(result) {
             </div>
         </div>
     `;
+}
+
+// ---------------------------------------------------------------------------
+// Unified Full SEO Audit — results renderer
+// ---------------------------------------------------------------------------
+function _unifiedScoreColor(score) {
+    const s = Number(score || 0);
+    if (s >= 90) return '#10b981';
+    if (s >= 70) return '#3b82f6';
+    if (s >= 50) return '#f59e0b';
+    return '#ef4444';
+}
+
+function _unifiedGradeColor(grade) {
+    const g = String(grade || '').toUpperCase();
+    if (g === 'A+' || g === 'A') return '#10b981';
+    if (g === 'B') return '#3b82f6';
+    if (g === 'C') return '#f59e0b';
+    return '#ef4444';
+}
+
+function _unifiedPriorityBadge(priority) {
+    const p = String(priority || '').toUpperCase();
+    if (p === 'P0') return 'ds-badge ds-badge-danger';
+    if (p === 'P1') return 'ds-badge ds-badge-warning';
+    if (p === 'P2') return 'ds-badge ds-badge-info';
+    return 'ds-badge';
+}
+
+function generateUnifiedAuditHTML(result) {
+    const r = result.results || result.result || result;
+    const overallScore = Number(r.overall_score ?? 0);
+    const overallGrade = r.overall_grade || '';
+    const durationMs = Number(r.duration_ms ?? 0);
+    const toolsRun = Number(r.tools_run ?? 0);
+    const toolsFailed = Number(r.tools_failed ?? 0);
+    const scores = r.scores || {};
+    const devTasks = Array.isArray(r.dev_tasks) ? r.dev_tasks : [];
+    const errors = r.errors || {};
+    const tid = result.task_id || taskId || '';
+    const url = result.url || r.url || '';
+
+    const durationSec = (durationMs / 1000).toFixed(1);
+
+    // --- Header with overall score ring ---
+    const headerHtml = buildToolHeader({
+        gradient: 'from-indigo-600 to-blue-700',
+        label: 'Unified Full SEO Audit',
+        title: 'Комплексный SEO-аудит',
+        subtitle: url ? escapeHtml(url) : '',
+        score: overallScore,
+        scoreLabel: 'оценка',
+        scoreGrade: overallGrade,
+        badges: [
+            { text: `Инструментов: ${toolsRun}`, cls: 'bg-white/20 text-white' },
+            toolsFailed > 0
+                ? { text: `Ошибок: ${toolsFailed}`, cls: 'bg-red-500/30 text-white' }
+                : { text: 'Без ошибок', cls: 'bg-emerald-500/30 text-white' },
+            { text: `${durationSec}s`, cls: 'bg-white/20 text-white' }
+        ],
+        metaLines: [],
+        actionButtons: `
+            <button onclick="downloadUnifiedAuditExport('xlsx')" class="ds-export-btn" aria-label="Скачать XLSX отчет">
+                <i class="fas fa-file-excel mr-1"></i>XLSX
+            </button>
+            <button onclick="downloadUnifiedAuditExport('docx')" class="ds-export-btn" aria-label="Скачать DOCX отчет">
+                <i class="fas fa-file-word mr-1"></i>DOCX
+            </button>`
+    });
+
+    // --- Overall grade display ---
+    const gradeColor = _unifiedGradeColor(overallGrade);
+    const gradeHtml = overallGrade ? `
+    <div class="ds-card text-center" style="padding:1.5rem;">
+        <div style="font-size:4rem;font-weight:800;color:${gradeColor};line-height:1;">${escapeHtml(overallGrade)}</div>
+        <div class="text-sm" style="color:var(--ds-text-secondary);margin-top:0.5rem;">Общая оценка</div>
+        <div class="text-2xl font-bold" style="color:${_unifiedScoreColor(overallScore)};margin-top:0.25rem;">${overallScore.toFixed(1)}</div>
+    </div>` : '';
+
+    // --- Chart canvases ---
+    const chartsHtml = `
+    <div class="ds-card" style="padding:1.25rem;">
+        <h4 class="font-semibold mb-3" style="color:var(--ds-text);">Результаты по инструментам</h4>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div><canvas id="ds-chart-unified-overall" width="200" height="200"></canvas></div>
+            <div><canvas id="ds-chart-unified-scores" width="400" height="200"></canvas></div>
+        </div>
+    </div>`;
+
+    // --- Scores grid ---
+    const scoreNames = {
+        onpage: 'OnPage Audit',
+        render: 'Render Audit',
+        mobile_friendly: 'Mobile Friendly',
+        bot_accessibility: 'Bot Accessibility',
+        redirect: 'Redirect Checker',
+        cwv_mobile: 'CWV Mobile',
+        cwv_desktop: 'CWV Desktop',
+        cwv_avg: 'CWV Average',
+        robots_ok: 'Robots.txt'
+    };
+    const scoreKeys = Object.keys(scores);
+    const scoresGridHtml = scoreKeys.length > 0 ? `
+    <div class="ds-card" style="padding:1.25rem;">
+        <h4 class="font-semibold mb-3" style="color:var(--ds-text);">Оценки по модулям</h4>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            ${scoreKeys.map(k => {
+                const s = Number(scores[k] || 0);
+                const label = scoreNames[k] || k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                return `<div class="ds-card text-center" style="padding:1rem;animation:none;">
+                    <div class="text-3xl font-bold" style="color:${_unifiedScoreColor(s)}">${s}</div>
+                    <div class="text-sm" style="color:var(--ds-text-secondary);">${escapeHtml(label)}</div>
+                </div>`;
+            }).join('')}
+        </div>
+    </div>` : '';
+
+    // --- Developer Tasks table (ТЗ) ---
+    let devTasksHtml = '';
+    if (devTasks.length > 0) {
+        const rows = devTasks.map((t, i) => `
+            <tr>
+                <td style="padding:0.5rem;white-space:nowrap;">${i + 1}</td>
+                <td style="padding:0.5rem;"><span class="${_unifiedPriorityBadge(t.priority)}">${escapeHtml(String(t.priority || ''))}</span></td>
+                <td style="padding:0.5rem;">${escapeHtml(String(t.category || ''))}</td>
+                <td style="padding:0.5rem;">${escapeHtml(String(t.source_tool || ''))}</td>
+                <td style="padding:0.5rem;font-weight:500;">${escapeHtml(String(t.title || ''))}</td>
+                <td style="padding:0.5rem;font-size:0.85em;color:var(--ds-text-secondary);">${escapeHtml(String(t.description || ''))}</td>
+                <td style="padding:0.5rem;">${escapeHtml(String(t.owner || ''))}</td>
+            </tr>`).join('');
+
+        const p0Count = devTasks.filter(t => String(t.priority).toUpperCase() === 'P0').length;
+        const p1Count = devTasks.filter(t => String(t.priority).toUpperCase() === 'P1').length;
+        const p2Count = devTasks.filter(t => String(t.priority).toUpperCase() === 'P2').length;
+        const p3Count = devTasks.filter(t => String(t.priority).toUpperCase() === 'P3').length;
+
+        devTasksHtml = `
+        <div class="ds-card" style="padding:1.25rem;">
+            <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <h4 class="font-semibold" style="color:var(--ds-text);">Техническое задание (${devTasks.length} задач)</h4>
+                <div class="flex gap-2 text-xs">
+                    ${p0Count ? `<span class="ds-badge ds-badge-danger">P0: ${p0Count}</span>` : ''}
+                    ${p1Count ? `<span class="ds-badge ds-badge-warning">P1: ${p1Count}</span>` : ''}
+                    ${p2Count ? `<span class="ds-badge ds-badge-info">P2: ${p2Count}</span>` : ''}
+                    ${p3Count ? `<span class="ds-badge">P3: ${p3Count}</span>` : ''}
+                </div>
+            </div>
+            <div class="ds-table-wrap">
+                <table class="ds-table">
+                    <thead>
+                        <tr>
+                            <th>#</th><th>Priority</th><th>Category</th><th>Tool</th>
+                            <th>Title</th><th>Description</th><th>Owner</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        </div>`;
+    }
+
+    // --- Errors section ---
+    const errorKeys = Object.keys(errors);
+    let errorsHtml = '';
+    if (errorKeys.length > 0) {
+        const errRows = errorKeys.map(k => `
+            <tr>
+                <td style="padding:0.5rem;font-weight:500;">${escapeHtml(k)}</td>
+                <td style="padding:0.5rem;color:var(--ds-danger);">${escapeHtml(String(errors[k] || ''))}</td>
+            </tr>`).join('');
+        errorsHtml = `
+        <div class="ds-card" style="padding:1.25rem;">
+            <h4 class="font-semibold mb-3" style="color:var(--ds-danger);">Ошибки выполнения</h4>
+            <div class="ds-table-wrap">
+                <table class="ds-table">
+                    <thead><tr><th>Инструмент</th><th>Ошибка</th></tr></thead>
+                    <tbody>${errRows}</tbody>
+                </table>
+            </div>
+        </div>`;
+    }
+
+    // --- Per-tool collapsible details ---
+    const toolResults = r.tool_results || r.per_tool || {};
+    const toolResultKeys = Object.keys(toolResults);
+    let perToolHtml = '';
+    if (toolResultKeys.length > 0) {
+        const toolDetails = toolResultKeys.map(k => {
+            const toolData = toolResults[k];
+            const toolScore = scores[k] !== undefined ? scores[k] : '—';
+            const toolScoreColor = typeof toolScore === 'number' ? _unifiedScoreColor(toolScore) : 'var(--ds-text-muted)';
+            return `
+            <details class="ds-card" style="padding:0;">
+                <summary style="padding:1rem;cursor:pointer;display:flex;align-items:center;justify-content:space-between;">
+                    <span class="font-medium" style="color:var(--ds-text);">${escapeHtml(scoreNames[k] || k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()))}</span>
+                    <span class="text-lg font-bold" style="color:${toolScoreColor};">${toolScore}</span>
+                </summary>
+                <div style="padding:0 1rem 1rem;border-top:1px solid var(--ds-border);">
+                    <pre class="text-xs overflow-auto rounded p-3" style="background:var(--ds-bg);color:var(--ds-text);max-height:400px;">${escapeHtml(JSON.stringify(toolData, null, 2))}</pre>
+                </div>
+            </details>`;
+        }).join('');
+        perToolHtml = `
+        <div style="display:flex;flex-direction:column;gap:0.5rem;">
+            <h4 class="font-semibold" style="color:var(--ds-text);margin-bottom:0.25rem;">Детали по инструментам</h4>
+            ${toolDetails}
+        </div>`;
+    }
+
+    return `
+    <div class="space-y-4">
+        ${headerHtml}
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+            <div class="lg:col-span-1">${gradeHtml}</div>
+            <div class="lg:col-span-3">${chartsHtml}</div>
+        </div>
+        ${scoresGridHtml}
+        ${devTasksHtml}
+        ${errorsHtml}
+        ${perToolHtml}
+    </div>`;
+}
+
+function downloadUnifiedAuditExport(format) {
+    const data = unifiedAuditData;
+    if (!data) { alert('Нет данных Unified Audit'); return; }
+    const tid = data.task_id || taskId;
+    if (!tid) { alert('task_id не найден'); return; }
+    const url = `/api/tasks/unified-audit/${tid}/export/${format}`;
+    const ext = format === 'docx' ? 'docx' : 'xlsx';
+    fetch(url)
+        .then(resp => {
+            if (!resp.ok) throw new Error('Export failed: ' + resp.status);
+            return resp.blob().then(blob => ({ blob, resp }));
+        })
+        .then(({ blob, resp }) => {
+            const filename = filenameFromResponse(resp, 'unified-audit', ext, data.url || '');
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        })
+        .catch(err => { console.error(err); alert('Ошибка экспорта: ' + err.message); });
+}
+
+// ---------------------------------------------------------------------------
+// Batch Mode — results renderer
+// ---------------------------------------------------------------------------
+function _batchExtractScore(item, toolType) {
+    if (!item || item.status !== 'success' || !item.result) return null;
+    const r = item.result.results || item.result;
+    if (!r) return null;
+    const t = String(toolType || '').toLowerCase();
+    if (t.includes('onpage')) return r.summary?.score ?? r.score ?? null;
+    if (t.includes('redirect')) return r.summary?.quality_score ?? null;
+    if (t.includes('cwv') || t.includes('core_web_vitals')) return r.summary?.performance_score ?? null;
+    if (t.includes('bot')) return r.summary?.total ? Math.round((r.summary.crawlable || 0) / r.summary.total * 100) : null;
+    if (t.includes('render')) return r.summary?.score ?? null;
+    if (t.includes('mobile')) return r.summary?.score ?? null;
+    if (t.includes('robots')) return r.quality_score ?? null;
+    if (t.includes('sitemap')) return r.quality_score ?? null;
+    if (t.includes('link_profile')) return r.summary?.score ?? null;
+    // generic fallback
+    if (typeof r.score === 'number') return r.score;
+    if (r.summary && typeof r.summary.score === 'number') return r.summary.score;
+    if (r.summary && typeof r.summary.quality_score === 'number') return r.summary.quality_score;
+    return null;
+}
+
+function _batchExtractIssues(item, toolType) {
+    if (!item || item.status !== 'success' || !item.result) return '';
+    const r = item.result.results || item.result;
+    if (!r) return '';
+    const issues = r.issues || r.findings || [];
+    if (!Array.isArray(issues) || issues.length === 0) return '—';
+    let critical = 0, warning = 0, info = 0;
+    issues.forEach(i => {
+        const sev = String(i.severity || '').toLowerCase();
+        if (sev === 'critical' || sev === 'error') critical++;
+        else if (sev === 'warning') warning++;
+        else info++;
+    });
+    const parts = [];
+    if (critical > 0) parts.push(`<span style="color:#ef4444;font-weight:600;">${critical} critical</span>`);
+    if (warning > 0) parts.push(`<span style="color:#f59e0b;">${warning} warning</span>`);
+    if (info > 0) parts.push(`<span style="color:#3b82f6;">${info} info</span>`);
+    return parts.join(', ') || '—';
+}
+
+function generateBatchResultsHTML(result) {
+    const r = result.results || result.result || result;
+    const summary = r.summary || {};
+    const items = Array.isArray(r.items) ? r.items : [];
+    const toolType = summary.tool || result.task_type || '';
+    const totalUrls = Number(summary.total_urls ?? items.length);
+    const successCount = Number(summary.success ?? items.filter(i => i.status === 'success').length);
+    const errorCount = Number(summary.errors ?? items.filter(i => i.status === 'error').length);
+    const url = result.url || r.url || '';
+    const tid = result.task_id || taskId || '';
+
+    const toolLabel = (toolType || 'batch').replace(/^batch_/, '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+    // --- Header ---
+    const headerHtml = buildToolHeader({
+        gradient: 'from-purple-600 to-indigo-700',
+        label: 'Batch Mode',
+        title: `Batch ${toolLabel}`,
+        subtitle: `${totalUrls} URLs (${successCount} success, ${errorCount} error)`,
+        score: totalUrls > 0 ? Math.round(successCount / totalUrls * 100) : null,
+        scoreLabel: 'success rate',
+        badges: [
+            { text: `Total: ${totalUrls}`, cls: 'bg-white/20 text-white' },
+            successCount > 0 ? { text: `OK: ${successCount}`, cls: 'bg-emerald-500/30 text-white' } : null,
+            errorCount > 0 ? { text: `Error: ${errorCount}`, cls: 'bg-red-500/30 text-white' } : null
+        ].filter(Boolean),
+        metaLines: [],
+        actionButtons: null
+    });
+
+    // --- Summary metrics ---
+    const metricsHtml = `
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        ${buildMetricCard('Total URLs', totalUrls)}
+        ${buildMetricCard('Success', successCount, successCount === totalUrls ? 'Все успешно' : '')}
+        ${buildMetricCard('Errors', errorCount, errorCount > 0 ? 'Требуют внимания' : '')}
+        ${buildMetricCard('Success Rate', totalUrls > 0 ? Math.round(successCount / totalUrls * 100) + '%' : '—')}
+    </div>`;
+
+    // --- Results table ---
+    let tableHtml = '';
+    if (items.length > 0) {
+        const rows = items.map((item, i) => {
+            const isSuccess = item.status === 'success';
+            const statusBadge = isSuccess
+                ? '<span class="ds-badge ds-badge-success">OK</span>'
+                : '<span class="ds-badge ds-badge-danger">Error</span>';
+            const score = _batchExtractScore(item, toolType);
+            const scoreHtml = score !== null
+                ? `<span style="color:${_unifiedScoreColor(score)};font-weight:600;">${score}</span>`
+                : '—';
+            const issuesHtml = isSuccess ? _batchExtractIssues(item, toolType) : escapeHtml(String(item.error || 'Unknown error'));
+            const itemUrl = item.url || '';
+            return `
+            <tr>
+                <td style="padding:0.5rem;white-space:nowrap;">${i + 1}</td>
+                <td style="padding:0.5rem;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(itemUrl)}">${escapeHtml(itemUrl)}</td>
+                <td style="padding:0.5rem;">${statusBadge}</td>
+                <td style="padding:0.5rem;text-align:center;">${scoreHtml}</td>
+                <td style="padding:0.5rem;">${issuesHtml}</td>
+            </tr>`;
+        }).join('');
+
+        tableHtml = `
+        <div class="ds-card" style="padding:1.25rem;">
+            <h4 class="font-semibold mb-3" style="color:var(--ds-text);">Результаты по URL</h4>
+            <div class="ds-table-wrap">
+                <table class="ds-table">
+                    <thead>
+                        <tr><th>#</th><th>URL</th><th>Status</th><th>Score</th><th>Issues</th></tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        </div>`;
+    }
+
+    // --- Per-URL collapsible details ---
+    let detailsHtml = '';
+    if (items.length > 0) {
+        const detailItems = items.map((item, i) => {
+            const isSuccess = item.status === 'success';
+            const itemUrl = item.url || `URL #${i + 1}`;
+            const score = _batchExtractScore(item, toolType);
+            const scoreStr = score !== null ? score : '—';
+            const scoreColor = score !== null ? _unifiedScoreColor(score) : 'var(--ds-text-muted)';
+            const content = isSuccess
+                ? `<pre class="text-xs overflow-auto rounded p-3" style="background:var(--ds-bg);color:var(--ds-text);max-height:400px;">${escapeHtml(JSON.stringify(item.result, null, 2))}</pre>`
+                : `<div class="text-sm" style="color:var(--ds-danger);padding:0.75rem;">${escapeHtml(String(item.error || 'Unknown error'))}</div>`;
+            return `
+            <details class="ds-card" style="padding:0;">
+                <summary style="padding:0.75rem 1rem;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:0.5rem;">
+                    <span class="font-medium text-sm" style="color:var(--ds-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${escapeHtml(itemUrl)}</span>
+                    <span class="flex items-center gap-2 flex-shrink-0">
+                        ${isSuccess
+                            ? '<span class="ds-badge ds-badge-success" style="font-size:0.7em;">OK</span>'
+                            : '<span class="ds-badge ds-badge-danger" style="font-size:0.7em;">Error</span>'}
+                        <span class="text-lg font-bold" style="color:${scoreColor};">${scoreStr}</span>
+                    </span>
+                </summary>
+                <div style="padding:0 1rem 1rem;border-top:1px solid var(--ds-border);">
+                    ${content}
+                </div>
+            </details>`;
+        }).join('');
+
+        detailsHtml = `
+        <div style="display:flex;flex-direction:column;gap:0.5rem;">
+            <h4 class="font-semibold" style="color:var(--ds-text);margin-bottom:0.25rem;">Детали по URL</h4>
+            ${detailItems}
+        </div>`;
+    }
+
+    return `
+    <div class="space-y-4">
+        ${headerHtml}
+        ${metricsHtml}
+        ${tableHtml}
+        ${detailsHtml}
+    </div>`;
 }
 
 // Export copyToClipboard to global scope

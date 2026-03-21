@@ -925,3 +925,461 @@ async def get_core_web_vitals_docx(task_id: str):
         return _error_response(str(e), status_code=500)
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Unified Full SEO Audit — inline report builders
+# ═══════════════════════════════════════════════════════════════════════════
+
+_SCORE_LABELS = {
+    "onpage": "OnPage Audit",
+    "render": "Render Audit",
+    "mobile_friendly": "Mobile Friendly",
+    "bot_accessibility": "Bot Accessibility",
+    "redirect": "Redirect Checker",
+    "cwv_mobile": "CWV Mobile",
+    "cwv_desktop": "CWV Desktop",
+    "cwv_avg": "CWV Average",
+    "robots_ok": "Robots.txt",
+}
+
+
+def _score_status(value) -> str:
+    """Map a numeric score to a human-readable status label."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "N/A"
+    if v >= 90:
+        return "Excellent"
+    if v >= 70:
+        return "Good"
+    if v >= 50:
+        return "Needs Work"
+    return "Critical"
+
+
+def _build_unified_xlsx(task_id: str, url: str, results: dict) -> str:
+    """Build an XLSX workbook for the Unified Full SEO Audit and return the filepath."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from app.config import settings
+
+    reports_dir = settings.REPORTS_DIR
+    os.makedirs(reports_dir, exist_ok=True)
+
+    wb = Workbook()
+
+    # -- shared styles --
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="0F4C81", end_color="0F4C81", fill_type="solid")
+    header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin_border = Border(
+        left=Side(style="thin"), right=Side(style="thin"),
+        top=Side(style="thin"), bottom=Side(style="thin"),
+    )
+    zebra_fill = PatternFill(start_color="F8FBFF", end_color="F8FBFF", fill_type="solid")
+
+    def _style_header(ws, row_idx, col_count):
+        for ci in range(1, col_count + 1):
+            c = ws.cell(row=row_idx, column=ci)
+            c.font = header_font
+            c.fill = header_fill
+            c.alignment = header_align
+            c.border = thin_border
+
+    def _style_data_rows(ws, start_row, end_row, col_count):
+        for ri in range(start_row, end_row + 1):
+            for ci in range(1, col_count + 1):
+                c = ws.cell(row=ri, column=ci)
+                c.border = thin_border
+                c.alignment = Alignment(vertical="center", wrap_text=True)
+                if (ri - start_row) % 2 == 0:
+                    c.fill = zebra_fill
+
+    def _auto_width(ws, col_count):
+        for ci in range(1, col_count + 1):
+            max_len = 0
+            for row in ws.iter_rows(min_col=ci, max_col=ci, values_only=False):
+                for cell in row:
+                    val = str(cell.value or "")
+                    max_len = max(max_len, len(val))
+            ws.column_dimensions[ws.cell(row=1, column=ci).column_letter].width = min(max_len + 4, 60)
+
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    # ── Sheet 1: Overview ──────────────────────────────────────────────
+    ws_overview = wb.active
+    ws_overview.title = "Overview"
+    ws_overview.sheet_properties.tabColor = "0F4C81"
+    overview_headers = ["Metric", "Value"]
+    for ci, h in enumerate(overview_headers, 1):
+        ws_overview.cell(row=1, column=ci, value=h)
+    _style_header(ws_overview, 1, 2)
+
+    overview_rows = [
+        ("URL", url),
+        ("Overall Score", results.get("overall_score", "N/A")),
+        ("Grade", results.get("overall_grade", "N/A")),
+        ("Tools Run", results.get("tools_run", "N/A")),
+        ("Tools Failed", results.get("tools_failed", "N/A")),
+        ("Duration", f"{results.get('duration_ms', 'N/A')}ms"),
+        ("Date", generated_at),
+    ]
+    for ri, (metric, value) in enumerate(overview_rows, 2):
+        ws_overview.cell(row=ri, column=1, value=metric)
+        ws_overview.cell(row=ri, column=2, value=str(value))
+    _style_data_rows(ws_overview, 2, len(overview_rows) + 1, 2)
+    _auto_width(ws_overview, 2)
+
+    # ── Sheet 2: Scores ────────────────────────────────────────────────
+    ws_scores = wb.create_sheet("Scores")
+    ws_scores.sheet_properties.tabColor = "0E7490"
+    score_headers = ["Tool", "Score", "Status"]
+    for ci, h in enumerate(score_headers, 1):
+        ws_scores.cell(row=1, column=ci, value=h)
+    _style_header(ws_scores, 1, 3)
+
+    scores = results.get("scores", {})
+    row_idx = 2
+    for key, label in _SCORE_LABELS.items():
+        val = scores.get(key)
+        ws_scores.cell(row=row_idx, column=1, value=label)
+        ws_scores.cell(row=row_idx, column=2, value=val if val is not None else "N/A")
+        ws_scores.cell(row=row_idx, column=3, value=_score_status(val))
+        row_idx += 1
+    if row_idx > 2:
+        _style_data_rows(ws_scores, 2, row_idx - 1, 3)
+    _auto_width(ws_scores, 3)
+
+    # ── Sheet 3: Developer Tasks (ТЗ) ─────────────────────────────────
+    ws_tasks = wb.create_sheet("Developer Tasks")
+    ws_tasks.sheet_properties.tabColor = "C2410C"
+    task_headers = ["#", "Priority", "Category", "Source Tool", "Title", "Description", "Owner", "Fix"]
+    for ci, h in enumerate(task_headers, 1):
+        ws_tasks.cell(row=1, column=ci, value=h)
+    _style_header(ws_tasks, 1, len(task_headers))
+
+    priority_fills = {
+        "P0": PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid"),
+        "P1": PatternFill(start_color="FFEDD5", end_color="FFEDD5", fill_type="solid"),
+        "P2": PatternFill(start_color="FEF9C3", end_color="FEF9C3", fill_type="solid"),
+        "P3": PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid"),
+    }
+    dev_tasks = results.get("dev_tasks", []) or []
+    row_idx = 2
+    for idx, dt in enumerate(dev_tasks, 1):
+        priority = str(dt.get("priority", ""))
+        ws_tasks.cell(row=row_idx, column=1, value=idx)
+        ws_tasks.cell(row=row_idx, column=2, value=priority)
+        ws_tasks.cell(row=row_idx, column=3, value=str(dt.get("category", "")))
+        ws_tasks.cell(row=row_idx, column=4, value=str(dt.get("source_tool", "")))
+        ws_tasks.cell(row=row_idx, column=5, value=str(dt.get("title", "")))
+        ws_tasks.cell(row=row_idx, column=6, value=str(dt.get("description", "")))
+        ws_tasks.cell(row=row_idx, column=7, value=str(dt.get("owner", "")))
+        ws_tasks.cell(row=row_idx, column=8, value=str(dt.get("fix", "")))
+        # Apply priority color to entire row
+        p_fill = priority_fills.get(priority)
+        for ci in range(1, len(task_headers) + 1):
+            c = ws_tasks.cell(row=row_idx, column=ci)
+            c.border = thin_border
+            c.alignment = Alignment(vertical="center", wrap_text=True)
+            if p_fill:
+                c.fill = p_fill
+        row_idx += 1
+    _auto_width(ws_tasks, len(task_headers))
+
+    # ── Sheet 4: Errors (only if present) ──────────────────────────────
+    errors = results.get("errors", {}) or {}
+    if errors:
+        ws_errors = wb.create_sheet("Errors")
+        ws_errors.sheet_properties.tabColor = "B91C1C"
+        err_headers = ["Tool", "Error"]
+        for ci, h in enumerate(err_headers, 1):
+            ws_errors.cell(row=1, column=ci, value=h)
+        _style_header(ws_errors, 1, 2)
+        row_idx = 2
+        for tool_key, err_info in errors.items():
+            err_msg = err_info.get("error", str(err_info)) if isinstance(err_info, dict) else str(err_info)
+            ws_errors.cell(row=row_idx, column=1, value=str(tool_key))
+            ws_errors.cell(row=row_idx, column=2, value=err_msg)
+            row_idx += 1
+        if row_idx > 2:
+            _style_data_rows(ws_errors, 2, row_idx - 1, 2)
+        _auto_width(ws_errors, 2)
+
+    filepath = os.path.join(reports_dir, f"unified_audit_{task_id}.xlsx")
+    wb.save(filepath)
+    return filepath
+
+
+def _build_unified_docx(task_id: str, url: str, results: dict) -> str:
+    """Build a DOCX report for the Unified Full SEO Audit and return the filepath."""
+    from docx import Document
+    from docx.shared import Inches, Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
+    from docx.oxml.ns import qn
+    from app.config import settings
+
+    reports_dir = settings.REPORTS_DIR
+    os.makedirs(reports_dir, exist_ok=True)
+
+    doc = Document()
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    # ── Configure document typography ──────────────────────────────────
+    for section in doc.sections:
+        section.left_margin = Inches(0.7)
+        section.right_margin = Inches(0.7)
+        section.top_margin = Inches(0.65)
+        section.bottom_margin = Inches(0.65)
+
+    normal_style = doc.styles["Normal"]
+    normal_style.font.name = "Calibri"
+    normal_style.font.size = Pt(10.5)
+    normal_style.paragraph_format.space_after = Pt(6)
+    normal_style.paragraph_format.line_spacing = 1.12
+
+    for style_name, size, color in (
+        ("Title", 28, RGBColor(15, 76, 129)),
+        ("Heading 1", 16, RGBColor(15, 76, 129)),
+        ("Heading 2", 13, RGBColor(14, 116, 144)),
+        ("Heading 3", 11, RGBColor(30, 41, 59)),
+    ):
+        if style_name not in doc.styles:
+            continue
+        style = doc.styles[style_name]
+        style.font.name = "Calibri"
+        style.font.size = Pt(size)
+        style.font.bold = True
+        style.font.color.rgb = color
+        style.paragraph_format.space_before = Pt(10 if style_name != "Heading 3" else 8)
+        style.paragraph_format.space_after = Pt(5)
+        style.paragraph_format.keep_with_next = True
+
+    doc.core_properties.author = "SEO Tools Platform"
+    doc.core_properties.title = "Full SEO Audit Report"
+
+    # ── Cover page ─────────────────────────────────────────────────────
+    doc.add_paragraph()
+    title_para = doc.add_heading("Full SEO Audit Report", 0)
+    title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    for run in title_para.runs:
+        run.font.color.rgb = RGBColor(15, 76, 129)
+        run.font.size = Pt(28)
+
+    subtitle_para = doc.add_paragraph("Unified Full SEO Audit")
+    subtitle_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if subtitle_para.runs:
+        subtitle_para.runs[0].font.size = Pt(14)
+        subtitle_para.runs[0].font.color.rgb = RGBColor(107, 114, 128)
+
+    if url:
+        url_para = doc.add_paragraph(url)
+        url_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if url_para.runs:
+            url_para.runs[0].font.color.rgb = RGBColor(14, 116, 144)
+
+    grade_text = f"Overall Grade: {results.get('overall_grade', 'N/A')}"
+    grade_para = doc.add_paragraph(grade_text)
+    grade_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if grade_para.runs:
+        grade_para.runs[0].font.size = Pt(18)
+        grade_para.runs[0].font.bold = True
+        grade_para.runs[0].font.color.rgb = RGBColor(15, 76, 129)
+
+    ts_para = doc.add_paragraph(generated_at)
+    ts_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if ts_para.runs:
+        ts_para.runs[0].font.color.rgb = RGBColor(107, 114, 128)
+
+    logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "icon.png")
+    if os.path.exists(logo_path):
+        try:
+            logo_para = doc.add_paragraph()
+            logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = logo_para.add_run()
+            run.add_picture(logo_path, width=Inches(1))
+        except Exception:
+            pass
+
+    doc.add_page_break()
+
+    # ── Header / Footer ────────────────────────────────────────────────
+    section = doc.sections[0]
+    header = section.header
+    header_para = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+    header_para.text = "SEO Tools Platform | Full SEO Audit Report"
+    header_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if header_para.runs:
+        header_para.runs[0].font.size = Pt(8)
+        header_para.runs[0].font.color.rgb = RGBColor(128, 128, 128)
+
+    footer = section.footer
+    footer_para = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+    footer_para.text = "SEO Tools Platform"
+    footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if footer_para.runs:
+        footer_para.runs[0].font.size = Pt(8)
+        footer_para.runs[0].font.color.rgb = RGBColor(128, 128, 128)
+
+    # ── Helper: branded table ──────────────────────────────────────────
+    def _add_table(headers, rows):
+        table = doc.add_table(rows=1, cols=len(headers))
+        table.style = "Table Grid"
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        table.autofit = True
+        hdr_cells = table.rows[0].cells
+        for i, h in enumerate(headers):
+            cell = hdr_cells[i]
+            cell.text = str(h)
+            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+            shading = cell._element.get_or_add_tcPr()
+            shd_el = shading.makeelement(qn("w:shd"), {
+                qn("w:val"): "clear", qn("w:color"): "auto", qn("w:fill"): "0F4C81",
+            })
+            shading.append(shd_el)
+            for p in cell.paragraphs:
+                for r in p.runs:
+                    r.font.bold = True
+                    r.font.color.rgb = RGBColor(255, 255, 255)
+        for row_index, row_data in enumerate(rows):
+            row_cells = table.add_row().cells
+            for i, value in enumerate(row_data):
+                row_cells[i].text = str(value)
+                row_cells[i].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+                if row_index % 2 == 0:
+                    tc_pr = row_cells[i]._element.get_or_add_tcPr()
+                    shd_el = tc_pr.makeelement(qn("w:shd"), {
+                        qn("w:val"): "clear", qn("w:color"): "auto", qn("w:fill"): "F8FBFF",
+                    })
+                    tc_pr.append(shd_el)
+        return table
+
+    # ── Section 1: Overview ────────────────────────────────────────────
+    doc.add_heading("Overview", level=1)
+    overview_rows = [
+        ("URL", url),
+        ("Overall Score", str(results.get("overall_score", "N/A"))),
+        ("Grade", str(results.get("overall_grade", "N/A"))),
+        ("Tools Run", str(results.get("tools_run", "N/A"))),
+        ("Tools Failed", str(results.get("tools_failed", "N/A"))),
+        ("Duration", f"{results.get('duration_ms', 'N/A')}ms"),
+        ("Date", generated_at),
+    ]
+    _add_table(["Metric", "Value"], overview_rows)
+    doc.add_paragraph()
+
+    # ── Section 2: Scores by Tool ──────────────────────────────────────
+    doc.add_heading("Scores by Tool", level=1)
+    scores = results.get("scores", {})
+    score_rows = []
+    for key, label in _SCORE_LABELS.items():
+        val = scores.get(key)
+        score_rows.append((label, val if val is not None else "N/A", _score_status(val)))
+    _add_table(["Tool", "Score", "Status"], score_rows)
+    doc.add_paragraph()
+
+    # ── Section 3: Developer Tasks / ТЗ ────────────────────────────────
+    doc.add_heading("Developer Tasks / ТЗ", level=1)
+    dev_tasks = results.get("dev_tasks", []) or []
+    if dev_tasks:
+        priority_colors = {
+            "P0": RGBColor(185, 28, 28),
+            "P1": RGBColor(194, 65, 12),
+            "P2": RGBColor(161, 98, 7),
+            "P3": RGBColor(21, 128, 61),
+        }
+        task_table = doc.add_table(rows=1, cols=8)
+        task_table.style = "Table Grid"
+        task_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        task_table.autofit = True
+        t_headers = ["#", "Priority", "Category", "Source Tool", "Title", "Description", "Owner", "Fix"]
+        hdr_cells = task_table.rows[0].cells
+        for i, h in enumerate(t_headers):
+            cell = hdr_cells[i]
+            cell.text = h
+            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+            shading = cell._element.get_or_add_tcPr()
+            shd_el = shading.makeelement(qn("w:shd"), {
+                qn("w:val"): "clear", qn("w:color"): "auto", qn("w:fill"): "0F4C81",
+            })
+            shading.append(shd_el)
+            for p in cell.paragraphs:
+                for r in p.runs:
+                    r.font.bold = True
+                    r.font.color.rgb = RGBColor(255, 255, 255)
+        for idx, dt in enumerate(dev_tasks, 1):
+            priority = str(dt.get("priority", ""))
+            row_cells = task_table.add_row().cells
+            values = [
+                str(idx), priority, str(dt.get("category", "")),
+                str(dt.get("source_tool", "")), str(dt.get("title", "")),
+                str(dt.get("description", "")), str(dt.get("owner", "")),
+                str(dt.get("fix", "")),
+            ]
+            for i, val in enumerate(values):
+                row_cells[i].text = val
+                row_cells[i].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+            # Color-code priority cell text
+            p_color = priority_colors.get(priority)
+            if p_color:
+                for p in row_cells[1].paragraphs:
+                    for r in p.runs:
+                        r.font.color.rgb = p_color
+                        r.font.bold = True
+    else:
+        doc.add_paragraph("No developer tasks generated.")
+    doc.add_paragraph()
+
+    # ── Section 4: Errors ──────────────────────────────────────────────
+    errors = results.get("errors", {}) or {}
+    if errors:
+        doc.add_heading("Errors", level=1)
+        error_rows = []
+        for tool_key, err_info in errors.items():
+            err_msg = err_info.get("error", str(err_info)) if isinstance(err_info, dict) else str(err_info)
+            error_rows.append((str(tool_key), err_msg))
+        _add_table(["Tool", "Error"], error_rows)
+
+    filepath = os.path.join(reports_dir, f"unified_audit_{task_id}.docx")
+    doc.save(filepath)
+    return filepath
+
+
+# ─── unified audit GET ─────────────────────────────────────────────────
+
+
+@router.get("/tasks/unified-audit/{task_id}/export/xlsx")
+async def get_unified_audit_xlsx(task_id: str):
+    """GET export: Unified Full SEO Audit → XLSX."""
+    try:
+        task, task_result, url, err = _get_task_or_error(task_id, "unified_audit")
+        if err:
+            return err
+        results = task_result.get("results", task_result) or {}
+        filepath = _build_unified_xlsx(task_id, url, results)
+        if not filepath or not os.path.exists(filepath):
+            return _error_response("Failed to generate report", status_code=500)
+        append_task_artifact(task_id, filepath, kind="export")
+        return _file_response(filepath, _XLSX, _export_filename("unified_audit", url, "xlsx"))
+    except Exception as e:
+        return _error_response(str(e), status_code=500)
+
+
+@router.get("/tasks/unified-audit/{task_id}/export/docx")
+async def get_unified_audit_docx(task_id: str):
+    """GET export: Unified Full SEO Audit → DOCX."""
+    try:
+        task, task_result, url, err = _get_task_or_error(task_id, "unified_audit")
+        if err:
+            return err
+        results = task_result.get("results", task_result) or {}
+        filepath = _build_unified_docx(task_id, url, results)
+        if not filepath or not os.path.exists(filepath):
+            return _error_response("Failed to generate report", status_code=500)
+        append_task_artifact(task_id, filepath, kind="export")
+        return _file_response(filepath, _DOCX, _export_filename("unified_audit", url, "docx"))
+    except Exception as e:
+        return _error_response(str(e), status_code=500)
+
+
