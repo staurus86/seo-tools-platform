@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, BackgroundTasks
 from app.validators import URLModel
-from app.api.routers._task_store import create_task_pending, update_task_state, save_task_result
+from app.api.routers._task_store import create_task_pending, update_task_state, create_task_result
 
 router = APIRouter(tags=["Unified Audit"])
 
@@ -29,17 +29,10 @@ async def create_unified_audit(data: UnifiedAuditRequest, background_tasks: Back
             from app.tools.unified import run_unified_audit
             result = run_unified_audit(url=url, use_proxy=data.use_proxy, progress_callback=_progress_cb)
 
-            save_task_result(task_id, {
-                "task_type": "unified_audit",
-                "url": url,
-                "results": result,
-            })
+            create_task_result(task_id, "unified_audit", url, result)
         except Exception as e:
-            save_task_result(task_id, {
-                "task_type": "unified_audit",
-                "url": url,
-                "results": {"error": str(e)},
-            }, status="FAILURE")
+            update_task_state(task_id, status="FAILURE", progress=100,
+                            status_message=f"Error: {str(e)[:200]}")
 
     background_tasks.add_task(_run)
     return {"task_id": task_id, "url": url}
