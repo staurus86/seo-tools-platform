@@ -1130,7 +1130,7 @@ class SiteAuditProAdapter:
         anchor_quality_raw: Dict[str, Tuple[int, int]] = {}
 
         session = requests.Session()
-        session.headers.update({"User-Agent": "SEO-Tools-SiteAuditPro/0.1"})
+        session.headers.update({"User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"})
         if use_proxy:
             from app.proxy import get_requests_proxies
             _proxies = get_requests_proxies()
