@@ -8163,7 +8163,7 @@ function generateUnifiedAuditHTML(result) {
     }
 
     // --- Per-tool collapsible details ---
-    const toolResults = r.tool_results || r.per_tool || {};
+    const toolResults = r.results || r.tool_results || r.per_tool || {};
     const toolResultKeys = Object.keys(toolResults);
     let perToolHtml = '';
     if (toolResultKeys.length > 0) {

@@ -2,7 +2,7 @@
 import time
 import traceback
 from datetime import datetime
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, List, Optional, Callable
 
 
 def run_unified_audit(
@@ -40,17 +40,17 @@ def run_unified_audit(
             result = _run_tool(tool_key, url, use_proxy)
             results[tool_key] = result
         except Exception as e:
-            errors[tool_key] = {"error": str(e), "traceback": traceback.format_exc()[-500:]}
+            errors[tool_key] = str(e)  # string, not dict — for clean JS rendering
 
     duration_ms = int((time.perf_counter() - started) * 1000)
 
-    # Build combined scores
+    # Build combined scores (only for tools that ran successfully)
     scores = _extract_scores(results)
 
     # Generate developer task specs (ТЗ)
     dev_tasks = _generate_dev_tasks(results, scores, url)
 
-    # Overall grade
+    # Overall grade — only count tools that actually ran
     overall_score = _calculate_overall_score(scores)
 
     return {
@@ -66,6 +66,7 @@ def run_unified_audit(
         "results": results,
         "errors": errors,
         "dev_tasks": dev_tasks,
+        "skipped_tools": list(skip_set),
     }
 
 
@@ -95,15 +96,13 @@ def _run_tool(tool_key: str, url: str, use_proxy: bool) -> dict:
 
     elif tool_key == "render":
         from app.tools.render.service_v2 import RenderAuditServiceV2
-        import time as _t
         svc = RenderAuditServiceV2(use_proxy=use_proxy)
-        return svc.run(url=url, task_id=f"unified-render-{_t.time()}")
+        return svc.run(url=url, task_id=f"unified-render-{time.time()}")
 
     elif tool_key == "mobile":
         from app.tools.mobile.service_v2 import MobileCheckServiceV2
-        import time as _t
-        svc = MobileCheckServiceV2(use_proxy=use_proxy, mode="quick")
-        return svc.run(url=url, task_id=f"unified-mobile-{_t.time()}")
+        svc = MobileCheckServiceV2(use_proxy=use_proxy)
+        return svc.run(url=url, task_id=f"unified-mobile-{time.time()}", mode="quick")
 
     elif tool_key == "bot_check":
         from app.tools.bots.service_v2 import BotAccessibilityServiceV2
@@ -121,55 +120,71 @@ def _run_tool(tool_key: str, url: str, use_proxy: bool) -> dict:
     raise ValueError(f"Unknown tool: {tool_key}")
 
 
+def _deep_get(d: dict, *keys, default=0):
+    """Safely traverse nested dicts."""
+    current = d
+    for k in keys:
+        if isinstance(current, dict):
+            current = current.get(k, {})
+        else:
+            return default
+    return current if current != {} else default
+
+
 def _extract_scores(results: dict) -> dict:
     scores = {}
 
-    # OnPage score
+    # OnPage score — may be at result.score or result.results.score
     onpage = results.get("onpage", {})
-    onpage_r = onpage.get("results", onpage)
-    scores["onpage"] = onpage_r.get("score", onpage_r.get("scores", {}).get("onpage_score", 0))
+    onpage_score = onpage.get("score") or _deep_get(onpage, "results", "score") or _deep_get(onpage, "results", "scores", "onpage_score") or 0
+    scores["onpage"] = round(float(onpage_score), 1) if onpage_score else 0
 
-    # Render score
+    # Render score — look in multiple places
     render = results.get("render", {})
-    render_r = render.get("results", render)
-    comp = render_r.get("comparison", {})
-    scores["render"] = comp.get("score", 0) if isinstance(comp, dict) else 0
+    render_score = (
+        _deep_get(render, "comparison", "score") or
+        _deep_get(render, "results", "comparison", "score") or
+        _deep_get(render, "results", "score") or
+        render.get("score") or 0
+    )
+    scores["render"] = round(float(render_score), 1) if render_score else 0
 
     # Mobile friendly
     mobile = results.get("mobile", {})
-    mobile_r = mobile.get("results", mobile)
-    scores["mobile_friendly"] = 100 if mobile_r.get("mobile_friendly", False) else 50
+    mobile_friendly = mobile.get("mobile_friendly") or _deep_get(mobile, "results", "mobile_friendly")
+    scores["mobile_friendly"] = 100 if mobile_friendly else 50
 
     # Bot accessibility
     bot = results.get("bot_check", {})
-    bot_r = bot.get("results", bot)
-    bot_summary = bot_r.get("summary", {})
-    total_bots = bot_summary.get("accessible", 0) + bot_summary.get("non_indexable", 0)
-    scores["bot_accessibility"] = round(bot_summary.get("accessible", 0) / max(1, total_bots) * 100)
+    bot_summary = bot.get("summary") or _deep_get(bot, "results", "summary") or {}
+    accessible = int(bot_summary.get("accessible", 0) or 0)
+    non_indexable = int(bot_summary.get("non_indexable", 0) or 0)
+    total_bots = accessible + non_indexable
+    scores["bot_accessibility"] = round(accessible / max(1, total_bots) * 100) if total_bots > 0 else 0
 
     # Redirect grade
     redirect = results.get("redirect", {})
-    redirect_r = redirect.get("results", redirect)
-    redirect_summary = redirect_r.get("summary", {})
-    total_sc = redirect_summary.get("total_scenarios", 23)
-    passed = redirect_summary.get("passed", 0)
-    scores["redirect"] = round(passed / max(1, total_sc) * 100)
+    redirect_summary = redirect.get("summary") or _deep_get(redirect, "results", "summary") or {}
+    total_sc = int(redirect_summary.get("total_scenarios", 0) or 0)
+    passed = int(redirect_summary.get("passed", 0) or 0)
+    scores["redirect"] = round(passed / max(1, total_sc) * 100) if total_sc > 0 else 0
 
-    # CWV performance
+    # CWV performance — handle combined and single modes
     cwv = results.get("cwv", {})
     if cwv.get("combined"):
-        mobile_perf = cwv.get("mobile", {}).get("categories_scores", {}).get("performance", 0)
-        desktop_perf = cwv.get("desktop", {}).get("categories_scores", {}).get("performance", 0)
-        scores["cwv_mobile"] = mobile_perf
-        scores["cwv_desktop"] = desktop_perf
-        scores["cwv_avg"] = round((mobile_perf + desktop_perf) / 2)
+        mobile_perf = _deep_get(cwv, "mobile", "categories_scores", "performance") or 0
+        desktop_perf = _deep_get(cwv, "desktop", "categories_scores", "performance") or 0
+        scores["cwv_mobile"] = round(float(mobile_perf), 1)
+        scores["cwv_desktop"] = round(float(desktop_perf), 1)
+        scores["cwv_avg"] = round((float(mobile_perf) + float(desktop_perf)) / 2, 1)
     else:
-        scores["cwv_avg"] = cwv.get("categories_scores", {}).get("performance", 0)
+        perf = _deep_get(cwv, "categories_scores", "performance") or cwv.get("performance", 0) or 0
+        scores["cwv_avg"] = round(float(perf), 1)
 
     # Robots
     robots = results.get("robots", {})
-    robots_r = robots.get("results", robots)
-    scores["robots_ok"] = 100 if robots_r.get("robots_txt_found", False) else 0
+    robots_found = robots.get("robots_txt_found") or _deep_get(robots, "results", "robots_txt_found")
+    scores["robots_ok"] = 100 if robots_found else 0
 
     return scores
 
@@ -187,10 +202,11 @@ def _calculate_overall_score(scores: dict) -> float:
     total = 0
     weight_sum = 0
     for key, weight in weights.items():
-        val = scores.get(key, 0)
-        if isinstance(val, (int, float)):
-            total += val * weight
+        val = scores.get(key)
+        if val is not None and isinstance(val, (int, float)) and val > 0:
+            total += float(val) * weight
             weight_sum += weight
+    # If some tools didn't run/failed, normalize by actual weight sum
     return round(total / max(0.01, weight_sum), 1)
 
 
@@ -209,13 +225,13 @@ def _score_to_grade(score: float) -> str:
 
 
 def _generate_dev_tasks(results: dict, scores: dict, url: str) -> list:
-    """Generate developer task specifications from audit results."""
+    """Generate developer task specifications (ТЗ) from audit results."""
     tasks = []
 
     # --- OnPage issues ---
     onpage = results.get("onpage", {})
     onpage_r = onpage.get("results", onpage)
-    for issue in onpage_r.get("issues", []):
+    for issue in (onpage_r.get("issues") or []):
         severity = issue.get("severity", "info")
         priority = "P1" if severity == "critical" else "P2" if severity == "warning" else "P3"
         tasks.append({
@@ -230,7 +246,10 @@ def _generate_dev_tasks(results: dict, scores: dict, url: str) -> list:
     # --- Render issues ---
     render = results.get("render", {})
     render_r = render.get("results", render)
-    for check in render_r.get("seo_checks", {}).get("items", []):
+    seo_checks = render_r.get("seo_checks", {})
+    if isinstance(seo_checks, dict):
+        seo_checks = seo_checks.get("items", [])
+    for check in (seo_checks or []):
         if check.get("status") in ("fail", "warn"):
             tasks.append({
                 "priority": "P1" if check.get("severity") == "critical" else "P2",
@@ -245,7 +264,7 @@ def _generate_dev_tasks(results: dict, scores: dict, url: str) -> list:
     # --- Mobile issues ---
     mobile = results.get("mobile", {})
     mobile_r = mobile.get("results", mobile)
-    for issue in mobile_r.get("issues", []):
+    for issue in (mobile_r.get("issues") or []):
         tasks.append({
             "priority": "P1" if issue.get("severity") == "critical" else "P2",
             "category": "Frontend / Mobile",
@@ -258,7 +277,7 @@ def _generate_dev_tasks(results: dict, scores: dict, url: str) -> list:
     # --- Redirect issues ---
     redirect = results.get("redirect", {})
     redirect_r = redirect.get("results", redirect)
-    for scenario in redirect_r.get("scenarios", []):
+    for scenario in (redirect_r.get("scenarios") or []):
         if scenario.get("status") in ("failed", "warning"):
             tasks.append({
                 "priority": "P1" if scenario.get("status") == "failed" else "P2",
@@ -272,14 +291,14 @@ def _generate_dev_tasks(results: dict, scores: dict, url: str) -> list:
     # --- CWV opportunities ---
     cwv = results.get("cwv", {})
     cwv_data = cwv.get("mobile", cwv) if cwv.get("combined") else cwv
-    for opp in cwv_data.get("opportunities", [])[:10]:
+    for opp in (cwv_data.get("opportunities") or [])[:10]:
         if opp.get("priority") in ("critical", "high"):
             tasks.append({
                 "priority": "P1" if opp.get("priority") == "critical" else "P2",
                 "category": "Performance / CWV",
                 "source_tool": "Core Web Vitals",
                 "title": opp.get("title", ""),
-                "description": opp.get("description", "")[:300],
+                "description": (opp.get("description") or "")[:300],
                 "savings": f"{opp.get('savings_ms', 0)}ms" if opp.get("savings_ms") else "",
                 "owner": opp.get("group", "Frontend"),
             })
@@ -287,7 +306,7 @@ def _generate_dev_tasks(results: dict, scores: dict, url: str) -> list:
     # --- Bot blocker issues ---
     bot = results.get("bot_check", {})
     bot_r = bot.get("results", bot)
-    for blocker in bot_r.get("priority_blockers", []):
+    for blocker in (bot_r.get("priority_blockers") or []):
         tasks.append({
             "priority": "P0",
             "category": "DevOps / Access",
