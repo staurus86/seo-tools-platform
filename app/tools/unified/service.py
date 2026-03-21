@@ -135,56 +135,102 @@ def _extract_scores(results: dict) -> dict:
     scores = {}
 
     # OnPage score — may be at result.score or result.results.score
-    onpage = results.get("onpage", {})
-    onpage_score = onpage.get("score") or _deep_get(onpage, "results", "score") or _deep_get(onpage, "results", "scores", "onpage_score") or 0
-    scores["onpage"] = round(float(onpage_score), 1) if onpage_score else 0
+    if "onpage" in results:
+        onpage = results["onpage"]
+        onpage_score = onpage.get("score") or _deep_get(onpage, "results", "score") or _deep_get(onpage, "results", "scores", "onpage_score") or 0
+        scores["onpage"] = round(float(onpage_score), 1) if onpage_score else 0
+    else:
+        scores["onpage"] = None
 
-    # Render score — look in multiple places
-    render = results.get("render", {})
-    render_score = (
-        _deep_get(render, "comparison", "score") or
-        _deep_get(render, "results", "comparison", "score") or
-        _deep_get(render, "results", "score") or
-        render.get("score") or 0
-    )
-    scores["render"] = round(float(render_score), 1) if render_score else 0
+    # Render score — look in multiple places.
+    # If the tool ran successfully but score resolves to 0, check for meaningful
+    # data (seo_checks, raw_snapshot).  A successful render with no JS issues
+    # means the page is essentially identical → score ~100.
+    if "render" in results:
+        render = results["render"]
+        render_score = (
+            _deep_get(render, "comparison", "score") or
+            _deep_get(render, "results", "comparison", "score") or
+            _deep_get(render, "results", "score") or
+            render.get("score") or 0
+        )
+        render_score = round(float(render_score), 1) if render_score else 0
+        if render_score == 0:
+            # Render ran but score is 0 — check if there's real data indicating
+            # the tool completed (no JS rendering issues ≈ perfect score).
+            render_r = render.get("results", render)
+            has_data = (
+                render_r.get("seo_checks")
+                or render_r.get("raw_snapshot")
+                or render_r.get("rendered_snapshot")
+                or render_r.get("comparison")
+            )
+            if has_data:
+                render_score = 100.0
+        scores["render"] = render_score
+    else:
+        scores["render"] = None
 
     # Mobile friendly
-    mobile = results.get("mobile", {})
-    mobile_friendly = mobile.get("mobile_friendly") or _deep_get(mobile, "results", "mobile_friendly")
-    scores["mobile_friendly"] = 100 if mobile_friendly else 50
+    if "mobile" in results:
+        mobile = results["mobile"]
+        mobile_friendly = mobile.get("mobile_friendly") or _deep_get(mobile, "results", "mobile_friendly")
+        scores["mobile_friendly"] = 100 if mobile_friendly else 50
+    else:
+        scores["mobile_friendly"] = None
 
     # Bot accessibility
-    bot = results.get("bot_check", {})
-    bot_summary = bot.get("summary") or _deep_get(bot, "results", "summary") or {}
-    accessible = int(bot_summary.get("accessible", 0) or 0)
-    non_indexable = int(bot_summary.get("non_indexable", 0) or 0)
-    total_bots = accessible + non_indexable
-    scores["bot_accessibility"] = round(accessible / max(1, total_bots) * 100) if total_bots > 0 else 0
-
-    # Redirect grade
-    redirect = results.get("redirect", {})
-    redirect_summary = redirect.get("summary") or _deep_get(redirect, "results", "summary") or {}
-    total_sc = int(redirect_summary.get("total_scenarios", 0) or 0)
-    passed = int(redirect_summary.get("passed", 0) or 0)
-    scores["redirect"] = round(passed / max(1, total_sc) * 100) if total_sc > 0 else 0
-
-    # CWV performance — handle combined and single modes
-    cwv = results.get("cwv", {})
-    if cwv.get("combined"):
-        mobile_perf = _deep_get(cwv, "mobile", "categories_scores", "performance") or 0
-        desktop_perf = _deep_get(cwv, "desktop", "categories_scores", "performance") or 0
-        scores["cwv_mobile"] = round(float(mobile_perf), 1)
-        scores["cwv_desktop"] = round(float(desktop_perf), 1)
-        scores["cwv_avg"] = round((float(mobile_perf) + float(desktop_perf)) / 2, 1)
+    if "bot_check" in results:
+        bot = results["bot_check"]
+        bot_summary = bot.get("summary") or _deep_get(bot, "results", "summary") or {}
+        accessible = int(bot_summary.get("accessible", 0) or 0)
+        non_indexable = int(bot_summary.get("non_indexable", 0) or 0)
+        total_bots = accessible + non_indexable
+        scores["bot_accessibility"] = round(accessible / max(1, total_bots) * 100) if total_bots > 0 else 0
     else:
-        perf = _deep_get(cwv, "categories_scores", "performance") or cwv.get("performance", 0) or 0
-        scores["cwv_avg"] = round(float(perf), 1)
+        scores["bot_accessibility"] = None
+
+    # Redirect grade — prefer quality_score from the tool itself, fall back to
+    # passed/total ratio.  The redirect checker returns results.summary with
+    # quality_score (0-100), quality_grade, passed, warnings, errors, total_scenarios.
+    if "redirect" in results:
+        redirect = results["redirect"]
+        redirect_summary = redirect.get("summary") or _deep_get(redirect, "results", "summary") or {}
+        quality_score = redirect_summary.get("quality_score")
+        if quality_score is not None:
+            scores["redirect"] = round(float(quality_score), 1)
+        else:
+            total_sc = int(redirect_summary.get("total_scenarios", 0) or 0)
+            passed = int(redirect_summary.get("passed", 0) or 0)
+            scores["redirect"] = round(passed / max(1, total_sc) * 100) if total_sc > 0 else 0
+    else:
+        scores["redirect"] = None
+
+    # CWV performance — handle combined and single modes.
+    # If CWV tool failed (not in results), set to None so _calculate_overall_score skips it.
+    if "cwv" in results:
+        cwv = results["cwv"]
+        if cwv.get("combined"):
+            mobile_perf = _deep_get(cwv, "mobile", "categories_scores", "performance") or 0
+            desktop_perf = _deep_get(cwv, "desktop", "categories_scores", "performance") or 0
+            scores["cwv_mobile"] = round(float(mobile_perf), 1)
+            scores["cwv_desktop"] = round(float(desktop_perf), 1)
+            scores["cwv_avg"] = round((float(mobile_perf) + float(desktop_perf)) / 2, 1)
+        else:
+            perf = _deep_get(cwv, "categories_scores", "performance") or cwv.get("performance", 0) or 0
+            scores["cwv_avg"] = round(float(perf), 1)
+    else:
+        scores["cwv_mobile"] = None
+        scores["cwv_desktop"] = None
+        scores["cwv_avg"] = None
 
     # Robots
-    robots = results.get("robots", {})
-    robots_found = robots.get("robots_txt_found") or _deep_get(robots, "results", "robots_txt_found")
-    scores["robots_ok"] = 100 if robots_found else 0
+    if "robots" in results:
+        robots = results["robots"]
+        robots_found = robots.get("robots_txt_found") or _deep_get(robots, "results", "robots_txt_found")
+        scores["robots_ok"] = 100 if robots_found else 0
+    else:
+        scores["robots_ok"] = None
 
     return scores
 
@@ -203,7 +249,9 @@ def _calculate_overall_score(scores: dict) -> float:
     weight_sum = 0
     for key, weight in weights.items():
         val = scores.get(key)
-        if val is not None and isinstance(val, (int, float)) and val > 0:
+        if val is None:
+            continue  # tool failed or was skipped — don't penalize
+        if isinstance(val, (int, float)) and val > 0:
             total += float(val) * weight
             weight_sum += weight
     # If some tools didn't run/failed, normalize by actual weight sum
@@ -261,15 +309,20 @@ def _generate_dev_tasks(results: dict, scores: dict, url: str) -> list:
                 "owner": "Frontend",
             })
 
-    # --- Mobile issues ---
+    # --- Mobile issues (deduplicate portrait/landscape duplicates by title) ---
     mobile = results.get("mobile", {})
     mobile_r = mobile.get("results", mobile)
+    seen_mobile_titles = set()
     for issue in (mobile_r.get("issues") or []):
+        title = issue.get("title", "")
+        if title in seen_mobile_titles:
+            continue
+        seen_mobile_titles.add(title)
         tasks.append({
             "priority": "P1" if issue.get("severity") == "critical" else "P2",
             "category": "Frontend / Mobile",
             "source_tool": "Mobile Audit",
-            "title": issue.get("title", ""),
+            "title": title,
             "description": issue.get("details", ""),
             "owner": "Frontend",
         })

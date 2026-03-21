@@ -8236,24 +8236,26 @@ function generateUnifiedAuditHTML(result) {
         }
 
         else if (toolKey === 'sitemap') {
-            const totalUrls = rd.total_urls ?? rd.summary?.total_urls ?? 0;
-            const filesCount = rd.files_checked ?? rd.summary?.files_checked ?? 0;
-            const status = rd.status ?? rd.summary?.status ?? 'unknown';
+            const totalUrls = rd.urls_count ?? rd.total_urls ?? rd.summary?.total_urls ?? 0;
+            const filesCount = rd.sitemaps_scanned ?? rd.files_checked ?? rd.summary?.files_checked ?? 0;
+            const sitemapValid = rd.valid ?? rd.summary?.valid;
+            const sitemapGrade = rd.quality_grade ?? rd.summary?.quality_grade ?? '';
+            const status = sitemapValid === true ? 'valid' : sitemapValid === false ? 'invalid' : (sitemapGrade || 'unknown');
             metricsHtml = `
                 <div class="grid grid-cols-3 gap-3 mb-3">
-                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-text)">${totalUrls.toLocaleString()}</div><div class="text-xs" style="color:var(--ds-text-muted)">URL в sitemap</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-text)">${Number(totalUrls).toLocaleString()}</div><div class="text-xs" style="color:var(--ds-text-muted)">URL в sitemap</div></div>
                     <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-text)">${filesCount}</div><div class="text-xs" style="color:var(--ds-text-muted)">Файлов</div></div>
-                    <div class="text-center"><div class="text-xl font-bold" style="color:${status === 'valid' ? 'var(--ds-success)' : 'var(--ds-warning)'}">${status}</div><div class="text-xs" style="color:var(--ds-text-muted)">Статус</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:${status === 'valid' ? 'var(--ds-success)' : status === 'invalid' ? 'var(--ds-danger)' : 'var(--ds-warning)'}">${status}</div><div class="text-xs" style="color:var(--ds-text-muted)">Статус</div></div>
                 </div>`;
         }
 
         else if (toolKey === 'onpage') {
-            const opScore = rd.score ?? rd.scores?.onpage_score ?? 0;
+            const opScore = rd.score ?? rd.scores?.onpage_score ?? rd.summary?.score ?? 0;
             const wordCount = rd.content?.word_count ?? 0;
-            const kwCoverage = rd.keyword_coverage?.coverage_pct ?? 0;
-            const titleLen = rd.technical?.title_len ?? 0;
-            const descLen = rd.technical?.description_len ?? 0;
-            const aiRisk = rd.ai_insights?.ai_risk_composite ?? 0;
+            const kwCoverage = rd.keyword_coverage?.coverage_pct ?? rd.summary?.keyword_coverage_pct ?? 0;
+            const titleLen = rd.title?.length ?? rd.technical?.title_len ?? 0;
+            const descLen = rd.description?.length ?? rd.technical?.description_len ?? 0;
+            const aiRisk = rd.ai_insights?.ai_risk_composite ?? rd.summary?.ai_risk_composite ?? 0;
             metricsHtml = `
                 <div class="grid grid-cols-3 md:grid-cols-6 gap-3 mb-3">
                     <div class="text-center"><div class="text-xl font-bold" style="color:${_unifiedScoreColor(opScore)}">${opScore}</div><div class="text-xs" style="color:var(--ds-text-muted)">Score</div></div>
@@ -8283,10 +8285,13 @@ function generateUnifiedAuditHTML(result) {
         }
 
         else if (toolKey === 'render') {
-            const renderScore = rd.comparison?.score ?? rd.score ?? 0;
-            const frameworks = rd.js_frameworks || rd.rendered_snapshot?.js_frameworks || [];
-            const missingCount = rd.comparison?.missing ? Object.values(rd.comparison.missing).reduce((s,a) => s + (Array.isArray(a) ? a.length : 0), 0) : 0;
-            const consoleErrors = rd.console_log?.error_count ?? rd.rendered_snapshot?.console_log?.error_count ?? 0;
+            const renderSummary = rd.summary || {};
+            const renderVariants = Array.isArray(rd.variants) ? rd.variants : [];
+            const renderScore = renderSummary.score ?? rd.comparison?.score ?? rd.score ?? 0;
+            const allFrameworks = renderVariants.reduce((acc, v) => { (v.js_frameworks || []).forEach(f => { if (!acc.includes(f)) acc.push(f); }); return acc; }, []);
+            const frameworks = allFrameworks.length > 0 ? allFrameworks : (rd.js_frameworks || rd.rendered_snapshot?.js_frameworks || []);
+            const missingCount = renderSummary.missing_total ?? (rd.comparison?.missing ? Object.values(rd.comparison.missing).reduce((s,a) => s + (Array.isArray(a) ? a.length : 0), 0) : 0);
+            const consoleErrors = renderVariants.reduce((s, v) => s + (v.console_log?.error_count ?? 0), 0) || (rd.console_log?.error_count ?? rd.rendered_snapshot?.console_log?.error_count ?? 0);
             metricsHtml = `
                 <div class="grid grid-cols-4 gap-3 mb-3">
                     <div class="text-center"><div class="text-xl font-bold" style="color:${_unifiedScoreColor(renderScore)}">${Math.round(renderScore)}</div><div class="text-xs" style="color:var(--ds-text-muted)">Score</div></div>
@@ -8294,13 +8299,13 @@ function generateUnifiedAuditHTML(result) {
                     <div class="text-center"><div class="text-xl font-bold" style="color:${consoleErrors > 0 ? 'var(--ds-danger)' : 'var(--ds-success)'}">${consoleErrors}</div><div class="text-xs" style="color:var(--ds-text-muted)">JS Errors</div></div>
                     <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-brand)">${frameworks.length > 0 ? frameworks.join(', ') : '—'}</div><div class="text-xs" style="color:var(--ds-text-muted)">Framework</div></div>
                 </div>`;
-            const seoChecks = rd.seo_checks?.items || [];
-            const failedChecks = seoChecks.filter(c => c.status === 'fail' || c.status === 'warn');
-            if (failedChecks.length > 0) {
-                issuesHtml = `<div class="space-y-1">${failedChecks.slice(0,8).map(c => `
+            const renderIssues = Array.isArray(rd.issues) ? rd.issues : [];
+            const renderFailedIssues = renderIssues.filter(i => i.severity === 'critical' || i.severity === 'warning');
+            if (renderFailedIssues.length > 0) {
+                issuesHtml = `<div class="space-y-1">${renderFailedIssues.slice(0,8).map(i => `
                     <div class="flex items-center gap-2 text-sm">
-                        <span class="ds-badge ${c.severity === 'critical' ? 'ds-badge-danger' : 'ds-badge-warning'}" style="font-size:0.65rem;">${c.severity}</span>
-                        <span style="color:var(--ds-text);">${escapeHtml(c.label || c.code || '')}</span>
+                        <span class="ds-badge ${i.severity === 'critical' ? 'ds-badge-danger' : 'ds-badge-warning'}" style="font-size:0.65rem;">${i.severity}</span>
+                        <span style="color:var(--ds-text);">${escapeHtml(i.title || i.code || '')}</span>
                     </div>`).join('')}</div>`;
             }
         }
@@ -8344,22 +8349,22 @@ function generateUnifiedAuditHTML(result) {
         else if (toolKey === 'redirect') {
             const redSummary = rd.summary || {};
             const passed = redSummary.passed ?? 0;
-            const failed = redSummary.failed ?? 0;
-            const warnings = redSummary.warnings ?? 0;
-            const grade = redSummary.overall_grade ?? '—';
+            const redErrors = redSummary.errors ?? redSummary.failed ?? 0;
+            const redWarnings = redSummary.warnings ?? 0;
+            const grade = redSummary.quality_grade ?? redSummary.overall_grade ?? '—';
             metricsHtml = `
                 <div class="grid grid-cols-4 gap-3 mb-3">
                     <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-text)">${grade}</div><div class="text-xs" style="color:var(--ds-text-muted)">Оценка</div></div>
                     <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-success)">${passed}</div><div class="text-xs" style="color:var(--ds-text-muted)">Passed</div></div>
-                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-danger)">${failed}</div><div class="text-xs" style="color:var(--ds-text-muted)">Failed</div></div>
-                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-warning)">${warnings}</div><div class="text-xs" style="color:var(--ds-text-muted)">Warnings</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-danger)">${redErrors}</div><div class="text-xs" style="color:var(--ds-text-muted)">Errors</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-warning)">${redWarnings}</div><div class="text-xs" style="color:var(--ds-text-muted)">Warnings</div></div>
                 </div>`;
             const scenarios = rd.scenarios || [];
-            const failedScenarios = scenarios.filter(s => s.status === 'failed' || s.status === 'warning');
+            const failedScenarios = scenarios.filter(s => s.status === 'error' || s.status === 'failed' || s.status === 'warning');
             if (failedScenarios.length > 0) {
                 issuesHtml = `<div class="space-y-1">${failedScenarios.slice(0,8).map(s => `
                     <div class="flex items-center gap-2 text-sm">
-                        <span class="ds-badge ${s.status === 'failed' ? 'ds-badge-danger' : 'ds-badge-warning'}" style="font-size:0.65rem;">${s.status}</span>
+                        <span class="ds-badge ${s.status === 'error' || s.status === 'failed' ? 'ds-badge-danger' : 'ds-badge-warning'}" style="font-size:0.65rem;">${s.status}</span>
                         <span style="color:var(--ds-text);">${escapeHtml(s.title || '')}</span>
                     </div>`).join('')}</div>`;
             }
