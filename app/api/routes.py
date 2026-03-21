@@ -18,6 +18,8 @@ from app.api.routers import link_profile as _link_profile_mod  # noqa: E402
 from app.api.routers import cwv as _cwv_mod                  # noqa: E402
 from app.api.routers import site_analyze as _site_analyze_mod  # noqa: E402
 from app.api.routers import robots as _robots_mod            # noqa: E402
+from app.api.routers import unified as _unified_mod          # noqa: E402
+from app.api.routers import batch as _batch_mod              # noqa: E402
 
 router.include_router(_exports_mod.router)
 router.include_router(_tasks_mod.router)
@@ -31,3 +33,5 @@ router.include_router(_link_profile_mod.router)
 router.include_router(_cwv_mod.router)
 router.include_router(_site_analyze_mod.router)
 router.include_router(_robots_mod.router)
+router.include_router(_unified_mod.router)
+router.include_router(_batch_mod.router)

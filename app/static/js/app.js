@@ -389,6 +389,41 @@ async function startTask(event, endpoint) {
     }
 }
 
+async function startBatchTask(event) {
+    event.preventDefault();
+    const form = event.target;
+    const tool = form.querySelector('[name="tool"]').value;
+    const urlsText = form.querySelector('[name="urls"]').value;
+    const useProxy = form.querySelector('[name="use_proxy"]')?.checked || false;
+
+    const urls = urlsText.split('\n').map(u => u.trim()).filter(u => u.length > 0);
+    if (urls.length === 0) { showToast('Add at least one URL', 'warning'); return; }
+    if (urls.length > 50) { showToast('Maximum 50 URLs', 'warning'); return; }
+
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Starting...';
+
+    try {
+        const resp = await fetch('/api/tasks/batch', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({tool, urls, use_proxy: useProxy}),
+        });
+        const data = await resp.json();
+        if (data.task_id) {
+            window.location.href = '/task/' + data.task_id;
+        } else {
+            showToast(data.error || 'Failed to start batch', 'error');
+        }
+    } catch(e) {
+        showToast('Network error', 'error');
+    } finally {
+        button.disabled = false;
+        button.innerHTML = '<i class="fas fa-play"></i>Запустить Batch';
+    }
+}
+
 async function startLinkProfileTask(event) {
     event.preventDefault();
     const form = event.target;
@@ -603,6 +638,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Export functions for use in other scripts
+window.startBatchTask = startBatchTask;
 window.startLinkProfileTask = startLinkProfileTask;
 window.startTask = startTask;
 window.showToast = showToast;
