@@ -8005,7 +8005,12 @@ function _unifiedPriorityBadge(priority) {
 }
 
 function generateUnifiedAuditHTML(result) {
-    const r = result.results || result.result || result;
+    // result may be the direct run_unified_audit() output (has overall_score at top level)
+    // or wrapped in .results / .result by the task store
+    const r = (result.overall_score != null) ? result
+            : (result.results && result.results.overall_score != null) ? result.results
+            : (result.result && result.result.overall_score != null) ? result.result
+            : result;
     const overallScore = Number(r.overall_score ?? 0);
     const overallGrade = r.overall_grade || '';
     const durationMs = Number(r.duration_ms ?? 0);
@@ -8266,7 +8271,11 @@ function _batchExtractIssues(item, toolType) {
 }
 
 function generateBatchResultsHTML(result) {
-    const r = result.results || result.result || result;
+    // Unwrap: find the level that has .summary and .items
+    const r = (result.summary && result.items) ? result
+            : (result.results && result.results.summary) ? result.results
+            : (result.result && result.result.summary) ? result.result
+            : result;
     const summary = r.summary || {};
     const items = Array.isArray(r.items) ? r.items : [];
     const toolType = summary.tool || result.task_type || '';

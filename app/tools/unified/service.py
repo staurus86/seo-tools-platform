@@ -9,13 +9,15 @@ def run_unified_audit(
     *,
     url: str,
     use_proxy: bool = False,
+    skip_tools: Optional[list] = None,
     progress_callback: Optional[Callable] = None,
 ) -> Dict[str, Any]:
     """Run all SEO tools on a single URL and produce a combined report."""
     started = time.perf_counter()
     results = {}
     errors = {}
-    tools_order = [
+    skip_set = set(s.lower().strip() for s in (skip_tools or []))
+    all_tools = [
         ("robots", "Robots.txt Audit"),
         ("sitemap", "Sitemap Validation"),
         ("onpage", "OnPage Audit"),
@@ -25,11 +27,12 @@ def run_unified_audit(
         ("redirect", "Redirect Checker"),
         ("cwv", "Core Web Vitals"),
     ]
+    tools_order = [(k, n) for k, n in all_tools if k not in skip_set]
 
     total = len(tools_order)
 
     for i, (tool_key, tool_name) in enumerate(tools_order):
-        pct = int((i / total) * 100)
+        pct = int((i / total) * 100) if total > 0 else 100
         if progress_callback:
             progress_callback(progress=pct, status_message=f"[{i+1}/{total}] {tool_name}...")
 

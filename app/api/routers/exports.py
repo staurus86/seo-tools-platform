@@ -1356,7 +1356,8 @@ async def get_unified_audit_xlsx(task_id: str):
         task, task_result, url, err = _get_task_or_error(task_id, "unified_audit")
         if err:
             return err
-        results = task_result.get("results", task_result) or {}
+        # task_result is the full run_unified_audit() output; use it directly
+        results = task_result if task_result.get("overall_score") is not None else task_result.get("results", task_result) or {}
         filepath = _build_unified_xlsx(task_id, url, results)
         if not filepath or not os.path.exists(filepath):
             return _error_response("Failed to generate report", status_code=500)
@@ -1373,7 +1374,7 @@ async def get_unified_audit_docx(task_id: str):
         task, task_result, url, err = _get_task_or_error(task_id, "unified_audit")
         if err:
             return err
-        results = task_result.get("results", task_result) or {}
+        results = task_result if task_result.get("overall_score") is not None else task_result.get("results", task_result) or {}
         filepath = _build_unified_docx(task_id, url, results)
         if not filepath or not os.path.exists(filepath):
             return _error_response("Failed to generate report", status_code=500)
