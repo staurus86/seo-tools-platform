@@ -8089,8 +8089,11 @@ function generateUnifiedAuditHTML(result) {
             ${scoreKeys.map(k => {
                 const s = Number(scores[k] || 0);
                 const label = scoreNames[k] || k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                const isCwvError = (k === 'cwv_mobile' || k === 'cwv_desktop' || k === 'cwv_avg') && s === 0 && (errors['cwv'] || errors['core_web_vitals']);
+                const displayVal = isCwvError ? 'N/A' : s;
+                const displayColor = isCwvError ? 'var(--ds-text-muted)' : _unifiedScoreColor(s);
                 return `<div class="ds-card text-center" style="padding:1rem;animation:none;">
-                    <div class="text-3xl font-bold" style="color:${_unifiedScoreColor(s)}">${s}</div>
+                    <div class="text-3xl font-bold" style="color:${displayColor}">${displayVal}</div>
                     <div class="text-sm" style="color:var(--ds-text-secondary);">${escapeHtml(label)}</div>
                 </div>`;
             }).join('')}
@@ -8162,30 +8165,267 @@ function generateUnifiedAuditHTML(result) {
         </div>`;
     }
 
-    // --- Per-tool collapsible details ---
+    // --- Cross-tool insights (synergy) ---
+    let insightsHtml = '';
+    const insights = [];
+
+    // Check for common patterns across tools
+    if (scores.render === 0 || scores.render < 50) {
+        if (scores.onpage > 70) insights.push({icon: 'exclamation-triangle', color: 'var(--ds-warning)', text: 'Контент хорошего качества, но рендеринг проблемный — боты могут не увидеть контент.'});
+    }
+    if (scores.mobile_friendly < 100 && scores.cwv_avg && scores.cwv_avg < 50) {
+        insights.push({icon: 'mobile-alt', color: 'var(--ds-danger)', text: 'Мобильная версия и Core Web Vitals ниже нормы — Google может понизить позиции (Mobile-First Indexing).'});
+    }
+    if (scores.bot_accessibility < 80) {
+        insights.push({icon: 'robot', color: 'var(--ds-danger)', text: 'Часть ботов не может получить доступ к сайту — проверьте robots.txt и серверную конфигурацию.'});
+    }
+    if (scores.redirect < 60) {
+        insights.push({icon: 'exchange-alt', color: 'var(--ds-warning)', text: 'Много проблем с редиректами — это тратит краулинговый бюджет и может вызвать проблемы с индексацией.'});
+    }
+    if (scores.robots_ok === 0) {
+        insights.push({icon: 'file-alt', color: 'var(--ds-danger)', text: 'robots.txt не найден — поисковые системы не получают инструкций по краулингу.'});
+    }
+    if (scores.onpage > 80 && scores.cwv_avg > 80 && scores.mobile_friendly >= 100) {
+        insights.push({icon: 'check-circle', color: 'var(--ds-success)', text: 'Контент, скорость и мобильность в хорошем состоянии — сильная техническая база.'});
+    }
+
+    if (insights.length > 0) {
+        insightsHtml = `
+        <div class="ds-card" style="padding:1.25rem;border-left:4px solid var(--ds-brand);">
+            <h4 class="font-semibold mb-3" style="color:var(--ds-text);"><i class="fas fa-lightbulb mr-2" style="color:var(--ds-brand);"></i>Кросс-инструментная аналитика</h4>
+            <div class="space-y-2">
+                ${insights.map(ins => `
+                    <div class="flex items-start gap-3 text-sm">
+                        <i class="fas fa-${ins.icon} mt-0.5" style="color:${ins.color};"></i>
+                        <span style="color:var(--ds-text);">${ins.text}</span>
+                    </div>`).join('')}
+            </div>
+        </div>`;
+    }
+
+    // --- Per-tool detailed results ---
     const toolResults = r.results || r.tool_results || r.per_tool || {};
-    const toolResultKeys = Object.keys(toolResults);
+
+    function _renderToolSummary(toolKey, toolName, data) {
+        if (!data || typeof data !== 'object') return '';
+        const score = scores[toolKey];
+        const scoreColor = typeof score === 'number' ? _unifiedScoreColor(score) : 'var(--ds-text-muted)';
+        const scoreDisplay = score !== undefined && score !== null ? score : '—';
+
+        let metricsHtml = '';
+        let issuesHtml = '';
+        let detailsHtml = '';
+
+        // Extract results — may be nested under .results
+        const rd = data.results || data;
+
+        if (toolKey === 'robots') {
+            const found = rd.robots_txt_found ?? data.robots_txt_found;
+            const rulesCount = rd.total_rules ?? rd.findings?.total_rules ?? 0;
+            const sitemapsCount = rd.sitemaps_found ?? rd.findings?.total_sitemaps ?? 0;
+            metricsHtml = `
+                <div class="grid grid-cols-3 gap-3 mb-3">
+                    <div class="text-center"><div class="text-xl font-bold" style="color:${found ? 'var(--ds-success)' : 'var(--ds-danger)'}">${found ? 'Найден' : 'Не найден'}</div><div class="text-xs" style="color:var(--ds-text-muted)">robots.txt</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-text)">${rulesCount}</div><div class="text-xs" style="color:var(--ds-text-muted)">Правила</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-text)">${sitemapsCount}</div><div class="text-xs" style="color:var(--ds-text-muted)">Sitemaps</div></div>
+                </div>`;
+            const recs = rd.recommendations || data.recommendations || [];
+            if (recs.length > 0) {
+                issuesHtml = `<ul class="text-sm space-y-1" style="color:var(--ds-text-secondary);">${recs.slice(0,5).map(rec => `<li>• ${escapeHtml(typeof rec === 'string' ? rec : rec.text || rec.title || JSON.stringify(rec))}</li>`).join('')}</ul>`;
+            }
+        }
+
+        else if (toolKey === 'sitemap') {
+            const totalUrls = rd.total_urls ?? rd.summary?.total_urls ?? 0;
+            const filesCount = rd.files_checked ?? rd.summary?.files_checked ?? 0;
+            const status = rd.status ?? rd.summary?.status ?? 'unknown';
+            metricsHtml = `
+                <div class="grid grid-cols-3 gap-3 mb-3">
+                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-text)">${totalUrls.toLocaleString()}</div><div class="text-xs" style="color:var(--ds-text-muted)">URL в sitemap</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-text)">${filesCount}</div><div class="text-xs" style="color:var(--ds-text-muted)">Файлов</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:${status === 'valid' ? 'var(--ds-success)' : 'var(--ds-warning)'}">${status}</div><div class="text-xs" style="color:var(--ds-text-muted)">Статус</div></div>
+                </div>`;
+        }
+
+        else if (toolKey === 'onpage') {
+            const opScore = rd.score ?? rd.scores?.onpage_score ?? 0;
+            const wordCount = rd.content?.word_count ?? 0;
+            const kwCoverage = rd.keyword_coverage?.coverage_pct ?? 0;
+            const titleLen = rd.technical?.title_len ?? 0;
+            const descLen = rd.technical?.description_len ?? 0;
+            const aiRisk = rd.ai_insights?.ai_risk_composite ?? 0;
+            metricsHtml = `
+                <div class="grid grid-cols-3 md:grid-cols-6 gap-3 mb-3">
+                    <div class="text-center"><div class="text-xl font-bold" style="color:${_unifiedScoreColor(opScore)}">${opScore}</div><div class="text-xs" style="color:var(--ds-text-muted)">Score</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-text)">${wordCount}</div><div class="text-xs" style="color:var(--ds-text-muted)">Слов</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-text)">${kwCoverage}%</div><div class="text-xs" style="color:var(--ds-text-muted)">Ключи</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:${titleLen > 30 && titleLen < 60 ? 'var(--ds-success)' : 'var(--ds-warning)'}">${titleLen}</div><div class="text-xs" style="color:var(--ds-text-muted)">Title</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:${descLen > 120 && descLen < 160 ? 'var(--ds-success)' : 'var(--ds-warning)'}">${descLen}</div><div class="text-xs" style="color:var(--ds-text-muted)">Desc</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:${aiRisk < 30 ? 'var(--ds-success)' : aiRisk < 60 ? 'var(--ds-warning)' : 'var(--ds-danger)'}">${Math.round(aiRisk)}</div><div class="text-xs" style="color:var(--ds-text-muted)">AI Risk</div></div>
+                </div>`;
+            // SERP preview if available
+            const serp = rd.serp_preview;
+            if (serp && serp.google) {
+                detailsHtml += `
+                <div class="mb-3 p-3 rounded-lg" style="background:var(--ds-bg);border:1px solid var(--ds-border);">
+                    <div class="text-xs font-medium mb-2" style="color:var(--ds-text-muted);">SERP Preview (Google)</div>
+                    <div style="font-family:arial,sans-serif;">
+                        <div style="color:#1a0dab;font-size:18px;line-height:1.3;">${escapeHtml(serp.google.title || '')}</div>
+                        <div style="color:#006621;font-size:13px;">${escapeHtml(serp.google.breadcrumb || '')}</div>
+                        <div style="color:#545454;font-size:13px;line-height:1.4;">${escapeHtml(serp.google.description || '')}</div>
+                    </div>
+                </div>`;
+            }
+            const opIssues = rd.issues || [];
+            if (opIssues.length > 0) {
+                issuesHtml = _renderIssuesList(opIssues, 8);
+            }
+        }
+
+        else if (toolKey === 'render') {
+            const renderScore = rd.comparison?.score ?? rd.score ?? 0;
+            const frameworks = rd.js_frameworks || rd.rendered_snapshot?.js_frameworks || [];
+            const missingCount = rd.comparison?.missing ? Object.values(rd.comparison.missing).reduce((s,a) => s + (Array.isArray(a) ? a.length : 0), 0) : 0;
+            const consoleErrors = rd.console_log?.error_count ?? rd.rendered_snapshot?.console_log?.error_count ?? 0;
+            metricsHtml = `
+                <div class="grid grid-cols-4 gap-3 mb-3">
+                    <div class="text-center"><div class="text-xl font-bold" style="color:${_unifiedScoreColor(renderScore)}">${Math.round(renderScore)}</div><div class="text-xs" style="color:var(--ds-text-muted)">Score</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-text)">${missingCount}</div><div class="text-xs" style="color:var(--ds-text-muted)">JS-only</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:${consoleErrors > 0 ? 'var(--ds-danger)' : 'var(--ds-success)'}">${consoleErrors}</div><div class="text-xs" style="color:var(--ds-text-muted)">JS Errors</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-brand)">${frameworks.length > 0 ? frameworks.join(', ') : '—'}</div><div class="text-xs" style="color:var(--ds-text-muted)">Framework</div></div>
+                </div>`;
+            const seoChecks = rd.seo_checks?.items || [];
+            const failedChecks = seoChecks.filter(c => c.status === 'fail' || c.status === 'warn');
+            if (failedChecks.length > 0) {
+                issuesHtml = `<div class="space-y-1">${failedChecks.slice(0,8).map(c => `
+                    <div class="flex items-center gap-2 text-sm">
+                        <span class="ds-badge ${c.severity === 'critical' ? 'ds-badge-danger' : 'ds-badge-warning'}" style="font-size:0.65rem;">${c.severity}</span>
+                        <span style="color:var(--ds-text);">${escapeHtml(c.label || c.code || '')}</span>
+                    </div>`).join('')}</div>`;
+            }
+        }
+
+        else if (toolKey === 'mobile') {
+            const mobileFriendly = rd.mobile_friendly ?? false;
+            const devicesCount = rd.devices_tested?.length ?? rd.device_results?.length ?? 0;
+            const totalIssues = rd.issues_count ?? (rd.issues || []).length;
+            metricsHtml = `
+                <div class="grid grid-cols-3 gap-3 mb-3">
+                    <div class="text-center"><div class="text-xl font-bold" style="color:${mobileFriendly ? 'var(--ds-success)' : 'var(--ds-danger)'}">${mobileFriendly ? 'Да' : 'Нет'}</div><div class="text-xs" style="color:var(--ds-text-muted)">Mobile-friendly</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-text)">${devicesCount}</div><div class="text-xs" style="color:var(--ds-text-muted)">Устройств</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:${totalIssues > 0 ? 'var(--ds-warning)' : 'var(--ds-success)'}">${totalIssues}</div><div class="text-xs" style="color:var(--ds-text-muted)">Проблем</div></div>
+                </div>`;
+            if ((rd.issues || []).length > 0) issuesHtml = _renderIssuesList(rd.issues, 6);
+        }
+
+        else if (toolKey === 'bot_check') {
+            const botSummary = rd.summary || {};
+            const accessible = botSummary.accessible ?? 0;
+            const nonIndexable = botSummary.non_indexable ?? 0;
+            const blocked = botSummary.robots_disallowed ?? 0;
+            const avgMs = botSummary.avg_response_time_ms ?? 0;
+            metricsHtml = `
+                <div class="grid grid-cols-4 gap-3 mb-3">
+                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-success)">${accessible}</div><div class="text-xs" style="color:var(--ds-text-muted)">Доступны</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-warning)">${nonIndexable}</div><div class="text-xs" style="color:var(--ds-text-muted)">Не индекс.</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-danger)">${blocked}</div><div class="text-xs" style="color:var(--ds-text-muted)">Заблокир.</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-text)">${Math.round(avgMs)}ms</div><div class="text-xs" style="color:var(--ds-text-muted)">Avg time</div></div>
+                </div>`;
+            const blockers = rd.priority_blockers || [];
+            if (blockers.length > 0) {
+                issuesHtml = `<div class="space-y-1">${blockers.slice(0,5).map(b => `
+                    <div class="flex items-center gap-2 text-sm">
+                        <span class="ds-badge ds-badge-danger" style="font-size:0.65rem;">P0</span>
+                        <span style="color:var(--ds-text);">${escapeHtml(b.title || '')} (${b.affected_bots || 0} bots)</span>
+                    </div>`).join('')}</div>`;
+            }
+        }
+
+        else if (toolKey === 'redirect') {
+            const redSummary = rd.summary || {};
+            const passed = redSummary.passed ?? 0;
+            const failed = redSummary.failed ?? 0;
+            const warnings = redSummary.warnings ?? 0;
+            const grade = redSummary.overall_grade ?? '—';
+            metricsHtml = `
+                <div class="grid grid-cols-4 gap-3 mb-3">
+                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-text)">${grade}</div><div class="text-xs" style="color:var(--ds-text-muted)">Оценка</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-success)">${passed}</div><div class="text-xs" style="color:var(--ds-text-muted)">Passed</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-danger)">${failed}</div><div class="text-xs" style="color:var(--ds-text-muted)">Failed</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-warning)">${warnings}</div><div class="text-xs" style="color:var(--ds-text-muted)">Warnings</div></div>
+                </div>`;
+            const scenarios = rd.scenarios || [];
+            const failedScenarios = scenarios.filter(s => s.status === 'failed' || s.status === 'warning');
+            if (failedScenarios.length > 0) {
+                issuesHtml = `<div class="space-y-1">${failedScenarios.slice(0,8).map(s => `
+                    <div class="flex items-center gap-2 text-sm">
+                        <span class="ds-badge ${s.status === 'failed' ? 'ds-badge-danger' : 'ds-badge-warning'}" style="font-size:0.65rem;">${s.status}</span>
+                        <span style="color:var(--ds-text);">${escapeHtml(s.title || '')}</span>
+                    </div>`).join('')}</div>`;
+            }
+        }
+
+        else if (toolKey === 'cwv') {
+            const cwvData = data.combined ? (data.mobile || data) : data;
+            const perfScore = cwvData.categories_scores?.performance ?? 0;
+            const lcpMs = cwvData.metrics?.lcp?.lab_value_ms ?? cwvData.metrics?.lcp?.field_value_ms;
+            const cls = cwvData.metrics?.cls?.lab_value_ms ?? cwvData.metrics?.cls?.field_value_ms;
+            const grade = cwvData.cwv_grade ?? '—';
+            metricsHtml = `
+                <div class="grid grid-cols-4 gap-3 mb-3">
+                    <div class="text-center"><div class="text-xl font-bold" style="color:${_unifiedScoreColor(perfScore)}">${perfScore}</div><div class="text-xs" style="color:var(--ds-text-muted)">Performance</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-text)">${lcpMs != null ? (lcpMs/1000).toFixed(1)+'s' : '—'}</div><div class="text-xs" style="color:var(--ds-text-muted)">LCP</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-text)">${cls != null ? cls.toFixed(3) : '—'}</div><div class="text-xs" style="color:var(--ds-text-muted)">CLS</div></div>
+                    <div class="text-center"><div class="text-xl font-bold" style="color:${grade === 'good' ? 'var(--ds-success)' : grade === 'needs_improvement' ? 'var(--ds-warning)' : 'var(--ds-danger)'}">${grade}</div><div class="text-xs" style="color:var(--ds-text-muted)">CWV Grade</div></div>
+                </div>`;
+            const opps = cwvData.opportunities || [];
+            const topOpps = opps.filter(o => o.priority === 'critical' || o.priority === 'high').slice(0, 5);
+            if (topOpps.length > 0) {
+                issuesHtml = `<div class="space-y-1">${topOpps.map(o => `
+                    <div class="flex items-center gap-2 text-sm">
+                        <span class="ds-badge ${o.priority === 'critical' ? 'ds-badge-danger' : 'ds-badge-warning'}" style="font-size:0.65rem;">${o.priority}</span>
+                        <span style="color:var(--ds-text);">${escapeHtml(o.title || '')}${o.savings_ms ? ` (−${o.savings_ms}ms)` : ''}</span>
+                    </div>`).join('')}</div>`;
+            }
+        }
+
+        return `
+        <details class="ds-card" style="padding:0;" ${toolKey === 'onpage' ? 'open' : ''}>
+            <summary style="padding:1rem;cursor:pointer;display:flex;align-items:center;justify-content:space-between;">
+                <span class="font-medium" style="color:var(--ds-text);">${escapeHtml(toolName)}</span>
+                <span class="text-lg font-bold" style="color:${scoreColor};">${scoreDisplay}</span>
+            </summary>
+            <div style="padding:0 1rem 1rem;border-top:1px solid var(--ds-border);">
+                ${metricsHtml}
+                ${detailsHtml}
+                ${issuesHtml ? `<div class="mt-2">${issuesHtml}</div>` : '<div class="text-sm" style="color:var(--ds-text-muted);">Проблем не обнаружено</div>'}
+            </div>
+        </details>`;
+    }
+
+    function _renderIssuesList(issues, maxCount) {
+        const critical = issues.filter(i => i.severity === 'critical');
+        const warning = issues.filter(i => i.severity === 'warning');
+        const shown = [...critical, ...warning].slice(0, maxCount);
+        if (shown.length === 0) return '';
+        return `<div class="space-y-1">${shown.map(i => `
+            <div class="flex items-center gap-2 text-sm">
+                <span class="ds-badge ${i.severity === 'critical' ? 'ds-badge-danger' : 'ds-badge-warning'}" style="font-size:0.65rem;">${i.severity}</span>
+                <span style="color:var(--ds-text);">${escapeHtml(i.title || i.code || '')}</span>
+            </div>`).join('')}</div>`;
+    }
+
+    // Build per-tool HTML
+    const toolDisplayOrder = ['robots', 'sitemap', 'onpage', 'render', 'mobile', 'bot_check', 'redirect', 'cwv'];
+    const toolDisplayNames = {robots:'Robots.txt',sitemap:'Sitemap',onpage:'OnPage Audit',render:'Render Audit',mobile:'Mobile Audit',bot_check:'Bot Checker',redirect:'Redirect Checker',cwv:'Core Web Vitals'};
+
     let perToolHtml = '';
-    if (toolResultKeys.length > 0) {
-        const toolDetails = toolResultKeys.map(k => {
-            const toolData = toolResults[k];
-            const toolScore = scores[k] !== undefined ? scores[k] : '—';
-            const toolScoreColor = typeof toolScore === 'number' ? _unifiedScoreColor(toolScore) : 'var(--ds-text-muted)';
-            return `
-            <details class="ds-card" style="padding:0;">
-                <summary style="padding:1rem;cursor:pointer;display:flex;align-items:center;justify-content:space-between;">
-                    <span class="font-medium" style="color:var(--ds-text);">${escapeHtml(scoreNames[k] || k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()))}</span>
-                    <span class="text-lg font-bold" style="color:${toolScoreColor};">${toolScore}</span>
-                </summary>
-                <div style="padding:0 1rem 1rem;border-top:1px solid var(--ds-border);">
-                    <pre class="text-xs overflow-auto rounded p-3" style="background:var(--ds-bg);color:var(--ds-text);max-height:400px;">${escapeHtml(JSON.stringify(toolData, null, 2))}</pre>
-                </div>
-            </details>`;
-        }).join('');
+    const availableTools = toolDisplayOrder.filter(k => toolResults[k]);
+    if (availableTools.length > 0) {
         perToolHtml = `
         <div style="display:flex;flex-direction:column;gap:0.5rem;">
             <h4 class="font-semibold" style="color:var(--ds-text);margin-bottom:0.25rem;">Детали по инструментам</h4>
-            ${toolDetails}
+            ${availableTools.map(k => _renderToolSummary(k, toolDisplayNames[k] || k, toolResults[k])).join('')}
         </div>`;
     }
 
@@ -8197,6 +8437,7 @@ function generateUnifiedAuditHTML(result) {
             <div class="lg:col-span-3">${chartsHtml}</div>
         </div>
         ${scoresGridHtml}
+        ${insightsHtml}
         ${devTasksHtml}
         ${errorsHtml}
         ${perToolHtml}
