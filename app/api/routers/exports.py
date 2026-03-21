@@ -961,6 +961,7 @@ def _build_unified_xlsx(task_id: str, url: str, results: dict) -> str:
     """Build an XLSX workbook for the Unified Full SEO Audit and return the filepath."""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
     from app.config import settings
 
     reports_dir = settings.REPORTS_DIR
@@ -1002,7 +1003,7 @@ def _build_unified_xlsx(task_id: str, url: str, results: dict) -> str:
                 for cell in row:
                     val = str(cell.value or "")
                     max_len = max(max_len, len(val))
-            ws.column_dimensions[ws.cell(row=1, column=ci).column_letter].width = min(max_len + 4, 60)
+            ws.column_dimensions[get_column_letter(ci)].width = min(max_len + 4, 60)
 
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
@@ -1178,7 +1179,7 @@ def _build_unified_xlsx(task_id: str, url: str, results: dict) -> str:
     # Column widths for readability
     col_widths = {1: 5, 2: 12, 3: 10, 4: 22, 5: 18, 6: 40, 7: 50, 8: 60, 9: 15, 10: 18}
     for ci, w in col_widths.items():
-        ws_tasks.column_dimensions[ws_tasks.cell(row=1, column=ci).column_letter].width = w
+        ws_tasks.column_dimensions[get_column_letter(ci)].width = w
 
     ws_tasks.freeze_panes = "A5"
 
@@ -1230,7 +1231,7 @@ def _build_unified_xlsx(task_id: str, url: str, results: dict) -> str:
             ri += 1
         cat_widths = {1: 5, 2: 12, 3: 40, 4: 45, 5: 60, 6: 15, 7: 18, 8: 10}
         for ci, w in cat_widths.items():
-            ws_cat.column_dimensions[ws_cat.cell(row=1, column=ci).column_letter].width = w
+            ws_cat.column_dimensions[get_column_letter(ci)].width = w
         ws_cat.freeze_panes = "A3"
 
     # ── Sheet 4: Errors (only if present) ──────────────────────────────
