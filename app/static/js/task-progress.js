@@ -8300,7 +8300,9 @@ function generateUnifiedAuditHTML(result) {
                     <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-brand)">${frameworks.length > 0 ? frameworks.join(', ') : '—'}</div><div class="text-xs" style="color:var(--ds-text-muted)">Framework</div></div>
                 </div>`;
             const renderIssues = Array.isArray(rd.issues) ? rd.issues : [];
-            const renderFailedIssues = renderIssues.filter(i => i.severity === 'critical' || i.severity === 'warning');
+            // Deduplicate render issues (desktop + mobile variants may duplicate)
+            const seenRender = new Set();
+            const renderFailedIssues = renderIssues.filter(i => { if (i.severity !== 'critical' && i.severity !== 'warning') return false; const t = i.title || i.code || ''; if (seenRender.has(t)) return false; seenRender.add(t); return true; });
             if (renderFailedIssues.length > 0) {
                 issuesHtml = `<div class="space-y-1">${renderFailedIssues.slice(0,8).map(i => `
                     <div class="flex items-center gap-2 text-sm">
@@ -8320,7 +8322,10 @@ function generateUnifiedAuditHTML(result) {
                     <div class="text-center"><div class="text-xl font-bold" style="color:var(--ds-text)">${devicesCount}</div><div class="text-xs" style="color:var(--ds-text-muted)">Устройств</div></div>
                     <div class="text-center"><div class="text-xl font-bold" style="color:${totalIssues > 0 ? 'var(--ds-warning)' : 'var(--ds-success)'}">${totalIssues}</div><div class="text-xs" style="color:var(--ds-text-muted)">Проблем</div></div>
                 </div>`;
-            if ((rd.issues || []).length > 0) issuesHtml = _renderIssuesList(rd.issues, 6);
+            // Deduplicate mobile issues (portrait + landscape duplicates)
+            const seenMobile = new Set();
+            const dedupMobile = (rd.issues || []).filter(i => { const t = i.title || i.code || ''; if (seenMobile.has(t)) return false; seenMobile.add(t); return true; });
+            if (dedupMobile.length > 0) issuesHtml = _renderIssuesList(dedupMobile, 6);
         }
 
         else if (toolKey === 'bot_check') {

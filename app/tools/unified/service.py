@@ -149,6 +149,8 @@ def _extract_scores(results: dict) -> dict:
     if "render" in results:
         render = results["render"]
         render_score = (
+            _deep_get(render, "results", "summary", "score") or
+            _deep_get(render, "summary", "score") or
             _deep_get(render, "comparison", "score") or
             _deep_get(render, "results", "comparison", "score") or
             _deep_get(render, "results", "score") or
@@ -207,17 +209,28 @@ def _extract_scores(results: dict) -> dict:
         scores["redirect"] = None
 
     # CWV performance — handle combined and single modes.
-    # If CWV tool failed (not in results), set to None so _calculate_overall_score skips it.
+    # Combined: cwv = {"results": {"combined": True, "mobile": {...}, "desktop": {...}}}
+    # Single:   cwv = {"results": {"summary": {"performance_score": N}, "categories": {...}}}
     if "cwv" in results:
         cwv = results["cwv"]
-        if cwv.get("combined"):
-            mobile_perf = _deep_get(cwv, "mobile", "categories_scores", "performance") or 0
-            desktop_perf = _deep_get(cwv, "desktop", "categories_scores", "performance") or 0
+        cwv_r = cwv.get("results", cwv)  # unwrap results wrapper
+        if cwv_r.get("combined"):
+            mobile_perf = (
+                _deep_get(cwv_r, "mobile", "summary", "performance_score") or
+                _deep_get(cwv_r, "mobile", "categories", "performance") or 0
+            )
+            desktop_perf = (
+                _deep_get(cwv_r, "desktop", "summary", "performance_score") or
+                _deep_get(cwv_r, "desktop", "categories", "performance") or 0
+            )
             scores["cwv_mobile"] = round(float(mobile_perf), 1)
             scores["cwv_desktop"] = round(float(desktop_perf), 1)
             scores["cwv_avg"] = round((float(mobile_perf) + float(desktop_perf)) / 2, 1)
         else:
-            perf = _deep_get(cwv, "categories_scores", "performance") or cwv.get("performance", 0) or 0
+            perf = (
+                _deep_get(cwv_r, "summary", "performance_score") or
+                _deep_get(cwv_r, "categories", "performance") or 0
+            )
             scores["cwv_avg"] = round(float(perf), 1)
     else:
         scores["cwv_mobile"] = None
