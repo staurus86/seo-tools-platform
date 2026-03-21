@@ -29,8 +29,8 @@ except Exception:  # pragma: no cover - optional at runtime
 
 
 REDIRECT_STATUSES = {301, 302, 303, 307, 308}
-UA_NOJS = "Mozilla/5.0 (compatible; LLMCrawlerNoJS/1.0; +https://example.com/bot)"
-UA_RENDER = "Mozilla/5.0 (compatible; LLMCrawlerRendered/1.0; +https://example.com/bot)"
+UA_NOJS = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+UA_RENDER = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
 BOT_USER_AGENTS = {
     "gptbot": "Mozilla/5.0 (compatible; GPTBot/1.0; +https://openai.com/gptbot)",
     "googlebot": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
