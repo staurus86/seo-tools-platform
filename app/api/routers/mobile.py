@@ -93,6 +93,7 @@ def check_mobile_full(
     devices: Optional[List[str]] = None,
     progress_callback=None,
     use_proxy: bool = False,
+    throttle: str = "none",
 ) -> Dict[str, Any]:
     """Feature-flagged mobile check with v2 service fallback."""
     from app.config import settings
@@ -102,7 +103,7 @@ def check_mobile_full(
         try:
             from app.tools.mobile.service_v2 import MobileCheckServiceV2
 
-            checker = MobileCheckServiceV2(timeout=getattr(settings, "MOBILE_CHECK_TIMEOUT", 20), use_proxy=use_proxy)
+            checker = MobileCheckServiceV2(timeout=getattr(settings, "MOBILE_CHECK_TIMEOUT", 20), use_proxy=use_proxy, throttle=throttle)
             selected_mode = (mode or getattr(settings, "MOBILE_CHECK_MODE", "quick") or "quick").lower()
             if selected_mode not in ("quick", "full"):
                 selected_mode = "full"
@@ -111,6 +112,7 @@ def check_mobile_full(
                 task_id=task_id,
                 mode=selected_mode,
                 selected_devices=devices,
+                throttle=throttle,
                 progress_callback=progress_callback,
             )
         except Exception as e:
@@ -143,6 +145,7 @@ class MobileCheckRequest(URLModel):
     mode: Optional[str] = "quick"
     devices: Optional[List[str]] = None
     use_proxy: bool = False
+    throttle: str = "none"
 
 
 @router.post("/tasks/mobile-check")
@@ -152,6 +155,7 @@ async def create_mobile_check(data: MobileCheckRequest, background_tasks: Backgr
     from app.config import settings
     mode = data.mode or getattr(settings, "MOBILE_CHECK_MODE", "quick") or "quick"
     devices = data.devices
+    throttle = data.throttle if data.throttle in ("none", "3g", "4g") else "none"
 
     print(f"[API] Mobile check queued for: {url}")
     task_id = f"mobile-{datetime.now().timestamp()}"
@@ -171,6 +175,7 @@ async def create_mobile_check(data: MobileCheckRequest, background_tasks: Backgr
                 devices=devices,
                 progress_callback=_progress,
                 use_proxy=bool(data.use_proxy),
+                throttle=throttle,
             )
 
             results = result.get("results", {}) if isinstance(result, dict) else {}

@@ -9,6 +9,17 @@ from urllib.parse import urlparse
 
 from openpyxl import load_workbook
 
+# ---------------------------------------------------------------------------
+# Optional: pymorphy3 for Russian anchor lemmatization
+# ---------------------------------------------------------------------------
+try:
+    import pymorphy3
+    _morph = pymorphy3.MorphAnalyzer()
+    _HAS_PYMORPHY = True
+except ImportError:
+    _morph = None  # type: ignore[assignment]
+    _HAS_PYMORPHY = False
+
 ProgressCallback = Optional[Callable[[int, str], None]]
 MAX_LINK_PROFILE_ROWS = 120000
 MAX_RAW_TABLE_ROWS = 5000
@@ -543,6 +554,129 @@ def _dr_bucket_decile(dr: Optional[float]) -> str:
 
 def _anchor_words(anchor: str) -> List[str]:
     return [w.lower() for w in re.findall(r"[A-Za-zА-Яа-яЁё0-9]{3,}", anchor or "")]
+
+
+def _lemmatize_anchor(text: str) -> str:
+    """Lemmatize anchor text for better grouping (supports Russian via pymorphy3)."""
+    if not text or not text.strip():
+        return text
+    words = text.lower().split()
+    if _HAS_PYMORPHY and _morph is not None:
+        lemmatized: List[str] = []
+        for w in words:
+            if any("\u0400" <= c <= "\u04ff" for c in w):
+                parsed = _morph.parse(w)
+                lemmatized.append(parsed[0].normal_form if parsed else w)
+            else:
+                lemmatized.append(w)
+        return " ".join(lemmatized)
+    return text.lower()
+
+
+def _parse_date_value(raw: Any) -> Optional[datetime]:
+    """Try to parse a date value from various formats."""
+    if raw is None:
+        return None
+    if isinstance(raw, datetime):
+        return raw
+    text = str(raw).strip()
+    if not text:
+        return None
+    # ISO-like: 2024-03-15 or 2024-03-15T...
+    if len(text) >= 10 and re.match(r"^\d{4}-\d{2}-\d{2}", text):
+        try:
+            return datetime.strptime(text[:10], "%Y-%m-%d")
+        except ValueError:
+            pass
+    # DD.MM.YYYY
+    if len(text) >= 10 and re.match(r"^\d{2}\.\d{2}\.\d{4}", text):
+        try:
+            return datetime.strptime(text[:10], "%d.%m.%Y")
+        except ValueError:
+            pass
+    # MM/DD/YYYY
+    if len(text) >= 10 and re.match(r"^\d{2}/\d{2}/\d{4}", text):
+        try:
+            return datetime.strptime(text[:10], "%m/%d/%Y")
+        except ValueError:
+            pass
+    return None
+
+
+def _generate_disavow(risk_signals: List[Dict[str, Any]], threshold: float = 55.0) -> Dict[str, Any]:
+    """Generate Google Disavow format from risk signals."""
+    toxic_domains: List[str] = []
+    for signal in risk_signals:
+        score = signal.get("Risk Score") or signal.get("risk_score") or 0
+        try:
+            score = float(score)
+        except (TypeError, ValueError):
+            score = 0.0
+        if score >= threshold:
+            domain = str(signal.get("Domain") or signal.get("domain") or "").strip()
+            if domain:
+                toxic_domains.append(domain)
+
+    if not toxic_domains:
+        return {"generated": False, "reason": "No domains above risk threshold", "domains_count": 0}
+
+    unique_domains = sorted(set(toxic_domains))
+    lines = [
+        "# Google Disavow File",
+        f"# Generated: {datetime.utcnow().isoformat()}",
+        f"# Threshold: risk_score >= {threshold}",
+        "",
+    ]
+    for d in unique_domains:
+        lines.append(f"domain:{d}")
+
+    return {
+        "generated": True,
+        "domains_count": len(unique_domains),
+        "content": "\n".join(lines),
+        "threshold_used": threshold,
+    }
+
+
+def _calculate_velocity(links: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Calculate link acquisition/loss velocity from date fields."""
+    monthly_gained: Dict[str, int] = defaultdict(int)
+    monthly_lost: Dict[str, int] = defaultdict(int)
+
+    for link in links:
+        first_seen = link.get("first_seen") or link.get("date_found") or link.get("discovered")
+        if first_seen:
+            dt = _parse_date_value(first_seen)
+            if dt is not None:
+                month_key = dt.strftime("%Y-%m")
+                monthly_gained[month_key] += 1
+
+        last_seen = link.get("last_seen") or link.get("date_lost")
+        lost = link.get("lost_flag") is True or str(link.get("lost_status") or "").lower() in (
+            "lost", "removed", "dropped",
+        )
+        if lost and last_seen:
+            dt = _parse_date_value(last_seen)
+            if dt is not None:
+                month_key = dt.strftime("%Y-%m")
+                monthly_lost[month_key] += 1
+
+    if not monthly_gained and not monthly_lost:
+        return {"available": False, "reason": "No date fields found in uploaded data"}
+
+    all_months = sorted(set(list(monthly_gained.keys()) + list(monthly_lost.keys())))
+    velocity: List[Dict[str, Any]] = []
+    for m in all_months:
+        gained = monthly_gained.get(m, 0)
+        lost_count = monthly_lost.get(m, 0)
+        velocity.append({
+            "month": m,
+            "gained": gained,
+            "lost": lost_count,
+            "net": gained - lost_count,
+        })
+
+    return {"available": True, "months": velocity, "total_months": len(velocity)}
 
 
 def _has_redirect_301(*values: Any) -> bool:
@@ -1159,6 +1293,8 @@ def run_link_profile_audit(
     follow_comp_counter: Counter[str] = Counter()
     anchor_type_counter: Counter[str] = Counter()
     anchor_counter: Counter[str] = Counter()
+    anchor_lemma_counter: Counter[str] = Counter()
+    anchor_lemma_display: Dict[str, str] = {}
     anchor_word_counter: Counter[str] = Counter()
     dr_bucket_counter: Counter[str] = Counter()
     zone_counter: Counter[str] = Counter()
@@ -1354,6 +1490,11 @@ def run_link_profile_audit(
         anchor_type_counter[anchor_type] += 1
         if anchor:
             anchor_counter[anchor] += 1
+            lemma_key = _lemmatize_anchor(anchor)
+            anchor_lemma_counter[lemma_key] += 1
+            # Keep the most frequent raw form for display
+            if lemma_key not in anchor_lemma_display or anchor_counter[anchor] > anchor_counter.get(anchor_lemma_display[lemma_key], 0):
+                anchor_lemma_display[lemma_key] = anchor
             for token in _anchor_words(anchor):
                 anchor_word_counter[token] += 1
 
@@ -2025,7 +2166,14 @@ def run_link_profile_audit(
     )
     follow_home_internal_benchmark_rows = benchmark_rows[:]
 
-    top_anchors = [{"anchor": a, "count": c} for a, c in anchor_counter.most_common(30)]
+    top_anchors = [
+        {
+            "anchor": anchor_lemma_display.get(lemma, lemma),
+            "lemma": lemma,
+            "count": c,
+        }
+        for lemma, c in anchor_lemma_counter.most_common(30)
+    ]
     anchor_word_rows = [{"word": w, "count": c} for w, c in anchor_word_counter.most_common(30)]
     priority_domains = sorted(
         duplicates_with_our,
@@ -2910,6 +3058,13 @@ def run_link_profile_audit(
         {"template": "rowReviewTemplate", "text": prompts.get("rowReviewTemplate", "")},
     ]
 
+    # --- Disavow file generation ---
+    disavow_data = _generate_disavow(risk_signals_rows, threshold=55.0)
+
+    # --- Link velocity ---
+    velocity_data = _calculate_velocity(normalized_rows)
+    velocity_rows: List[Dict[str, Any]] = velocity_data.get("months", []) if velocity_data.get("available") else []
+
     def _cap_rows(rows: List[Dict[str, Any]], limit: int = MAX_RESULT_TABLE_ROWS) -> List[Dict[str, Any]]:
         if not isinstance(rows, list):
             return []
@@ -3008,6 +3163,9 @@ def run_link_profile_audit(
                 "http_type_lang_platform": _cap_rows(http_type_lang_platform_rows),
                 "target_structure": _cap_rows(target_structure_rows),
                 "risk_signals": _cap_rows(risk_signals_rows),
+                "disavow_preview": disavow_data,
+                "link_velocity": velocity_data,
+                "link_velocity_rows": _cap_rows(velocity_rows),
                 "validation_checks": _cap_rows(validation_checks, 200),
                 "prompt_templates": _cap_rows(prompt_templates_rows, 50),
                 "ourSiteTables": [
@@ -3069,6 +3227,8 @@ def run_link_profile_audit(
                     {"title": "Loss & recovery", "rows": _cap_rows(loss_recovery_rows)},
                     {"title": "HTTP/Type/Lang/Platform", "rows": _cap_rows(http_type_lang_platform_rows)},
                     {"title": "Risk signals", "rows": _cap_rows(risk_signals_rows)},
+                    {"title": "Disavow preview", "rows": [disavow_data] if disavow_data.get("generated") else []},
+                    {"title": "Link velocity", "rows": _cap_rows(velocity_rows)},
                     {"title": "Prompt templates", "rows": _cap_rows(prompt_templates_rows, 50)},
                     {"title": "Auto brand keywords", "rows": _cap_rows(brand_rows)},
                     {"title": "Source files", "rows": _cap_rows(file_summaries)},

@@ -426,6 +426,54 @@ class RenderAuditServiceV2:
         self.use_proxy = use_proxy
         self.debug_enabled = bool(getattr(settings, "RENDER_AUDIT_DEBUG", False) or getattr(settings, "DEBUG", False))
 
+    def _hydration_check(self, raw_snapshot: Dict[str, Any], rendered_snapshot: Dict[str, Any]) -> Dict[str, Any]:
+        """Compare raw (noJS) and rendered snapshots for SSR vs CSR hydration issues."""
+        issues: List[Dict[str, Any]] = []
+        # Title mismatch
+        raw_title = (raw_snapshot.get("title") or "").strip()
+        rendered_title = (rendered_snapshot.get("title") or "").strip()
+        if raw_title and rendered_title and raw_title != rendered_title:
+            issues.append({
+                "code": "hydration_title_mismatch",
+                "severity": "warning",
+                "title": "Title changes after hydration",
+                "raw": raw_title,
+                "rendered": rendered_title,
+            })
+
+        # H1 mismatch
+        raw_h1 = int(raw_snapshot.get("h1_count", 0) or 0)
+        rendered_h1 = int(rendered_snapshot.get("h1_count", 0) or 0)
+        if raw_h1 != rendered_h1:
+            issues.append({
+                "code": "hydration_h1_change",
+                "severity": "warning",
+                "title": f"H1 count changes after hydration ({raw_h1} -> {rendered_h1})",
+            })
+
+        # Content significantly different
+        raw_text_len = int(raw_snapshot.get("visible_text_count", 0) or 0)
+        rendered_text_len = int(rendered_snapshot.get("visible_text_count", 0) or 0)
+        if rendered_text_len > 0 and raw_text_len < rendered_text_len * 0.5:
+            pct = round((1 - raw_text_len / max(1, rendered_text_len)) * 100)
+            issues.append({
+                "code": "hydration_content_gap",
+                "severity": "critical",
+                "title": f"{pct}% of content only available after JS hydration",
+            })
+
+        # Links count diff
+        raw_links = int(raw_snapshot.get("links_count", 0) or 0)
+        rendered_links = int(rendered_snapshot.get("links_count", 0) or 0)
+        if rendered_links > 0 and raw_links < rendered_links * 0.7:
+            issues.append({
+                "code": "hydration_links_gap",
+                "severity": "warning",
+                "title": f"Links change after hydration ({raw_links} -> {rendered_links})",
+            })
+
+        return {"hydration_issues": issues, "has_hydration_problems": len(issues) > 0}
+
     def _dbg(self, task_id: str, message: str) -> None:
         if self.debug_enabled:
             print(f"[RENDER-DEBUG][{task_id}] {message}")
@@ -463,7 +511,7 @@ class RenderAuditServiceV2:
             errors,
         )
 
-    def _render(self, p: Any, url: str, ua: str, mobile: bool, shot_js: Path, shot_nojs: Path) -> Tuple[Snapshot, Dict[str, float], Dict[str, float], Dict[str, Any], List[str], Dict[str, Any]]:
+    def _render(self, p: Any, url: str, ua: str, mobile: bool, shot_js: Path, shot_nojs: Path) -> Tuple[Snapshot, Dict[str, float], Dict[str, float], Dict[str, Any], List[str], Dict[str, Any], Dict[str, Any]]:
         errors: List[str] = []
         out: Dict[str, Any] = {}
         js_timing: Dict[str, float] = {}
@@ -471,6 +519,7 @@ class RenderAuditServiceV2:
         emulation: Dict[str, Any] = {}
         js_frameworks: List[str] = []
         console_log: Dict[str, Any] = {"errors": [], "warnings": [], "error_count": 0, "warning_count": 0}
+        css_hidden_content: Dict[str, Any] = {"hidden_elements": [], "hidden_count": 0}
         launch_kwargs = {"headless": True}
         if self.use_proxy:
             from app.proxy import get_playwright_proxy
@@ -579,6 +628,34 @@ class RenderAuditServiceV2:
                 "warning_count": len(console_warnings_list),
             }
 
+            # Task 4.3: CSS-based Content Visibility Detection
+            css_hidden_content: Dict[str, Any] = {"hidden_elements": [], "hidden_count": 0}
+            try:
+                visibility_js = """
+                () => {
+                    const results = [];
+                    const selectors = 'h1, h2, h3, article, main, [role="main"], p, .content, #content';
+                    document.querySelectorAll(selectors).forEach(el => {
+                        const s = getComputedStyle(el);
+                        const text = (el.textContent || '').trim().substring(0, 100);
+                        if (!text) return;
+                        const hidden = s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0' ||
+                                       (parseInt(s.maxHeight) === 0 && s.overflow === 'hidden') ||
+                                       el.getAttribute('aria-hidden') === 'true';
+                        if (hidden) {
+                            results.push({tag: el.tagName.toLowerCase(), text, reason:
+                                s.display === 'none' ? 'display:none' : s.visibility === 'hidden' ? 'visibility:hidden' :
+                                s.opacity === '0' ? 'opacity:0' : 'other'
+                            });
+                        }
+                    });
+                    return {hidden_elements: results, hidden_count: results.length};
+                }
+                """
+                css_hidden_content = page.evaluate(visibility_js) or css_hidden_content
+            except Exception:
+                pass
+
             try:
                 page.screenshot(path=str(shot_js), full_page=True)
             except Exception:
@@ -624,7 +701,7 @@ class RenderAuditServiceV2:
             0,
             errors,
         )
-        return snap, js_timing, nojs_timing, emulation, js_frameworks, console_log
+        return snap, js_timing, nojs_timing, emulation, js_frameworks, console_log, css_hidden_content
 
     def run(self, url: str, task_id: str, progress_callback=None) -> Dict[str, Any]:
         def notify(progress: int, message: str) -> None:
@@ -667,7 +744,7 @@ class RenderAuditServiceV2:
                     base = f"render_{re.sub(r'[^a-zA-Z0-9]+','-',urlparse(url).netloc or 'site').strip('-').lower()}_{datetime.utcnow().strftime('%Y-%m-%d_%H-%M')}_{vid}"
                     shot_js = shot_dir / f"{base}_js.png"
                     shot_nojs = shot_dir / f"{base}_nojs.png"
-                    rendered, timing_js, timing_nojs, emulation, detected_frameworks, detected_console_log = self._render(p, url, ua, mobile, shot_js, shot_nojs)
+                    rendered, timing_js, timing_nojs, emulation, detected_frameworks, detected_console_log, detected_css_hidden = self._render(p, url, ua, mobile, shot_js, shot_nojs)
                     elapsed = max(0.0, time.time() - t0)
                     self._dbg(
                         task_id,
@@ -707,6 +784,7 @@ class RenderAuditServiceV2:
                         "errors": rendered.errors,
                         "js_frameworks": detected_frameworks,
                         "console_log": detected_console_log,
+                        "css_hidden_content": detected_css_hidden,
                     }
 
                     missing = {
@@ -755,6 +833,27 @@ class RenderAuditServiceV2:
                             "details": f"Обнаружено {err_count} ошибок JavaScript в консоли браузера при рендеринге.",
                             "examples": detected_console_log.get("errors", [])[:5],
                         })
+                    # Task 4.3: CSS hidden content issue
+                    hidden_count = detected_css_hidden.get("hidden_count", 0)
+                    if hidden_count > 0:
+                        issues.append({
+                            "severity": "warning",
+                            "code": "css_hidden_content",
+                            "title": f"Content hidden via CSS ({hidden_count} elements) — search engines may not index this content",
+                            "details": f"Обнаружено {hidden_count} SEO-элементов, скрытых через CSS (display:none, visibility:hidden, opacity:0 и т.д.).",
+                            "examples": [f"{el.get('tag')}: {el.get('text', '')[:60]} ({el.get('reason', 'unknown')})" for el in detected_css_hidden.get("hidden_elements", [])[:5]],
+                        })
+
+                    # Task 4.4: SSR vs CSR Hydration check
+                    hydration = self._hydration_check(raw_stats, rendered_stats)
+                    for h_issue in hydration.get("hydration_issues", []):
+                        issues.append({
+                            "severity": h_issue.get("severity", "warning"),
+                            "code": h_issue.get("code", "hydration_issue"),
+                            "title": h_issue.get("title", "Hydration issue"),
+                            "details": f"Raw: {h_issue.get('raw', '-')}, Rendered: {h_issue.get('rendered', '-')}" if h_issue.get("raw") else h_issue.get("title", ""),
+                        })
+
                     if metrics["score"] < 70:
                         issues.append({"severity": "critical", "code": "low_render_score", "title": "Низкий балл рендеринга", "details": f"Текущий балл: {metrics['score']:.1f}/100."})
                     if meta_cmp["changed"] or meta_cmp["only_rendered"] or meta_cmp["only_raw"]:
@@ -816,6 +915,8 @@ class RenderAuditServiceV2:
                         "emulation": emulation,
                         "js_frameworks": detected_frameworks,
                         "console_log": detected_console_log,
+                        "css_hidden_content": detected_css_hidden,
+                        "hydration": hydration,
                         "issues": issues,
                         "recommendations": _build_recommendations(missing) + _build_seo_recommendations(seo_required),
                         "screenshots": shots,

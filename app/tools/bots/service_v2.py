@@ -425,6 +425,8 @@ class BotAccessibilityServiceV2:
         self.baseline_enabled = bool(baseline_enabled)
         self.ai_block_expected = bool(ai_block_expected)
         self.trend_history_limit = 50
+        self._render_count = 0
+        self._render_limit = 5  # Max bots that get Playwright rendering per run
         self.session = self._build_session()
 
     def _build_session(self) -> requests.Session:
@@ -444,6 +446,13 @@ class BotAccessibilityServiceV2:
             if _proxies:
                 session.proxies.update(_proxies)
         return session
+
+    def _can_render(self) -> bool:
+        """Check if we can still do Playwright rendering (max 5 per run)."""
+        if self._render_count >= self._render_limit:
+            return False
+        self._render_count += 1
+        return True
 
     def _baseline_file_path(self, domain: str) -> str:
         safe = re.sub(r"[^a-z0-9._-]+", "_", (domain or "site").lower())
@@ -824,6 +833,39 @@ class BotAccessibilityServiceV2:
             if 0 < body_length < 500:
                 content_check_details_parts.append(f"short body ({body_length} bytes)")
             content_check_details = "; ".join(content_check_details_parts) if content_check_details_parts else "ok"
+
+            # Task 2.4: Conditional JS rendering when raw HTML has no meaningful content
+            rendered_check = False
+            rendered_has_content = False
+            rendered_error = None
+            if not has_meaningful_content and is_html and self._can_render():
+                try:
+                    from playwright.sync_api import sync_playwright
+                    with sync_playwright() as pw:
+                        br = pw.chromium.launch(headless=True)
+                        ctx = br.new_context(user_agent=bot.user_agent)
+                        pg = ctx.new_page()
+                        pg.goto(url, wait_until="domcontentloaded", timeout=15000)
+                        try:
+                            pg.wait_for_load_state("networkidle", timeout=8000)
+                        except Exception:
+                            pass
+                        rendered_html = pg.content()
+                        rendered_has_content = bool(
+                            rendered_html
+                            and len(rendered_html.strip()) > 500
+                            and "<body" in rendered_html.lower()
+                        )
+                        ctx.close()
+                        br.close()
+                    rendered_check = True
+                    if rendered_has_content:
+                        has_meaningful_content = True
+                        content_check_details = "Content available after JS rendering"
+                except Exception as render_exc:
+                    rendered_check = False
+                    rendered_error = str(render_exc)
+
             accessible = 200 <= response.status_code < 400
             crawlable = bool(accessible and robots_allowed is not False)
             waf_cdn = self._detect_waf_cdn(response, html_head, None)
@@ -875,6 +917,9 @@ class BotAccessibilityServiceV2:
                 "content_length": body_length,
                 "has_meaningful_content": has_meaningful_content,
                 "content_check_details": content_check_details,
+                "rendered_check": rendered_check,
+                "rendered_has_content": rendered_has_content,
+                "rendered_error": rendered_error,
                 "x_robots_tag": x_robots,
                 "x_robots_forbidden": _is_forbidden_directive(x_robots or ""),
                 "meta_robots": meta_robots,

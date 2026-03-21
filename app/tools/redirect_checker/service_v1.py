@@ -302,6 +302,93 @@ def _make_scenario(
     }
 
 
+def _check_js_redirect(url: str, timeout: int = 15000, use_proxy: bool = False) -> Dict[str, Any]:
+    """Detect JavaScript-triggered redirects using Playwright."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return {"status": "skipped", "reason": "Playwright not available"}
+
+    try:
+        with sync_playwright() as p:
+            launch_kwargs: Dict[str, Any] = {"headless": True, "args": ["--no-sandbox"]}
+            if use_proxy:
+                from app.proxy import get_playwright_proxy
+                pw_proxy = get_playwright_proxy()
+                if pw_proxy:
+                    launch_kwargs["proxy"] = pw_proxy
+            browser = p.chromium.launch(**launch_kwargs)
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+            )
+            page = context.new_page()
+
+            redirects: List[Dict[str, str]] = []
+            page.on(
+                "request",
+                lambda req: redirects.append({"url": req.url, "method": req.method})
+                if req.is_navigation_request()
+                else None,
+            )
+
+            started = time.perf_counter()
+            response = page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+            try:
+                page.wait_for_load_state("networkidle", timeout=min(timeout, 8000))
+            except Exception:
+                pass
+
+            final_url = page.url
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+
+            # Check for meta refresh
+            meta_refresh = page.evaluate(
+                """
+                () => {
+                    const meta = document.querySelector('meta[http-equiv="refresh"]');
+                    return meta ? meta.getAttribute('content') : null;
+                }
+            """
+            )
+
+            # Check for JS redirect patterns in source
+            js_redirect_detected = page.evaluate(
+                """
+                () => {
+                    const scripts = document.querySelectorAll('script');
+                    let found = false;
+                    scripts.forEach(s => {
+                        const t = s.textContent || '';
+                        if (t.includes('location.href') || t.includes('location.replace') ||
+                            t.includes('window.location') || t.includes('location.assign')) {
+                            found = true;
+                        }
+                    });
+                    return found;
+                }
+            """
+            )
+
+            context.close()
+            browser.close()
+
+            is_js_redirect = final_url.rstrip("/") != url.rstrip("/")
+
+            return {
+                "status": "checked",
+                "original_url": url,
+                "final_url": final_url,
+                "is_js_redirect": is_js_redirect,
+                "js_redirect_code_detected": js_redirect_detected,
+                "meta_refresh": meta_refresh,
+                "navigation_requests": len(redirects),
+                "redirect_chain": redirects[:10],
+                "elapsed_ms": elapsed_ms,
+            }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
 def run_redirect_checker(
     *,
     url: str,
@@ -318,7 +405,7 @@ def run_redirect_checker(
     progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> Dict[str, Any]:
     started = time.perf_counter()
-    total_scenarios = 17
+    total_scenarios = 18
 
     normalized_input = _normalize_http_input(url)
     if not normalized_input:
@@ -1166,6 +1253,58 @@ def run_redirect_checker(
             recommendation=rec_soft404,
             test_url=url_404,
             trace=trace_404,
+        )
+    )
+
+    # 18) JavaScript / Meta Refresh redirect detection
+    _notify_progress(18, "js_redirect", "JavaScript / Meta Refresh Redirects", normalized_input)
+    js_result = _check_js_redirect(normalized_input, use_proxy=use_proxy)
+    js_status = "passed"
+    js_recommendation = ""
+    if js_result.get("status") == "skipped":
+        js_status = "info"
+        js_recommendation = js_result.get("reason", "Playwright not available")
+        js_actual = "skipped"
+    elif js_result.get("status") == "error":
+        js_status = "info"
+        js_recommendation = f"Could not check JS redirects: {js_result.get('error', 'unknown error')}"
+        js_actual = "error"
+    elif js_result.get("is_js_redirect"):
+        js_status = "warning"
+        js_recommendation = (
+            f"JavaScript redirect detected: {normalized_input} -> {js_result['final_url']}. "
+            "Use 301 redirect instead for SEO."
+        )
+        js_actual = f"JS redirect to {js_result.get('final_url', '-')}"
+    elif js_result.get("meta_refresh"):
+        js_status = "warning"
+        js_recommendation = (
+            f"Meta refresh redirect detected: {js_result['meta_refresh']}. "
+            "Use 301 redirect instead."
+        )
+        js_actual = f"Meta refresh: {js_result['meta_refresh']}"
+    elif js_result.get("js_redirect_code_detected"):
+        js_status = "info"
+        js_recommendation = "JavaScript redirect code found in source but not triggered during page load."
+        js_actual = "JS redirect code present but not triggered"
+    else:
+        js_actual = "No client-side redirects detected"
+
+    scenarios.append(
+        _make_scenario(
+            sid=18,
+            key="js_redirect",
+            title="JavaScript / Meta Refresh Redirects",
+            what_checked="Client-side redirect detection via Playwright rendering",
+            status=js_status,
+            expected="No client-side redirects (use 301 instead)",
+            actual=js_actual,
+            recommendation=js_recommendation,
+            test_url=normalized_input,
+            duration_ms=js_result.get("elapsed_ms", 0),
+            details={
+                "js_result": js_result,
+            },
         )
     )
 

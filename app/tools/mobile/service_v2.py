@@ -121,9 +121,10 @@ def _safe_int(value: Any, default: int = 0) -> int:
 
 
 class MobileCheckServiceV2:
-    def __init__(self, timeout: int = 20, use_proxy: bool = False):
+    def __init__(self, timeout: int = 20, use_proxy: bool = False, throttle: str = "none"):
         self.timeout = timeout
         self.use_proxy = use_proxy
+        self.throttle = throttle if throttle in ("none", "3g", "4g") else "none"
 
     def _select_devices(self, mode: str = "full", selected: Optional[List[str]] = None) -> List[MobileDevice]:
         by_name = {d.name: d for d in DEVICE_PROFILES}
@@ -226,12 +227,131 @@ class MobileCheckServiceV2:
             issues.append({"severity": "info", "code": "nav_menu", "title": "Не найдено мобильное меню", "details": "Навигация может быть неудобной на узких экранах."})
         return issues
 
+    def _apply_throttling(self, context, page) -> None:
+        """Apply network throttling via CDP for realistic mobile testing."""
+        throttle_profile = self.throttle
+        if throttle_profile == "none":
+            return
+        try:
+            cdp = context.new_cdp_session(page)
+            if throttle_profile == "3g":
+                cdp.send("Network.emulateNetworkConditions", {
+                    "offline": False,
+                    "downloadThroughput": int(1.6 * 1024 * 1024 / 8),  # 1.6 Mbps
+                    "uploadThroughput": int(750 * 1024 / 8),  # 750 Kbps
+                    "latency": 300,  # 300ms RTT
+                })
+            elif throttle_profile == "4g":
+                cdp.send("Network.emulateNetworkConditions", {
+                    "offline": False,
+                    "downloadThroughput": int(9 * 1024 * 1024 / 8),  # 9 Mbps
+                    "uploadThroughput": int(1.5 * 1024 * 1024 / 8),  # 1.5 Mbps
+                    "latency": 70,  # 70ms RTT
+                })
+        except Exception:
+            # CDP throttling is best-effort; do not fail the audit if unsupported.
+            pass
+
+    def _evaluate_wcag(self, page) -> Dict[str, Any]:
+        """Run basic WCAG AA accessibility checks via JS evaluation."""
+        wcag_js = """
+        () => {
+            const issues = [];
+            // 1. Images without alt text
+            const imgs = document.querySelectorAll('img:not([alt])');
+            if (imgs.length > 0) issues.push({code: 'img_no_alt', count: imgs.length, severity: 'warning', title: 'Images without alt text'});
+
+            // 2. Form inputs without labels
+            const inputs = document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"])');
+            let unlabeled = 0;
+            inputs.forEach(inp => {
+                const id = inp.id;
+                const hasLabel = id && document.querySelector('label[for="' + id + '"]');
+                const hasAriaLabel = inp.getAttribute('aria-label') || inp.getAttribute('aria-labelledby');
+                const hasPlaceholder = inp.getAttribute('placeholder');
+                if (!hasLabel && !hasAriaLabel && !hasPlaceholder) unlabeled++;
+            });
+            if (unlabeled > 0) issues.push({code: 'input_no_label', count: unlabeled, severity: 'warning', title: 'Form inputs without labels'});
+
+            // 3. Missing lang attribute
+            if (!document.documentElement.getAttribute('lang')) issues.push({code: 'no_lang', count: 1, severity: 'info', title: 'Missing lang attribute on html'});
+
+            // 4. Empty links/buttons
+            const emptyLinks = [...document.querySelectorAll('a')].filter(a => !(a.textContent || '').trim() && !a.querySelector('img') && !a.getAttribute('aria-label')).length;
+            if (emptyLinks > 0) issues.push({code: 'empty_links', count: emptyLinks, severity: 'warning', title: 'Empty links without text or aria-label'});
+
+            // 5. Skip nav detection
+            const hasSkipNav = !!document.querySelector('a[href="#main"], a[href="#content"], [class*="skip"]');
+            if (!hasSkipNav) issues.push({code: 'no_skip_nav', count: 1, severity: 'info', title: 'No skip navigation link found'});
+
+            return {issues, checked: true};
+        }
+        """
+        try:
+            return page.evaluate(wcag_js)
+        except Exception:
+            return {"issues": [], "checked": False}
+
+    def _evaluate_contrast(self, page) -> Dict[str, Any]:
+        """Run simplified WCAG AA color contrast checks via JS evaluation."""
+        contrast_js = r"""
+        () => {
+            function luminance(r, g, b) {
+                const [rs, gs, bs] = [r, g, b].map(c => {
+                    c = c / 255;
+                    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+                });
+                return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
+            }
+            function contrastRatio(l1, l2) {
+                const lighter = Math.max(l1, l2);
+                const darker = Math.min(l1, l2);
+                return (lighter + 0.05) / (darker + 0.05);
+            }
+            function parseColor(color) {
+                const m = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+                return m ? [parseInt(m[1]), parseInt(m[2]), parseInt(m[3])] : null;
+            }
+
+            const failures = [];
+            const textEls = document.querySelectorAll('p, span, a, li, h1, h2, h3, h4, h5, h6, td, th, label, button');
+            let checked = 0, failed = 0;
+            const maxCheck = 200;
+
+            for (const el of textEls) {
+                if (checked >= maxCheck) break;
+                const style = getComputedStyle(el);
+                const fg = parseColor(style.color);
+                const bg = parseColor(style.backgroundColor);
+                if (!fg || !bg) continue;
+                if (bg[0] === 0 && bg[1] === 0 && bg[2] === 0 && style.backgroundColor.includes('0)')) continue;
+                checked++;
+                const ratio = contrastRatio(luminance(...fg), luminance(...bg));
+                const fontSize = parseFloat(style.fontSize);
+                const isLarge = fontSize >= 18 || (fontSize >= 14 && style.fontWeight >= 700);
+                const minRatio = isLarge ? 3.0 : 4.5;
+                if (ratio < minRatio) {
+                    failed++;
+                    if (failures.length < 10) {
+                        failures.push({tag: el.tagName.toLowerCase(), text: (el.textContent||'').trim().substring(0,50), ratio: Math.round(ratio*100)/100, required: minRatio});
+                    }
+                }
+            }
+            return {checked, failed, failures, pass_rate: checked > 0 ? Math.round((checked - failed) / checked * 100) : 100};
+        }
+        """
+        try:
+            return page.evaluate(contrast_js)
+        except Exception:
+            return {"checked": 0, "failed": 0, "failures": [], "pass_rate": 100}
+
     def run(
         self,
         url: str,
         task_id: str,
         mode: str = "full",
         selected_devices: Optional[List[str]] = None,
+        throttle: str = "none",
         progress_callback=None,
     ) -> Dict[str, Any]:
         def _notify(progress: int, message: str) -> None:
@@ -240,6 +360,10 @@ class MobileCheckServiceV2:
                     progress_callback(progress, message)
                 except Exception:
                     pass
+
+        # Allow run-time throttle override
+        if throttle in ("3g", "4g"):
+            self.throttle = throttle
 
         devices = self._select_devices(mode=mode, selected=selected_devices)
         _notify(8, "Получение метаданных страницы")
@@ -295,12 +419,16 @@ class MobileCheckServiceV2:
                     user_agent=device.user_agent,
                 )
                 page = context.new_page()
+                # Apply network throttling for realistic mobile testing
+                self._apply_throttling(context, page)
                 console_errors = []
                 page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
                 status_code = None
                 final_url = prefetch.get("final_url") or url
                 error = None
                 eval_data: Dict[str, Any] = {}
+                wcag_data: Dict[str, Any] = {}
+                contrast_data: Dict[str, Any] = {}
                 try:
                     try:
                         response = page.goto(url, wait_until="networkidle", timeout=self.timeout * 1000)
@@ -310,6 +438,8 @@ class MobileCheckServiceV2:
                     final_url = page.url or final_url
                     page.screenshot(path=str(shot_path), full_page=True)
                     eval_data = self._evaluate_page(page)
+                    wcag_data = self._evaluate_wcag(page)
+                    contrast_data = self._evaluate_contrast(page)
                 except Exception as e:
                     error = str(e)
                 finally:
@@ -321,6 +451,22 @@ class MobileCheckServiceV2:
 
                 elapsed_ms = int((time.perf_counter() - started) * 1000)
                 issues = self._collect_issues(eval_data, prefetch.get("viewport_content"), len(console_errors))
+                # WCAG accessibility issues
+                for wcag_issue in (wcag_data.get("issues") or []):
+                    issues.append({
+                        "severity": wcag_issue.get("severity", "info"),
+                        "code": wcag_issue.get("code", "wcag_issue"),
+                        "title": wcag_issue.get("title", "Accessibility issue"),
+                        "details": f"{wcag_issue.get('count', 0)} element(s) affected.",
+                    })
+                # Contrast issues
+                if contrast_data.get("failed", 0) > 0:
+                    issues.append({
+                        "severity": "warning",
+                        "code": "low_contrast",
+                        "title": "Low contrast text found",
+                        "details": f"{contrast_data['failed']} elements below WCAG AA threshold (checked {contrast_data.get('checked', 0)}, pass rate {contrast_data.get('pass_rate', 100)}%).",
+                    })
                 if error:
                     issues.insert(0, {"severity": "critical", "code": "runtime_error", "title": "Device check failed", "details": error})
                 global_issues.extend([{**issue, "device": device.name} for issue in issues])
@@ -340,6 +486,9 @@ class MobileCheckServiceV2:
                         "mobile_friendly": mobile_friendly,
                         "issues_count": len(issues),
                         "issues": issues,
+                        "accessibility": wcag_data,
+                        "contrast": contrast_data,
+                        "throttle_profile": self.throttle,
                         "screenshot_path": str(shot_path),
                         "screenshot_name": shot_name,
                         "screenshot_url": f"/api/mobile-artifacts/{task_id}/{shot_name}",
@@ -363,6 +512,8 @@ class MobileCheckServiceV2:
                     user_agent=device.user_agent,
                 )
                 page = context.new_page()
+                # Apply network throttling for landscape pass as well
+                self._apply_throttling(context, page)
                 ls_console_errors = []
                 page.on("console", lambda msg: ls_console_errors.append(msg.text) if msg.type == "error" else None)
                 ls_status_code = None
@@ -465,6 +616,7 @@ class MobileCheckServiceV2:
             "results": {
                 "engine": "v2",
                 "mode": mode,
+                "throttle_profile": self.throttle,
                 "status_code": prefetch.get("status_code"),
                 "final_url": prefetch.get("final_url"),
                 "viewport_found": prefetch.get("has_viewport"),

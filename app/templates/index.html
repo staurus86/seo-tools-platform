@@ -193,6 +193,14 @@
                     <option value="full">Полный (стандартный набор устройств)</option>
                 </select>
             </div>
+            <div>
+                <label class="block text-sm font-medium mb-1" style="color:var(--ds-text-secondary);">Эмуляция сети</label>
+                <select name="throttle" class="ds-select text-sm focus:ring-2 focus:ring-pink-500">
+                    <option value="none" selected>No throttling</option>
+                    <option value="4g">4G (9 Mbps, 70ms)</option>
+                    <option value="3g">3G (1.6 Mbps, 300ms)</option>
+                </select>
+            </div>
             <details class="rounded-lg border p-3" style="border-color:var(--ds-border);background:var(--ds-surface-soft);">
                 <summary class="cursor-pointer text-sm font-medium" style="color:#ec4899;">Кастомные устройства (опционально)</summary>
                 <p class="mt-2 text-xs" style="color:var(--ds-text-muted);">Если ничего не выбрано, используются устройства режима по умолчанию.</p>

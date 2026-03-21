@@ -18,15 +18,54 @@ from app.tools.http_text import decode_response_text
 _TOKEN_RE = re.compile(r"[A-Za-zА-Яа-яЁё0-9]+", re.IGNORECASE)
 _SENTENCE_SPLIT_RE = re.compile(r"[.!?]+")
 
-_STOPWORDS_RU = {
-    "и", "в", "во", "на", "с", "со", "по", "под", "над", "к", "ко", "у", "о", "об", "от", "до", "для",
-    "не", "ни", "это", "как", "а", "но", "или", "ли", "же", "бы", "что", "чтобы", "из", "за", "при",
-    "мы", "вы", "они", "он", "она", "оно", "их", "его", "ее", "наш", "ваш", "этот", "эта", "эти",
+_STOPWORDS_BY_LANG = {
+    "en": {
+        "the", "a", "an", "and", "or", "but", "if", "for", "to", "of", "in", "on", "at", "from", "with",
+        "by", "as", "is", "are", "was", "were", "be", "been", "it", "this", "that", "these", "those",
+        "we", "you", "they", "he", "she", "them", "our", "your",
+    },
+    "ru": {
+        "и", "в", "во", "на", "с", "со", "по", "под", "над", "к", "ко", "у", "о", "об", "от", "до", "для",
+        "не", "ни", "это", "как", "а", "но", "или", "ли", "же", "бы", "что", "чтобы", "из", "за", "при",
+        "мы", "вы", "они", "он", "она", "оно", "их", "его", "ее", "наш", "ваш", "этот", "эта", "эти",
+    },
+    "de": {"der", "die", "das", "und", "ist", "ein", "eine", "nicht", "ich", "mit", "auf", "den", "von", "zu"},
+    "fr": {"le", "la", "les", "de", "des", "un", "une", "et", "est", "que", "dans", "pour", "pas", "qui", "sur"},
+    "es": {"el", "la", "los", "las", "de", "del", "en", "un", "una", "que", "por", "con", "para", "como", "es"},
+    "it": {"il", "lo", "la", "le", "di", "del", "che", "un", "una", "per", "con", "non", "sono", "come", "nel"},
+    "pt": {"o", "a", "os", "as", "de", "do", "da", "em", "um", "uma", "que", "para", "com", "por", "como"},
+    "tr": {"bir", "bu", "ve", "ile", "de", "da", "için", "olan", "gibi", "daha", "ben", "var", "ne", "çok"},
+    "pl": {"nie", "się", "jest", "na", "to", "że", "jak", "ale", "czy", "tak", "już", "od", "do", "po"},
+    "uk": {"це", "що", "для", "або", "якщо", "без", "при", "під", "над", "бути", "є", "так", "вони"},
 }
-_STOPWORDS_EN = {
-    "the", "a", "an", "and", "or", "but", "if", "for", "to", "of", "in", "on", "at", "from", "with",
-    "by", "as", "is", "are", "was", "were", "be", "been", "it", "this", "that", "these", "those",
-    "we", "you", "they", "he", "she", "them", "our", "your",
+_STOPWORDS_RU = _STOPWORDS_BY_LANG["ru"]
+_STOPWORDS_EN = _STOPWORDS_BY_LANG["en"]
+
+# Language-appropriate sentence length thresholds for readability
+_LONG_SENTENCE_THRESHOLD = {
+    "en": 25,
+    "ru": 28,
+    "de": 30,
+    "fr": 27,
+    "es": 27,
+    "it": 27,
+    "pt": 27,
+    "tr": 25,
+    "pl": 28,
+    "uk": 28,
+}
+
+# Language detection heuristics: character ranges
+_LANG_CHAR_PATTERNS = {
+    "ru": re.compile(r"[а-яёА-ЯЁ]"),
+    "uk": re.compile(r"[іїєґІЇЄҐ]"),
+    "de": re.compile(r"[äöüßÄÖÜ]"),
+    "fr": re.compile(r"[àâçéèêëîïôùûüÿœæ]", re.IGNORECASE),
+    "es": re.compile(r"[ñ¿¡áéíóú]", re.IGNORECASE),
+    "it": re.compile(r"[àèéìíîòóùú]", re.IGNORECASE),
+    "pt": re.compile(r"[ãõçâêôà]", re.IGNORECASE),
+    "tr": re.compile(r"[çğıöşüÇĞİÖŞÜ]"),
+    "pl": re.compile(r"[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]"),
 }
 
 
@@ -304,6 +343,95 @@ class OnPageAuditServiceV1:
                 }
             )
         return rows
+
+    def _detect_language(self, page_lang: str, visible_text: str) -> str:
+        """Detect language from html lang attr, then fallback to character heuristics."""
+        if page_lang:
+            lang_code = page_lang.lower().split("-")[0].split("_")[0]
+            if lang_code in _STOPWORDS_BY_LANG:
+                return lang_code
+        # Character-based heuristic
+        sample = visible_text[:3000]
+        scores: Dict[str, int] = {}
+        for lang, pattern in _LANG_CHAR_PATTERNS.items():
+            scores[lang] = len(pattern.findall(sample))
+        if scores:
+            best = max(scores, key=lambda k: scores[k])
+            if scores[best] > 10:
+                return best
+        # Default to en
+        return "en"
+
+    def _check_page_links(self, links: list, max_check: int = 200, batch_size: int = 30) -> Dict[str, Any]:
+        """Check links for broken status in batches."""
+        import time as _time
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        unique = list(set(links))[:max_check]
+        results: List[Dict[str, Any]] = []
+        for i in range(0, len(unique), batch_size):
+            batch = unique[i:i + batch_size]
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                futures = {executor.submit(self._head_check, url): url for url in batch}
+                for f in as_completed(futures):
+                    try:
+                        results.append(f.result())
+                    except Exception:
+                        results.append({"url": futures[f], "is_broken": True, "error": "check failed"})
+            if i + batch_size < len(unique):
+                _time.sleep(0.3)
+        broken = [r for r in results if r.get("is_broken")]
+        return {"total_checked": len(results), "broken_count": len(broken), "broken": broken[:50]}
+
+    def _head_check(self, url: str) -> Dict[str, Any]:
+        """Check a single URL via HEAD (fallback to GET on 405)."""
+        try:
+            resp = requests.head(url, timeout=8, allow_redirects=True, headers={"User-Agent": "Mozilla/5.0"})
+            if resp.status_code == 405:
+                resp = requests.get(url, timeout=8, allow_redirects=True, headers={"User-Agent": "Mozilla/5.0"}, stream=True)
+            return {"url": url, "status_code": resp.status_code, "is_broken": resp.status_code >= 400}
+        except Exception as e:
+            return {"url": url, "status_code": None, "is_broken": True, "error": str(e)}
+
+    def _serp_preview(self, title: str, description: str, url: str) -> Dict[str, Any]:
+        """Generate SERP preview data for Google and Yandex."""
+        google_title_limit = 60
+        google_desc_limit = 160
+
+        title_display = title[:google_title_limit] + "..." if len(title) > google_title_limit else title
+        desc_display = description[:google_desc_limit] + "..." if len(description) > google_desc_limit else description
+
+        parsed = urlparse(url)
+        breadcrumb = parsed.netloc + parsed.path.rstrip("/").replace("/", " \u203a ")
+        if len(breadcrumb) > 70:
+            breadcrumb = breadcrumb[:67] + "..."
+
+        serp_issues: List[Dict[str, Any]] = []
+        if len(title) > google_title_limit:
+            serp_issues.append({"severity": "warning", "title": f"Title will be truncated in Google ({len(title)} > {google_title_limit} chars)"})
+        if len(description) > google_desc_limit:
+            serp_issues.append({"severity": "info", "title": f"Description will be truncated in Google ({len(description)} > {google_desc_limit} chars)"})
+        if not title.strip():
+            serp_issues.append({"severity": "warning", "title": "Title is empty — search engines will auto-generate"})
+
+        return {
+            "google": {
+                "title": title_display,
+                "title_truncated": len(title) > google_title_limit,
+                "title_pixel_width_est": len(title) * 8,
+                "description": desc_display,
+                "description_truncated": len(description) > google_desc_limit,
+                "breadcrumb": breadcrumb,
+                "url": url,
+            },
+            "yandex": {
+                "title": title[:70] + "..." if len(title) > 70 else title,
+                "title_truncated": len(title) > 70,
+                "description": description[:240] + "..." if len(description) > 240 else description,
+                "description_truncated": len(description) > 240,
+                "url": url,
+            },
+            "issues": serp_issues,
+        }
 
     def _build_issues(
         self,
@@ -721,12 +849,9 @@ class OnPageAuditServiceV1:
 
         page_lang = _norm_text(soup.html.get("lang") if soup.html else "")
         if language == "auto":
-            if page_lang.lower().startswith("ru"):
-                language = "ru"
-            elif page_lang.lower().startswith("en"):
-                language = "en"
-            else:
-                language = "ru"
+            # Collect visible text early for language detection heuristic
+            _temp_text = self._collect_visible_text(BeautifulSoup(raw_html, "html.parser"))
+            language = self._detect_language(page_lang, _temp_text)
 
         title = _norm_text(soup.title.string if soup.title else "")
         description = ""
@@ -748,14 +873,15 @@ class OnPageAuditServiceV1:
         sentences = [s.strip() for s in _SENTENCE_SPLIT_RE.split(visible_text) if s.strip()]
         sentence_lengths = [len(_tokens(s)) for s in sentences]
         avg_sentence_len = round(sum(sentence_lengths) / max(1, len(sentence_lengths)), 2)
-        long_sentence_ratio = sum(1 for ln in sentence_lengths if ln >= 25) / max(1, len(sentence_lengths))
+        long_sent_threshold = _LONG_SENTENCE_THRESHOLD.get(language, 25)
+        long_sentence_ratio = sum(1 for ln in sentence_lengths if ln >= long_sent_threshold) / max(1, len(sentence_lengths))
         lexical_diversity = unique_words / max(1, total_words)
         sentence_norm = [re.sub(r"\s+", " ", s.lower()) for s in sentences if len(_tokens(s)) >= 6]
         sentence_counts = Counter(sentence_norm)
         duplicate_sentences = sum(c - 1 for c in sentence_counts.values() if c > 1)
         duplicate_sentence_ratio = duplicate_sentences / max(1, len(sentence_norm))
 
-        stopwords = _STOPWORDS_RU if language == "ru" else _STOPWORDS_EN
+        stopwords = _STOPWORDS_BY_LANG.get(language, _STOPWORDS_EN)
         content_tokens = [t for t in all_tokens if t not in stopwords and len(t) > 2]
         content_counts = Counter(content_tokens)
         core_vocabulary = len(set(content_tokens))
@@ -811,6 +937,19 @@ class OnPageAuditServiceV1:
                 internal_links += 1
             else:
                 external_links += 1
+
+        # Task 5.2: Broken link checking (batched)
+        all_link_urls = []
+        for a in soup.find_all("a"):
+            href = _norm_text(a.get("href"))
+            if href and not href.startswith("#") and not href.startswith("javascript:") and not href.startswith("mailto:") and not href.startswith("tel:"):
+                full_href = urljoin(base_url, href)
+                if full_href.startswith(("http://", "https://")):
+                    all_link_urls.append(full_href)
+        broken_links = self._check_page_links(all_link_urls)
+
+        # Task 5.4: SERP Preview
+        serp_preview = self._serp_preview(title, description, final_url)
 
         images = soup.find_all("img")
         images_total = len(images)
@@ -1237,9 +1376,11 @@ class OnPageAuditServiceV1:
                 "opengraph": opengraph,
                 "twitter_cards": twitter_cards,
                 "links": links,
+                "broken_links": broken_links,
                 "link_anchor_terms": link_anchor_terms,
                 "media": media,
                 "readability": readability,
+                "serp_preview": serp_preview,
                 "ai_insights": ai_insights,
                 "spam_signals": spam_signals,
                 "heatmap": heatmap,

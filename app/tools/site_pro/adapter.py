@@ -260,6 +260,157 @@ class SiteAuditProAdapter:
                     )
                 )
 
+    def _extract_all_links(
+        self, page_url: str, soup: BeautifulSoup, base_host: str,
+    ) -> Tuple[List[str], List[str]]:
+        """Return (internal_links, external_links) as resolved absolute URLs."""
+        internal: List[str] = []
+        external: List[str] = []
+        for tag in soup.find_all("a", href=True):
+            href = (tag.get("href") or "").strip()
+            if not href or href.startswith(("mailto:", "tel:", "javascript:", "#")):
+                continue
+            candidate = self._normalize_url(urljoin(page_url, href))
+            parsed = urlparse(candidate)
+            if not parsed.scheme.startswith("http"):
+                continue
+            if parsed.netloc == base_host:
+                internal.append(candidate)
+            else:
+                external.append(candidate)
+        return internal, external
+
+    def _extract_image_urls(
+        self, page_url: str, soup: BeautifulSoup,
+    ) -> List[str]:
+        """Extract image URLs from <img src> and <picture><source srcset>."""
+        urls: List[str] = []
+        for img in soup.find_all("img", src=True):
+            src = (img.get("src") or "").strip()
+            if src:
+                urls.append(self._normalize_url(urljoin(page_url, src)))
+        for source in soup.find_all("source", srcset=True):
+            if source.find_parent("picture"):
+                srcset = (source.get("srcset") or "").strip()
+                if srcset:
+                    # srcset may contain multiple entries like "url 1x, url 2x"
+                    for entry in srcset.split(","):
+                        parts = entry.strip().split()
+                        if parts:
+                            urls.append(self._normalize_url(urljoin(page_url, parts[0])))
+        return urls
+
+    def _check_links_batch(
+        self,
+        links: list,
+        session: requests.Session,
+        batch_size: int = 50,
+        max_workers: int = 10,
+    ) -> list:
+        """Check links in batches to avoid server overload."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import time
+
+        results = []
+        for i in range(0, len(links), batch_size):
+            batch = links[i : i + batch_size]
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {}
+                for link in batch:
+                    futures[executor.submit(self._check_single_link, link, session)] = link
+                for future in as_completed(futures):
+                    link = futures[future]
+                    try:
+                        results.append(future.result())
+                    except Exception as e:
+                        results.append({"url": link, "status_code": None, "is_broken": True, "error": str(e)})
+            time.sleep(0.5)  # pause between batches
+        return results
+
+    def _check_single_link(self, url: str, session: requests.Session) -> dict:
+        """HEAD request to check if link is alive. Falls back to GET on 405."""
+        try:
+            resp = session.head(url, timeout=8, allow_redirects=True)
+            if resp.status_code == 405:
+                resp = session.get(url, timeout=8, allow_redirects=True, stream=True)
+                resp.close()
+            return {
+                "url": url,
+                "status_code": resp.status_code,
+                "is_broken": resp.status_code >= 400,
+                "redirect_url": str(resp.url) if str(resp.url) != url else None,
+                "response_time_ms": int(resp.elapsed.total_seconds() * 1000),
+            }
+        except requests.Timeout:
+            return {"url": url, "status_code": None, "is_broken": True, "error": "timeout"}
+        except Exception as e:
+            return {"url": url, "status_code": None, "is_broken": True, "error": str(e)}
+
+    def _check_images_batch(
+        self,
+        image_urls: list,
+        session: requests.Session,
+        batch_size: int = 50,
+        max_workers: int = 10,
+    ) -> list:
+        """HEAD-check images in batches to get size and content-type."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import time
+
+        results = []
+        for i in range(0, len(image_urls), batch_size):
+            batch = image_urls[i : i + batch_size]
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {}
+                for img_url in batch:
+                    futures[executor.submit(self._head_image, img_url, session)] = img_url
+                for future in as_completed(futures):
+                    img_url = futures[future]
+                    try:
+                        results.append(future.result())
+                    except Exception:
+                        results.append({"url": img_url, "size_bytes": 0, "format": "other"})
+            time.sleep(0.3)
+        return results
+
+    def _head_image(self, url: str, session: requests.Session) -> dict:
+        """HEAD request for an image URL to get Content-Length and Content-Type."""
+        try:
+            resp = session.head(url, timeout=8, allow_redirects=True)
+            content_type = (resp.headers.get("Content-Type") or "").lower()
+            content_length = int(resp.headers.get("Content-Length") or 0)
+            fmt = "other"
+            if "webp" in content_type:
+                fmt = "webp"
+            elif "avif" in content_type:
+                fmt = "avif"
+            elif "svg" in content_type:
+                fmt = "svg"
+            elif "png" in content_type:
+                fmt = "png"
+            elif "gif" in content_type:
+                fmt = "gif"
+            elif "jpeg" in content_type or "jpg" in content_type:
+                fmt = "jpeg"
+            elif not content_type:
+                # Fallback: detect from URL extension
+                lower_url = url.lower().split("?")[0]
+                if lower_url.endswith(".webp"):
+                    fmt = "webp"
+                elif lower_url.endswith(".avif"):
+                    fmt = "avif"
+                elif lower_url.endswith(".svg"):
+                    fmt = "svg"
+                elif lower_url.endswith(".png"):
+                    fmt = "png"
+                elif lower_url.endswith(".gif"):
+                    fmt = "gif"
+                elif lower_url.endswith((".jpg", ".jpeg")):
+                    fmt = "jpeg"
+            return {"url": url, "size_bytes": content_length, "format": fmt}
+        except Exception:
+            return {"url": url, "size_bytes": 0, "format": "other"}
+
     def _extract_anchor_data(
         self, page_url: str, soup: BeautifulSoup, base_host: str
     ) -> Tuple[List[str], int, int, int, int, int]:
@@ -1128,6 +1279,11 @@ class SiteAuditProAdapter:
         incoming_counts: Counter = Counter()
         page_texts: Dict[str, str] = {}
         anchor_quality_raw: Dict[str, Tuple[int, int]] = {}
+        # Broken link checking: link_url -> set of pages where it was found
+        all_discovered_links: Dict[str, Set[str]] = defaultdict(set)
+        # Image analysis: collect unique image URLs per page
+        all_image_urls: Dict[str, Set[str]] = defaultdict(set)
+        all_image_urls_global: Set[str] = set()
 
         session = requests.Session()
         session.headers.update({"User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"})
@@ -1194,6 +1350,16 @@ class SiteAuditProAdapter:
                         depth_by_url[link_norm] = current_depth + 1
                     if (not effective_batch_mode) and link not in visited and len(visited) + len(queue) < page_limit * 2:
                         queue.append(link)
+
+                # Collect links and images for post-crawl analysis
+                _page_soup = BeautifulSoup(raw_html or "", "html.parser")
+                _int_links, _ext_links = self._extract_all_links(final_url, _page_soup, base_host)
+                for _lnk in _int_links + _ext_links:
+                    all_discovered_links[_lnk].add(current)
+                _img_urls = self._extract_image_urls(final_url, _page_soup)
+                for _img in _img_urls:
+                    all_image_urls[current].add(_img)
+                    all_image_urls_global.add(_img)
             except Exception as exc:
                 crawl_errors.append(f"{current}: {exc}")
                 rows.append(
@@ -1231,6 +1397,126 @@ class SiteAuditProAdapter:
                     "current_url": current,
                 },
             )
+
+        # ── Broken Link Checking (Task 1.3) ──────────────────────────────
+        _MAX_LINK_CHECK = 2000
+        links_to_check = sorted(all_discovered_links.keys())
+        broken_links_note: Optional[str] = None
+        if len(links_to_check) > _MAX_LINK_CHECK:
+            broken_links_note = f"Only first {_MAX_LINK_CHECK} of {len(links_to_check)} unique links were checked."
+            links_to_check = links_to_check[:_MAX_LINK_CHECK]
+
+        notify(72, "Checking links for broken URLs…")
+        link_check_results = self._check_links_batch(links_to_check, session) if links_to_check else []
+
+        broken_items = []
+        redirected_items = []
+        for item in link_check_results:
+            if item.get("is_broken"):
+                found_on = sorted(all_discovered_links.get(item["url"], set()))[:10]
+                broken_items.append({**item, "found_on": found_on})
+            elif item.get("redirect_url"):
+                redirected_items.append(item)
+
+        broken_links_data: Dict[str, Any] = {
+            "total_checked": len(link_check_results),
+            "broken_count": len(broken_items),
+            "broken": broken_items[:200],
+            "redirected": redirected_items[:200],
+        }
+        if broken_links_note:
+            broken_links_data["note"] = broken_links_note
+
+        # ── Image Analysis (Task 1.4) ─────────────────────────────────
+        _MAX_IMAGE_CHECK = 500
+        total_images_found = len(all_image_urls_global)
+        images_sample = sorted(all_image_urls_global)[:_MAX_IMAGE_CHECK]
+
+        notify(78, "Analyzing images…")
+        image_check_results = self._check_images_batch(images_sample, session) if images_sample else []
+
+        format_counts: Dict[str, int] = {"jpeg": 0, "png": 0, "webp": 0, "avif": 0, "svg": 0, "gif": 0, "other": 0}
+        large_images: List[Dict[str, Any]] = []
+        total_size = 0
+        for img_result in image_check_results:
+            fmt = img_result.get("format", "other")
+            if fmt in format_counts:
+                format_counts[fmt] += 1
+            else:
+                format_counts["other"] += 1
+            sz = int(img_result.get("size_bytes") or 0)
+            total_size += sz
+            if sz > 200 * 1024:
+                large_images.append(img_result)
+
+        checked_count = len(image_check_results)
+        modern_count = format_counts["webp"] + format_counts["avif"] + format_counts["svg"]
+        modern_format_pct = round((modern_count / max(1, checked_count)) * 100.0, 1)
+        legacy_count = format_counts["jpeg"] + format_counts["png"] + format_counts["gif"]
+
+        image_analysis_data: Dict[str, Any] = {
+            "total_images": total_images_found,
+            "checked": checked_count,
+            "formats": format_counts,
+            "modern_format_pct": modern_format_pct,
+            "large_images": sorted(large_images, key=lambda x: x.get("size_bytes", 0), reverse=True)[:50],
+            "missing_modern_format": legacy_count,
+            "total_size_bytes": total_size,
+            "avg_size_bytes": round(total_size / max(1, checked_count)),
+        }
+
+        # Add image-related issues to the first (homepage) row
+        _issue_target = rows[0] if rows else None
+        if _issue_target and checked_count > 0:
+            if modern_format_pct < 50.0:
+                _issue_target.issues.append(
+                    SiteAuditProIssue(
+                        severity="warning",
+                        code="low_modern_image_formats_site",
+                        title="Most images use legacy formats (JPEG/PNG). Consider WebP/AVIF.",
+                        details=f"Modern format: {modern_format_pct}% ({modern_count}/{checked_count})",
+                    )
+                )
+            very_large = [img for img in large_images if int(img.get("size_bytes") or 0) > 1024 * 1024]
+            large_over_500k = [img for img in large_images if int(img.get("size_bytes") or 0) > 500 * 1024]
+            if very_large:
+                _issue_target.issues.append(
+                    SiteAuditProIssue(
+                        severity="critical",
+                        code="very_large_images",
+                        title="Very large images found — significantly impacts page speed",
+                        details=f"{len(very_large)} images over 1MB",
+                    )
+                )
+            elif large_over_500k:
+                _issue_target.issues.append(
+                    SiteAuditProIssue(
+                        severity="warning",
+                        code="large_images",
+                        title=f"Large images found ({len(large_over_500k)}) — optimize for faster loading",
+                        details=f"{len(large_over_500k)} images over 500KB",
+                    )
+                )
+
+        # Add broken link issues to rows where broken links were found
+        if broken_items:
+            broken_urls_set = {item["url"] for item in broken_items}
+            for row in rows:
+                # Check both internal links (link_graph) and all discovered links from this page
+                page_internal = link_graph.get(row.url, set())
+                page_all = {lnk for lnk, sources in all_discovered_links.items() if row.url in sources}
+                broken_on_page = broken_urls_set & (page_internal | page_all)
+                if broken_on_page:
+                    row.issues.append(
+                        SiteAuditProIssue(
+                            severity="warning",
+                            code="broken_links_on_page",
+                            title=f"Page has {len(broken_on_page)} broken link(s)",
+                            details=", ".join(sorted(broken_on_page)[:5]),
+                        )
+                    )
+
+        notify(82, "Analyzing duplicates and structure…")
 
         duplicate_titles = {t for t, count in title_counter.items() if t and count > 1}
         duplicate_desc = {t for t, count in desc_counter.items() if t and count > 1}
@@ -1465,6 +1751,8 @@ class SiteAuditProAdapter:
             "homepage_security": homepage_security,
             "topic_clusters_count": len(topic_clusters),
             "semantic_suggestions": semantic_suggestions,
+            "broken_links": broken_links_data,
+            "image_analysis": image_analysis_data,
             "notes": [
                 "Lightweight crawl adapter is active",
                 "Full seopro calculation parity is pending",
