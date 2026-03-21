@@ -1050,13 +1050,9 @@ def _build_unified_xlsx(task_id: str, url: str, results: dict) -> str:
         _style_data_rows(ws_scores, 2, row_idx - 1, 3)
     _auto_width(ws_scores, 3)
 
-    # ── Sheet 3: Developer Tasks (ТЗ) ─────────────────────────────────
-    ws_tasks = wb.create_sheet("Developer Tasks")
+    # ── Sheet 3: ТЗ — Полное техническое задание ─────────────────────
+    ws_tasks = wb.create_sheet("ТЗ — Техническое задание")
     ws_tasks.sheet_properties.tabColor = "C2410C"
-    task_headers = ["#", "Priority", "Category", "Source Tool", "Title", "Description", "Owner", "Fix"]
-    for ci, h in enumerate(task_headers, 1):
-        ws_tasks.cell(row=1, column=ci, value=h)
-    _style_header(ws_tasks, 1, len(task_headers))
 
     priority_fills = {
         "P0": PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid"),
@@ -1064,28 +1060,178 @@ def _build_unified_xlsx(task_id: str, url: str, results: dict) -> str:
         "P2": PatternFill(start_color="FEF9C3", end_color="FEF9C3", fill_type="solid"),
         "P3": PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid"),
     }
+    priority_fonts = {
+        "P0": Font(bold=True, color="B91C1C"),
+        "P1": Font(bold=True, color="C2410C"),
+        "P2": Font(bold=False, color="92400E"),
+        "P3": Font(bold=False, color="166534"),
+    }
+
+    # Title row
+    ws_tasks.merge_cells("A1:J1")
+    title_cell = ws_tasks.cell(row=1, column=1, value=f"Техническое задание по SEO-аудиту — {url}")
+    title_cell.font = Font(bold=True, size=14, color="0F4C81")
+    title_cell.alignment = Alignment(horizontal="left", vertical="center")
+    ws_tasks.row_dimensions[1].height = 30
+
+    # Subtitle
+    ws_tasks.merge_cells("A2:J2")
+    sub_cell = ws_tasks.cell(row=2, column=1, value=f"Оценка: {results.get('overall_score', 'N/A')}/100 ({results.get('overall_grade', '?')}) | Дата: {generated_at}")
+    sub_cell.font = Font(size=10, color="666666")
+    sub_cell.alignment = Alignment(horizontal="left")
+
+    # Summary row
     dev_tasks = results.get("dev_tasks", []) or []
-    row_idx = 2
+    p0 = sum(1 for t in dev_tasks if t.get("priority") == "P0")
+    p1 = sum(1 for t in dev_tasks if t.get("priority") == "P1")
+    p2 = sum(1 for t in dev_tasks if t.get("priority") == "P2")
+    p3 = sum(1 for t in dev_tasks if t.get("priority") == "P3")
+    ws_tasks.merge_cells("A3:J3")
+    ws_tasks.cell(row=3, column=1, value=f"Всего задач: {len(dev_tasks)} | P0 (блокер): {p0} | P1 (критично): {p1} | P2 (важно): {p2} | P3 (рекомендация): {p3}")
+    ws_tasks.cell(row=3, column=1).font = Font(size=10, bold=True)
+    ws_tasks.row_dimensions[3].height = 22
+
+    # Headers
+    task_headers = [
+        "#", "Приоритет", "Статус", "Категория", "Инструмент",
+        "Что исправить", "Подробное описание", "Как исправить",
+        "Ответственный", "Срок",
+    ]
+    for ci, h in enumerate(task_headers, 1):
+        ws_tasks.cell(row=4, column=ci, value=h)
+    _style_header(ws_tasks, 4, len(task_headers))
+
+    # Priority to deadline mapping
+    deadline_map = {"P0": "Немедленно", "P1": "1-3 дня", "P2": "1-2 недели", "P3": "При возможности"}
+
+    # How-to-fix recommendations
+    fix_map = {
+        "Title length out of range": "Оптимизируйте <title> тег: 30-60 символов, включите основной ключ в начало.",
+        "Description length out of range": "Перепишите meta description: 120-160 символов, с CTA и ключевым словом.",
+        "Structured data is missing": "Добавьте JSON-LD разметку (Organization, WebPage, BreadcrumbList). Используйте Google Structured Data Testing Tool для проверки.",
+        "Twitter Card type not specified": "Добавьте <meta name=\"twitter:card\" content=\"summary_large_image\"> в <head>.",
+        "Twitter Card title missing": "Добавьте <meta name=\"twitter:title\" content=\"...\"> — можно дублировать OG title.",
+        "Twitter Card image not set": "Добавьте <meta name=\"twitter:image\" content=\"URL_изображения\"> — мин. 800×418px.",
+        "Low stopword ratio": "Увеличьте связность текста: добавьте предлоги, союзы, местоимения для естественности.",
+        "Bots cannot reach URL": "Проверьте firewall/WAF, убедитесь что боты не блокируются по IP/UA. Проверьте robots.txt.",
+        "Множественные слеши": "Настройте серверное правило: /page//path → 301 → /page/path.",
+        "Регистр URL": "Все URL должны быть в нижнем регистре. Добавьте 301 redirect /Page → /page.",
+        "Index-файлы": "Добавьте в nginx/Apache: rewrite ^/index\\.(html|php)$ / permanent;",
+        "Trailing slash": "Выберите единую политику (со слешем или без) и настройте 301 для несоответствий.",
+        "Старые расширения": "Настройте 301 redirect для .html/.php URL на чистые URL без расширений.",
+        "Цепочки редиректов": "Замените цепочку A→B→C на прямой A→C. Обновите внутренние ссылки.",
+        "Query params canonicalization": "Настройте canonical URL без UTM/tracking параметров. Используйте rel=canonical.",
+        "JavaScript / Meta Refresh Redirects": "Замените JS redirect (location.href) на серверный 301 redirect.",
+        "Pagination ?page=1 redirect": "Добавьте 301: ?page=1 → каноническая версия без page=1.",
+        "Legacy index.html/index.php redirect": "Добавьте 301: /index.html → / (корень сайта).",
+        "Слишком маленькие интерактивные элементы": "Увеличьте кнопки/ссылки до мин. 44×44px (CSS min-height/min-width/padding).",
+        "Слишком мелкий текст": "Установите мин. font-size: 16px для body текста на мобильных устройствах.",
+        "Low contrast text found": "Увеличьте контраст текста: мин. 4.5:1 (обычный текст) или 3:1 (крупный). Используйте WebAIM Contrast Checker.",
+        "Контент появляется только после JavaScript": "Реализуйте SSR (Server-Side Rendering) или SSG для критичного контента. Боты не всегда выполняют JS.",
+        "Ссылки появляются только после JavaScript": "Отрендерите навигационные ссылки на сервере (SSR). Критичные ссылки должны быть в HTML.",
+        "Content hidden via CSS": "Уберите display:none / visibility:hidden с важного контента. Используйте альтернативные методы для скрытия.",
+        "Links change after hydration": "Проверьте SSR гидрацию — количество ссылок не должно меняться после загрузки JS.",
+        "Низкий балл рендеринга": "Основной контент должен быть доступен без JavaScript. Используйте SSR/SSG фреймворк.",
+    }
+
+    row_idx = 5
     for idx, dt in enumerate(dev_tasks, 1):
-        priority = str(dt.get("priority", ""))
+        priority = str(dt.get("priority", "P3"))
+        title = str(dt.get("title", ""))
+        description = str(dt.get("description", ""))
+        fix = str(dt.get("fix", ""))
+
+        # Find matching how-to-fix
+        how_to_fix = fix
+        if not how_to_fix:
+            for pattern, recommendation in fix_map.items():
+                if pattern.lower() in title.lower():
+                    how_to_fix = recommendation
+                    break
+        if not how_to_fix:
+            how_to_fix = description
+
         ws_tasks.cell(row=row_idx, column=1, value=idx)
         ws_tasks.cell(row=row_idx, column=2, value=priority)
-        ws_tasks.cell(row=row_idx, column=3, value=str(dt.get("category", "")))
-        ws_tasks.cell(row=row_idx, column=4, value=str(dt.get("source_tool", "")))
-        ws_tasks.cell(row=row_idx, column=5, value=str(dt.get("title", "")))
-        ws_tasks.cell(row=row_idx, column=6, value=str(dt.get("description", "")))
-        ws_tasks.cell(row=row_idx, column=7, value=str(dt.get("owner", "")))
-        ws_tasks.cell(row=row_idx, column=8, value=str(dt.get("fix", "")))
-        # Apply priority color to entire row
+        ws_tasks.cell(row=row_idx, column=3, value="Открыта")
+        ws_tasks.cell(row=row_idx, column=4, value=str(dt.get("category", "")))
+        ws_tasks.cell(row=row_idx, column=5, value=str(dt.get("source_tool", "")))
+        ws_tasks.cell(row=row_idx, column=6, value=title)
+        ws_tasks.cell(row=row_idx, column=7, value=description)
+        ws_tasks.cell(row=row_idx, column=8, value=how_to_fix)
+        ws_tasks.cell(row=row_idx, column=9, value=str(dt.get("owner", "")))
+        ws_tasks.cell(row=row_idx, column=10, value=deadline_map.get(priority, ""))
+
+        # Styling
         p_fill = priority_fills.get(priority)
+        p_font = priority_fonts.get(priority)
         for ci in range(1, len(task_headers) + 1):
             c = ws_tasks.cell(row=row_idx, column=ci)
             c.border = thin_border
-            c.alignment = Alignment(vertical="center", wrap_text=True)
+            c.alignment = Alignment(vertical="top", wrap_text=True)
             if p_fill:
                 c.fill = p_fill
+        if p_font:
+            ws_tasks.cell(row=row_idx, column=2).font = p_font
         row_idx += 1
-    _auto_width(ws_tasks, len(task_headers))
+
+    # Column widths for readability
+    col_widths = {1: 5, 2: 12, 3: 10, 4: 22, 5: 18, 6: 40, 7: 50, 8: 60, 9: 15, 10: 18}
+    for ci, w in col_widths.items():
+        ws_tasks.column_dimensions[ws_tasks.cell(row=1, column=ci).column_letter].width = w
+
+    ws_tasks.freeze_panes = "A5"
+
+    # ── Sheet 3b: ТЗ по категориям ────────────────────────────────────
+    categories = {}
+    for dt in dev_tasks:
+        cat = dt.get("category", "Другое")
+        categories.setdefault(cat, []).append(dt)
+
+    for cat_name, cat_tasks in categories.items():
+        safe_name = re.sub(r"[^\w\s-]", "", cat_name)[:28]
+        ws_cat = wb.create_sheet(safe_name)
+        ws_cat.sheet_properties.tabColor = "0E7490"
+
+        ws_cat.merge_cells("A1:H1")
+        ws_cat.cell(row=1, column=1, value=f"ТЗ: {cat_name} ({len(cat_tasks)} задач)")
+        ws_cat.cell(row=1, column=1).font = Font(bold=True, size=12, color="0F4C81")
+
+        cat_headers = ["#", "Приоритет", "Что исправить", "Описание", "Как исправить", "Ответственный", "Срок", "Статус"]
+        for ci, h in enumerate(cat_headers, 1):
+            ws_cat.cell(row=2, column=ci, value=h)
+        _style_header(ws_cat, 2, len(cat_headers))
+
+        ri = 3
+        for i, dt in enumerate(cat_tasks, 1):
+            priority = str(dt.get("priority", "P3"))
+            title = str(dt.get("title", ""))
+            how_to_fix = str(dt.get("fix", ""))
+            if not how_to_fix:
+                for pattern, rec in fix_map.items():
+                    if pattern.lower() in title.lower():
+                        how_to_fix = rec
+                        break
+            ws_cat.cell(row=ri, column=1, value=i)
+            ws_cat.cell(row=ri, column=2, value=priority)
+            ws_cat.cell(row=ri, column=3, value=title)
+            ws_cat.cell(row=ri, column=4, value=str(dt.get("description", "")))
+            ws_cat.cell(row=ri, column=5, value=how_to_fix)
+            ws_cat.cell(row=ri, column=6, value=str(dt.get("owner", "")))
+            ws_cat.cell(row=ri, column=7, value=deadline_map.get(priority, ""))
+            ws_cat.cell(row=ri, column=8, value="Открыта")
+            p_fill = priority_fills.get(priority)
+            for ci in range(1, len(cat_headers) + 1):
+                c = ws_cat.cell(row=ri, column=ci)
+                c.border = thin_border
+                c.alignment = Alignment(vertical="top", wrap_text=True)
+                if p_fill:
+                    c.fill = p_fill
+            ri += 1
+        cat_widths = {1: 5, 2: 12, 3: 40, 4: 45, 5: 60, 6: 15, 7: 18, 8: 10}
+        for ci, w in cat_widths.items():
+            ws_cat.column_dimensions[ws_cat.cell(row=1, column=ci).column_letter].width = w
+        ws_cat.freeze_panes = "A3"
 
     # ── Sheet 4: Errors (only if present) ──────────────────────────────
     errors = results.get("errors", {}) or {}
