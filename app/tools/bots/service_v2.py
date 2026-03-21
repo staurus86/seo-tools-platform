@@ -799,7 +799,31 @@ class BotAccessibilityServiceV2:
                 path = f"{path}?{final_parsed.query}"
             robots_eval = _evaluate_robots_for_path(bot.name, bot.user_agent, robots_text, path)
             robots_allowed = robots_eval.get("allowed")
-            has_content = len(response.content or b"") > 0
+            raw_body = response.content or b""
+            body_length = len(raw_body)
+            has_content = body_length > 0
+            body_stripped = html_head.strip() if html_head else ""
+            has_html_tag = bool(re.search(r"<html[\s>]", body_stripped, re.IGNORECASE)) if body_stripped else False
+            has_body_tag = bool(re.search(r"<body[\s>]", body_stripped, re.IGNORECASE)) if body_stripped else False
+            has_meaningful_content = bool(
+                body_length > 0
+                and len(body_stripped) > 0
+                and (has_html_tag or has_body_tag)
+            )
+            content_check_details_parts: List[str] = []
+            if body_length == 0:
+                content_check_details_parts.append("empty body")
+            elif len(body_stripped) == 0:
+                content_check_details_parts.append("whitespace-only body")
+            if is_html and not has_html_tag and not has_body_tag:
+                content_check_details_parts.append("missing <html> and <body> tags")
+            elif is_html and not has_html_tag:
+                content_check_details_parts.append("missing <html> tag")
+            elif is_html and not has_body_tag:
+                content_check_details_parts.append("missing <body> tag")
+            if 0 < body_length < 500:
+                content_check_details_parts.append(f"short body ({body_length} bytes)")
+            content_check_details = "; ".join(content_check_details_parts) if content_check_details_parts else "ok"
             accessible = 200 <= response.status_code < 400
             crawlable = bool(accessible and robots_allowed is not False)
             waf_cdn = self._detect_waf_cdn(response, html_head, None)
@@ -848,6 +872,9 @@ class BotAccessibilityServiceV2:
                 "accessible": accessible,
                 "response_time_ms": elapsed_ms,
                 "has_content": has_content,
+                "content_length": body_length,
+                "has_meaningful_content": has_meaningful_content,
+                "content_check_details": content_check_details,
                 "x_robots_tag": x_robots,
                 "x_robots_forbidden": _is_forbidden_directive(x_robots or ""),
                 "meta_robots": meta_robots,
@@ -880,6 +907,9 @@ class BotAccessibilityServiceV2:
                 "accessible": False,
                 "response_time_ms": elapsed_ms,
                 "has_content": False,
+                "content_length": 0,
+                "has_meaningful_content": False,
+                "content_check_details": "request_failed",
                 "x_robots_tag": None,
                 "x_robots_forbidden": False,
                 "meta_robots": None,
@@ -1319,11 +1349,13 @@ class BotAccessibilityServiceV2:
             "top_missed": missed_rows[:5],
         }
 
-    def run(self, raw_url: str, selected_bots: Optional[List[str]] = None, bot_groups: Optional[List[str]] = None) -> Dict[str, Any]:
+    def run(self, raw_url: str, selected_bots: Optional[List[str]] = None, bot_groups: Optional[List[str]] = None, custom_bot_name: Optional[str] = None, custom_bot_ua: Optional[str] = None) -> Dict[str, Any]:
         url = normalize_url(raw_url)
         completed_at = datetime.utcnow().isoformat()
         robots_text, robots_status = self._load_robots(url)
         bots_to_check = self._resolve_bots(selected_bots, bot_groups)
+        if custom_bot_name and custom_bot_ua:
+            bots_to_check.append(BotDefinition(name=custom_bot_name.strip(), user_agent=custom_bot_ua.strip(), category="Custom"))
 
         rows: List[Dict[str, Any]] = []
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
@@ -1340,6 +1372,9 @@ class BotAccessibilityServiceV2:
                 "response_time": (row.get("response_time_ms") or 0) / 1000.0,
                 "response_time_ms": row.get("response_time_ms"),
                 "has_content": row.get("has_content"),
+                "content_length": row.get("content_length", 0),
+                "has_meaningful_content": row.get("has_meaningful_content", False),
+                "content_check_details": row.get("content_check_details", ""),
                 "category": row.get("category"),
                 "x_robots_tag": row.get("x_robots_tag"),
                 "x_robots_forbidden": row.get("x_robots_forbidden"),
@@ -1468,11 +1503,11 @@ class BotAccessibilityServiceV2:
             },
         }
 
-    def run_batch(self, raw_urls: List[str], selected_bots: Optional[List[str]] = None, bot_groups: Optional[List[str]] = None) -> Dict[str, Any]:
+    def run_batch(self, raw_urls: List[str], selected_bots: Optional[List[str]] = None, bot_groups: Optional[List[str]] = None, custom_bot_name: Optional[str] = None, custom_bot_ua: Optional[str] = None) -> Dict[str, Any]:
         urls = _normalize_batch_urls(raw_urls, limit=100)
         if not urls:
             return self.run("")
-        runs = [self.run(u, selected_bots=selected_bots, bot_groups=bot_groups) for u in urls]
+        runs = [self.run(u, selected_bots=selected_bots, bot_groups=bot_groups, custom_bot_name=custom_bot_name, custom_bot_ua=custom_bot_ua) for u in urls]
         primary = runs[0]
         batch_rows: List[Dict[str, Any]] = []
         for run in runs:

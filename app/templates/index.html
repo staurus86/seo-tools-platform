@@ -305,6 +305,13 @@
                     </label>
                 </div>
             </details>
+            <details class="rounded-lg border p-3" style="border-color:var(--ds-border);background:var(--ds-surface-soft);">
+                <summary class="cursor-pointer text-sm font-medium" style="color:var(--ds-text-secondary);">Custom Bot (optional)</summary>
+                <div class="mt-2 space-y-2">
+                    <input type="text" name="custom_bot_name" placeholder="MyBot" class="ds-input text-sm">
+                    <input type="text" name="custom_bot_ua" placeholder="Mozilla/5.0 (compatible; MyBot/1.0)" class="ds-input text-sm">
+                </div>
+            </details>
             <label class="flex items-center gap-2 text-sm cursor-pointer" style="color:var(--ds-text-secondary);"><input type="checkbox" name="use_proxy" value="true" class="rounded"><i class="fas fa-globe-americas text-xs" style="color:var(--ds-brand-2);"></i>Geo-прокси</label>
             <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:var(--ds-danger);border-color:var(--ds-danger);">
                 <i class="fas fa-play"></i>Запустить проверку ботов
@@ -558,6 +565,10 @@
                 </select>
             </div>
             <label class="flex items-center gap-2 text-sm cursor-pointer" style="color:var(--ds-text-secondary);"><input type="checkbox" name="use_proxy" value="true" class="rounded"><i class="fas fa-globe-americas text-xs" style="color:var(--ds-brand-2);"></i>Geo-прокси</label>
+            <label class="flex items-center gap-2 text-sm cursor-pointer" style="color:var(--ds-text-secondary);">
+                <input type="checkbox" name="combined" value="true" class="rounded">
+                Mobile + Desktop (combined)
+            </label>
             <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:#0ea5e9;border-color:#0ea5e9;">
                 <i class="fas fa-play"></i>Запустить Core Web Vitals Scanner
             </button>

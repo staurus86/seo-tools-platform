@@ -463,12 +463,14 @@ class RenderAuditServiceV2:
             errors,
         )
 
-    def _render(self, p: Any, url: str, ua: str, mobile: bool, shot_js: Path, shot_nojs: Path) -> Tuple[Snapshot, Dict[str, float], Dict[str, float], Dict[str, Any]]:
+    def _render(self, p: Any, url: str, ua: str, mobile: bool, shot_js: Path, shot_nojs: Path) -> Tuple[Snapshot, Dict[str, float], Dict[str, float], Dict[str, Any], List[str], Dict[str, Any]]:
         errors: List[str] = []
         out: Dict[str, Any] = {}
         js_timing: Dict[str, float] = {}
         nojs_timing: Dict[str, float] = {}
         emulation: Dict[str, Any] = {}
+        js_frameworks: List[str] = []
+        console_log: Dict[str, Any] = {"errors": [], "warnings": [], "error_count": 0, "warning_count": 0}
         launch_kwargs = {"headless": True}
         if self.use_proxy:
             from app.proxy import get_playwright_proxy
@@ -506,6 +508,11 @@ class RenderAuditServiceV2:
             ctx = browser.new_context(**ctx_kwargs)
             page = ctx.new_page()
             page.set_default_timeout(self.timeout_ms)
+
+            # Task 4.2: Capture console messages
+            console_messages: List[Dict[str, str]] = []
+            page.on("console", lambda msg: console_messages.append({"type": msg.type, "text": msg.text}))
+
             try:
                 page.goto(url, wait_until="networkidle")
             except Exception:
@@ -539,6 +546,39 @@ class RenderAuditServiceV2:
             }""").strip()
             out = page.evaluate(script)
             js_timing = page.evaluate("() => { const nav=performance.getEntriesByType('navigation')[0]||performance.timing||{}; return {tti:(nav.loadEventEnd||0), dcl:(nav.domContentLoadedEventEnd||0)}; }")
+
+            # Task 4.1: JS Framework Detection
+            frameworks_js = """
+            () => {
+                const f = [];
+                if (window.__NEXT_DATA__ || document.getElementById('__next')) f.push('Next.js');
+                if (window.__NUXT__ || window.$nuxt) f.push('Nuxt');
+                if (document.querySelector('[data-reactroot]') || document.querySelector('[id="root"]')?.innerHTML || window.__REACT_DEVTOOLS_GLOBAL_HOOK__) f.push('React');
+                if (document.querySelector('[data-v-]') || window.__VUE__) f.push('Vue');
+                if (window.ng || document.querySelector('[ng-version]') || document.querySelector('[_ngcontent-]')) f.push('Angular');
+                if (document.querySelector('[class*="svelte-"]') || window.__svelte) f.push('Svelte');
+                if (window.Gatsby) f.push('Gatsby');
+                if (window.__REMIX_CONTEXT) f.push('Remix');
+                if (document.querySelector('script[src*="astro"]') || document.querySelector('[data-astro-cid-]')) f.push('Astro');
+                if (window.jQuery || window.$?.fn?.jquery) f.push('jQuery');
+                return f;
+            }
+            """
+            try:
+                js_frameworks = page.evaluate(frameworks_js) or []
+            except Exception:
+                js_frameworks = []
+
+            # Task 4.2: Process console messages
+            console_errors_list = [m["text"] for m in console_messages if m["type"] == "error"]
+            console_warnings_list = [m["text"] for m in console_messages if m["type"] == "warning"]
+            console_log = {
+                "errors": console_errors_list[:50],
+                "warnings": console_warnings_list[:50],
+                "error_count": len(console_errors_list),
+                "warning_count": len(console_warnings_list),
+            }
+
             try:
                 page.screenshot(path=str(shot_js), full_page=True)
             except Exception:
@@ -584,7 +624,7 @@ class RenderAuditServiceV2:
             0,
             errors,
         )
-        return snap, js_timing, nojs_timing, emulation
+        return snap, js_timing, nojs_timing, emulation, js_frameworks, console_log
 
     def run(self, url: str, task_id: str, progress_callback=None) -> Dict[str, Any]:
         def notify(progress: int, message: str) -> None:
@@ -627,7 +667,7 @@ class RenderAuditServiceV2:
                     base = f"render_{re.sub(r'[^a-zA-Z0-9]+','-',urlparse(url).netloc or 'site').strip('-').lower()}_{datetime.utcnow().strftime('%Y-%m-%d_%H-%M')}_{vid}"
                     shot_js = shot_dir / f"{base}_js.png"
                     shot_nojs = shot_dir / f"{base}_nojs.png"
-                    rendered, timing_js, timing_nojs, emulation = self._render(p, url, ua, mobile, shot_js, shot_nojs)
+                    rendered, timing_js, timing_nojs, emulation, detected_frameworks, detected_console_log = self._render(p, url, ua, mobile, shot_js, shot_nojs)
                     elapsed = max(0.0, time.time() - t0)
                     self._dbg(
                         task_id,
@@ -665,6 +705,8 @@ class RenderAuditServiceV2:
                         "visible_text_count": len(rendered.visible_text),
                         "html_bytes": rendered.html_bytes,
                         "errors": rendered.errors,
+                        "js_frameworks": detected_frameworks,
+                        "console_log": detected_console_log,
                     }
 
                     missing = {
@@ -688,6 +730,31 @@ class RenderAuditServiceV2:
                         issues.append({"severity": "warning", "code": "schema_missing_nojs", "title": "Структурированные данные зависят от JavaScript", "details": f"Найдено {len(missing['Structured data'])} элементов JSON-LD только с JS.", "examples": _sample(missing["Structured data"])})
                     if elapsed > 12:
                         issues.append({"severity": "warning", "code": "render_too_slow", "title": "Медленный JS-рендер", "details": f"Время JS-рендера: {elapsed:.2f} сек."})
+                    # Task 4.1: JS framework dependency warning
+                    if detected_frameworks and len(missing.get("Visible text", [])) > 5:
+                        fw_list = ", ".join(detected_frameworks)
+                        issues.append({
+                            "severity": "warning",
+                            "code": "content_js_framework_dependent",
+                            "title": f"Content depends on {fw_list} JavaScript rendering",
+                            "details": (
+                                f"Обнаружены фреймворки: {fw_list}. "
+                                f"Rendered версия содержит значительно больше контента ({len(rendered.visible_text)} строк) "
+                                f"чем raw HTML ({len(raw.visible_text)} строк). "
+                                "Контент критически зависит от выполнения клиентского JavaScript."
+                            ),
+                            "examples": detected_frameworks,
+                        })
+                    # Task 4.2: Console errors warning
+                    if detected_console_log.get("error_count", 0) > 0:
+                        err_count = detected_console_log["error_count"]
+                        issues.append({
+                            "severity": "warning",
+                            "code": "js_console_errors",
+                            "title": f"JavaScript errors detected ({err_count}) — may affect content rendering for bots",
+                            "details": f"Обнаружено {err_count} ошибок JavaScript в консоли браузера при рендеринге.",
+                            "examples": detected_console_log.get("errors", [])[:5],
+                        })
                     if metrics["score"] < 70:
                         issues.append({"severity": "critical", "code": "low_render_score", "title": "Низкий балл рендеринга", "details": f"Текущий балл: {metrics['score']:.1f}/100."})
                     if meta_cmp["changed"] or meta_cmp["only_rendered"] or meta_cmp["only_raw"]:
@@ -747,6 +814,8 @@ class RenderAuditServiceV2:
                         "timing_nojs_ms": timing_nojs,
                         "timing_js_ms": timing_js,
                         "emulation": emulation,
+                        "js_frameworks": detected_frameworks,
+                        "console_log": detected_console_log,
                         "issues": issues,
                         "recommendations": _build_recommendations(missing) + _build_seo_recommendations(seo_required),
                         "screenshots": shots,

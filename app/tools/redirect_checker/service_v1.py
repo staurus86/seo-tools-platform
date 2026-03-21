@@ -113,12 +113,14 @@ def _trace_url(url: str, user_agent: str, timeout: int = 12, max_hops: int = 10,
     }
 
     for _ in range(max_hops + 1):
+        hop_start = time.perf_counter()
         try:
             response = session.get(current, allow_redirects=False, timeout=timeout, headers=headers)
         except requests.RequestException as exc:
             error_text = str(exc)
             break
 
+        elapsed_ms = int((time.perf_counter() - hop_start) * 1000)
         final_response = response
         location_raw = str(response.headers.get("Location") or "").strip()
         location_abs = urljoin(current, location_raw) if location_raw else ""
@@ -127,6 +129,12 @@ def _trace_url(url: str, user_agent: str, timeout: int = 12, max_hops: int = 10,
                 "url": current,
                 "status_code": int(response.status_code),
                 "location": location_abs or location_raw,
+                "timing_ms": elapsed_ms,
+                "headers": {
+                    "server": response.headers.get("Server", ""),
+                    "x-powered-by": response.headers.get("X-Powered-By", ""),
+                    "content-type": response.headers.get("Content-Type", ""),
+                },
             }
         )
 
@@ -141,6 +149,10 @@ def _trace_url(url: str, user_agent: str, timeout: int = 12, max_hops: int = 10,
 
     duration_ms = int((time.perf_counter() - started_at) * 1000)
 
+    total_chain_ms = int((time.perf_counter() - started_at) * 1000)
+    avg_hop_ms = total_chain_ms // max(1, len(chain))
+    slowest_hop = max(chain, key=lambda x: x.get("timing_ms", 0)) if chain else None
+
     if final_response is None:
         return {
             "start_url": url,
@@ -151,6 +163,9 @@ def _trace_url(url: str, user_agent: str, timeout: int = 12, max_hops: int = 10,
             "error": error_text or "Request failed",
             "loop_detected": loop_detected,
             "duration_ms": duration_ms,
+            "total_chain_ms": total_chain_ms,
+            "avg_hop_ms": avg_hop_ms,
+            "slowest_hop": slowest_hop,
             "content_type": "",
             "canonical_url": "",
             "canonical_source": "",
@@ -167,6 +182,9 @@ def _trace_url(url: str, user_agent: str, timeout: int = 12, max_hops: int = 10,
         "error": error_text,
         "loop_detected": loop_detected,
         "duration_ms": duration_ms,
+        "total_chain_ms": total_chain_ms,
+        "avg_hop_ms": avg_hop_ms,
+        "slowest_hop": slowest_hop,
         "content_type": str(final_response.headers.get("Content-Type") or ""),
         "canonical_url": canonical_url,
         "canonical_source": canonical_source,

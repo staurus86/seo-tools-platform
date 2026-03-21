@@ -372,6 +372,44 @@ def _rendered_fetch(
                 else:
                     chain.append({"url": final_url, "status_code": status_code, "location": ""})
 
+            # --- CSS visibility check for important content ---
+            css_visibility: Dict[str, Any] = {"hidden_elements": [], "total_checked": 0, "hidden_count": 0}
+            try:
+                _css_visibility_js = """
+() => {
+    const hidden = [];
+    const important = document.querySelectorAll('h1, h2, h3, p, article, main, [role="main"]');
+    important.forEach(el => {
+        const style = getComputedStyle(el);
+        const isHidden = style.display === 'none' ||
+                         style.visibility === 'hidden' ||
+                         style.opacity === '0' ||
+                         style.clipPath === 'inset(100%)' ||
+                         (parseInt(style.height) === 0 && style.overflow === 'hidden') ||
+                         (parseInt(style.width) === 0 && style.overflow === 'hidden') ||
+                         el.getAttribute('aria-hidden') === 'true';
+        if (isHidden) {
+            const tag = el.tagName.toLowerCase();
+            const text = (el.textContent || '').trim().substring(0, 100);
+            if (text) {
+                hidden.push({tag, text, reason:
+                    style.display === 'none' ? 'display:none' :
+                    style.visibility === 'hidden' ? 'visibility:hidden' :
+                    style.opacity === '0' ? 'opacity:0' :
+                    style.clipPath === 'inset(100%)' ? 'clip-path' :
+                    el.getAttribute('aria-hidden') === 'true' ? 'aria-hidden' :
+                    'zero-size'
+                });
+            }
+        }
+    });
+    return {hidden_elements: hidden, total_checked: important.length, hidden_count: hidden.length};
+}
+"""
+                css_visibility = page.evaluate(_css_visibility_js) or css_visibility
+            except Exception:
+                pass
+
             return {
                 "status_code": status_code,
                 "final_url": final_url,
@@ -385,6 +423,7 @@ def _rendered_fetch(
                 "redirect_chain": chain,
                 "console_errors": console_errors[:50],
                 "failed_requests": failed_requests[:50],
+                "css_visibility": css_visibility,
             }
         finally:
             if context is not None:
@@ -396,6 +435,72 @@ def _rendered_fetch(
                 browser.close()
             except Exception:
                 pass
+
+
+def _fetch_llms_txt(url: str, use_proxy: bool = False) -> Dict[str, Any]:
+    """Fetch and parse llms.txt file from site root."""
+    parsed = urlparse(url)
+    llms_url = urlunparse((parsed.scheme, parsed.netloc, "/llms.txt", "", "", ""))
+
+    try:
+        proxy_kwargs: Dict[str, Any] = {}
+        if use_proxy:
+            from app.proxy import get_requests_proxies
+            _proxies = get_requests_proxies()
+            if _proxies:
+                proxy_kwargs["proxies"] = _proxies
+        resp = requests.get(
+            llms_url,
+            timeout=10,
+            headers={"User-Agent": "Mozilla/5.0"},
+            **proxy_kwargs,
+        )
+        if resp.status_code == 200:
+            text = resp.text.strip()
+            lines = text.splitlines()
+            parsed_data: Dict[str, Any] = {"raw": text, "lines": len(lines), "found": True}
+            for line in lines:
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    k = k.strip().lower().replace(" ", "_")
+                    parsed_data[k] = v.strip()
+            return parsed_data
+        return {"found": False, "status_code": resp.status_code}
+    except Exception as e:
+        return {"found": False, "error": str(e)}
+
+
+def _fetch_llms_full_txt(url: str, use_proxy: bool = False) -> Dict[str, Any]:
+    """Fetch and parse llms-full.txt file from site root."""
+    parsed = urlparse(url)
+    llms_full_url = urlunparse((parsed.scheme, parsed.netloc, "/llms-full.txt", "", "", ""))
+
+    try:
+        proxy_kwargs: Dict[str, Any] = {}
+        if use_proxy:
+            from app.proxy import get_requests_proxies
+            _proxies = get_requests_proxies()
+            if _proxies:
+                proxy_kwargs["proxies"] = _proxies
+        resp = requests.get(
+            llms_full_url,
+            timeout=10,
+            headers={"User-Agent": "Mozilla/5.0"},
+            **proxy_kwargs,
+        )
+        if resp.status_code == 200:
+            text = resp.text.strip()
+            lines = text.splitlines()
+            parsed_data: Dict[str, Any] = {"raw": text, "lines": len(lines), "found": True}
+            for line in lines:
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    k = k.strip().lower().replace(" ", "_")
+                    parsed_data[k] = v.strip()
+            return parsed_data
+        return {"found": False, "status_code": resp.status_code}
+    except Exception as e:
+        return {"found": False, "error": str(e)}
 
 
 def _fetch_profile_snapshot(
@@ -2721,6 +2826,18 @@ def run_llm_crawler_simulation(
         )
     timings["policies_ms"] = int((time.perf_counter() - t1) * 1000)
 
+    # --- llms.txt detection ---
+    notify(45, "Checking llms.txt")
+    _llms_target_url = str(nojs_snapshot.get("final_url") or normalized_url)
+    llms_txt_data = _fetch_llms_txt(_llms_target_url, use_proxy=use_proxy)
+    llms_full_txt_data = _fetch_llms_full_txt(_llms_target_url, use_proxy=use_proxy)
+    llms_txt_result: Dict[str, Any] = {
+        "llms_txt": llms_txt_data,
+        "llms_full_txt": llms_full_txt_data,
+        "has_llms_txt": bool(llms_txt_data.get("found")),
+        "has_llms_full_txt": bool(llms_full_txt_data.get("found")),
+    }
+
     rendered_snapshot: Optional[Dict[str, Any]] = None
     render_error: Optional[str] = None
     render_status: Dict[str, Any] = {"status": "not_executed", "reason": "render_disabled_in_options"}
@@ -2753,6 +2870,9 @@ def run_llm_crawler_simulation(
                 "failed_requests": rendered_http.get("failed_requests") or [],
             }
             rendered_snapshot["render_debug"] = render_debug
+            rendered_snapshot["css_visibility"] = rendered_http.get("css_visibility") or {
+                "hidden_elements": [], "total_checked": 0, "hidden_count": 0,
+            }
             if bool(options.get("include_rendered_html")):
                 rendered_snapshot["rendered_html"] = str(rendered_http.get("body_text") or "")[:200000]
             _apply_chunk_dedupe(rendered_snapshot)
@@ -2841,6 +2961,47 @@ def run_llm_crawler_simulation(
         issues.append("H1 appears only after JS")
         score["top_issues"] = list(dict.fromkeys(issues))[:10]
     recommendations = _build_recommendations(nojs_snapshot, rendered_snapshot, policies, score)
+
+    # --- llms.txt recommendations ---
+    if llms_txt_result.get("has_llms_txt"):
+        recommendations.append({
+            "id": "llms_txt_found",
+            "severity": "info",
+            "title": "llms.txt found",
+            "description": "llms.txt found — AI bots have explicit guidance",
+        })
+    else:
+        recommendations.append({
+            "id": "llms_txt_missing",
+            "severity": "suggestion",
+            "title": "Add llms.txt",
+            "description": "Consider adding llms.txt to guide AI crawlers",
+        })
+
+    # --- CSS visibility recommendations ---
+    _css_vis = (rendered_snapshot or {}).get("css_visibility") or {}
+    _css_hidden_count = int(_css_vis.get("hidden_count") or 0)
+    if _css_hidden_count > 0:
+        _css_hidden_els = _css_vis.get("hidden_elements") or []
+        _has_critical = any(
+            el.get("tag") in ("h1", "article", "main")
+            for el in _css_hidden_els
+        )
+        if _has_critical:
+            recommendations.append({
+                "id": "css_visibility_critical",
+                "severity": "warning",
+                "title": "Critical content hidden via CSS",
+                "description": f"Critical content hidden via CSS ({_css_hidden_count} elements) — may not be indexed by search engines",
+            })
+        else:
+            recommendations.append({
+                "id": "css_visibility_minor",
+                "severity": "info",
+                "title": "Some content hidden via CSS",
+                "description": f"{_css_hidden_count} elements hidden via CSS (h2/h3/p) — review if important content is affected",
+            })
+
     llm_enabled = bool(getattr(settings, "LLM_SIMULATION_ENABLED", False))
     llm_sim = _run_llm_simulation(nojs_snapshot, enabled=llm_enabled)
     js_dep = _js_dependency_score(rendered_snapshot, diff, render_status=render_status)
@@ -3131,6 +3292,7 @@ def run_llm_crawler_simulation(
         "ads_detection": segmentation_payload.get("ads_detection") or {},
         "utility_detection": segmentation_payload.get("utility_detection") or {},
         "main_content_analysis": segmentation_payload.get("main_content_analysis") or {},
+        "llms_txt": llms_txt_result,
         "ui_wow_enabled": quality_mode,
         "engine": "llm_crawler_mvp_v1",
     }

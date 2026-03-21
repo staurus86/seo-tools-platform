@@ -3352,6 +3352,8 @@ def check_bots_full(
     batch_mode: bool = False,
     batch_urls: Optional[List[str]] = None,
     use_proxy: bool = False,
+    custom_bot_name: Optional[str] = None,
+    custom_bot_ua: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Bot accessibility check with feature-flagged v2 engine."""
     from app.config import settings
@@ -3375,8 +3377,8 @@ def check_bots_full(
                 use_proxy=use_proxy,
             )
             if batch_mode:
-                return checker.run_batch(batch_urls or [], selected_bots=selected_bots, bot_groups=bot_groups)
-            return checker.run(url, selected_bots=selected_bots, bot_groups=bot_groups)
+                return checker.run_batch(batch_urls or [], selected_bots=selected_bots, bot_groups=bot_groups, custom_bot_name=custom_bot_name, custom_bot_ua=custom_bot_ua)
+            return checker.run(url, selected_bots=selected_bots, bot_groups=bot_groups, custom_bot_name=custom_bot_name, custom_bot_ua=custom_bot_ua)
         except Exception as e:
             print(f"[API] bot v2 failed, fallback to legacy: {e}")
             legacy = _check_bots_legacy(url)
@@ -3462,6 +3464,8 @@ class BotCheckRequest(URLModel):
     scan_mode: Optional[str] = "single"
     batch_urls: Optional[List[str]] = None
     use_proxy: bool = False
+    custom_bot_name: Optional[str] = None
+    custom_bot_ua: Optional[str] = None
 
     @field_validator("url", mode="before")
     @classmethod
@@ -3913,6 +3917,8 @@ async def create_bot_check(data: BotCheckRequest):
         batch_mode=(str(data.scan_mode or "single").lower() == "batch"),
         batch_urls=(data.batch_urls or []),
         use_proxy=bool(data.use_proxy),
+        custom_bot_name=data.custom_bot_name,
+        custom_bot_ua=data.custom_bot_ua,
     )
     task_id = f"bots-{datetime.now().timestamp()}"
     create_task_result(task_id, "bot_check", url, result)

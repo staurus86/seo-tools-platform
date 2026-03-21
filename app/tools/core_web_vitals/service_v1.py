@@ -354,6 +354,56 @@ def _build_action_plan(
     return plan[:12]
 
 
+def _run_combined_report(
+    *,
+    url: str,
+    timeout: int = 60,
+    api_key: Optional[str] = None,
+    use_proxy: bool = False,
+) -> Dict[str, Any]:
+    """Run PSI for both mobile and desktop and return a merged combined report."""
+    mobile_result = run_core_web_vitals(
+        url=url, strategy="mobile", timeout=timeout, api_key=api_key, use_proxy=use_proxy, combined=False,
+    )
+    desktop_result = run_core_web_vitals(
+        url=url, strategy="desktop", timeout=timeout, api_key=api_key, use_proxy=use_proxy, combined=False,
+    )
+
+    mobile_res = mobile_result.get("results") or {}
+    desktop_res = desktop_result.get("results") or {}
+
+    def _get_metric(res: Dict[str, Any], metric: str, key: str) -> Any:
+        return ((res.get("metrics") or {}).get(metric) or {}).get(key)
+
+    def _get_summary(res: Dict[str, Any], key: str) -> Any:
+        return (res.get("summary") or {}).get(key)
+
+    score_m = _get_summary(mobile_res, "performance_score")
+    score_d = _get_summary(desktop_res, "performance_score")
+
+    comparison = {
+        "performance_mobile": score_m,
+        "performance_desktop": score_d,
+        "lcp_mobile_ms": _get_metric(mobile_res, "lcp", "lab_value_ms"),
+        "lcp_desktop_ms": _get_metric(desktop_res, "lcp", "lab_value_ms"),
+        "cls_mobile": _get_metric(mobile_res, "cls", "lab_value"),
+        "cls_desktop": _get_metric(desktop_res, "cls", "lab_value"),
+        "cwv_grade_mobile": _get_summary(mobile_res, "core_web_vitals_status"),
+        "cwv_grade_desktop": _get_summary(desktop_res, "core_web_vitals_status"),
+    }
+
+    return {
+        "task_type": "core_web_vitals",
+        "url": mobile_result.get("url") or desktop_result.get("url") or url,
+        "results": {
+            "combined": True,
+            "mobile": mobile_res,
+            "desktop": desktop_res,
+            "comparison": comparison,
+        },
+    }
+
+
 def run_core_web_vitals(
     *,
     url: str,
@@ -361,7 +411,11 @@ def run_core_web_vitals(
     timeout: int = 60,
     api_key: Optional[str] = None,
     use_proxy: bool = False,
+    combined: bool = False,
 ) -> Dict[str, Any]:
+    if combined:
+        return _run_combined_report(url=url, timeout=timeout, api_key=api_key, use_proxy=use_proxy)
+
     normalized_url = _normalize_http_input(url)
     if not normalized_url:
         raise ValueError("Введите корректный URL сайта (http/https или домен).")

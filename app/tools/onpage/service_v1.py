@@ -332,6 +332,7 @@ class OnPageAuditServiceV1:
         heading_analysis: Dict[str, Any],
         schema_analysis: Dict[str, Any],
         opengraph: Dict[str, Any],
+        twitter_cards: Dict[str, Any],
         content_profile: Dict[str, Any],
         ai_insights: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
@@ -462,6 +463,14 @@ class OnPageAuditServiceV1:
                 "OpenGraph required tags are missing",
                 f"Missing OG tags: {', '.join(opengraph.get('required_missing', []))}.",
             )
+
+        # Twitter Card issues
+        if "twitter:card" in (twitter_cards.get("required_missing") or []):
+            add("warning", "twitter_card_type_missing", "Twitter Card type not specified", "Add twitter:card meta tag to specify card type (e.g. summary_large_image).")
+        if "twitter:title" in (twitter_cards.get("required_missing") or []):
+            add("warning", "twitter_card_title_missing", "Twitter Card title missing", "Add twitter:title meta tag for better social sharing.")
+        if "twitter:image" in (twitter_cards.get("recommended_missing") or []):
+            add("info", "twitter_card_image_missing", "Twitter Card image not set (recommended for social sharing)", "Add twitter:image meta tag with a relevant image URL.")
 
         images_total = int(media.get("images_total", 0))
         images_missing_alt = int(media.get("images_missing_alt", 0))
@@ -832,6 +841,27 @@ class OnPageAuditServiceV1:
         schema_count = int(schema_analysis.get("json_ld_blocks", 0) or 0)
         opengraph = self._opengraph_analysis(soup)
 
+        # Twitter Cards
+        twitter_tags: Dict[str, str] = {}
+        for meta in soup.find_all("meta", attrs={"name": re.compile(r"^twitter:", re.I)}):
+            key = (meta.get("name") or "").lower()
+            val = (meta.get("content") or "").strip()
+            if key and val:
+                twitter_tags[key] = val
+
+        twitter_required = ["twitter:card", "twitter:title", "twitter:description"]
+        twitter_recommended = ["twitter:image", "twitter:site"]
+        twitter_missing_required = [t for t in twitter_required if t not in twitter_tags]
+        twitter_missing_recommended = [t for t in twitter_recommended if t not in twitter_tags]
+
+        twitter_cards = {
+            "tags": twitter_tags,
+            "tags_count": len(twitter_tags),
+            "card_type": twitter_tags.get("twitter:card", ""),
+            "required_missing": twitter_missing_required,
+            "recommended_missing": twitter_missing_recommended,
+        }
+
         technical = {
             "canonical_href": canonical_href,
             "canonical_abs": canonical_abs,
@@ -947,6 +977,7 @@ class OnPageAuditServiceV1:
             heading_analysis=heading_analysis,
             schema_analysis=schema_analysis,
             opengraph=opengraph,
+            twitter_cards=twitter_cards,
             content_profile=content_profile,
             ai_insights=ai_insights,
         )
@@ -1043,6 +1074,7 @@ class OnPageAuditServiceV1:
             {"parameter": "H6", "value": headings.get("h6_count", 0), "status": "info"},
             {"parameter": "Schema types", "value": schema_analysis.get("types_count", 0), "status": "info"},
             {"parameter": "OpenGraph tags", "value": opengraph.get("tags_count", 0), "status": "info"},
+            {"parameter": "Twitter Card tags", "value": twitter_cards.get("tags_count", 0), "status": "info"},
             {"parameter": "AI Marker Density/1k", "value": ai_insights.get("ai_marker_density_1k", 0), "status": "bad" if ai_insights.get("ai_marker_density_1k", 0) >= 8 else ("acceptable" if ai_insights.get("ai_marker_density_1k", 0) >= 4 else "good")},
             {"parameter": "Hedging Ratio", "value": ai_insights.get("hedging_ratio", 0), "status": "bad" if ai_insights.get("hedging_ratio", 0) >= 0.12 else ("acceptable" if ai_insights.get("hedging_ratio", 0) >= 0.07 else "good")},
             {"parameter": "Template Repetition", "value": ai_insights.get("template_repetition", 0), "status": "bad" if ai_insights.get("template_repetition", 0) >= 6 else ("acceptable" if ai_insights.get("template_repetition", 0) >= 3 else "good")},
@@ -1083,7 +1115,7 @@ class OnPageAuditServiceV1:
             c = (code or "").lower()
             if any(x in c for x in ("link", "anchor")):
                 return "links"
-            if any(x in c for x in ("schema", "open", "og", "structured")):
+            if any(x in c for x in ("schema", "open", "og", "structured", "twitter")):
                 return "schema"
             if any(x in c for x in ("keyword", "term", "water", "nausea", "content", "lexical", "sentence")):
                 return "content"
@@ -1203,6 +1235,7 @@ class OnPageAuditServiceV1:
                 "technical": technical,
                 "schema": schema_analysis,
                 "opengraph": opengraph,
+                "twitter_cards": twitter_cards,
                 "links": links,
                 "link_anchor_terms": link_anchor_terms,
                 "media": media,

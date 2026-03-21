@@ -330,6 +330,7 @@ class MobileCheckServiceV2:
                     {
                         "device_name": device.name,
                         "category": device.category,
+                        "orientation": "portrait",
                         "viewport": {"width": device.width, "height": device.height},
                         "pixel_ratio": device.dpr,
                         "status_code": status_code,
@@ -345,6 +346,91 @@ class MobileCheckServiceV2:
                     }
                 )
                 _notify(12 + int((device_idx / total_devices) * 80), f"Завершено: {device.name} ({device_idx}/{total_devices})")
+            # Task 3.1: Landscape orientation pass for phones only
+            phone_devices = [d for d in devices if d.category == "phone"]
+            total_landscape = len(phone_devices) or 1
+            for ls_idx, device in enumerate(phone_devices, start=1):
+                started = time.perf_counter()
+                _notify(92 + int((ls_idx / total_landscape) * 6), f"Ландшафт: {device.name} ({ls_idx}/{total_landscape})")
+                landscape_viewport = {"width": device.height, "height": device.width}
+                shot_name = f"mobile_{_slug(domain)}_{stamp}_{_slug(device.name)}_landscape.png"
+                shot_path = shot_dir / shot_name
+                context = browser.new_context(
+                    viewport=landscape_viewport,
+                    device_scale_factor=device.dpr,
+                    is_mobile=True,
+                    has_touch=True,
+                    user_agent=device.user_agent,
+                )
+                page = context.new_page()
+                ls_console_errors = []
+                page.on("console", lambda msg: ls_console_errors.append(msg.text) if msg.type == "error" else None)
+                ls_status_code = None
+                ls_final_url = prefetch.get("final_url") or url
+                ls_error = None
+                ls_eval_data: Dict[str, Any] = {}
+                try:
+                    try:
+                        response = page.goto(url, wait_until="networkidle", timeout=self.timeout * 1000)
+                    except Exception:
+                        response = page.goto(url, wait_until="domcontentloaded", timeout=self.timeout * 1000)
+                    ls_status_code = response.status if response else prefetch.get("status_code")
+                    ls_final_url = page.url or ls_final_url
+                    page.screenshot(path=str(shot_path), full_page=True)
+                    # Only check horizontal overflow in landscape
+                    ls_eval_data = page.evaluate("""
+                    (() => {
+                      const viewportWidth = window.innerWidth || 0;
+                      const docWidth = Math.max(document.body?.scrollWidth || 0, document.documentElement?.scrollWidth || 0);
+                      const horizontalOverflow = docWidth > viewportWidth + 2;
+                      return {
+                        viewport_width: viewportWidth,
+                        document_width: docWidth,
+                        horizontal_overflow: horizontalOverflow,
+                      };
+                    })();
+                    """)
+                except Exception as e:
+                    ls_error = str(e)
+                finally:
+                    try:
+                        context.close()
+                    except Exception:
+                        pass
+
+                elapsed_ms = int((time.perf_counter() - started) * 1000)
+                ls_issues: List[Dict[str, Any]] = []
+                if ls_error:
+                    ls_issues.append({"severity": "critical", "code": "runtime_error", "title": "Landscape check failed", "details": ls_error})
+                if ls_eval_data.get("horizontal_overflow"):
+                    ls_issues.append({
+                        "severity": "warning",
+                        "code": "horizontal_overflow_landscape",
+                        "title": "Горизонтальный скролл в ландшафтном режиме",
+                        "details": f"Ширина документа {ls_eval_data.get('document_width')}px превышает viewport {ls_eval_data.get('viewport_width')}px в ландшафтной ориентации.",
+                    })
+                global_issues.extend([{**issue, "device": device.name, "orientation": "landscape"} for issue in ls_issues])
+                ls_mobile_friendly = not any(issue["severity"] in ("critical", "warning") for issue in ls_issues)
+                results.append(
+                    {
+                        "device_name": device.name,
+                        "category": device.category,
+                        "orientation": "landscape",
+                        "viewport": landscape_viewport,
+                        "pixel_ratio": device.dpr,
+                        "status_code": ls_status_code,
+                        "final_url": ls_final_url,
+                        "load_time_ms": elapsed_ms,
+                        "console_errors_count": len(ls_console_errors),
+                        "mobile_friendly": ls_mobile_friendly,
+                        "issues_count": len(ls_issues),
+                        "issues": ls_issues,
+                        "screenshot_path": str(shot_path),
+                        "screenshot_name": shot_name,
+                        "screenshot_url": f"/api/mobile-artifacts/{task_id}/{shot_name}",
+                    }
+                )
+
             try:
                 browser.close()
             except Exception:

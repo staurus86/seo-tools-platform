@@ -9,6 +9,15 @@ import math
 import re
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
+# ── Optional pymorphy3 for Russian lemmatization ────────────────────────────
+try:
+    import pymorphy3
+    _morph = pymorphy3.MorphAnalyzer()
+    _HAS_PYMORPHY = True
+except ImportError:
+    _morph = None
+    _HAS_PYMORPHY = False
+
 SimilarityMethod = str
 ClusteringMode = str
 ProgressCallback = Optional[Callable[[int, str], None]]
@@ -76,7 +85,8 @@ def _normalize_keyword(value: str) -> str:
     return text
 
 
-def _stem_token(token: str) -> str:
+def _simple_stem(token: str) -> str:
+    """Suffix-stripping stemmer (fallback for non-Russian or when pymorphy3 is absent)."""
     value = str(token or "").strip().lower()
     if len(value) <= 3:
         return value
@@ -89,6 +99,25 @@ def _stem_token(token: str) -> str:
             value = value[: -len(suffix)]
             break
     return value
+
+
+def _stem_word(word: str) -> str:
+    """Stem/lemmatize a single word. Uses pymorphy3 for Russian when available."""
+    w = word.lower().strip()
+    if not w:
+        return w
+    if _HAS_PYMORPHY and any('\u0400' <= c <= '\u04ff' for c in w):
+        # Russian word — use pymorphy3 lemmatization
+        parsed = _morph.parse(w)  # type: ignore[union-attr]
+        if parsed:
+            return parsed[0].normal_form
+    # Fallback to suffix-stripping stemmer for non-Russian words
+    return _simple_stem(w)
+
+
+def _stem_token(token: str) -> str:
+    """Stem a token — delegates to _stem_word (pymorphy3-aware)."""
+    return _stem_word(token)
 
 
 def _tokenize(normalized_keyword: str) -> Dict[str, Set[str]]:

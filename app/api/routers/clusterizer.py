@@ -1,13 +1,16 @@
 """
 Keyword Clusterizer router.
 """
+import io
+import os
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 
-from app.api.routers._task_store import create_task_pending, update_task_state
+from app.api.routers._task_store import create_task_pending, update_task_state, get_task_result
 
 router = APIRouter(tags=["SEO Tools"])
 
@@ -291,3 +294,194 @@ async def create_clusterizer_task_upload(
 
     background_tasks.add_task(_run_upload_task)
     return {"task_id": task_id, "status": "PENDING", "message": f"Кластеризация {len(keyword_rows)} ключей из файла запущена"}
+
+
+# ── XLSX Export ──────────────────────────────────────────────────────────────
+
+
+def _build_clusterizer_xlsx(task_data: Dict[str, Any]) -> bytes:
+    """Build an XLSX workbook from clusterizer task result and return bytes."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    # Brand styling (matches design-system)
+    HEADER_FONT = Font(bold=True, color="FFFFFF", size=11)
+    HEADER_FILL = PatternFill(start_color="0F4C81", end_color="0F4C81", fill_type="solid")
+    HEADER_ALIGN = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    CELL_BORDER = Border(
+        left=Side(style="thin"),
+        right=Side(style="thin"),
+        top=Side(style="thin"),
+        bottom=Side(style="thin"),
+    )
+    ALT_FILL_A = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+    ALT_FILL_B = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+
+    def _apply_header(ws, headers: List[str]) -> None:
+        for col_idx, header in enumerate(headers, start=1):
+            cell = ws.cell(row=1, column=col_idx, value=header)
+            cell.font = HEADER_FONT
+            cell.fill = HEADER_FILL
+            cell.alignment = HEADER_ALIGN
+            cell.border = CELL_BORDER
+        ws.freeze_panes = "A2"
+
+    def _apply_row_style(ws, row_idx: int, col_count: int) -> None:
+        fill = ALT_FILL_A if row_idx % 2 == 0 else ALT_FILL_B
+        align = Alignment(horizontal="left", vertical="center", wrap_text=False)
+        for col_idx in range(1, col_count + 1):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            cell.fill = fill
+            cell.border = CELL_BORDER
+            cell.alignment = align
+
+    def _auto_width(ws, col_count: int, max_rows: int = 200) -> None:
+        for col_idx in range(1, col_count + 1):
+            max_len = 10
+            for row_idx in range(1, min(max_rows + 2, ws.max_row + 1)):
+                val = ws.cell(row=row_idx, column=col_idx).value
+                if val is not None:
+                    max_len = max(max_len, min(60, len(str(val)) + 2))
+            ws.column_dimensions[get_column_letter(col_idx)].width = max_len
+
+    result = task_data.get("result", {}) or {}
+    results = result.get("results", {}) or {}
+    clusters = results.get("clusters", []) or []
+    flat_keywords = results.get("cluster_keywords_flat", []) or []
+    unclustered = results.get("unclustered_keywords", []) or []
+    summary = results.get("summary", {}) or {}
+
+    wb = Workbook()
+
+    # ── Sheet 1: Clusters ────────────────────────────────────────────────
+    ws_clusters = wb.active
+    ws_clusters.title = "Clusters"
+    ws_clusters.sheet_properties.tabColor = "0F4C81"
+    cluster_headers = [
+        "Cluster ID", "Representative", "Size", "Quality",
+        "Intent", "Avg Similarity", "Keywords",
+    ]
+    _apply_header(ws_clusters, cluster_headers)
+    for row_idx, cluster in enumerate(clusters, start=2):
+        keywords_joined = ", ".join(cluster.get("keywords", []))
+        ws_clusters.cell(row=row_idx, column=1, value=cluster.get("cluster_id", ""))
+        ws_clusters.cell(row=row_idx, column=2, value=cluster.get("representative", ""))
+        ws_clusters.cell(row=row_idx, column=3, value=cluster.get("size", 0))
+        ws_clusters.cell(row=row_idx, column=4, value=cluster.get("cohesion", ""))
+        ws_clusters.cell(row=row_idx, column=5, value=cluster.get("intent", ""))
+        ws_clusters.cell(row=row_idx, column=6, value=cluster.get("avg_similarity", 0))
+        ws_clusters.cell(row=row_idx, column=7, value=keywords_joined)
+        _apply_row_style(ws_clusters, row_idx, len(cluster_headers))
+    _auto_width(ws_clusters, len(cluster_headers))
+
+    # ── Sheet 2: All Keywords ────────────────────────────────────────────
+    ws_keywords = wb.create_sheet("All Keywords")
+    ws_keywords.sheet_properties.tabColor = "0E7490"
+    kw_headers = [
+        "Keyword", "Frequency", "Cluster ID",
+        "Cluster Representative", "Intent",
+    ]
+    _apply_header(ws_keywords, kw_headers)
+
+    # Build cluster lookup for intent
+    cluster_intent_map: Dict[int, str] = {}
+    for cluster in clusters:
+        cluster_intent_map[int(cluster.get("cluster_id", 0))] = str(cluster.get("intent", ""))
+
+    for row_idx, kw_row in enumerate(flat_keywords, start=2):
+        cid = int(kw_row.get("cluster_id", 0))
+        ws_keywords.cell(row=row_idx, column=1, value=kw_row.get("keyword", ""))
+        ws_keywords.cell(row=row_idx, column=2, value=kw_row.get("demand", 0))
+        ws_keywords.cell(row=row_idx, column=3, value=cid)
+        ws_keywords.cell(row=row_idx, column=4, value=kw_row.get("representative", ""))
+        ws_keywords.cell(row=row_idx, column=5, value=cluster_intent_map.get(cid, ""))
+        _apply_row_style(ws_keywords, row_idx, len(kw_headers))
+    _auto_width(ws_keywords, len(kw_headers))
+
+    # ── Sheet 3: Singletons ──────────────────────────────────────────────
+    ws_singletons = wb.create_sheet("Singletons")
+    ws_singletons.sheet_properties.tabColor = "F59E0B"
+    singleton_headers = ["Keyword", "Frequency"]
+    _apply_header(ws_singletons, singleton_headers)
+
+    # Get singleton data from flat_keywords (cluster size == 1)
+    singleton_rows = [
+        kw_row for kw_row in flat_keywords
+        if int(kw_row.get("cluster_size", 0)) == 1
+    ]
+    # Fallback to unclustered list if flat data doesn't have cluster_size
+    if not singleton_rows and unclustered:
+        for row_idx, keyword in enumerate(unclustered, start=2):
+            ws_singletons.cell(row=row_idx, column=1, value=keyword)
+            ws_singletons.cell(row=row_idx, column=2, value="")
+            _apply_row_style(ws_singletons, row_idx, len(singleton_headers))
+    else:
+        for row_idx, kw_row in enumerate(singleton_rows, start=2):
+            ws_singletons.cell(row=row_idx, column=1, value=kw_row.get("keyword", ""))
+            ws_singletons.cell(row=row_idx, column=2, value=kw_row.get("demand", 0))
+            _apply_row_style(ws_singletons, row_idx, len(singleton_headers))
+    _auto_width(ws_singletons, len(singleton_headers))
+
+    # ── Sheet 4: Summary ─────────────────────────────────────────────────
+    ws_summary = wb.create_sheet("Summary")
+    ws_summary.sheet_properties.tabColor = "10B981"
+    summary_headers = ["Metric", "Value"]
+    _apply_header(ws_summary, summary_headers)
+
+    summary_rows = [
+        ("Total Keywords (input)", summary.get("keywords_input_total", 0)),
+        ("Unique Keywords", summary.get("keywords_unique_total", 0)),
+        ("Duplicates Removed", summary.get("duplicates_removed", 0)),
+        ("Total Demand (input)", summary.get("input_demand_total", 0)),
+        ("Unique Demand", summary.get("unique_demand_total", 0)),
+        ("Clusters Total", summary.get("clusters_total", 0)),
+        ("Primary Clusters (multi-keyword)", summary.get("primary_clusters_total", 0)),
+        ("Multi-keyword Clusters", summary.get("multi_keyword_clusters", 0)),
+        ("Singleton Clusters", summary.get("singleton_clusters", 0)),
+        ("Biggest Cluster Size", summary.get("biggest_cluster_size", 0)),
+        ("Average Cluster Size", summary.get("avg_cluster_size", 0)),
+        ("Average Cluster Cohesion", summary.get("avg_cluster_cohesion", 0)),
+        ("High Quality Clusters", summary.get("high_quality_clusters", 0)),
+        ("Low Confidence Keywords", summary.get("low_confidence_keywords", 0)),
+        ("Primary Demand Share %", summary.get("primary_demand_share_pct", 0)),
+        ("Singleton Demand Share %", summary.get("singleton_demand_share_pct", 0)),
+        ("Top Cluster Demand Share %", summary.get("top_cluster_demand_share_pct", 0)),
+    ]
+    for row_idx, (metric, value) in enumerate(summary_rows, start=2):
+        ws_summary.cell(row=row_idx, column=1, value=metric)
+        ws_summary.cell(row=row_idx, column=2, value=value)
+        _apply_row_style(ws_summary, row_idx, len(summary_headers))
+    _auto_width(ws_summary, len(summary_headers))
+
+    # Save to bytes
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+@router.get("/tasks/clusterizer/{task_id}/export/xlsx")
+async def export_clusterizer_xlsx(task_id: str):
+    """Export clusterizer results as XLSX file."""
+    task_data = get_task_result(task_id)
+    if not task_data:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    status = str(task_data.get("status", "")).upper()
+    if status != "SUCCESS":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Task is not completed yet (status: {status})",
+        )
+
+    xlsx_bytes = _build_clusterizer_xlsx(task_data)
+
+    safe_id = task_id.replace("/", "_").replace("\\", "_")
+    filename = f"clusterizer_{safe_id}.xlsx"
+
+    return StreamingResponse(
+        io.BytesIO(xlsx_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

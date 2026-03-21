@@ -14,10 +14,10 @@ from app.api.routers._task_store import create_task_pending, update_task_state
 router = APIRouter(tags=["SEO Tools"])
 
 
-def check_core_web_vitals(url: str, strategy: str = "desktop", use_proxy: bool = False) -> Dict[str, Any]:
+def check_core_web_vitals(url: str, strategy: str = "desktop", use_proxy: bool = False, combined: bool = False) -> Dict[str, Any]:
     from app.tools.core_web_vitals import run_core_web_vitals
 
-    return run_core_web_vitals(url=url, strategy=strategy, use_proxy=use_proxy)
+    return run_core_web_vitals(url=url, strategy=strategy, use_proxy=use_proxy, combined=combined)
 
 
 class CoreWebVitalsRequest(URLModel):
@@ -26,7 +26,16 @@ class CoreWebVitalsRequest(URLModel):
     scan_mode: Optional[str] = "single"
     batch_urls: Optional[List[str]] = None
     competitor_mode: bool = False
+    combined: bool = False
     use_proxy: bool = False
+
+    @field_validator("combined", mode="before")
+    @classmethod
+    def _normalize_combined(cls, value):
+        if isinstance(value, bool):
+            return value
+        token = str(value or "").strip().lower()
+        return token in {"1", "true", "yes", "on"}
 
     @field_validator("strategy", mode="before")
     @classmethod
@@ -855,7 +864,7 @@ async def create_core_web_vitals(data: CoreWebVitalsRequest, background_tasks: B
                     "current_url": url,
                 },
             )
-            result = check_core_web_vitals(url, strategy=strategy, use_proxy=bool(data.use_proxy))
+            result = check_core_web_vitals(url, strategy=strategy, use_proxy=bool(data.use_proxy), combined=bool(data.combined))
             update_task_state(
                 task_id,
                 status="SUCCESS",
