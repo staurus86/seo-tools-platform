@@ -42,6 +42,10 @@ logger.info(f"Files in current dir: {os.listdir('.')}")
 logger.info(f"PORT env var: {os.environ.get('PORT', 'NOT SET')}")
 logger.info(f"PYTHONPATH: {os.environ.get('PYTHONPATH', 'NOT SET')}")
 
+ASSET_VERSION = str(int(os.environ.get("RAILWAY_DEPLOYMENT_ID", "0") or "0"))
+if ASSET_VERSION == "0":
+    ASSET_VERSION = str(int(os.path.getmtime(__file__)))
+
 # Try importing FastAPI
 try:
     logger.info("Importing FastAPI...")
@@ -207,6 +211,8 @@ for path in template_paths:
 
 if templates is None:
     logger.error("[ERROR] Could not load templates from any path")
+else:
+    templates.env.globals["asset_version"] = ASSET_VERSION
 
 # API routes
 app.include_router(api_router)

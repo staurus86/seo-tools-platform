@@ -10,7 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="icon" type="image/x-icon" href="/static/icon.png">
     <link rel="shortcut icon" href="/static/icon.png">
-    <link rel="stylesheet" href="/static/css/design-system.css">
+    <link rel="stylesheet" href="/static/css/design-system.css?v={{ asset_version }}">
     <style>
         body { font-family: 'Inter', sans-serif; }
         .card-hover { transition: all 0.3s ease; }
@@ -120,7 +120,7 @@
     <div id="toast-container" class="fixed bottom-4 right-4 z-50 space-y-2" aria-live="polite" aria-atomic="true"></div>
 
     <!-- Scripts -->
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js?v={{ asset_version }}"></script>
     <script>
         // Fix theme icon on load
         (function() {
