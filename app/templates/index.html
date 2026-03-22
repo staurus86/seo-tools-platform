@@ -22,8 +22,15 @@
     </div>
 </div>
 
+<div class="ds-quick-nav" aria-label="Быстрые сценарии">
+    <a href="#full-audit-card" class="ds-quick-link"><i class="fas fa-microscope"></i><span>Быстрый старт</span></a>
+    <a href="#crawl-tools-section" class="ds-quick-link"><i class="fas fa-globe"></i><span>Техаудит</span></a>
+    <a href="#visibility-tools-section" class="ds-quick-link"><i class="fas fa-spider"></i><span>Видимость & CWV</span></a>
+    <a href="#data-tools-section" class="ds-quick-link"><i class="fas fa-table"></i><span>Данные & семантика</span></a>
+</div>
+
 <!-- Unified Full SEO Audit -->
-<div class="ds-card mb-8" style="border-top:4px solid var(--ds-brand);border-left:4px solid var(--ds-brand);">
+<div id="full-audit-card" class="ds-card ds-card-primary mb-8" data-priority="Primary" style="border-top:4px solid var(--ds-brand);border-left:4px solid var(--ds-brand);">
     <div class="flex items-center mb-4">
         <div class="p-4 rounded-lg mr-4" style="background:rgba(15,76,129,0.1);">
             <i class="fas fa-microscope text-2xl" style="color:var(--ds-brand);"></i>
@@ -38,8 +45,10 @@
         Результат — единый отчёт + ТЗ для разработчиков с приоритетами P0-P3.
     </p>
     <form class="space-y-3" onsubmit="startTask(event, 'unified-audit')">
-        <input type="url" name="url" placeholder="https://example.com" required
+        <label class="ds-label" for="unified-audit-url">URL сайта</label>
+        <input id="unified-audit-url" type="url" name="url" placeholder="https://example.com" required autocomplete="off"
                class="ds-input focus:ring-2" style="font-size:1.1rem;padding:0.75rem;">
+        <p class="ds-helper">Введите главную страницу сайта. Аудит сам соберёт остальные сигналы.</p>
         <details class="rounded-lg border p-3" style="border-color:var(--ds-border);background:var(--ds-surface-soft);">
             <summary class="cursor-pointer text-sm font-medium" style="color:var(--ds-text-secondary);">
                 <i class="fas fa-cog mr-1"></i>Настроить инструменты
@@ -65,8 +74,14 @@
 <!-- Tools Grid -->
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
 
+    <div id="crawl-tools-section" class="ds-section-divider md:col-span-2 lg:col-span-3">
+        <span class="ds-section-kicker">Section 1</span>
+        <h3 class="text-xl font-bold mb-1" style="color:var(--ds-text);">Базовый техаудит</h3>
+        <p class="text-sm" style="color:var(--ds-text-secondary);">Сценарии для первичной проверки сайта, batch-запусков и отдельного обхода.</p>
+    </div>
+
     <!-- Batch Mode -->
-    <div class="ds-card" style="border-top:3px solid #8b5cf6;">
+    <div id="batch-mode-card" class="ds-card ds-card-primary" data-priority="Primary" style="border-top:3px solid #8b5cf6;">
         <div class="flex items-center mb-4">
             <div class="p-3 rounded-lg mr-4" style="background:rgba(139,92,246,0.1);">
                 <i class="fas fa-layer-group text-xl" style="color:#8b5cf6;"></i>
@@ -80,7 +95,8 @@
             Запустите любой инструмент на списке URL (до 50). Результаты по каждому URL отдельно.
         </p>
         <form class="space-y-3" onsubmit="startBatchTask(event)">
-            <select name="tool" class="ds-select" required>
+            <label class="ds-label" for="batch-tool">Инструмент</label>
+            <select id="batch-tool" name="tool" class="ds-select" required>
                 <option value="">Выберите инструмент</option>
                 <option value="onpage">OnPage Audit</option>
                 <option value="render">Render Audit</option>
@@ -90,8 +106,10 @@
                 <option value="cwv">Core Web Vitals</option>
                 <option value="bot-check">Bot Checker</option>
             </select>
-            <textarea name="urls" rows="5" placeholder="https://example.com&#10;https://example.com/page1&#10;https://example.com/page2" required
+            <label class="ds-label" for="batch-urls">Список URL</label>
+            <textarea id="batch-urls" name="urls" rows="5" placeholder="https://example.com&#10;https://example.com/page1&#10;https://example.com/page2" required
                       class="ds-textarea"></textarea>
+            <p class="ds-helper">По одному URL в строке. Максимум 50 адресов за запуск.</p>
             <label class="flex items-center gap-2 text-sm cursor-pointer" style="color:var(--ds-text-secondary);"><input type="checkbox" name="use_proxy" value="true" class="rounded"><i class="fas fa-globe-americas text-xs" style="color:var(--ds-brand-2);"></i>Geo-прокси</label>
             <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:#8b5cf6;border-color:#8b5cf6;">
                 <i class="fas fa-play"></i>Запустить Batch
@@ -100,7 +118,7 @@
     </div>
 
     <!-- Tool 1: OnPage Audit -->
-    <div class="ds-card" style="border-top:3px solid #3b82f6;">
+    <div id="onpage-card" class="ds-card" style="border-top:3px solid #3b82f6;">
         <div class="flex items-center mb-4">
             <div class="p-3 rounded-lg mr-4" style="background:rgba(59,130,246,0.1);">
                 <i class="fas fa-sitemap text-xl" style="color:#3b82f6;"></i>
@@ -132,7 +150,7 @@
     </div>
 
     <!-- Tool 1b: Site Audit Pro -->
-    <div class="ds-card" style="border-top:3px solid var(--ds-brand);">
+    <div id="site-pro-card" class="ds-card ds-card-primary" data-priority="Primary" style="border-top:3px solid var(--ds-brand);">
         <div class="flex items-center mb-4">
             <div class="p-3 rounded-lg mr-4" style="background:rgba(15,76,129,0.1);">
                 <i class="fas fa-layer-group text-xl" style="color:var(--ds-brand);"></i>
@@ -146,18 +164,26 @@
             Выделенный движок для миграции SEOPRO с режимами quick/full и отчетами XLSX/DOCX.
         </p>
         <form class="space-y-3" onsubmit="startTask(event, 'site-audit-pro')" data-tool="site-audit-pro">
-            <input type="url" name="url" placeholder="https://example.com (необязательно в batch)"
+            <label class="ds-label" for="site-pro-url">Стартовый URL</label>
+            <input id="site-pro-url" type="url" name="url" placeholder="https://example.com (необязательно в batch)" autocomplete="off"
                    class="ds-input focus:ring-2 focus:ring-indigo-500 js-sitepro-root-url">
             <div class="grid grid-cols-2 gap-2">
-                <select name="mode" class="ds-select text-sm">
-                    <option value="quick" selected>quick</option>
-                    <option value="full">full</option>
-                </select>
-                <input type="number" name="max_pages" value="100" min="1" max="1500"
-                       class="ds-input text-sm" title="Макс. страниц">
+                <div>
+                    <label class="ds-label" for="site-pro-mode">Режим</label>
+                    <select id="site-pro-mode" name="mode" class="ds-select text-sm">
+                        <option value="quick" selected>quick</option>
+                        <option value="full">full</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="ds-label" for="site-pro-max-pages">Макс. страниц</label>
+                    <input id="site-pro-max-pages" type="number" name="max_pages" value="100" min="1" max="1500"
+                           class="ds-input text-sm" title="Макс. страниц">
+                </div>
             </div>
             <div class="grid grid-cols-1 gap-2">
-                <select name="scan_mode" class="ds-select text-sm js-sitepro-scan-mode">
+                <label class="ds-label" for="site-pro-scan-mode">Сценарий запуска</label>
+                <select id="site-pro-scan-mode" name="scan_mode" class="ds-select text-sm js-sitepro-scan-mode">
                     <option value="crawl" selected>обход сайта</option>
                     <option value="batch">список URL (batch)</option>
                 </select>
@@ -168,7 +194,9 @@
                 </label>
                 <input type="hidden" name="batch_mode" value="false" class="js-sitepro-batch-flag">
                 <div class="hidden js-sitepro-batch-box">
+                    <label class="ds-label" for="site-pro-batch-urls">Batch URL</label>
                     <textarea
+                        id="site-pro-batch-urls"
                         name="batch_urls_text"
                         class="ds-textarea text-sm"
                         rows="8"
@@ -185,7 +213,7 @@
     </div>
 
     <!-- Tool 2: Проверка Robots.txt -->
-    <div class="ds-card" style="border-top:3px solid var(--ds-success);">
+    <div id="robots-card" class="ds-card" style="border-top:3px solid var(--ds-success);">
         <div class="flex items-center mb-4">
             <div class="p-3 rounded-lg mr-4" style="background:rgba(21,128,61,0.1);">
                 <i class="fas fa-robot text-xl" style="color:var(--ds-success);"></i>
@@ -197,7 +225,8 @@
         </div>
         <p class="mb-4 text-sm" style="color:var(--ds-text-secondary);">Проверка директив, наличия sitemap и прав краулеров.</p>
         <form class="space-y-3" onsubmit="startTask(event, 'robots-check')">
-            <input type="url" name="url" placeholder="https://example.com" required
+            <label class="ds-label" for="robots-url">URL сайта</label>
+            <input id="robots-url" type="url" name="url" placeholder="https://example.com" required autocomplete="off"
                    class="ds-input focus:ring-2 focus:ring-green-500">
             <label class="flex items-center gap-2 text-sm cursor-pointer" style="color:var(--ds-text-secondary);"><input type="checkbox" name="use_proxy" value="true" class="rounded"><i class="fas fa-globe-americas text-xs" style="color:var(--ds-brand-2);"></i>Geo-прокси</label>
             <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:var(--ds-success);border-color:var(--ds-success);">
@@ -250,7 +279,7 @@
     </div>
 
     <!-- Tool 3: Sitemap Validator -->
-    <div class="ds-card" style="border-top:3px solid var(--ds-brand-2);">
+    <div id="sitemap-card" class="ds-card" style="border-top:3px solid var(--ds-brand-2);">
         <div class="flex items-center mb-4">
             <div class="p-3 rounded-lg mr-4" style="background:rgba(14,116,144,0.1);">
                 <i class="fas fa-map text-xl" style="color:var(--ds-brand-2);"></i>
@@ -262,7 +291,8 @@
         </div>
         <p class="mb-4 text-sm" style="color:var(--ds-text-secondary);">Проверка структуры sitemap, URL и качества метаданных.</p>
         <form class="space-y-3" onsubmit="startTask(event, 'sitemap-validate')">
-            <input type="text" name="url" placeholder="example.com или https://example.com/sitemap.xml" required
+            <label class="ds-label" for="sitemap-url">Домен или URL sitemap</label>
+            <input id="sitemap-url" type="text" name="url" placeholder="example.com или https://example.com/sitemap.xml" required autocomplete="off"
                    class="ds-input focus:ring-2 focus:ring-teal-500">
             <p class="text-xs" style="color:var(--ds-text-muted);">Можно ввести домен, сайт с http/https или полный URL sitemap. Сначала ищем sitemap в robots.txt.</p>
             <label class="flex items-center gap-2 text-sm cursor-pointer" style="color:var(--ds-text-secondary);"><input type="checkbox" name="use_proxy" value="true" class="rounded"><i class="fas fa-globe-americas text-xs" style="color:var(--ds-brand-2);"></i>Geo-прокси</label>
@@ -273,7 +303,7 @@
     </div>
 
     <!-- Tool 4: Render Audit -->
-    <div class="ds-card" style="border-top:3px solid #f97316;">
+    <div id="render-card" class="ds-card" style="border-top:3px solid #f97316;">
         <div class="flex items-center mb-4">
             <div class="p-3 rounded-lg mr-4" style="background:rgba(249,115,22,0.1);">
                 <i class="fas fa-code text-xl" style="color:#f97316;"></i>
@@ -285,7 +315,8 @@
         </div>
         <p class="mb-4 text-sm" style="color:var(--ds-text-secondary);">Сравнение HTML и ключевых SEO-элементов с JS и без JS.</p>
         <form class="space-y-3" onsubmit="startTask(event, 'render-audit')">
-            <input type="url" name="url" placeholder="https://example.com/page" required
+            <label class="ds-label" for="render-url">URL страницы</label>
+            <input id="render-url" type="url" name="url" placeholder="https://example.com/page" required autocomplete="off"
                    class="ds-input focus:ring-2 focus:ring-orange-500">
             <label class="flex items-center gap-2 text-sm cursor-pointer" style="color:var(--ds-text-secondary);"><input type="checkbox" name="use_proxy" value="true" class="rounded"><i class="fas fa-globe-americas text-xs" style="color:var(--ds-brand-2);"></i>Geo-прокси</label>
             <button type="submit" class="w-full ds-btn ds-btn-primary" style="background:#f97316;border-color:#f97316;">
@@ -295,7 +326,7 @@
     </div>
 
     <!-- Tool 5: Проверка мобильной версии -->
-    <div class="ds-card" style="border-top:3px solid #ec4899;">
+    <div id="mobile-card" class="ds-card ds-card-secondary" style="border-top:3px solid #ec4899;">
         <div class="flex items-center mb-4">
             <div class="p-3 rounded-lg mr-4" style="background:rgba(236,72,153,0.1);">
                 <i class="fas fa-mobile-alt text-xl" style="color:#ec4899;"></i>
@@ -307,7 +338,8 @@
         </div>
         <p class="mb-4 text-sm" style="color:var(--ds-text-secondary);">Проверка адаптивности и удобства на популярных мобильных устройствах.</p>
         <form class="space-y-3" onsubmit="startTask(event, 'mobile-check')">
-            <input type="url" name="url" placeholder="https://example.com" required
+            <label class="ds-label" for="mobile-url">URL страницы</label>
+            <input id="mobile-url" type="url" name="url" placeholder="https://example.com" required autocomplete="off"
                    class="ds-input focus:ring-2 focus:ring-pink-500">
             <div>
                 <label class="block text-sm font-medium mb-1" style="color:var(--ds-text-secondary);">Режим сканирования</label>
@@ -344,8 +376,14 @@
         </form>
     </div>
 
+    <div id="visibility-tools-section" class="ds-section-divider md:col-span-2 lg:col-span-3">
+        <span class="ds-section-kicker">Section 2</span>
+        <h3 class="text-xl font-bold mb-1" style="color:var(--ds-text);">Видимость, краулеры и производительность</h3>
+        <p class="text-sm" style="color:var(--ds-text-secondary);">Инструменты для bot access, redirect policy, Core Web Vitals и AI-ready сигналов.</p>
+    </div>
+
     <!-- Tool 6: Проверка доступности ботов -->
-    <div class="ds-card" style="border-top:3px solid var(--ds-danger);">
+    <div id="bot-check-card" class="ds-card ds-card-secondary" style="border-top:3px solid var(--ds-danger);">
         <div class="flex items-center mb-4">
             <div class="p-3 rounded-lg mr-4" style="background:rgba(185,28,28,0.1);">
                 <i class="fas fa-spider text-xl" style="color:var(--ds-danger);"></i>
@@ -356,8 +394,12 @@
             </div>
         </div>
         <p class="mb-4 text-sm" style="color:var(--ds-text-secondary);">Проверка доступности для основных поисковых и AI-ботов по HTTP, robots и meta-правилам.</p>
-        <form class="space-y-3" onsubmit="startTask(event, 'bot-check')">
-            <input type="url" name="url" placeholder="https://example.com" required
+        <details class="ds-card-fold">
+            <summary>Открыть настройку Bot Checker</summary>
+            <div class="ds-card-fold-body">
+        <form class="space-y-3 mt-4" onsubmit="startTask(event, 'bot-check')">
+            <label class="ds-label" for="bot-check-url">URL страницы</label>
+            <input id="bot-check-url" type="url" name="url" placeholder="https://example.com" required autocomplete="off"
                    class="ds-input focus:ring-2 focus:ring-red-500">
             <div>
                 <label class="block text-sm font-medium mb-1" style="color:var(--ds-text-secondary);">Режим сканирования</label>
@@ -448,10 +490,18 @@
                 <i class="fas fa-play"></i>Запустить проверку ботов
             </button>
         </form>
+            </div>
+        </details>
+    </div>
+
+    <div id="data-tools-section" class="ds-section-divider md:col-span-2 lg:col-span-3">
+        <span class="ds-section-kicker">Section 3</span>
+        <h3 class="text-xl font-bold mb-1" style="color:var(--ds-text);">Семантика, ссылки и экспортные данные</h3>
+        <p class="text-sm" style="color:var(--ds-text-secondary);">Инструменты для кластеризации, ссылочного анализа и рабочих отчётов для SEO-команды.</p>
     </div>
 
     <!-- Tool 7: Keyword Clusterizer -->
-    <div class="ds-card" style="border-top:3px solid #06b6d4;">
+    <div id="clusterizer-card" class="ds-card ds-card-secondary" style="border-top:3px solid #06b6d4;">
         <div class="flex items-center mb-4">
             <div class="p-3 rounded-lg mr-4" style="background:rgba(6,182,212,0.1);">
                 <i class="fas fa-object-group text-xl" style="color:#06b6d4;"></i>
@@ -462,7 +512,10 @@
             </div>
         </div>
         <p class="mb-4 text-sm" style="color:var(--ds-text-secondary);">Кластеризация без SERP: до 25 000 ключей, гибридная схожесть (токены + опечатки) и режимы strict/balanced/broad.</p>
-        <form class="space-y-3" onsubmit="startTask(event, 'clusterizer')">
+        <details class="ds-card-fold">
+            <summary>Открыть настройку Clusterizer</summary>
+            <div class="ds-card-fold-body">
+        <form class="space-y-3 mt-4" onsubmit="startTask(event, 'clusterizer')">
             <textarea
                 name="keywords_text"
                 rows="7"
@@ -516,10 +569,12 @@
                 <i class="fas fa-play"></i>Запустить кластеризацию
             </button>
         </form>
+            </div>
+        </details>
     </div>
 
     <!-- Tool 8: Link Profile Audit -->
-    <div class="ds-card" style="border-top:3px solid #f59e0b;">
+    <div id="link-profile-card" class="ds-card ds-card-secondary" style="border-top:3px solid #f59e0b;">
         <div class="flex items-center mb-4">
             <div class="p-3 rounded-lg mr-4" style="background:rgba(245,158,11,0.1);">
                 <i class="fas fa-link text-xl" style="color:#f59e0b;"></i>
@@ -530,8 +585,12 @@
             </div>
         </div>
         <p class="mb-4 text-sm" style="color:var(--ds-text-secondary);">Загрузка выгрузок бэклинков и batch-файла для анализа конкурентов, анкоров и дубликатов доменов.</p>
-        <form class="space-y-3" onsubmit="startLinkProfileTask(event)" data-tool="link-profile-audit">
-            <input type="text" name="our_domain" placeholder="example.com или https://example.com" required
+        <details class="ds-card-fold">
+            <summary>Открыть настройку Link Profile</summary>
+            <div class="ds-card-fold-body">
+        <form class="space-y-3 mt-4" onsubmit="startLinkProfileTask(event)" data-tool="link-profile-audit">
+            <label class="ds-label" for="link-profile-domain">Домен проекта</label>
+            <input id="link-profile-domain" type="text" name="our_domain" placeholder="example.com или https://example.com" required autocomplete="off"
                    class="ds-input focus:ring-2 focus:ring-amber-500">
             <div>
                 <label class="block text-sm font-medium mb-1" style="color:var(--ds-text-secondary);">Файлы бэклинков (CSV/XLSX, можно несколько)</label>
@@ -557,10 +616,12 @@
                 <i class="fas fa-play"></i>Запустить аудит ссылочного профиля
             </button>
         </form>
+            </div>
+        </details>
     </div>
 
     <!-- Tool 10: Redirect Checker -->
-    <div class="ds-card" style="border-top:3px solid var(--ds-success);">
+    <div id="redirect-card" class="ds-card ds-card-secondary" style="border-top:3px solid var(--ds-success);">
         <div class="flex items-center mb-4">
             <div class="p-3 rounded-lg mr-4" style="background:rgba(21,128,61,0.1);">
                 <i class="fas fa-random text-xl" style="color:var(--ds-success);"></i>
@@ -574,7 +635,8 @@
             Автопроверка HTTPS/WWW, trailing slash, index-файлов, canonical/404, query params, cross-domain и soft-404 с рекомендациями.
         </p>
         <form class="space-y-3" onsubmit="startTask(event, 'redirect-checker')">
-            <input type="text" name="url" placeholder="example.com или https://example.com" required
+            <label class="ds-label" for="redirect-url">Домен или URL</label>
+            <input id="redirect-url" type="text" name="url" placeholder="example.com или https://example.com" required autocomplete="off"
                    class="ds-input focus:ring-2 focus:ring-emerald-500">
             <div>
                 <label class="block text-sm font-medium mb-1" style="color:var(--ds-text-secondary);">User-Agent</label>
@@ -647,7 +709,7 @@
     </div>
 
     <!-- Tool 11: Core Web Vitals Scanner -->
-    <div class="ds-card" style="border-top:3px solid #0ea5e9;">
+    <div id="cwv-card" class="ds-card ds-card-secondary" style="border-top:3px solid #0ea5e9;">
         <div class="flex items-center mb-4">
             <div class="p-3 rounded-lg mr-4" style="background:rgba(14,165,233,0.1);">
                 <i class="fas fa-tachometer-alt text-xl" style="color:#0ea5e9;"></i>
@@ -668,7 +730,8 @@
                     <option value="batch">Batch (до 10 URL)</option>
                 </select>
             </div>
-            <input type="text" name="url" placeholder="example.com или https://example.com/page" required
+            <label class="ds-label" for="cwv-url">Домен или URL</label>
+            <input id="cwv-url" type="text" name="url" placeholder="example.com или https://example.com/page" required autocomplete="off"
                    class="ds-input focus:ring-2 focus:ring-sky-500 js-cwv-url">
             <div class="hidden js-cwv-batch-box">
                 <label class="block text-sm font-medium mb-1" style="color:var(--ds-text-secondary);">Список URL (до 10)</label>

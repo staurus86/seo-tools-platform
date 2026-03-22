@@ -1,8 +1,9 @@
 """
 Core Web Vitals router.
 """
+import math
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
@@ -346,7 +347,7 @@ def _build_core_web_vitals_batch_result(
         "common_opportunities": common_opportunities_rows,
         "priority_urls": priority_urls,
         "action_plan": batch_action_plan,
-        "checked_at": datetime.utcnow().isoformat(),
+        "checked_at": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -630,7 +631,7 @@ def _build_core_web_vitals_competitor_result(
         "failed_urls": base.get("failed_urls") or [],
         "recommendations": recommendations,
         "action_plan": primary_plan if primary_plan else (base.get("action_plan") or []),
-        "checked_at": datetime.utcnow().isoformat(),
+        "checked_at": datetime.now(timezone.utc).isoformat(),
     }
 
 

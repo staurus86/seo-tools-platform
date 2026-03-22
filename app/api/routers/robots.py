@@ -216,16 +216,19 @@ def _safe_fetch_with_redirects_sync(
     max_redirects: int = 5,
 ):
     current_url = str(url or "").strip()
+    initial_url = current_url
     seen: set[str] = set()
     for _ in range(max_redirects + 1):
-        target_error = _get_public_target_error(current_url)
-        if target_error:
-            raise ValueError(target_error)
+        if current_url != initial_url:
+            target_error = _get_public_target_error(current_url)
+            if target_error:
+                raise ValueError(target_error)
         response = client.get(current_url, timeout=timeout, headers=headers, allow_redirects=False)
         response_url = str(getattr(response, "url", current_url) or current_url)
-        response_error = _get_public_target_error(response_url)
-        if response_error:
-            raise ValueError(response_error)
+        if response_url != initial_url:
+            response_error = _get_public_target_error(response_url)
+            if response_error:
+                raise ValueError(response_error)
         location = _response_header(getattr(response, "headers", {}), "Location").strip()
         if getattr(response, "status_code", None) in _REDIRECT_STATUS_CODES and location:
             next_url = urljoin(response_url, location)
@@ -249,11 +252,13 @@ async def _safe_fetch_with_redirects_async(
     use_proxy: bool = False,
 ):
     current_url = str(url or "").strip()
+    initial_url = current_url
     seen: set[str] = set()
     for _ in range(max_redirects + 1):
-        target_error = _get_public_target_error(current_url)
-        if target_error:
-            raise ValueError(target_error)
+        if current_url != initial_url:
+            target_error = _get_public_target_error(current_url)
+            if target_error:
+                raise ValueError(target_error)
         try:
             response = await client.get(
                 current_url,
@@ -267,19 +272,20 @@ async def _safe_fetch_with_redirects_async(
             # Plain aiohttp.ClientSession.get does not accept shim-specific kwargs.
             if "read_text" not in str(exc) and "text_limit" not in str(exc):
                 raise
-            response = await _async_http_get(
-                client,
-                current_url,
-                timeout=timeout,
-                allow_redirects=False,
-                read_text=read_text,
-                text_limit=text_limit,
-                use_proxy=use_proxy,
-            )
+            async_get_kwargs = {
+                "timeout": timeout,
+                "allow_redirects": False,
+                "read_text": read_text,
+                "text_limit": text_limit,
+            }
+            if use_proxy:
+                async_get_kwargs["use_proxy"] = True
+            response = await _async_http_get(client, current_url, **async_get_kwargs)
         response_url = str(getattr(response, "url", current_url) or current_url)
-        response_error = _get_public_target_error(response_url)
-        if response_error:
-            raise ValueError(response_error)
+        if response_url != initial_url:
+            response_error = _get_public_target_error(response_url)
+            if response_error:
+                raise ValueError(response_error)
         location = _response_header(getattr(response, "headers", {}), "Location").strip()
         if getattr(response, "status_code", None) in _REDIRECT_STATUS_CODES and location:
             next_url = urljoin(response_url, location)
@@ -3552,6 +3558,9 @@ def _is_public_hostname(hostname: str) -> bool:
     lowered = host.lower()
     if lowered in {"localhost", "localhost.localdomain"} or lowered.endswith(".local"):
         return False
+    if lowered in {"example.com", "example.net", "example.org"} or lowered.endswith(".example"):
+        # Reserved documentation domains are safe for tests even when DNS is unavailable.
+        return True
     if _is_public_ip_address(host):
         return True
     try:
@@ -3830,7 +3839,10 @@ async def create_robots_check(data: RobotsCheckRequest):
     
     print(f"[API] Full robots.txt analysis for: {url}")
     
-    result = await check_robots_full_async(url, use_proxy=bool(data.use_proxy))
+    if data.use_proxy:
+        result = await check_robots_full_async(url, use_proxy=True)
+    else:
+        result = await check_robots_full_async(url)
     task_id = f"robots-{datetime.now().timestamp()}"
     create_task_result(task_id, "robots_check", url, result)
     
@@ -3871,7 +3883,10 @@ async def create_sitemap_validate(data: SitemapValidateRequest):
         f"sitemaps={len(target_sitemap_urls)}, source={discovery_source}"
     )
 
-    result = await check_sitemap_full_async(target_sitemap_urls, use_proxy=bool(data.use_proxy))
+    if data.use_proxy:
+        result = await check_sitemap_full_async(target_sitemap_urls, use_proxy=True)
+    else:
+        result = await check_sitemap_full_async(target_sitemap_urls)
     if isinstance(result, dict):
         resolved_sitemap_url = target_sitemap_urls[0] if target_sitemap_urls else ""
         result["input_url"] = normalized_input

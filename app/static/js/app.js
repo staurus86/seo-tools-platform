@@ -412,7 +412,7 @@ async function startBatchTask(event) {
         });
         const data = await resp.json();
         if (data.task_id) {
-            window.location.href = '/task/' + data.task_id;
+            window.location.href = '/results/' + data.task_id;
         } else {
             showToast(data.error || 'Failed to start batch', 'error');
         }

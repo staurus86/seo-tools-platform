@@ -5,6 +5,7 @@ import os
 import sys
 import logging
 from logging.handlers import RotatingFileHandler
+from contextlib import asynccontextmanager
 
 # Setup logging first
 _log_fmt = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -82,12 +83,24 @@ except Exception as e:
 
 # Create FastAPI app
 logger.info("Creating FastAPI app...")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    start_memory_guard()
+    try:
+        yield
+    finally:
+        stop_memory_guard()
+
+
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description="Asynchronous SEO analysis platform with 10 tools",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
+    lifespan=lifespan,
 )
 
 
@@ -282,17 +295,6 @@ async def health_check():
         "version": settings.APP_VERSION,
         "memory": get_process_memory_snapshot(),
     }
-
-
-@app.on_event("startup")
-async def on_startup():
-    start_memory_guard()
-
-
-@app.on_event("shutdown")
-async def on_shutdown():
-    stop_memory_guard()
-
 
 @app.get("/robots.txt")
 async def robots_txt():

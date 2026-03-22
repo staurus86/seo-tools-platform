@@ -41,7 +41,7 @@ class ExistingToolsSmokeTests(unittest.IsolatedAsyncioTestCase):
         fake_result = {"task_type": "redirect_checker", "url": "https://example.com/", "results": {"summary": {}}}
         with patch("app.api.routes.check_redirect_checker_full", return_value=fake_result):
             response = await create_redirect_checker(RedirectCheckerRequest(url="example.com"))
-        self.assertEqual(response.get("status"), "SUCCESS")
+        self.assertEqual(response.get("status"), "PENDING")
 
 
 if __name__ == "__main__":

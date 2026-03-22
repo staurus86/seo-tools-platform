@@ -146,6 +146,34 @@
     box-shadow: var(--ds-shadow);
 }
 
+.ds-card-primary {
+    position: relative;
+    background:
+        radial-gradient(circle at top right, rgba(14, 116, 144, 0.12), transparent 28%),
+        linear-gradient(180deg, color-mix(in srgb, var(--ds-surface) 92%, #ffffff 8%), var(--ds-surface));
+    box-shadow: var(--ds-shadow);
+}
+
+.ds-card-primary::before {
+    content: attr(data-priority);
+    position: absolute;
+    top: 0.9rem;
+    right: 1rem;
+    padding: 0.25rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ds-brand);
+    background: color-mix(in srgb, var(--ds-info-bg) 84%, transparent);
+    border: 1px solid var(--ds-info-border);
+}
+
+.ds-card-secondary {
+    background: linear-gradient(180deg, var(--ds-surface), color-mix(in srgb, var(--ds-surface-soft) 66%, transparent));
+}
+
 /* ── Buttons ───────────────────────────────────────────────────────────── */
 .ds-btn {
     display: inline-flex;
@@ -157,9 +185,10 @@
     font-size: 0.875rem;
     font-weight: 600;
     cursor: pointer;
-    transition: all var(--ds-transition);
+    transition: background-color var(--ds-transition), color var(--ds-transition), border-color var(--ds-transition), box-shadow var(--ds-transition), transform var(--ds-transition), filter var(--ds-transition);
     border: 1px solid transparent;
     text-decoration: none;
+    touch-action: manipulation;
 }
 .ds-btn-primary {
     background: var(--ds-brand);
@@ -187,6 +216,138 @@
 .ds-btn-neutral:hover {
     background: var(--ds-surface-hover);
     border-color: var(--ds-border-hover);
+}
+
+.ds-btn:focus-visible,
+.ds-input:focus-visible,
+.ds-select:focus-visible,
+.ds-textarea:focus-visible,
+.ds-theme-toggle:focus-visible,
+details > summary:focus-visible,
+a:focus-visible {
+    outline: 3px solid var(--ds-input-focus);
+    outline-offset: 2px;
+}
+
+.ds-skip-link {
+    position: absolute;
+    left: 1rem;
+    top: -3rem;
+    z-index: 100;
+    padding: 0.75rem 1rem;
+    border-radius: var(--ds-radius-sm);
+    background: var(--ds-brand);
+    color: #fff;
+    font-weight: 600;
+    text-decoration: none;
+    transition: top var(--ds-transition);
+}
+
+.ds-skip-link:focus {
+    top: 1rem;
+}
+
+.ds-label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--ds-text-secondary);
+    margin-bottom: 0.35rem;
+}
+
+.ds-helper {
+    font-size: 0.75rem;
+    color: var(--ds-text-muted);
+}
+
+.ds-quick-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin: 0 0 1.5rem 0;
+}
+
+.ds-quick-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.7rem 1rem;
+    border-radius: 999px;
+    border: 1px solid var(--ds-border);
+    background: color-mix(in srgb, var(--ds-surface) 84%, transparent);
+    color: var(--ds-text);
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 600;
+    box-shadow: var(--ds-shadow-sm);
+    transition: background-color var(--ds-transition), border-color var(--ds-transition), transform var(--ds-transition), box-shadow var(--ds-transition);
+}
+
+.ds-quick-link:hover {
+    background: var(--ds-surface-hover);
+    border-color: var(--ds-border-hover);
+    transform: translateY(-1px);
+    box-shadow: var(--ds-shadow);
+}
+
+.ds-section-divider {
+    position: relative;
+    padding: 1.1rem 1.25rem;
+    border: 1px solid var(--ds-border);
+    border-radius: var(--ds-radius);
+    background:
+        radial-gradient(circle at top right, rgba(14, 116, 144, 0.14), transparent 32%),
+        linear-gradient(135deg, var(--ds-surface-soft), var(--ds-surface));
+    overflow: hidden;
+}
+
+.ds-section-divider::after {
+    content: "";
+    position: absolute;
+    inset: auto -40px -40px auto;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: rgba(15, 76, 129, 0.08);
+}
+
+.ds-section-kicker {
+    display: inline-block;
+    margin-bottom: 0.35rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ds-brand);
+}
+
+.ds-card-fold {
+    border: 1px solid var(--ds-border);
+    border-radius: var(--ds-radius-sm);
+    background: var(--ds-surface-soft);
+    overflow: hidden;
+}
+
+.ds-card-fold > summary {
+    padding: 0.9rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--ds-text);
+    cursor: pointer;
+}
+
+.ds-card-fold-body {
+    padding: 0 1rem 1rem 1rem;
+    border-top: 1px solid var(--ds-border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ds-card,
+    .ds-btn,
+    .ds-skip-link {
+        animation: none !important;
+        transition: none !important;
+    }
 }
 
 /* ── Badges ─────────────────────────────────────────────────────────────── */

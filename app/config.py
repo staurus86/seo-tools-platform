@@ -2,7 +2,7 @@
 Конфигурация SEO Tools Platform
 """
 import os
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
 
@@ -15,6 +15,7 @@ def env_bool(name: str, default: str = "false") -> bool:
 
 class Settings(BaseSettings):
     """Настройки приложения"""
+    model_config = SettingsConfigDict(env_file=".env")
     
     # App
     APP_NAME: str = "SEO Tools Platform"
@@ -132,9 +133,9 @@ class Settings(BaseSettings):
     SITE_AUDIT_PRO_MAX_PAGES_LIMIT: int = int(os.getenv("SITE_AUDIT_PRO_MAX_PAGES_LIMIT", "1500"))
     SITE_AUDIT_PRO_MAX_PAGES_LIMIT_QUICK: int = int(os.getenv("SITE_AUDIT_PRO_MAX_PAGES_LIMIT_QUICK", "200"))
     SITE_AUDIT_PRO_MAX_PAGES_LIMIT_FULL: int = int(os.getenv("SITE_AUDIT_PRO_MAX_PAGES_LIMIT_FULL", "1500"))
-    SITE_AUDIT_PRO_INLINE_ISSUES_LIMIT: int = int(os.getenv("SITE_AUDIT_PRO_INLINE_ISSUES_LIMIT", "500"))
-    SITE_AUDIT_PRO_INLINE_SEMANTIC_LIMIT: int = int(os.getenv("SITE_AUDIT_PRO_INLINE_SEMANTIC_LIMIT", "500"))
-    SITE_AUDIT_PRO_INLINE_PAGES_LIMIT: int = int(os.getenv("SITE_AUDIT_PRO_INLINE_PAGES_LIMIT", "1500"))
+    SITE_AUDIT_PRO_INLINE_ISSUES_LIMIT: int = int(os.getenv("SITE_AUDIT_PRO_INLINE_ISSUES_LIMIT", "200"))
+    SITE_AUDIT_PRO_INLINE_SEMANTIC_LIMIT: int = int(os.getenv("SITE_AUDIT_PRO_INLINE_SEMANTIC_LIMIT", "200"))
+    SITE_AUDIT_PRO_INLINE_PAGES_LIMIT: int = int(os.getenv("SITE_AUDIT_PRO_INLINE_PAGES_LIMIT", "500"))
     
     # CORS — comma-separated list of allowed origins.
     # Empty string means allow all ("*"). Set to your domain(s) in production.
@@ -160,8 +161,4 @@ class Settings(BaseSettings):
     PROGRESS_MEMORY_MAX_ITEMS: int = int(os.getenv("PROGRESS_MEMORY_MAX_ITEMS", "2000"))
     PROGRESS_IDLE_KEEP_SEC: int = int(os.getenv("PROGRESS_IDLE_KEEP_SEC", "900"))
     
-    class Config:
-        env_file = ".env"
-
-
 settings = Settings()

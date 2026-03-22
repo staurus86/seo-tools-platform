@@ -37,9 +37,9 @@ async def create_link_profile_audit(
     # batch_file is optional for all-in-one XLSX packs (e.g. test links.xlsx).
 
     max_backlink_files = max(1, min(200, int(getattr(settings, "LINK_PROFILE_MAX_BACKLINK_FILES", 20) or 20)))
-    max_file_size_bytes = max(1024, int(getattr(settings, "LINK_PROFILE_MAX_FILE_SIZE_BYTES", 25 * 1024 * 1024) or (25 * 1024 * 1024)))
+    max_file_size_bytes = max(1, int(getattr(settings, "LINK_PROFILE_MAX_FILE_SIZE_BYTES", 25 * 1024 * 1024) or (25 * 1024 * 1024)))
     max_batch_file_size_bytes = max(
-        1024,
+        1,
         int(getattr(settings, "LINK_PROFILE_MAX_BATCH_FILE_SIZE_BYTES", 50 * 1024 * 1024) or (50 * 1024 * 1024)),
     )
     max_total_upload_bytes = max(
@@ -74,11 +74,12 @@ async def create_link_profile_audit(
 
     batch_name = ""
     batch_payload = b""
-    if batch_file and str(batch_file.filename or "").strip():
-        batch_name = str(batch_file.filename or "")
+    batch_upload = batch_file if getattr(batch_file, "read", None) and getattr(batch_file, "filename", None) is not None else None
+    if batch_upload and str(batch_upload.filename or "").strip():
+        batch_name = str(batch_upload.filename or "")
         if not batch_name.lower().endswith(allowed_ext):
             raise HTTPException(status_code=422, detail="Batch файл должен быть .csv или .xlsx")
-        batch_payload = await batch_file.read()
+        batch_payload = await batch_upload.read()
         if not batch_payload:
             raise HTTPException(status_code=422, detail="Batch файл пустой")
         if len(batch_payload) > max_batch_file_size_bytes:

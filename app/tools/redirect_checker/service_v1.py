@@ -415,7 +415,14 @@ def run_redirect_checker(
     selected_ua = UA_PRESETS[selected_key]
     ua_value = selected_ua["value"]
 
-    base_trace = _trace_url(normalized_input, ua_value, timeout=timeout, max_hops=max_hops, use_proxy=use_proxy)
+    trace_kwargs = {
+        "timeout": timeout,
+        "max_hops": max_hops,
+    }
+    if use_proxy:
+        trace_kwargs["use_proxy"] = True
+
+    base_trace = _trace_url(normalized_input, ua_value, **trace_kwargs)
     canonical_from_base = str(base_trace.get("final_url") or normalized_input)
     parsed_canonical = urlparse(canonical_from_base)
 
@@ -481,7 +488,7 @@ def run_redirect_checker(
     # 1) HTTP -> HTTPS
     _notify_progress(1, "http_to_https", "HTTP -> HTTPS", normalized_input)
     http_url = urlunparse(("http", base_netloc, "/", "", "", ""))
-    trace_http = _trace_url(http_url, ua_value, timeout=timeout, max_hops=max_hops, use_proxy=use_proxy)
+    trace_http = _trace_url(http_url, ua_value, **trace_kwargs)
     traces_for_chain.append(("http_to_https", trace_http))
     final_scheme_http = (urlparse(str(trace_http.get("final_url") or "")).scheme or "").lower()
     http_first_code = (_trace_codes(trace_http) or [None])[0]
@@ -521,7 +528,7 @@ def run_redirect_checker(
         alt_host = f"www.{base_host}"
     alt_netloc = _build_netloc(alt_host, base_port)
     alt_www_url = urlunparse((base_scheme, alt_netloc, "/", "", "", "")) if alt_netloc else ""
-    trace_www = _trace_url(alt_www_url, ua_value, timeout=timeout, max_hops=max_hops, use_proxy=use_proxy) if alt_www_url else {}
+    trace_www = _trace_url(alt_www_url, ua_value, **trace_kwargs) if alt_www_url else {}
     if trace_www:
         traces_for_chain.append(("www_consistency", trace_www))
     final_www_host = (urlparse(str((trace_www or {}).get("final_url") or "")).hostname or "").lower()
@@ -569,7 +576,7 @@ def run_redirect_checker(
     # 3) Multiple slashes
     _notify_progress(3, "multiple_slashes", "Множественные слеши", normalized_input)
     slashes_url = urlunparse((base_scheme, base_netloc, "/redirect-checker//probe//", "", "", ""))
-    trace_slashes = _trace_url(slashes_url, ua_value, timeout=timeout, max_hops=max_hops, use_proxy=use_proxy)
+    trace_slashes = _trace_url(slashes_url, ua_value, **trace_kwargs)
     traces_for_chain.append(("multiple_slashes", trace_slashes))
     final_slashes_path = urlparse(str(trace_slashes.get("final_url") or "")).path or "/"
     if trace_slashes.get("error"):
@@ -602,7 +609,7 @@ def run_redirect_checker(
     # 4) URL case
     _notify_progress(4, "url_case", "Регистр URL", normalized_input)
     case_url = urlunparse((base_scheme, base_netloc, "/CART", "", "", ""))
-    trace_case = _trace_url(case_url, ua_value, timeout=timeout, max_hops=max_hops, use_proxy=use_proxy)
+    trace_case = _trace_url(case_url, ua_value, **trace_kwargs)
     traces_for_chain.append(("url_case", trace_case))
     final_case_path = urlparse(str(trace_case.get("final_url") or "")).path or "/"
     case_first_code = (_trace_codes(trace_case) or [None])[0]
@@ -647,7 +654,7 @@ def run_redirect_checker(
     # 5) index files
     _notify_progress(5, "index_files", "Index-файлы", normalized_input)
     index_url = urlunparse((base_scheme, base_netloc, "/index.html", "", "", ""))
-    trace_index = _trace_url(index_url, ua_value, timeout=timeout, max_hops=max_hops, use_proxy=use_proxy)
+    trace_index = _trace_url(index_url, ua_value, **trace_kwargs)
     traces_for_chain.append(("index_files", trace_index))
     index_first_code = (_trace_codes(trace_index) or [None])[0]
     final_index_path = urlparse(str(trace_index.get("final_url") or "")).path or "/"
@@ -682,8 +689,8 @@ def run_redirect_checker(
     _notify_progress(6, "trailing_slash", "Trailing slash", normalized_input)
     slash_a = urlunparse((base_scheme, base_netloc, "/page", "", "", ""))
     slash_b = urlunparse((base_scheme, base_netloc, "/page/", "", "", ""))
-    trace_slash_a = _trace_url(slash_a, ua_value, timeout=timeout, max_hops=max_hops, use_proxy=use_proxy)
-    trace_slash_b = _trace_url(slash_b, ua_value, timeout=timeout, max_hops=max_hops, use_proxy=use_proxy)
+    trace_slash_a = _trace_url(slash_a, ua_value, **trace_kwargs)
+    trace_slash_b = _trace_url(slash_b, ua_value, **trace_kwargs)
     traces_for_chain.append(("trailing_slash_a", trace_slash_a))
     traces_for_chain.append(("trailing_slash_b", trace_slash_b))
     final_path_a = urlparse(str(trace_slash_a.get("final_url") or "")).path or "/"
@@ -764,8 +771,8 @@ def run_redirect_checker(
     _notify_progress(7, "legacy_extensions", "Старые расширения", normalized_input)
     ext_html_url = urlunparse((base_scheme, base_netloc, "/legacy-page.html", "", "", ""))
     ext_php_url = urlunparse((base_scheme, base_netloc, "/legacy-page.php", "", "", ""))
-    trace_ext_html = _trace_url(ext_html_url, ua_value, timeout=timeout, max_hops=max_hops, use_proxy=use_proxy)
-    trace_ext_php = _trace_url(ext_php_url, ua_value, timeout=timeout, max_hops=max_hops, use_proxy=use_proxy)
+    trace_ext_html = _trace_url(ext_html_url, ua_value, **trace_kwargs)
+    trace_ext_php = _trace_url(ext_php_url, ua_value, **trace_kwargs)
     traces_for_chain.append(("legacy_html", trace_ext_html))
     traces_for_chain.append(("legacy_php", trace_ext_php))
 
@@ -849,7 +856,7 @@ def run_redirect_checker(
     _notify_progress(9, "missing_404", "404-страницы", normalized_input)
     random_404 = f"/redirect-checker-404-{uuid.uuid4().hex[:10]}"
     url_404 = urlunparse((base_scheme, base_netloc, random_404, "", "", ""))
-    trace_404 = _trace_url(url_404, ua_value, timeout=timeout, max_hops=max_hops, use_proxy=use_proxy)
+    trace_404 = _trace_url(url_404, ua_value, **trace_kwargs)
     traces_for_chain.append(("missing_404", trace_404))
     status_code_404 = int(trace_404.get("final_status_code") or 0)
     if trace_404.get("error"):
@@ -925,7 +932,7 @@ def run_redirect_checker(
     compare_keys = ["googlebot_desktop", "googlebot_smartphone", "yandex_bot"]
     ua_traces: Dict[str, Dict[str, Any]] = {}
     for key in compare_keys:
-        trace = _trace_url(base_root_url, UA_PRESETS[key]["value"], timeout=timeout, max_hops=max_hops, use_proxy=use_proxy)
+        trace = _trace_url(base_root_url, UA_PRESETS[key]["value"], **trace_kwargs)
         ua_traces[key] = trace
         traces_for_chain.append((f"ua_{key}", trace))
         ua_rows.append(
@@ -986,7 +993,7 @@ def run_redirect_checker(
     _notify_progress(12, "query_params_canonicalization", "Query params canonicalization", normalized_input)
     param_probe_query = "utm_source=test&gclid=abc123&page=2&sort=asc&ref=campaign"
     param_probe_url = urlunparse((base_scheme, base_netloc, "/redirect-checker-param-probe", "", param_probe_query, ""))
-    trace_params = _trace_url(param_probe_url, ua_value, timeout=timeout, max_hops=max_hops, use_proxy=use_proxy)
+    trace_params = _trace_url(param_probe_url, ua_value, **trace_kwargs)
     traces_for_chain.append(("query_params_canonicalization", trace_params))
     final_param_pairs = parse_qsl(urlparse(str(trace_params.get("final_url") or "")).query, keep_blank_values=True)
     final_param_keys = [str(key or "").strip().lower() for key, _ in final_param_pairs if str(key or "").strip()]
@@ -1047,7 +1054,7 @@ def run_redirect_checker(
         required_probe_url = urlunparse(
             (base_scheme, base_netloc, "/redirect-checker-required-probe", "", required_probe_query, "")
         )
-        trace_required = _trace_url(required_probe_url, ua_value, timeout=timeout, max_hops=max_hops, use_proxy=use_proxy)
+        trace_required = _trace_url(required_probe_url, ua_value, **trace_kwargs)
         traces_for_chain.append(("required_query_params", trace_required))
         required_final_keys = {
             str(key or "").strip().lower()
@@ -1369,7 +1376,7 @@ def run_redirect_checker(
     # 20) Pagination Redirect (page=1 -> canonical)
     _notify_progress(20, "pagination_redirect", "Pagination ?page=1 redirect", normalized_input)
     page1_url = urlunparse((base_scheme, base_netloc, "/", "", "page=1", ""))
-    trace_page1 = _trace_url(page1_url, ua_value, timeout=timeout, max_hops=max_hops, use_proxy=use_proxy)
+    trace_page1 = _trace_url(page1_url, ua_value, **trace_kwargs)
     traces_for_chain.append(("pagination_redirect", trace_page1))
     final_page1_url = str(trace_page1.get("final_url") or "")
     final_page1_query = urlparse(final_page1_url).query or ""
@@ -1405,7 +1412,7 @@ def run_redirect_checker(
     # 21) UTM Parameter Handling
     _notify_progress(21, "utm_handling", "UTM Parameter Handling", normalized_input)
     utm_url = urlunparse((base_scheme, base_netloc, "/", "", "utm_source=test&utm_medium=test", ""))
-    trace_utm = _trace_url(utm_url, ua_value, timeout=timeout, max_hops=max_hops, use_proxy=use_proxy)
+    trace_utm = _trace_url(utm_url, ua_value, **trace_kwargs)
     traces_for_chain.append(("utm_handling", trace_utm))
     final_utm_url = str(trace_utm.get("final_url") or "")
     final_utm_query = urlparse(final_utm_url).query or ""
@@ -1441,8 +1448,8 @@ def run_redirect_checker(
     _notify_progress(22, "legacy_index_redirect", "Legacy index.html/index.php redirect", normalized_input)
     idx_html_url = urlunparse((base_scheme, base_netloc, "/index.html", "", "", ""))
     idx_php_url = urlunparse((base_scheme, base_netloc, "/index.php", "", "", ""))
-    trace_idx_html = _trace_url(idx_html_url, ua_value, timeout=timeout, max_hops=max_hops, use_proxy=use_proxy)
-    trace_idx_php = _trace_url(idx_php_url, ua_value, timeout=timeout, max_hops=max_hops, use_proxy=use_proxy)
+    trace_idx_html = _trace_url(idx_html_url, ua_value, **trace_kwargs)
+    trace_idx_php = _trace_url(idx_php_url, ua_value, **trace_kwargs)
     traces_for_chain.append(("legacy_index_html", trace_idx_html))
     traces_for_chain.append(("legacy_index_php", trace_idx_php))
     idx_html_final = str(trace_idx_html.get("final_url") or "")

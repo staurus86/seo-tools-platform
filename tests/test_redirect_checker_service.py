@@ -64,8 +64,8 @@ class RedirectCheckerServiceTests(unittest.TestCase):
         summary = payload.get("summary", {})
         keyed = {item.get("key"): item for item in scenarios}
 
-        self.assertEqual(len(scenarios), 17)
-        self.assertEqual(summary.get("total_scenarios"), 17)
+        self.assertEqual(len(scenarios), 23)
+        self.assertEqual(summary.get("total_scenarios"), 23)
         self.assertEqual(keyed.get("http_to_https", {}).get("status"), "passed")
         self.assertEqual(keyed.get("canonical_tag", {}).get("status"), "passed")
         self.assertEqual(keyed.get("missing_404", {}).get("status"), "passed")
@@ -110,11 +110,11 @@ class RedirectCheckerServiceTests(unittest.TestCase):
             progress_callback=progress_events.append,
         )
 
-        self.assertEqual(len(progress_events), 17)
+        self.assertEqual(len(progress_events), 23)
         self.assertEqual(progress_events[0].get("current_scenario_key"), "http_to_https")
-        self.assertEqual(progress_events[-1].get("current_scenario_key"), "soft_404_detection")
-        self.assertEqual(progress_events[-1].get("current_scenario_index"), 17)
-        self.assertEqual(progress_events[-1].get("scenario_count"), 17)
+        self.assertEqual(progress_events[-1].get("current_scenario_key"), "mixed_content")
+        self.assertEqual(progress_events[-1].get("current_scenario_index"), 23)
+        self.assertEqual(progress_events[-1].get("scenario_count"), 23)
 
     @patch("app.tools.redirect_checker.service_v1._trace_url")
     def test_policy_controls_affect_statuses(self, mock_trace):
